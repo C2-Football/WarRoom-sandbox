@@ -44,10 +44,7 @@
             id: 'redraft',
             label: 'Redraft',
             valueHorizon: 'current_season',
-            // 0 = no age-curve projection: the board value IS this season's
-            // value (projectedValue returns it untouched). Redraft doctrine —
-            // age influences nothing here.
-            projectionYears: 0,
+            projectionYears: 1,
             needBias: 1.18,
             youthPremium: 1,
             positionMultipliers: { RB: 1.04, WR: 1.02, TE: 1.01, QB: 0.99 },
@@ -143,6 +140,7 @@
             tags: mergeKeyedPatch(b.tags, p.tags),
             notes: mergeKeyedPatch(b.notes, p.notes),
             tiers: mergeKeyedPatch(b.tiers, p.tiers),
+            roundPlans: mergeKeyedPatch(b.roundPlans, p.roundPlans),
             fades: mergeKeyedPatch(b.fades, p.fades),
             targets: mergeKeyedPatch(b.targets, p.targets),
             drafted: p.drafted || b.drafted || [],
@@ -164,6 +162,51 @@
         return idKey(data.leagueId || data.currentLeague?.league_id || data.currentLeague?.id || data.state?.leagueId || window.S?.leagues?.[0]?.league_id || '');
     }
 
+    // How much of a snapshot is the USER'S hand: manual order, tags, notes,
+    // tiers. Used by the recovery sweep to pick the richest surviving copy.
+    function boardUserWeight(b) {
+        if (!b || typeof b !== 'object') return 0;
+        return ((b.myOrder && b.myOrder.length) || 0) * 2
+            + Object.keys(b.tags || {}).length
+            + Object.keys(b.notes || {}).length
+            + Object.keys(b.tiers || {}).length
+            + Object.keys(b.roundPlans || {}).length;
+    }
+
+    // RECOVERY SWEEP (owner report 2026-08-17, board lost twice): the board is
+    // filed under wr_bigboard_<league>_<variant>, but the Draft-tab feeder and
+    // the live room can DETECT DIFFERENT VARIANTS for a league whose format
+    // doesn't map cleanly (the owner's chopped league read as type "3" until
+    // the chopped port, then "chopped" — neither maps to a draft variant, so
+    // each surface fell to its own fallback drawer). When the active drawer
+    // holds no hand-built board, adopt the richest snapshot from ANY drawer
+    // for this league and re-file it here so the heal is permanent.
+    function recoverRichestBoard(leagueId, merged) {
+        try {
+            if (boardUserWeight(merged) > 0) return merged;
+            const store = window.App?.WrStorage;
+            if (!store?.get || typeof localStorage === 'undefined') return merged;
+            const prefix = `wr_bigboard_${leagueId}`;
+            let best = null, bestWeight = 0, bestKey = '';
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (!key || key.indexOf(prefix) !== 0) continue;
+                const candidate = store.get(key, null);
+                const weight = boardUserWeight(candidate);
+                if (weight > bestWeight) { best = candidate; bestWeight = weight; bestKey = key; }
+            }
+            if (!best) return merged;
+            // A successful rescue is GOOD news — wrLog filed it in the admin
+            // error table as a cryptic "Error" row (owner ruling 2026-09-01).
+            console.info('[WarRoom] draftContext.boardRecovered', { from: bestKey, weight: bestWeight });
+            window.DHQBugCapture?.captureMessage?.('boardRecovered from ' + bestKey + ' (weight ' + bestWeight + ')', 'info', { source: 'draftContext' });
+            return mergeBoardData(merged, best);
+        } catch (e) {
+            if (window.wrLog) window.wrLog('draftContext.recoverBoard', e);
+            return merged;
+        }
+    }
+
     function loadStoredBoard(leagueId, draftType, explicitBoardData) {
         const fallback = explicitBoardData || null;
         try {
@@ -174,7 +217,15 @@
             const typedKey = boardStorageKey(leagueId, draftType);
             const legacy = store.get(legacyKey, fallback || {}) || {};
             const typed = typedKey !== legacyKey ? (store.get(typedKey, {}) || {}) : {};
-            return mergeBoardData(mergeBoardData(fallback || {}, legacy), typed);
+            const merged = mergeBoardData(mergeBoardData(fallback || {}, legacy), typed);
+            const recovered = recoverRichestBoard(leagueId, merged);
+            if (boardUserWeight(recovered) === 0) tryVaultRestore(leagueId, draftType);
+            // Permanent heal: an adopted board is re-filed under the ACTIVE key
+            // so both surfaces converge on it from now on.
+            if (recovered !== merged && boardUserWeight(recovered) > 0 && store.set) {
+                store.set(typedKey, recovered);
+            }
+            return recovered;
         } catch (e) {
             if (window.wrLog) window.wrLog('draftContext.loadStoredBoard', e);
             return fallback || {};
@@ -196,11 +247,57 @@
                 updatedAt: new Date().toISOString(),
             });
             store.set(boardStorageKey(leagueId, draftType), next);
+            scheduleVaultPush(leagueId, next);
             return next;
         } catch (e) {
             if (window.wrLog) window.wrLog('draftContext.saveBoardPatch', e);
             return null;
         }
+    }
+
+    // ── BIG BOARD CLOUD VAULT (owner directive 2026-08-17) ────────────
+    // Every board edit is backed up to Supabase a few seconds after the
+    // local write (debounced per league); when a load finds NO hand-built
+    // board anywhere on the device, the vault copy is adopted and re-filed
+    // locally. Backup-only: local edits always win — the race guard below
+    // re-checks local weight when the async restore lands.
+    const _vaultPushTimers = {};
+    function scheduleVaultPush(leagueId, board) {
+        try {
+            if (!leagueId || typeof window.OD?.saveBigBoardBackup !== 'function') return;
+            if (boardUserWeight(board) === 0) return; // nothing hand-built to protect
+            if (_vaultPushTimers[leagueId]) clearTimeout(_vaultPushTimers[leagueId]);
+            _vaultPushTimers[leagueId] = setTimeout(() => {
+                delete _vaultPushTimers[leagueId];
+                window.OD.saveBigBoardBackup(leagueId, board).then(ok => {
+                    if (!ok && window.wrLog) window.wrLog('draftContext.vaultPushFailed', { leagueId });
+                });
+            }, 4000);
+        } catch (e) { /* backup must never break an edit */ }
+    }
+
+    const _vaultRestoreTried = {};
+    function tryVaultRestore(leagueId, draftType) {
+        try {
+            const guardKey = leagueId + '|' + draftType;
+            if (_vaultRestoreTried[guardKey]) return;
+            _vaultRestoreTried[guardKey] = true;
+            if (typeof window.OD?.loadBigBoardBackup !== 'function') return;
+            window.OD.loadBigBoardBackup(leagueId).then(hit => {
+                if (!hit || boardUserWeight(hit.board) === 0) return;
+                // Race guard: the user may have started a fresh board while the
+                // fetch was in flight — a restore must never clobber live work.
+                const store = window.App?.WrStorage;
+                if (!store?.get || !store?.set) return;
+                const typedKey = boardStorageKey(leagueId, draftType);
+                const current = store.get(typedKey, {}) || {};
+                if (boardUserWeight(current) > 0) return;
+                store.set(typedKey, mergeBoardData(current, hit.board));
+                // Same as boardRecovered above: a rescue report, not an error.
+                console.info('[WarRoom] draftContext.boardVaultRestored', { leagueId, savedAt: hit.updatedAt });
+                window.DHQBugCapture?.captureMessage?.('boardVaultRestored for league ' + leagueId, 'info', { source: 'draftContext' });
+            });
+        } catch (e) { /* restore is best-effort */ }
     }
 
     function normalizeDraftType(input) {
@@ -325,16 +422,13 @@
             }
         } catch (e) {}
         try {
-            // Routed through GmMode.effects (resolveStrategy) rather than the
-            // raw window.GMStrategy bypass — that call ignored leagueId
-            // entirely and, worse, always returns a truthy default object
-            // even when nothing was ever saved, so the per-league WrStorage
-            // fallback two lines below could never actually fire. Gated on
-            // hasStrategy (not just object truthiness) for the same reason —
-            // resolveStrategy's own "nothing found" case is {}, still a
-            // truthy object.
-            const fx = window.WR?.GmMode?.effects?.(leagueId);
-            strategy = (fx && fx.hasStrategy) ? fx.strategy : null;
+            // Per-league resolution (audit 2026-09-02): the old no-arg
+            // getStrategy() returned a DEFAULT object when this league had
+            // no saved plan, which short-circuited the per-league store read
+            // below — the draft board could sort by another league's plan.
+            // GmMode.resolveStrategy carries the documented precedence guard.
+            if (window.WR?.GmMode?.resolveStrategy) strategy = window.WR.GmMode.resolveStrategy(leagueId) || null;
+            else if (window.GMStrategy?.getStrategy) strategy = window.GMStrategy.getStrategy(leagueId) || null;
         } catch (e) {}
         try {
             const keys = window.App?.WR_KEYS;
@@ -392,12 +486,6 @@
         const targetPositions = new Set(asArray(strategy.targetPositions || strategy.targets || []));
         const fadePositions = new Set(asArray(strategy.sellPositions || strategy.blockPositions || []));
         const adapter = data.formatAdapter || getDraftFormatAdapter(data);
-        // Which positions to lean toward (RB-Heavy/Hero-RB/Zero-RB/etc.) —
-        // distinct from draftStyle's need/BPA bias above. Falls back cleanly
-        // to 'balanced' (a no-op 1.0 multiplier) for strategies saved before
-        // this field existed.
-        const archKey = strategy.draftArchetype || 'balanced';
-        const archMultFn = window.App?.DraftGameplan?.archetypeMultiplier;
 
         return asArray(pool).slice().sort((a, b) => {
             const score = p => {
@@ -405,7 +493,6 @@
                 const baseValue = projectedValue(p, adapter.projectionYears);
                 let value = baseValue;
                 value *= Number(adapter.positionMultipliers?.[pos] || 1);
-                if (archMultFn) value *= archMultFn(archKey, pos);
                 if (adapter.id === 'best_ball' && p?.tier && Number(p.tier) <= 2) value *= 1.035;
                 if (needs.has(pos)) value *= (1 + 0.12 * needBias * Number(adapter.needBias || 1));
                 if (targetPositions.has(p?.pos)) value *= 1.05;

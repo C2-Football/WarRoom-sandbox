@@ -61,7 +61,14 @@
         }, []);
 
         const powerRanked = React.useMemo(() => {
-            return [...allAssess].sort((a, b) => (b.healthScore || 0) - (a.healthScore || 0));
+            // One rank (2026-09-02): blended powerScore with the engine's own
+            // tiebreak — this widget said "power rankings" but sorted by
+            // healthScore, disagreeing with the Power Rankings widget beside it.
+            return [...allAssess].sort((a, b) => {
+                if ((b.powerScore || 0) !== (a.powerScore || 0)) return (b.powerScore || 0) - (a.powerScore || 0);
+                if ((b.totalDHQ || 0) !== (a.totalDHQ || 0)) return (b.totalDHQ || 0) - (a.totalDHQ || 0);
+                return String(a.rosterId).localeCompare(String(b.rosterId));
+            });
         }, [allAssess]);
 
         const currentRoster = (currentLeague?.rosters || []).find(r => String(r.owner_id) === String(sleeperUserId));
@@ -84,7 +91,7 @@
         };
         const onClick = () => { if (isClickable) openAnalytics(); };
         function analyticsButton() {
-            return <button onClick={openAnalytics} title="Open League Analytics" style={{ padding: '3px 8px', minHeight: '44px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: colors.accent || 'var(--gold)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.22))', borderRadius: 'var(--card-radius-xs, 5px)', cursor: 'pointer', fontSize: fs(0.56), fontFamily: fonts.ui, fontWeight: 700, whiteSpace: 'nowrap' }}>Analytics</button>;
+            return <button onClick={openAnalytics} title="Open League Analytics" style={{ padding: '3px 8px', minHeight: '44px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: colors.accent || 'var(--gold)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.22))', borderRadius: '5px', cursor: 'pointer', fontSize: fs(0.56), fontFamily: fonts.ui, fontWeight: 700, whiteSpace: 'nowrap' }}>Analytics</button>;
         }
 
         // Tier distribution
@@ -217,7 +224,7 @@
                 <div key={key} style={{ display: 'flex', gap: '6px', padding: '3px 0', borderBottom: '1px solid var(--ov-2, rgba(255,255,255,0.03))', fontSize: fs(0.66), fontFamily: fonts.ui, alignItems: 'center' }}>
                     <span style={{ fontSize: fs(0.54), padding: '1px 5px', borderRadius: 3, background: wrAlpha(typeCol, '18'), color: typeCol, fontWeight: 700 }}>{(type === 'free_agent' ? 'FA' : type).toUpperCase()}</span>
                     <span style={{ flex: 1, color: colors.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{desc}</span>
-                    {tx.created && <span style={{ fontSize: fs(0.54), color: colors.textFaint }}>{timeAgo ? timeAgo(tx.created) : ''}</span>}
+                    {(tx.status_updated || tx.created) && <span style={{ fontSize: fs(0.54), color: colors.textFaint }}>{timeAgo ? timeAgo(tx.status_updated || tx.created) : ''}</span>}
                 </div>
             );
         }

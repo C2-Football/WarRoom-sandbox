@@ -9,9 +9,9 @@ const WR_TUTORIAL_CONFIG = {
     legacyKeys: ['wr_tutorial_done_v1'],
     accent: 'var(--k-d4af37, #d4af37)',
     title: 'Welcome to the GM Room',
-    kicker: 'Alex Ingram / War Room Briefing',
-    intro: 'I am Alex Ingram, your GM chief of staff. War Room is the full football office: roster board, trade desk, waiver desk, draft command, and league ops in one place.',
-    openingChips: ['90-second brief', 'War Room map', 'Replay in settings'],
+    kicker: 'Alex Ingram / Dynasty HQ Briefing',
+    intro: 'I am Alex Ingram, your GM chief of staff. Dynasty HQ is the full football office: roster board, trade desk, waiver desk, draft command, and league ops in one place.',
+    openingChips: ['90-second brief', 'Dynasty HQ map', 'Replay in settings'],
     openingBoard: {
         label: 'Mission',
         title: 'Run the room',
@@ -89,7 +89,7 @@ const WR_TUTORIAL_CONFIG = {
             },
         },
     ],
-    finishTitle: 'War Room Is Ready',
+    finishTitle: 'Dynasty HQ Is Ready',
     finishText: 'You have the office map. Start at Home, move to the right desk, and bring me in before a high-leverage decision leaves the building.',
     finishChips: ['Home first', 'Desk second', 'Alex before action'],
     finishBoard: {

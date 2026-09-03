@@ -64,7 +64,7 @@
             if (!entries.length) return [];
             let eliteTeams = allAssess.filter(a => a.tier === 'ELITE' || a.tier === 'CONTENDER');
             if (!eliteTeams.length) {
-                eliteTeams = [...allAssess].sort((a, b) => (b.healthScore || 0) - (a.healthScore || 0)).slice(0, Math.max(1, Math.ceil(allAssess.length / 4)));
+                eliteTeams = [...allAssess].sort((a, b) => (b.powerScore || 0) - (a.powerScore || 0)).slice(0, Math.max(1, Math.ceil(allAssess.length / 4)));
             }
             const urgencyRank = { deficit: 0, thin: 1, ok: 2, surplus: 3 };
             return entries.map(([pos, v]) => {
@@ -138,7 +138,7 @@
                     <span style={{ fontSize: opts.large ? '1.05rem' : '0.95rem' }}>🧩</span>
                     <span style={{ fontFamily: fonts.display, fontSize: fs(opts.large ? 1.0 : 0.9), fontWeight: 700, color: colors.negative || 'var(--k-e74c3c, #e74c3c)', letterSpacing: '0.06em', textTransform: 'uppercase', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Gap Plan</span>
                     <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: colors.textMuted, fontFamily: fonts.ui, whiteSpace: 'nowrap' }}>{openGaps.length ? openGaps.length + ' open gap' + (openGaps.length !== 1 ? 's' : '') : 'all covered'}</span>
-                    <button onClick={e => goTo('fa', e)} title="Open Free Agency" style={{ padding: '3px 8px', minHeight: '44px', marginTop: '-10px', marginBottom: '-10px', display: 'inline-flex', alignItems: 'center', background: wrAlpha(colors.info || 'var(--k-3498db, #3498db)', '1A'), color: colors.info || 'var(--k-3498db, #3498db)', border: '1px solid ' + wrAlpha(colors.info || 'var(--k-3498db, #3498db)', '47'), borderRadius: 'var(--card-radius-xs, 5px)', cursor: 'pointer', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: fonts.ui, fontWeight: 700, whiteSpace: 'nowrap' }}>FA</button>
+                    <button onClick={e => goTo('fa', e)} title="Open Free Agency" style={{ padding: '3px 8px', minHeight: '44px', marginTop: '-10px', marginBottom: '-10px', display: 'inline-flex', alignItems: 'center', background: wrAlpha(colors.info || 'var(--k-3498db, #3498db)', '1A'), color: colors.info || 'var(--k-3498db, #3498db)', border: '1px solid ' + wrAlpha(colors.info || 'var(--k-3498db, #3498db)', '47'), borderRadius: '5px', cursor: 'pointer', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: fonts.ui, fontWeight: 700, whiteSpace: 'nowrap' }}>FA</button>
                 </div>
             );
         }
@@ -177,9 +177,9 @@
             );
         }
 
-        // ── MD / LG: gap list ──
-        if (size === 'md' || size === 'lg') {
-            const rows = size === 'md' ? gaps.slice(0, 4) : gaps.slice(0, 7);
+        // ── MD / LG / NARROW: gap list (narrow = skinny column, all rows) ──
+        if (size === 'md' || size === 'lg' || size === 'narrow') {
+            const rows = size === 'md' ? gaps.slice(0, 4) : size === 'narrow' ? gaps : gaps.slice(0, 7);
             return (
                 <div style={{ ...cardStyle, padding: 'var(--card-pad, 12px 14px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                     {header({ large: size === 'lg' })}
@@ -191,7 +191,7 @@
                             <div key={g.pos} role="button" tabIndex={0} title={(g.isTarget ? 'Strategy target — ' : '') + 'Open ' + (g.need > 0 || g.depthShort > 0 ? 'Free Agency' : 'My Roster')}
                                 onClick={e => goTo(g.need > 0 || g.depthShort > 0 ? 'fa' : 'myteam', e)}
                                 onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goTo(g.need > 0 || g.depthShort > 0 ? 'fa' : 'myteam', e); } }}
-                                style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '3px 6px', minHeight: '26px', borderRadius: 'var(--card-radius-xs, 5px)', background: g.isTarget ? wrAlpha(colors.gold || 'var(--gold, #d4af37)', '0F') : 'var(--ov-1, rgba(255,255,255,0.02))', borderLeft: '2px solid ' + (g.isTarget ? (colors.gold || 'var(--gold, #d4af37)') : statusCol(g.status)), cursor: 'pointer' }}>
+                                style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '3px 6px', minHeight: '26px', borderRadius: '4px', background: g.isTarget ? wrAlpha(colors.gold || 'var(--gold, #d4af37)', '0F') : 'var(--ov-1, rgba(255,255,255,0.02))', borderLeft: '2px solid ' + (g.isTarget ? (colors.gold || 'var(--gold, #d4af37)') : statusCol(g.status)), cursor: 'pointer' }}>
                                 <span style={{ display: 'flex', alignItems: 'center', gap: '3px', width: 30, flexShrink: 0 }}>
                                     {g.isTarget && <span title="Strategy target" style={{ width: 5, height: 5, borderRadius: '50%', background: colors.gold || 'var(--gold, #d4af37)', flexShrink: 0, boxShadow: '0 0 4px ' + wrAlpha(colors.gold || 'var(--gold, #d4af37)', '99') }} />}
                                     <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: g.isTarget ? (colors.gold || 'var(--gold, #d4af37)') : colors.text, fontFamily: fonts.ui }}>{posLabel(g.pos)}</span>
@@ -207,7 +207,7 @@
                             <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: colors.textFaint, fontFamily: fonts.ui, opacity: 0.7 }}>+{gaps.length - rows.length} more positions</div>
                         )}
                     </div>
-                    {size === 'md' && (
+                    {(size === 'md' || size === 'narrow') && (
                         <div style={{ flexShrink: 0, fontSize: 'var(--text-micro, 0.6875rem)', color: colors.textFaint, fontFamily: fonts.ui, opacity: 0.65, marginTop: '4px' }}>count = starter-quality players · vs elite tier teams</div>
                     )}
                     {/* LG: concrete sources for the top gap */}

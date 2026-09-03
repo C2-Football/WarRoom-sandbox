@@ -114,7 +114,7 @@ function WrSeasonOdds({ active, currentLeague, myRoster, playersData, statsData,
 
     // ── Shells ───────────────────────────────────────────────────────
     const Section = ({ title, meta, children }) => (
-        <div style={{ background: PANEL, border: `1px solid ${LINE}`, borderRadius: 'var(--card-radius-sm, 8px)', padding: '14px 16px' }}>
+        <div style={{ background: PANEL, border: `1px solid ${LINE}`, borderRadius: '6px', padding: '14px 16px' }}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', flexWrap: 'wrap', marginBottom: '10px' }}>
                 <span style={{ fontSize: '0.72rem', letterSpacing: '0.08em', color: SILVER, fontWeight: 600, textTransform: 'uppercase' }}>{title}</span>
                 {meta ? <span style={{ ...microHdr, textTransform: 'none', letterSpacing: 0 }}>{meta}</span> : null}
@@ -123,7 +123,7 @@ function WrSeasonOdds({ active, currentLeague, myRoster, playersData, statsData,
         </div>
     );
     const Kpi = ({ label, value, sub, color }) => (
-        <div style={{ background: 'var(--black, #121217)', border: `1px solid ${LINE}`, borderRadius: 'var(--card-radius-sm, 8px)', padding: '9px 11px', minWidth: '104px', flex: 1 }}>
+        <div style={{ background: 'var(--black, #121217)', border: `1px solid ${LINE}`, borderRadius: '6px', padding: '9px 11px', minWidth: '104px', flex: 1 }}>
             <div style={{ ...microHdr }}>{label}</div>
             <div style={{ ...mono, fontSize: '1.3rem', fontWeight: 700, color: color || TEXT, marginTop: '2px' }}>{value}</div>
             {sub ? <div style={{ ...microHdr, textTransform: 'none', letterSpacing: 0, marginTop: '1px' }}>{sub}</div> : null}
@@ -256,7 +256,7 @@ function WrSeasonOdds({ active, currentLeague, myRoster, playersData, statsData,
                                 const cell = sos.weeks[i]?.byPos?.[p];
                                 return (
                                     <span key={w} title={cell ? cell.team + ' vs ' + cell.opp + ' — allows rank ' + cell.rank + ' fantasy pts to ' + p : 'No starter / opponent unresolved'}
-                                        style={{ ...mono, fontSize: '0.66rem', fontWeight: 600, textAlign: 'center', padding: '6px 2px', borderRadius: 'var(--card-radius-xs, 5px)', border: '1px solid ' + (cell ? (cell.tag === 'EASY' ? 'rgba(46,204,113,0.45)' : cell.tag === 'HARD' ? 'rgba(231,76,60,0.45)' : LINE) : 'rgba(255,255,255,0.07)'), color: cell ? tagColor(cell.tag) : 'var(--text-muted, #8D887E)' }}>
+                                        style={{ ...mono, fontSize: '0.66rem', fontWeight: 600, textAlign: 'center', padding: '6px 2px', borderRadius: '4px', border: '1px solid ' + (cell ? (cell.tag === 'EASY' ? 'rgba(46,204,113,0.45)' : cell.tag === 'HARD' ? 'rgba(231,76,60,0.45)' : LINE) : 'rgba(255,255,255,0.07)'), color: cell ? tagColor(cell.tag) : 'var(--text-muted, #8D887E)' }}>
                                         {cell ? cell.tag : '—'}
                                     </span>
                                 );
@@ -296,7 +296,7 @@ function WrSeasonOdds({ active, currentLeague, myRoster, playersData, statsData,
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '10px', flexWrap: 'wrap' }}>
                     {window.wrExport ? (
                         <button onClick={() => window.wrExport.capture(document.getElementById('wr-export-luck'), 'luck-ledger')}
-                            style={{ padding: '6px 12px', background: 'transparent', color: GOLD, border: '1px solid rgba(212,175,55,0.5)', borderRadius: 'var(--card-radius-xs, 5px)', font: '700 0.66rem ' + MONO, letterSpacing: '0.05em', textTransform: 'uppercase', cursor: 'pointer' }}>
+                            style={{ padding: '6px 12px', background: 'transparent', color: GOLD, border: '1px solid rgba(212,175,55,0.5)', borderRadius: '5px', font: '700 0.66rem ' + MONO, letterSpacing: '0.05em', textTransform: 'uppercase', cursor: 'pointer' }}>
                             Export for league chat
                         </button>
                     ) : null}

@@ -212,9 +212,9 @@
 
     function liveSyncStaleReason(snapshot) {
         if (!snapshot) return null;
-        if (snapshot.remoteBehind) return 'Sleeper returned fewer picks than War Room has already mirrored.';
+        if (snapshot.remoteBehind) return 'Sleeper returned fewer picks than Dynasty HQ has already mirrored.';
         if (snapshot.conflictPickNos?.length) {
-            return 'Sleeper returned conflicting records for pick ' + snapshot.conflictPickNos.join(', ') + '. War Room paused before applying the wrong player.';
+            return 'Sleeper returned conflicting records for pick ' + snapshot.conflictPickNos.join(', ') + '. Dynasty HQ paused before applying the wrong player.';
         }
         if (snapshot.missingPickNos?.length) return 'Sleeper feed is missing pick ' + snapshot.missingPickNos.join(', ') + '.';
         if (snapshot.invalidPickCount > 0) {

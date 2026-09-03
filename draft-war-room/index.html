@@ -5,7 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <title>Draft War Room</title>
+  <title>Draft Room</title>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -14,7 +14,8 @@
   <script>WRShared.load('rookie-data.js');</script>
   <script src="./csv-loader.js"></script>
   <!-- Supabase JS v2 (CDN) -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="../vendor/supabase.min.js"></script>
+<script>window.supabase||document.write('<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.101.1/dist/umd/supabase.min.js"><\/script>')</script>
   <!-- Supabase project credentials — edit before deploying -->
   <script src="./supabase-config.js"></script>
   <!-- Draft board + mock draft Supabase helpers -->
@@ -1679,6 +1680,6 @@
 
     ReactDOM.render(<DraftBoard />, document.getElementById('root'));
   </script>
-<footer style="text-align:center;padding:16px;font-size:12px;color:#666;border-top:1px solid #1a1a1a;margin-top:32px;">&copy; 2026 C2Football. All rights reserved.</footer>
+<footer style="text-align:center;padding:16px;font-size:12px;color:#666;border-top:1px solid #1a1a1a;margin-top:32px;">&copy; 2026 C2 Football LLC. All rights reserved.</footer>
 </body>
 </html>

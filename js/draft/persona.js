@@ -242,24 +242,6 @@
     }
 
     window.DraftCC = window.DraftCC || {};
-    // window.DraftHistory's real Sleeper sync is necessarily keyed by userId (a
-    // Sleeper account id, stable across season/roster reshuffles) — composePersona's
-    // draftDnaMap contract is keyed by THIS season's roster_id (see its own doc
-    // comment above). Bridge the two via each roster's current owner_id. Call on
-    // whatever loadDraftDNA()/syncDraftDNA() returns before handing it to
-    // composeAllPersonas or a MERGE_DRAFT_DNA payload — without this, the map's
-    // keys never match any persona and every real DNA sync is a silent no-op.
-    function remapDraftDnaByRosterId(dnaByUserId) {
-        if (!dnaByUserId) return {};
-        const rosters = window.S?.rosters || [];
-        const out = {};
-        rosters.forEach(r => {
-            const dna = dnaByUserId[String(r.owner_id)] || dnaByUserId[r.owner_id];
-            if (dna) out[r.roster_id] = dna;
-        });
-        return out;
-    }
-
     window.DraftCC.persona = {
         composePersona,
         composeAllPersonas,
@@ -267,6 +249,5 @@
         normalizeTradeDna,
         normalizePosture,
         normalizeAssessment,
-        remapDraftDnaByRosterId,
     };
 })();

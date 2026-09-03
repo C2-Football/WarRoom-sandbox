@@ -10,6 +10,25 @@
     // Rotated pick — spreads variants across rows by index so same-tier
     // neighbours don't open with the same sentence on a hash collision.
     const avPickRot = (seed, arr, off) => (window.AlexVoice ? window.AlexVoice.pickRot(seed, arr, off) : arr[(off | 0) % arr.length]);
+    // Content signature of a Big Board snapshot (manual order, AI order, tags,
+    // notes, drafted, active lane). Used to tell a real cross-view edit apart from a
+    // view's own echo so the Draft tab and live draft room can share one store
+    // without clobbering each other or looping, while still persisting every field
+    // the auto-save used to write.
+    const boardSyncSig = (b) => {
+        if (!b) return '';
+        try {
+            return JSON.stringify({
+                my: b.myOrder || [],
+                ai: b.aiOrder || [],
+                tags: b.tags || {},
+                notes: b.notes || {},
+                plans: b.roundPlans || {},
+                drafted: (b.drafted || []).slice().sort(),
+                lane: b.activeLane || b.boardMode || 'dhq',
+            });
+        } catch (e) { return ''; }
+    };
     // ══════════════════════════════════════════════════════════════════════════
     // END FREE AGENCY TAB
     // ══════════════════════════════════════════════════════════════════════════
@@ -17,7 +36,7 @@
     // ══════════════════════════════════════════════════════════════════════════
     // DRAFT TAB — migrated from draft-warroom.html
     // ══════════════════════════════════════════════════════════════════════════
-    function DraftTab({ playersData, statsData, myRoster, currentLeague, leagueSkin, sleeperUserId, timeRecomputeTs, viewMode }) {
+    function DraftTab({ playersData, statsData, myRoster, currentLeague, leagueSkin, sleeperUserId, setReconPanelOpen, sendReconMessage, timeRecomputeTs, viewMode }) {
         // Scout-free vs Pro (js/shared/pro-gate.js). Fail-open so the tab never
         // breaks if the gate isn't loaded. Evaluated per render (reconai precedent).
         // Free keeps: raw board + tiers + tags + saved views, pick inventory,
@@ -25,7 +44,11 @@
         const isPro = typeof window.wrIsPro !== 'function' || window.wrIsPro();
         const resolvedLeagueSkin = leagueSkin || window.App?.LeagueSkin?.getCurrent?.() || null;
         const skinFeatures = resolvedLeagueSkin?.features || {};
-        const valueShortLabel = resolvedLeagueSkin?.vocabulary?.valueShortLabel || 'DHQ';
+        // Owner ruling 2026-08-15: the draft room always speaks DHQ — even in
+        // redraft leagues where the league skin's vocabulary says 'ROS'. The
+        // number shown IS the DHQ value either way; the ROS label read as a
+        // different stat and confused the board.
+        const valueShortLabel = 'DHQ';
         const _draftCapitalLabel = skinFeatures.showFuturePicks === false ? 'draft capital' : 'future capital';
         const leagueKey = currentLeague?.league_id || currentLeague?.id || '';
         const leagueSeason = parseInt(currentLeague.season || new Date().getFullYear());
@@ -40,15 +63,7 @@
         const _phoneKitReady = !!(window.WR && window.WR.HeroCard && window.WR.AssetRow && window.WR.CardList && window.WR.FilterPill && window.WR.FilterSheet);
         const _phone = !!_vp.isPhone && _phoneKitReady;
         const [draftSort, setDraftSort] = useState({ key: 'dhq', dir: -1 });
-        // War Room ('command') = Draft Capital + Roster Targeting / Alex's
-        // Recommended Draft / Board Pressure — all three already gated off for
-        // redraft/chopped/best-ball/DFS (showDraftCapitalPlanning: !seasonal,
-        // js/league-skin.js), since a full re-draft every season has no
-        // "future capital" to plan around. commandTabAllowed mirrors that same
-        // flag so the TAB doesn't exist for those formats either, instead of
-        // just rendering empty.
-        const commandTabAllowed = skinFeatures.showDraftCapitalPlanning !== false;
-        const [draftView, setDraftView] = useState(() => (commandTabAllowed ? 'command' : 'board')); // 'command' | 'board' | 'mock' | 'live'
+        const [draftView, setDraftView] = useState('board'); // 'command' | 'board' | 'mock' | 'live' — Big Board is the front door (owner ruling 2026-08-15); live-draft auto-open below still outranks it
         const [draftInfo, setDraftInfo] = useState(null);
         const draftVariant = useMemo(() => {
             try {
@@ -81,29 +96,31 @@
             ? DRAFT_WR_KEYS.BIGBOARD_DRAFT(leagueKey, draftVariant)
             : DRAFT_WR_KEYS.BIGBOARD(leagueKey);
         const [boardData, setBoardData] = useState(() => DraftStorage.get(boardStorageKey, DraftStorage.get(DRAFT_WR_KEYS.BIGBOARD(leagueKey), null)));
+        // Last board signature this view has persisted or absorbed. When a write
+        // arrives from the live draft room (shared store) we stamp the incoming
+        // signature here first, so the auto-save effect that fires as we hydrate
+        // recognises the data as already-current and skips re-writing it — no echo,
+        // no stale-order clobber.
+        const boardSyncSigRef = useRef('');
+        const boardHydratedRef = useRef(false); // saved board applied — gates the auto-save
+        const cloudBoardPushRef = useRef(null); // debounce timer for the cloud board publish
         const [draftedPids, setDraftedPids] = useState(new Set());
+        // Players already taken in the live draft. Seeded from the persisted
+        // live-sync state so a freshly opened Draft tab strikes them through
+        // immediately, then kept live by the wr:live-draft-picks broadcast the
+        // command center emits on every pick. Held apart from the manual "Off"
+        // marks in draftedPids so neither overwrites the other.
+        const [liveDraftedPids, setLiveDraftedPids] = useState(() => {
+            try {
+                const lid = window.S?.currentLeagueId || leagueKey;
+                const d = window.DraftCC?.state?.loadFromLocal?.(lid, 'live-sync')?.draftedPids;
+                return d ? new Set(Object.keys(d)) : new Set();
+            } catch (e) { return new Set(); }
+        });
         const [boardNotes, setBoardNotes] = useState({});
         const [boardTags, setBoardTags] = useState({}); // pid -> 'target'|'avoid'|'sleeper'|'must'
-        // AI scouting report — one-shot, ask once (replaced the old chat handoff).
-        // Keyed by pid: null | {loading} | {error} | {text}
-        const [aiScoutReports, setAiScoutReports] = useState({});
-        async function requestAiScoutReport(r, pos, college, team, age, rankStr, tierStr, isSeasonalDraft) {
-            const pid = r.pid;
-            const name = pName(r.p);
-            setAiScoutReports(prev => ({ ...prev, [pid]: { loading: true } }));
-            try {
-                if (typeof window.dhqAI !== 'function') { setAiScoutReports(prev => ({ ...prev, [pid]: { error: 'AI not loaded' } })); return; }
-                const context = isSeasonalDraft
-                    ? (posLabel(pos) + ', ' + (team || 'FA') + ', age ' + (age || 'unknown') + ', ' + rankStr + ' board rank, ' + tierStr + ' tier')
-                    : (posLabel(pos) + ', ' + college);
-                const message = 'Give me a full ' + (isSeasonalDraft ? 'redraft NFL player scouting report' : 'rookie scouting report')
-                    + ' on ' + name + ' (' + context + '). Include role, production profile, weekly floor, ceiling, risk, comparable players, and where I should draft him in this league format.';
-                const text = await window.dhqAI('rookie-scout', message, null);
-                setAiScoutReports(prev => ({ ...prev, [pid]: { text: typeof text === 'string' ? text : '' } }));
-            } catch (e) {
-                setAiScoutReports(prev => ({ ...prev, [pid]: { error: e?.message || 'AI call failed' } }));
-            }
-        }
+        const [roundPlans, setRoundPlans] = useState({}); // round -> ['RB','WR'] — position targets on the round breaker lines
+        const [openPlanRound, setOpenPlanRound] = useState(null); // which round line has its position picker expanded
         const [boardMode, setBoardMode] = useState('dhq'); // 'dhq' | 'ai' | 'my'
         const [myBoardOrder, setMyBoardOrder] = useState([]); // custom ordered pid array
         const [boardPosFilter, setBoardPosFilter] = useState(''); // '' | 'QB' | 'RB' | 'WR' | 'TE' | 'DL' | 'LB' | 'DB'
@@ -111,12 +128,7 @@
         const [boardTeamFilter, setBoardTeamFilter] = useState(''); // '' | NFL team abbr
         const [boardRoundFilter, setBoardRoundFilter] = useState(''); // '' | '1'..'7' | 'UDFA'
         const [boardSort, setBoardSort] = useState({ key: 'dhq', dir: -1 }); // sortable columns
-        // Big Board render cap — 300 rows rendered at once made the whole page
-        // scroll; default to 50 with a contained scroll box + "Show more" instead
-        // (renderCompactBoard's outer div gets a fixed max-height/overflowY below).
-        const BOARD_PAGE_SIZE = 50;
-        const [boardVisibleCount, setBoardVisibleCount] = useState(BOARD_PAGE_SIZE);
-        useEffect(() => { setBoardVisibleCount(BOARD_PAGE_SIZE); }, [boardMode, boardSearch, boardPosFilter, boardTeamFilter, boardRoundFilter, hideDrafted]);
+        const [pendingBoardSort, setPendingBoardSort] = useState(null); // User Board "bake this order" confirm dialog
         // Hide-drafted toggle for the standalone Big Board. Shares the SAME WrStorage key as
         // the Command Center BigBoardPanel (js/draft/big-board.js) so the two boards stay in
         // sync. Default OFF (preserves the always-show + dim/strike behavior).
@@ -145,16 +157,7 @@
         const [flashAnalystReports, setFlashAnalystReports] = useState([]);
         const [flashAnalystStatus, setFlashAnalystStatus] = useState('idle');
         const [flashAnalystError, setFlashAnalystError] = useState('');
-        // Draft Gameplan's active archetype now reads/writes GM Strategy's
-        // draftArchetype field directly (window.WR.GmMode.useGmEffects already
-        // live-updates on save via the wr:gm-mode-changed event) — this card
-        // and the GM Strategy editor's "Draft Archetype" section are two views
-        // onto the same persisted value, not independent local state, so a
-        // change on either surface shows up on both and actually reaches the
-        // Big Board / Mock Draft scoring this card used to have no effect on.
-        const gmArchFx = window.WR?.GmMode?.useGmEffects ? window.WR.GmMode.useGmEffects(currentLeague) : null;
-        const gameplanArch = gmArchFx?.draftArchetype || 'balanced';
-        const setGameplanArch = (key) => { if (window.WR?.GmMode?.patchStrategy) window.WR.GmMode.patchStrategy(leagueKey, { draftArchetype: key }); };
+        const [gameplanArch, setGameplanArch] = useState('balanced'); // redraft draft-gameplan archetype
         const [showFuturePickCapital, setShowFuturePickCapital] = useState(false);
         const [liveAutoStartToken, setLiveAutoStartToken] = useState(0);
         // Draft History — archived recaps of finished drafts (local + Supabase-synced)
@@ -177,16 +180,8 @@
                             rounds: Number(d?.settings?.rounds) || null, playerType: Number(d?.settings?.player_type),
                         }));
                     } else {
-                        // league_id isn't guaranteed present on currentLeague depending on
-                        // how it was loaded — .id is the field the rest of the app treats
-                        // as canonical (see window.S.currentLeagueId in league-detail.js).
-                        // Missing this fallback silently zeroed the whole chain walk (lid
-                        // undefined → loop body never runs → "no drafts found" even for a
-                        // league with years of real Sleeper drafts).
-                        let lid = currentLeague?.league_id || currentLeague?.id;
-                        const seen = new Set();
-                        for (let hop = 0; lid && !seen.has(lid) && hop < 8 && !cancelled; hop++) {
-                            seen.add(lid);
+                        let lid = currentLeague?.league_id;
+                        for (let hop = 0; lid && hop < 8 && !cancelled; hop++) {
                             const [info, drafts] = await Promise.all([
                                 fetch('https://api.sleeper.app/v1/league/' + lid).then(r => r.ok ? r.json() : null).catch(() => null),
                                 fetch('https://api.sleeper.app/v1/league/' + lid + '/drafts').then(r => r.ok ? r.json() : []).catch(() => []),
@@ -195,10 +190,7 @@
                                 season: Number(d.season) || null, draftId: String(d.draft_id || ''), status: String(d.status || ''),
                                 rounds: Number(d?.settings?.rounds) || null, playerType: Number(d?.settings?.player_type),
                             }));
-                            // Sleeper marks "no earlier season" with the literal string '0',
-                            // not an absent field — treating it as falsy stops the walk here.
-                            const prev = info?.previous_league_id;
-                            lid = (prev && prev !== '0') ? prev : null;
+                            lid = info?.previous_league_id || null;
                         }
                     }
                     if (!cancelled) setHistDrafts(out.sort((a, b) => (b.season || 0) - (a.season || 0)));
@@ -208,7 +200,7 @@
                 }
             })();
             return () => { cancelled = true; };
-        }, [showDraftHistory, histDrafts, currentLeague?.league_id, currentLeague?.id]);
+        }, [showDraftHistory, histDrafts, currentLeague?.league_id]);
         const [recapPullTick, setRecapPullTick] = useState(0);
 
         // ── Live-draft bridge (shared by the Analyst Mock lock + Recommended Draft lock) ──
@@ -378,7 +370,18 @@
         const draftNavTouchedRef = useRef(false);
         // setDraftView wrapper for click-driven navigation (nav strip, jump-to-board
         // shortcuts). Programmatic view changes keep calling setDraftView directly.
-        const navDraftView = (view) => { draftNavTouchedRef.current = true; setDraftView(view); };
+        // Mock Draft Center and Follow-Live are Pro rooms (owner call
+        // 2026-07-11); free users get the upgrade page instead.
+        const draftViewLocked = (view) =>
+            (view === 'mock' || view === 'live')
+            && typeof window.wrIsPro === 'function' && !window.wrIsPro();
+        const navDraftView = (view) => {
+            if (draftViewLocked(view)) {
+                if (typeof window.showProLaunchPage === 'function') window.showProLaunchPage();
+                return;
+            }
+            draftNavTouchedRef.current = true; setDraftView(view);
+        };
 
         useEffect(() => {
             const openPickFocus = (event) => {
@@ -484,28 +487,18 @@
             const isSF = rosterPositions.some(slot => ['SUPER_FLEX', 'QB_FLEX', 'OP'].includes(String(slot).toUpperCase()));
             const pprVal = scoring.rec != null && scoring.rec >= 0.9 ? 1 : scoring.rec != null && scoring.rec >= 0.4 ? 0.5 : 0;
             const totalTeams = currentLeague?.rosters?.length || window.S?.rosters?.length || 12;
-            // Market mode follows the LEAGUE: redraft leagues price against the
-            // REDRAFT market (rookies included — no years_exp exclusion, since
-            // FC redraft prices them directly); dynasty keeps the dynasty
-            // market + rookie-ladder behavior unchanged.
-            const isRedraftLg = (window.App?.LeagueSkin?.getCurrent?.()?.type) === 'redraft';
-            const url = `https://api.fantasycalc.com/values/current?isDynasty=${isRedraftLg ? 'false' : 'true'}&numQbs=${isSF ? 2 : 1}&numTeams=${totalTeams}&ppr=${pprVal}`;
+            const url = `https://api.fantasycalc.com/values/current?isDynasty=true&numQbs=${isSF ? 2 : 1}&numTeams=${totalTeams}&ppr=${pprVal}`;
             fetch(url)
                 .then(r => r.ok ? r.json() : [])
                 .then(data => {
                     if (cancelled || !Array.isArray(data) || !data.length) return;
-                    const PV = window.App?.PlayerValue;
-                    const rosLive = isRedraftLg && PV?.isRedraftActive?.();
-                    const localValue = sid => rosLive ? Number(PV.getValue(sid) || 0) : Number(window.App?.LI?.playerScores?.[sid] || 0);
+                    const scores = window.App?.LI?.playerScores || {};
                     const matched = data
                         .filter(d => {
                             const sid = d.player?.sleeperId;
-                            if (!sid || d.player?.position === 'PICK' || !(d.value > 0) || !(localValue(sid) > 0)) return false;
-                            // Dynasty only: exclude rookies from the scale fit
-                            // (their DHQ comes from the rookie ladder, not market).
-                            return isRedraftLg || playersData?.[sid]?.years_exp !== 0;
+                            return sid && d.player?.position !== 'PICK' && d.value > 0 && scores[sid] > 0 && playersData?.[sid]?.years_exp !== 0;
                         })
-                        .map(d => ({ sid: d.player.sleeperId, fcVal: d.value, dhqVal: localValue(d.player.sleeperId) }))
+                        .map(d => ({ sid: d.player.sleeperId, fcVal: d.value, dhqVal: scores[d.player.sleeperId] }))
                         .sort((a, b) => b.fcVal - a.fcVal);
                     let scaleFactor = 1;
                     if (matched.length >= 10) {
@@ -524,14 +517,12 @@
                         };
                     });
                     const meta = window.App?.LI?.playerMeta || {};
-                    const scores = window.App?.LI?.playerScores || {};
                     const ladders = {};
                     ['QB', 'RB', 'WR', 'TE'].forEach(pos => {
-                        const pool = rosLive
-                            ? Object.entries(PV.rosState()?.values || {}).filter(([, v]) => v > 0)
-                            : Object.entries(scores).filter(([sid, score]) => score > 0 && playersData?.[sid]?.years_exp !== 0);
-                        ladders[pos] = pool
-                            .filter(([sid]) => {
+                        ladders[pos] = Object.entries(scores)
+                            .filter(([sid, score]) => {
+                                if (!score || score <= 0) return false;
+                                if (playersData?.[sid]?.years_exp === 0) return false;
                                 const playerPos = normPos(meta[sid]?.pos || playersData?.[sid]?.position || '');
                                 return playerPos === pos;
                             })
@@ -810,14 +801,8 @@
         // Team assessment for roster needs (drives needBonus in scoring)
         const assess = useMemo(() => typeof window.assessTeamFromGlobal === 'function' ? window.assessTeamFromGlobal(myRoster?.roster_id) : null, [myRoster, timeRecomputeTs]);
 
-        // Determine active view: global viewMode overrides to 'command' when set.
-        // Single choke point for the commandTabAllowed guard — whichever
-        // mechanism asked for 'command' (this override, draftView state, or any
-        // of the pick-focus/live-draft effects below that call
-        // setDraftView('command')), a league whose format doesn't get the War
-        // Room tab never actually lands on it; it clamps to Big Board instead.
-        const rawActiveView = viewMode === 'command' ? 'command' : draftView;
-        const activeView = (!commandTabAllowed && rawActiveView === 'command') ? 'board' : rawActiveView;
+        // Determine active view: global viewMode overrides to 'command' when set
+        const activeView = viewMode === 'command' ? 'command' : draftView;
         // Draft is over → lock the War Room sub-tab to a results-only view (owner
         // ask): hide every pre-draft planning surface (pick capital, draft plan,
         // analyst mock, recommended draft, board pressure + class depth) and keep
@@ -836,6 +821,7 @@
                 setDraftedPids(new Set());
                 setBoardNotes({});
                 setBoardTags({});
+                setRoundPlans({});
                 setMyBoardOrder([]);
                 setBoardMode('dhq');
             }
@@ -846,10 +832,18 @@
             if (boardData) {
                 if (boardData.tags) setBoardTags(boardData.tags);
                 if (boardData.notes) setBoardNotes(boardData.notes);
+                if (boardData.roundPlans) setRoundPlans(boardData.roundPlans);
                 if (boardData.drafted) setDraftedPids(new Set(boardData.drafted));
                 if (boardData.myOrder) setMyBoardOrder(boardData.myOrder);
                 if (['dhq', 'ai', 'my'].includes(boardData.activeLane || boardData.boardMode)) setBoardMode(boardData.activeLane || boardData.boardMode);
             }
+            // Only after the saved board is applied may the auto-save run. The
+            // mount render's empty defaults used to slip through it first,
+            // refreshing updatedAt (and, once cloud sync landed, publishing)
+            // on every OPEN — so each device stamped its own copy freshest and
+            // newest-wins adoption never fired; the app and website boards
+            // could never converge (owner report 2026-08-14).
+            boardHydratedRef.current = true;
         }, [boardData]);
 
         // Fetch draft info from Sleeper — the tab orbits the league's draft of
@@ -990,23 +984,163 @@
         // Auto-save board data to localStorage on changes. The AI order is saved
         // so mocks, context, and the visible Big Board share one recommendation source.
         useEffect(() => {
-            DraftStorage.set(boardStorageKey,
-                {
-                    tags: boardTags,
-                    notes: boardNotes,
-                    drafted: Array.from(draftedPids),
-                    aiOrder: aiRecommendedOrder,
-                    myOrder: myBoardOrder,
-                    activeLane: boardMode,
-                    lineage: {
-                        source: 'wr_bigboard',
-                        seededFrom: myBoardOrder.length ? null : 'ai',
-                        aiGeneratedAt: new Date().toISOString(),
-                        userLastEditedAt: new Date().toISOString(),
-                    },
-                    updatedAt: new Date().toISOString(),
-                });
-        }, [boardTags, boardNotes, draftedPids, aiRecommendedOrder, myBoardOrder, boardMode, boardStorageKey]);
+            const payload = {
+                tags: boardTags,
+                notes: boardNotes,
+                roundPlans,
+                drafted: Array.from(draftedPids),
+                aiOrder: aiRecommendedOrder,
+                myOrder: myBoardOrder,
+                activeLane: boardMode,
+            };
+            // Skip the write when nothing the user owns actually changed since the
+            // last value we persisted or absorbed from the live draft room. This is
+            // what stops a hydration from the shared store echoing straight back out
+            // (and overwriting a fresher live edit with our now-stale in-memory copy).
+            if (!boardHydratedRef.current) return; // pre-hydration defaults must never persist
+            const sig = boardSyncSig(payload);
+            if (sig === boardSyncSigRef.current) return;
+            // Identical to what's already on disk = a re-open, not an edit.
+            // Adopt the signature and stop — rewriting would refresh updatedAt
+            // and make this device claim the freshest board without any change.
+            const onDisk = DraftStorage.get(boardStorageKey, null);
+            if (onDisk && boardSyncSig(onDisk) === sig) { boardSyncSigRef.current = sig; return; }
+            boardSyncSigRef.current = sig;
+            const stored = {
+                ...payload,
+                lineage: {
+                    source: 'wr_bigboard',
+                    seededFrom: myBoardOrder.length ? null : 'ai',
+                    aiGeneratedAt: new Date().toISOString(),
+                    userLastEditedAt: new Date().toISOString(),
+                },
+                updatedAt: new Date().toISOString(),
+            };
+            DraftStorage.set(boardStorageKey, stored);
+            // Publish to the cloud (debounced — drag reorders land in bursts) so
+            // the app, website, and phone all serve this same board.
+            try {
+                if (cloudBoardPushRef.current) clearTimeout(cloudBoardPushRef.current);
+                cloudBoardPushRef.current = setTimeout(() => {
+                    try {
+                        const lid = currentLeague?.league_id || currentLeague?.id || leagueKey;
+                        if (lid) window.OD?.saveLeagueDoc?.(lid, 'bigboard', { key: boardStorageKey, data: stored });
+                        // Big Board cloud vault (owner directive 2026-08-17): this
+                        // effect is the Draft tab's own save path — it bypasses
+                        // context.saveBoardPatch, so the vault must be fed here too.
+                        if (lid) window.OD?.saveBigBoardBackup?.(lid, stored);
+                    } catch (e) { /* cloud unavailable — local board still serves */ }
+                }, 1200);
+            } catch (e) { /* never let sync break the save */ }
+        }, [boardTags, boardNotes, roundPlans, draftedPids, aiRecommendedOrder, myBoardOrder, boardMode, boardStorageKey]);
+
+        // Re-hydrate from the shared Big Board store when the live draft room (or
+        // another tab) edits the same league's board. Without this, the Draft tab's
+        // Big Board only reads on mount and silently drifts from the live draft's
+        // User Board even though both persist to the same key. We stamp the incoming
+        // signature first so the auto-save above treats the hydration as current.
+        useEffect(() => {
+            const legacyKey = DRAFT_WR_KEYS.BIGBOARD(leagueKey);
+            const absorb = (value) => {
+                if (!value) return;
+                boardSyncSigRef.current = boardSyncSig(value);
+                setBoardData(value);
+            };
+            const onBoardWrite = (e) => {
+                const d = e?.detail;
+                if (!d || (d.key !== boardStorageKey && d.key !== legacyKey)) return;
+                if (boardSyncSig(d.value) === boardSyncSigRef.current) return; // our own echo
+                absorb(d.value);
+            };
+            // Cross-tab fallback (the native CustomEvent only fires in-document):
+            const onStorage = (e) => {
+                if (!e || (e.key !== boardStorageKey && e.key !== legacyKey) || e.newValue == null) return;
+                let value = null;
+                try { value = JSON.parse(e.newValue); } catch (err) { return; }
+                if (boardSyncSig(value) === boardSyncSigRef.current) return;
+                absorb(value);
+            };
+            window.addEventListener('wr:bigboard-write', onBoardWrite);
+            window.addEventListener('storage', onStorage);
+            return () => {
+                window.removeEventListener('wr:bigboard-write', onBoardWrite);
+                window.removeEventListener('storage', onStorage);
+            };
+        }, [boardStorageKey, leagueKey]);
+
+        // Keep the User Board's strike-throughs in step with the live draft: each
+        // pick the command center makes arrives here as a wr:live-draft-picks event
+        // carrying the full taken-player set, which re-renders the board instantly.
+        useEffect(() => {
+            const onLivePicks = (e) => {
+                const d = e?.detail;
+                if (!d) return;
+                const lid = window.S?.currentLeagueId || leagueKey;
+                if (d.leagueId && lid && String(d.leagueId) !== String(lid)) return;
+                setLiveDraftedPids(new Set(d.drafted || []));
+            };
+            window.addEventListener('wr:live-draft-picks', onLivePicks);
+            return () => window.removeEventListener('wr:live-draft-picks', onLivePicks);
+        }, [leagueKey]);
+
+        // Direct Sleeper pick feed — the strike-throughs above only flow while
+        // the Command Center's live-sync runs on THIS device; a user parked on
+        // the Big Board during a live draft (no Follow Live Draft open) saw no
+        // cross-offs at all (owner report 2026-08-14). While the league's draft
+        // status is 'drafting', poll the public picks endpoint every 10s and
+        // strike players out directly — works on every surface, no Command
+        // Center required. Read-only; merges with (never replaces) the
+        // event-driven set.
+        const [sleeperLivePids, setSleeperLivePids] = useState(null);
+        useEffect(() => {
+            const did = draftInfo?.draft_id;
+            if (!did || String(did).startsWith('mfl_') || liveDraftStatus !== 'drafting') { setSleeperLivePids(null); return undefined; }
+            let cancelled = false, timer = null;
+            const pull = async () => {
+                try {
+                    const picks = window.Sleeper?.fetchDraftPicks
+                        ? await window.Sleeper.fetchDraftPicks(did)
+                        : await (await fetch('https://api.sleeper.app/v1/draft/' + did + '/picks')).json();
+                    if (cancelled) return;
+                    const s = new Set((Array.isArray(picks) ? picks : []).map(p => String(p?.player_id || '')).filter(Boolean));
+                    setSleeperLivePids(prev => (prev && prev.size === s.size) ? prev : s);
+                } catch (e) { /* transient — next tick retries */ }
+                if (!cancelled) timer = setTimeout(pull, 10000);
+            };
+            pull();
+            return () => { cancelled = true; if (timer) clearTimeout(timer); };
+        }, [draftInfo?.draft_id, liveDraftStatus]);
+
+
+        // Cloud-shared User Board — the board lived only in this device's
+        // localStorage, so a board built on the website never appeared in the
+        // native app or on the phone (owner request 2026-08-14). Adopt the
+        // newest cloud copy on mount / when returning to the tab; the auto-save
+        // below publishes edits back. Same league-doc channel as verdicts and
+        // the power pin: signed-in surfaces share, newest wins.
+        useEffect(() => {
+            let cancelled = false;
+            const adopt = () => {
+                try {
+                    const lid = currentLeague?.league_id || currentLeague?.id || leagueKey;
+                    if (!lid || !window.OD || !window.OD.loadLeagueDoc) return;
+                    window.OD.loadLeagueDoc(lid, 'bigboard').then(doc => {
+                        if (cancelled || !doc || doc.key !== boardStorageKey || !doc.data) return;
+                        const local = DraftStorage.get(boardStorageKey, null);
+                        const localTs = Date.parse(local?.updatedAt || 0) || 0;
+                        if ((doc.ts || 0) <= localTs + 500) return; // local copy is current or newer
+                        if (boardSyncSig(doc.data) === boardSyncSigRef.current) return;
+                        boardSyncSigRef.current = boardSyncSig(doc.data);
+                        DraftStorage.set(boardStorageKey, doc.data);
+                        setBoardData(doc.data);
+                    }).catch(() => { /* offline — device copy still serves */ });
+                } catch (e) { /* sync must never break the board */ }
+            };
+            adopt();
+            const onVisible = () => { if (document.visibilityState === 'visible') adopt(); };
+            document.addEventListener('visibilitychange', onVisible);
+            return () => { cancelled = true; document.removeEventListener('visibilitychange', onVisible); };
+        }, [boardStorageKey]);
 
         const draftProjectionMeta = useMemo(() => {
             const rosters = currentLeague?.rosters || window.S?.rosters || [];
@@ -1341,13 +1475,9 @@
             return pickYears.map(yr => {
                 const picks = myPicks
                     .filter(pk => pk.year === yr)
-                    // Snake-mirror the position within the round, not the raw
-                    // draft-column slot — otherwise even rounds sort backwards
-                    // whenever two picks in the same round came from different
-                    // original slots (e.g. an owned pick + one acquired by trade).
                     .sort((a, b) => {
                         if (a.round !== b.round) return a.round - b.round;
-                        return (pickPosInRound(a.round, slotFor(a)) || 99) - (pickPosInRound(b.round, slotFor(b)) || 99);
+                        return (slotFor(a) || 99) - (slotFor(b) || 99);
                     })
                     .map(pk => ({ ...pk, slot: slotFor(pk), value: pickValueFor(pk) }));
                 return {
@@ -1356,7 +1486,7 @@
                     totalValue: picks.reduce((sum, pk) => sum + Number(pk.value || 0), 0),
                 };
             });
-        }, [pickYears, myPicks, slotFor, pickValueFor, pickPosInRound]);
+        }, [pickYears, myPicks, slotFor, pickValueFor]);
         const currentCapitalRow = pickCapitalRows.find(row => row.year === leagueSeason) || { year: leagueSeason, picks: [], totalValue: 0 };
         const futureCapitalRows = pickCapitalRows.filter(row => row.year !== leagueSeason);
         const totalPickCapital = pickCapitalRows.reduce((sum, row) => sum + row.totalValue, 0);
@@ -1367,12 +1497,11 @@
             return myPicks
                 .filter(pk => pk.year === leagueSeason)
                 .slice()
-                // Same snake-mirror fix as pickCapitalRows above.
                 .sort((a, b) => {
                     if (a.round !== b.round) return a.round - b.round;
-                    return (pickPosInRound(a.round, slotFor(a)) || 99) - (pickPosInRound(b.round, slotFor(b)) || 99);
+                    return (slotFor(a) || 99) - (slotFor(b) || 99);
                 })[0] || null;
-        }, [myPicks, leagueSeason, slotFor, pickPosInRound]);
+        }, [myPicks, leagueSeason, slotFor]);
 
         const nextSlot = nextPick ? slotFor(nextPick) : null;
         // Snake even rounds reverse the column → position-in-round mapping; without
@@ -1502,6 +1631,19 @@
         // Lifted from the Big Board so both the board and the Flash Brief scouting
         // drawer can compute the same value rank + tier + scouting bits per player.
         const isSeasonalDraftCtx = !isRookieDraft;
+
+        // Real market ADP (lab port 2026-08-15): adp-market.js fetches once and
+        // caches ~18h; bump a tick when the map lands after this board's first
+        // paint so the "Mkt ADP" column fills in without a manual refresh.
+        // Redraft-only — the module has no dynasty/rookie signal to offer.
+        const [, bumpAdpTick] = useState(0);
+        useEffect(() => {
+            if (!isSeasonalDraftCtx) return undefined;
+            try { if (typeof window.App?.fetchRedraftAdp === 'function') window.App.fetchRedraftAdp(); } catch (e) { /* column just stays dashed */ }
+            const onAdpLoaded = () => bumpAdpTick(t => t + 1);
+            window.addEventListener('wr:adp-loaded', onAdpLoaded);
+            return () => window.removeEventListener('wr:adp-loaded', onAdpLoaded);
+        }, [isSeasonalDraftCtx]);
         const hasDraftCapital = useCallback((cs = {}) => Number(cs.draftRound) > 0 || Number(cs.draftPick) > 0, []);
         // True once this class's NFL draft is in (any prospect carries a round/pick). Post-draft,
         // a prospect with no capital went undrafted, so "Capital TBD" is reclassified as UDFA.
@@ -2508,6 +2650,10 @@
             live: 'Live Sleeper mirror with your board, roster build, and opponent intel.'
         };
         const launchLiveDraft = () => {
+            if (draftViewLocked('live')) {
+                if (typeof window.showProLaunchPage === 'function') window.showProLaunchPage();
+                return;
+            }
             draftNavTouchedRef.current = true; // always click-driven (banner/strip buttons)
             setLiveAutoStartToken(Date.now());
             setDraftView('live');
@@ -2686,7 +2832,7 @@
                 <div style={{ fontSize: '0.8rem', color: 'var(--silver)', lineHeight: 1.45, marginBottom: '10px' }}>{arch.blurb}</div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(54px, 1fr))', gap: '5px' }}>
                     {arch.picks.map(pk => (
-                        <div key={pk.round} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', padding: '5px 0', border: '1px solid var(--ov-4, rgba(255,255,255,0.08))', borderRadius: 'var(--card-radius-xs, 5px)' }} title={'Round ' + pk.round + ' → ' + pk.pos}>
+                        <div key={pk.round} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', padding: '5px 0', border: '1px solid var(--ov-4, rgba(255,255,255,0.08))', borderRadius: '5px' }} title={'Round ' + pk.round + ' → ' + pk.pos}>
                             <span style={{ fontSize: '0.58rem', color: 'var(--silver)', letterSpacing: '0.04em' }}>R{pk.round}</span>
                             <span style={{ fontSize: '0.82rem', fontWeight: 700, color: posColor(pk.pos) }}>{pk.pos === 'DEF' ? 'DST' : pk.pos}</span>
                         </div>
@@ -2704,7 +2850,7 @@
                     all preserved; the strip itself never mounts on phone. */}
                 {_phone && (
                     <div className="wr-seg" style={{ marginBottom: '10px' }}>
-                        {commandTabAllowed && <button type="button" className={activeView === 'command' ? 'is-on' : ''} onClick={() => navDraftView('command')}>War Room</button>}
+                        <button type="button" className={activeView === 'command' ? 'is-on' : ''} onClick={() => navDraftView('command')}>War Room</button>
                         <button type="button" className={activeView === 'board' ? 'is-on' : ''} onClick={() => navDraftView('board')}>Big Board</button>
                         <button type="button" className={activeView === 'mock' ? 'is-on' : ''} onClick={() => navDraftView('mock')}>Mock</button>
                         <button type="button" className={activeView === 'live' ? 'is-on' : ''} onClick={launchLiveDraft}>Live</button>
@@ -2715,7 +2861,7 @@
                 <div className={'wr-module-strip' + (activeView === 'live' || activeView === 'mock' ? ' is-compact' : '')}>
                     <div className="wr-module-actions">
                     <div className="wr-module-nav">
-                    {commandTabAllowed && <button type="button" className={activeView === 'command' ? 'is-active' : ''} onClick={() => navDraftView('command')}>War Room</button>}
+                    <button type="button" className={activeView === 'command' ? 'is-active' : ''} onClick={() => navDraftView('command')}>War Room</button>
                     <button type="button" className={activeView === 'board' ? 'is-active' : ''} onClick={() => navDraftView('board')}>Big Board</button>
                     <button type="button" className={activeView === 'mock' ? 'is-active' : ''} onClick={() => navDraftView('mock')}>Mock Draft Center</button>
                     <button type="button" onClick={() => setShowDraftHistory(true)} title="Archived drafts — grades, picks, and recaps">Draft History</button>
@@ -2751,7 +2897,6 @@
                                 inline: true,
                                 primaryLabel: 'VIEW FULL BOARD →',
                                 onPrimary: launchLiveDraft,
-                                isDynasty: skinFeatures.showDraftClassTools,
                             })
                         ) : (
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 14px', borderRadius: 8, border: '1px solid var(--acc-line2, rgba(212,175,55,0.35))', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', flexWrap: 'wrap' }}>
@@ -2787,7 +2932,7 @@
                             hero grid below stacks 1-col at this width already. */}
                         {_phone && (() => {
                             const _phKpi = (label, value, sub) => (
-                                <div key={label} style={{ background: 'var(--black, #121217)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 'var(--card-radius, 10px)', padding: '9px 11px' }}>
+                                <div key={label} style={{ background: 'var(--black, #121217)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '9px', padding: '9px 11px' }}>
                                     <div style={{ fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--text-muted, #8B8B96)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</div>
                                     <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.3rem', fontWeight: 700, color: 'var(--white)', lineHeight: 1.15, marginTop: '2px', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
                                     {sub ? <div style={{ fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.65, whiteSpace: 'nowrap' }}>{sub}</div> : null}
@@ -2819,66 +2964,6 @@
                                 </div>
                             );
                         })()}
-                        {(() => {
-                        // Draft Capital + Roster Targeting is a multi-year rookie-capital
-                        // planning card (future pick rows, need-ranked targets) — doesn't
-                        // map onto redraft/chopped, where the roster is built fresh each
-                        // cycle. Hidden clean (not just its content), not just gated: the
-                        // hero grid's 2nd column (Draft Plan / Draft Gameplan) still needs
-                        // somewhere to render, so it drops out of the grid entirely rather
-                        // than leaving an empty first column beside it.
-                        const showCapitalPlanning = skinFeatures.showDraftCapitalPlanning !== false;
-                        const draftHqActionsEl = (
-                            <aside className="draft-hq-actions">
-                                {skinFeatures.showDraftClassTools && (
-                                <div className="draft-hq-action-card">
-                                    <strong>Draft Plan</strong>
-                                    {/* AI draft plan / class read + AI-order board apply → Pro */}
-                                    {!isPro ? (
-                                        window.WrGatedMoreRow
-                                            ? React.createElement(window.WrGatedMoreRow, { title: 'Alex draft plan + class read', sub: 'AI scouting reports and the strategy-fit board order are Scout Pro.', feature: 'draft_ai_reports' })
-                                            : <div dangerouslySetInnerHTML={{ __html: window.wrLockCard ? window.wrLockCard('Draft Plan', 'draft_ai_reports', 'AI draft plans and class reads are Scout Pro.') : '' }} />
-                                    ) : (
-                                    <div className="draft-card-actions draft-card-actions-grouped">
-                                        <div className="draft-card-actions-row">
-                                            <button type="button" disabled={!rosterState.isUsable} title={!rosterState.isUsable ? rosterState.message : 'Generate draft scouting report'} onClick={requestFullDraftReport}>{rosterState.isUsable ? 'Generate Report' : 'Sync Required'}</button>
-                                            <button type="button" onClick={requestClassOverview}>Class Read</button>
-                                        </div>
-                                        <div className="draft-card-actions-row">
-                                            <button type="button" disabled={!aiRecommendedOrder.length} onClick={() => applyAiOrderToUserBoard('master')}>Apply to Board</button>
-                                            <button type="button" disabled={!aiRecommendedOrder.length || !boardPosFilter} onClick={() => applyAiOrderToUserBoard('position')}>Apply Position</button>
-                                        </div>
-                                    </div>
-                                    )}
-                                    {savedReports.length > 0 && (
-                                        <div style={{ marginTop: 10, borderTop: '1px solid var(--ov-4, rgba(255,255,255,0.06))', paddingTop: 8 }}>
-                                            <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--silver)', opacity: 0.6, marginBottom: 6 }}>Saved Reports</div>
-                                            {/* Saved reports are stored AI reads — reopening one (wr:ask-show) is Pro,
-                                                even for a lapsed trial that generated them while paid. */}
-                                            {!isPro ? (
-                                                window.WrGatedMoreRow
-                                                    ? React.createElement(window.WrGatedMoreRow, { title: savedReports.length + ' saved report' + (savedReports.length === 1 ? '' : 's'), sub: 'Reopen your AI scouting reports with Scout Pro.', feature: 'draft_ai_reports' })
-                                                    : <div dangerouslySetInnerHTML={{ __html: window.wrLockCard ? window.wrLockCard('Saved Reports', 'draft_ai_reports', 'Reopen your AI scouting reports with Scout Pro.') : '' }} />
-                                            ) : savedReports.slice(0, 6).map(r => (
-                                                <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '2px 0' }}>
-                                                    <button type="button" title="Reopen report" onClick={() => window.dispatchEvent(new CustomEvent('wr:ask-show', { detail: { title: r.title, prompt: r.prompt, answer: r.content, kind: r.kind } }))} style={{ flex: 1, minWidth: 0, textAlign: 'left', background: 'transparent', border: 0, color: 'var(--silver)', cursor: 'pointer', font: 'inherit', fontSize: 'var(--text-micro, 0.6875rem)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', padding: 0 }}>
-                                                        <span style={{ color: 'var(--gold)' }}>{'★'}</span> {r.title} <span style={{ opacity: 0.45 }}>{new Date(r.createdAt).toLocaleDateString()}</span>
-                                                    </button>
-                                                    <button type="button" title="Remove from list" onClick={() => { const lid = window.S?.currentLeagueId || null; window.WR?.SavedReports?.remove?.(lid, r.id); setSavedReports(prev => prev.filter(x => x.id !== r.id)); }} style={{ flexShrink: 0, background: 'transparent', border: 0, color: 'var(--silver)', opacity: 0.5, cursor: 'pointer', fontSize: 'var(--text-micro, 0.6875rem)', padding: '0 2px' }}>{'✕'}</button>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                                )}
-                                {renderAnalystFlash()}
-                                {/* Draft Gameplan now lives on Big Board (single source of
-                                    truth reachable from every draft flow) — see the board
-                                    view below, not duplicated here. */}
-                            </aside>
-                        );
-                        if (!showCapitalPlanning) return draftHqActionsEl;
-                        return (
                         <div className="draft-hq-hero">
                             <section className="draft-hq-panel draft-hq-capital-targeting">
                                 <div className="draft-hq-panel-head">
@@ -2979,12 +3064,54 @@
                                 </>); })()}
                             </section>
 
-                            {draftHqActionsEl}
+                            <aside className="draft-hq-actions">
+                                <div className="draft-hq-action-card">
+                                    <strong>Draft Plan</strong>
+                                    {/* AI draft plan / class read + AI-order board apply → Pro */}
+                                    {!isPro ? (
+                                        window.WrGatedMoreRow
+                                            ? React.createElement(window.WrGatedMoreRow, { title: 'Alex draft plan + class read', sub: 'AI scouting reports and the strategy-fit board order are Scout Pro.', feature: 'draft_ai_reports' })
+                                            : <div dangerouslySetInnerHTML={{ __html: window.wrLockCard ? window.wrLockCard('Draft Plan', 'draft_ai_reports', 'AI draft plans and class reads are Scout Pro.') : '' }} />
+                                    ) : (
+                                    <div className="draft-card-actions draft-card-actions-grouped">
+                                        <div className="draft-card-actions-row">
+                                            <button type="button" disabled={!rosterState.isUsable} title={!rosterState.isUsable ? rosterState.message : 'Generate draft scouting report'} onClick={requestFullDraftReport}>{rosterState.isUsable ? 'Generate Report' : 'Sync Required'}</button>
+                                            <button type="button" onClick={requestClassOverview}>Class Read</button>
+                                        </div>
+                                        <div className="draft-card-actions-row">
+                                            <button type="button" disabled={!aiRecommendedOrder.length} onClick={() => applyAiOrderToUserBoard('master')}>Apply to Board</button>
+                                            <button type="button" disabled={!aiRecommendedOrder.length || !boardPosFilter} onClick={() => applyAiOrderToUserBoard('position')}>Apply Position</button>
+                                        </div>
+                                    </div>
+                                    )}
+                                    {savedReports.length > 0 && (
+                                        <div style={{ marginTop: 10, borderTop: '1px solid var(--ov-4, rgba(255,255,255,0.06))', paddingTop: 8 }}>
+                                            <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--silver)', opacity: 0.6, marginBottom: 6 }}>Saved Reports</div>
+                                            {/* Saved reports are stored AI reads — reopening one (wr:ask-show) is Pro,
+                                                even for a lapsed trial that generated them while paid. */}
+                                            {!isPro ? (
+                                                window.WrGatedMoreRow
+                                                    ? React.createElement(window.WrGatedMoreRow, { title: savedReports.length + ' saved report' + (savedReports.length === 1 ? '' : 's'), sub: 'Reopen your AI scouting reports with Scout Pro.', feature: 'draft_ai_reports' })
+                                                    : <div dangerouslySetInnerHTML={{ __html: window.wrLockCard ? window.wrLockCard('Saved Reports', 'draft_ai_reports', 'Reopen your AI scouting reports with Scout Pro.') : '' }} />
+                                            ) : savedReports.slice(0, 6).map(r => (
+                                                <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '2px 0' }}>
+                                                    <button type="button" title="Reopen report" onClick={() => window.dispatchEvent(new CustomEvent('wr:ask-show', { detail: { title: r.title, prompt: r.prompt, answer: r.content, kind: r.kind } }))} style={{ flex: 1, minWidth: 0, textAlign: 'left', background: 'transparent', border: 0, color: 'var(--silver)', cursor: 'pointer', font: 'inherit', fontSize: 'var(--text-micro, 0.6875rem)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', padding: 0 }}>
+                                                        <span style={{ color: 'var(--gold)' }}>{'★'}</span> {r.title} <span style={{ opacity: 0.45 }}>{new Date(r.createdAt).toLocaleDateString()}</span>
+                                                    </button>
+                                                    <button type="button" title="Remove from list" onClick={() => { const lid = window.S?.currentLeagueId || null; window.WR?.SavedReports?.remove?.(lid, r.id); setSavedReports(prev => prev.filter(x => x.id !== r.id)); }} style={{ flexShrink: 0, background: 'transparent', border: 0, color: 'var(--silver)', opacity: 0.5, cursor: 'pointer', fontSize: 'var(--text-micro, 0.6875rem)', padding: '0 2px' }}>{'✕'}</button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                                {renderAnalystFlash()}
+                                {/* E5: dynasty leagues have no gameplan at all (format,
+                                    not tier) — clean absence, not a lock card. */}
+                                {skinFeatures.showDraftGameplan !== false && renderDraftGameplan()}
+                            </aside>
                         </div>
-                        );
-                        })()}
 
-                        {skinFeatures.showDraftCapitalPlanning !== false && !rosterState.isUsable && window.App?.renderRosterDataBlocker?.(rosterState, {
+                        {!rosterState.isUsable && window.App?.renderRosterDataBlocker?.(rosterState, {
                             title: 'Draft roster targeting paused',
                             message: 'Pick inventory is still visible, but need-based targeting is hidden until roster IDs finish loading.',
                             detail: rosterState.detail,
@@ -2993,7 +3120,6 @@
                         })}
 
                         <div className="draft-hq-grid">
-                            {skinFeatures.showDraftCapitalPlanning !== false && (
                             <section className="draft-hq-panel">
                                 <div className="draft-hq-panel-head">
                                     <span>Alex's Recommended Draft</span>
@@ -3050,9 +3176,7 @@
                                 </div>
                                 )}
                             </section>
-                            )}
 
-                            {skinFeatures.showDraftCapitalPlanning !== false && (
                             <section className="draft-hq-panel">
                                 <div className="draft-hq-panel-head">
                                     <span>Board Pressure</span>
@@ -3070,8 +3194,6 @@
                                     )) : <div className="draft-empty">No pick-pressure read yet.</div>}
                                 </div>
 
-                                {skinFeatures.showDraftClassTools && (
-                                <React.Fragment>
                                 <div className="draft-hq-subhead">Class Depth</div>
                                 <div className="draft-run-list">
                                     {classDepthRows.map(row => (
@@ -3099,10 +3221,7 @@
                                         </div>
                                     ))}
                                 </div>
-                                </React.Fragment>
-                                )}
                             </section>
-                            )}
                         </div>
                         {scoutDrawerPid && (() => {
                             const r = draftPoolRows.find(row => String(row.pid) === String(scoutDrawerPid));
@@ -3168,6 +3287,7 @@
                                                         {[
                                                             [valueShortLabel, r.dhq > 0 ? r.dhq.toLocaleString() : '-'],
                                                             ['Rank', rankStr],
+                                                            ...(isSeasonalDraftCtx ? [['Mkt ADP', (() => { const g = window.App?.getRedraftAdp?.(String(r.pid)); return g && typeof g.adp === 'number' && g.adp > 0 ? g.adp.toFixed(1) : '—'; })()]] : []),
                                                             ['Tier', tierStr],
                                                             ['Draft', draftStr],
                                                             ['Team', team || 'TBD'],
@@ -3285,10 +3405,10 @@
                         if (boardRoundFilter === 'UDFA') return isTrueUdfa(cs);
                         return String(cs.draftRound) === boardRoundFilter;
                     });
-                    if (boardSort.key) {
-                        dhqBoardPlayers.sort((a, b) => {
+                    // Shared column comparator — used by the research-board view sort
+                    // below AND by the User Board's bake-this-order reorder (toggleSort).
+                    const boardCompare = (k, dir) => (a, b) => {
                             let va, vb;
-                            const k = boardSort.key;
                             if (k === 'dhq') { va = a.dhq; vb = b.dhq; }
                             else if (k === 'name') { va = (a.p.full_name || '').toLowerCase(); vb = (b.p.full_name || '').toLowerCase(); }
                             else if (k === 'pos') { va = normPos(a.p.position) || ''; vb = normPos(b.p.position) || ''; }
@@ -3303,26 +3423,60 @@
                             else if (k === 'size')   { va = parseSizeIn(a.csv?.size) || (a.p?.height || 0); vb = parseSizeIn(b.csv?.size) || (b.p?.height || 0); }
                             else if (k === 'weight') { va = parseFloat(a.csv?.weight) || parseFloat(a.p?.weight) || 0; vb = parseFloat(b.csv?.weight) || parseFloat(b.p?.weight) || 0; }
                             else if (k === 'speed')  { va = parseFloat(a.csv?.speed) || 99; vb = parseFloat(b.csv?.speed) || 99; }
+                            else if (k === 'adp')    { const ga = window.App?.getRedraftAdp?.(String(a.pid)); const gb = window.App?.getRedraftAdp?.(String(b.pid)); va = (ga && ga.adp > 0) ? ga.adp : 9999; vb = (gb && gb.adp > 0) ? gb.adp : 9999; }
                             else { va = 0; vb = 0; }
-                            if (typeof va === 'string') return va < vb ? -boardSort.dir : va > vb ? boardSort.dir : 0;
-                            return ((va || 0) - (vb || 0)) * boardSort.dir;
-                        });
+                            if (typeof va === 'string') return va < vb ? -dir : va > vb ? dir : 0;
+                            return ((va || 0) - (vb || 0)) * dir;
+                    };
+                    if (boardSort.key) {
+                        dhqBoardPlayers.sort(boardCompare(boardSort.key, boardSort.dir));
                     }
 
                     const aiSeedOrder = aiRecommendedOrder.length ? aiRecommendedOrder : draftPoolRows.map(r => r.pid);
 
-                    // Drag handlers
-                    const handleDragStart = (pid) => setDragPid(pid);
-                    const handleDragOver = (e) => e.preventDefault();
-                    const handleDrop = (targetPid) => {
-                        if (!dragPid || dragPid === targetPid) return;
+                    // Drag handlers — mirror the live Big Board exactly. Setting
+                    // dataTransfer in onDragStart (and dropEffect in onDragOver) is
+                    // what actually initiates the native drag on iPad/WKWebView;
+                    // without it the touch falls back to selecting text.
+                    const handleDragStart = (e, pid) => {
+                        setDragPid(pid);
+                        // Rows SLIDE out of the way while the drag is in flight
+                        // (WR.listDrag, owner call 2026-08-19): an open slot
+                        // travels with the finger, so nudging a player one row
+                        // down works and the landing spot is always visible.
+                        if (e?.currentTarget && window.WR?.listDrag) window.WR.listDrag.start(e.currentTarget);
+                        try {
+                            if (e?.dataTransfer) {
+                                e.dataTransfer.effectAllowed = 'move';
+                                e.dataTransfer.setData('text/plain', String(pid));
+                            }
+                        } catch (_) {}
+                    };
+                    const handleDragOver = (e) => {
+                        e.preventDefault();
+                        try { if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'; } catch (_) {}
+                        if (window.WR?.listDrag) window.WR.listDrag.over(e.clientY);
+                    };
+                    // Drop commit: the slot index k from WR.listDrag counts the
+                    // DISPLAYED rows minus the dragged one — map it back to a
+                    // typed pid via the same rows list the board renders from
+                    // (passed in by renderCompactBoard, where it's in scope).
+                    const handleListDrop = (rowsList) => {
+                        const t = window.WR?.listDrag ? window.WR.listDrag.target() : null;
+                        if (window.WR?.listDrag) window.WR.listDrag.end();
+                        if (!t || !dragPid) { setDragPid(null); return; }
+                        const displayed = rowsList.map(r => r.pid).filter(pid => pid !== dragPid);
+                        const targetPid = t.appended ? null : displayed[t.k];
+                        if (targetPid === undefined) { setDragPid(null); return; }
                         setMyBoardOrder(prev => {
                             const order = prev.length ? [...prev] : aiSeedOrder.slice();
                             const fromIdx = order.indexOf(dragPid);
-                            const toIdx = order.indexOf(targetPid);
-                            if (fromIdx === -1 || toIdx === -1) return order;
+                            if (fromIdx === -1) return order;
                             order.splice(fromIdx, 1);
-                            order.splice(toIdx, 0, dragPid);
+                            if (targetPid == null) { order.push(dragPid); return order; }
+                            const at = order.indexOf(targetPid);
+                            if (at === -1) return prev;
+                            order.splice(at, 0, dragPid);
                             return order;
                         });
                         setDragPid(null);
@@ -3385,19 +3539,28 @@
 
                     // Compact board renderer (used for both sides)
                     const sortArrow = (key) => boardSort.key === key ? (boardSort.dir === -1 ? ' \u25BC' : ' \u25B2') : '';
-                    const toggleSort = (key) => setBoardSort(prev => prev.key === key ? { ...prev, dir: prev.dir * -1 } : { key, dir: ['name','school','team','rank','tier','draft','speed','age'].includes(key) ? 1 : -1 });
+                    const SORT_ASC_KEYS = ['name','school','team','rank','tier','draft','speed','age','adp'];
+                    const toggleSort = (key) => {
+                        if (boardMode === 'my') {
+                            // User Board: sorting IS a reorder. Bake the column order into
+                            // the board itself (saved + cloud-synced like any edit) behind a
+                            // confirm so a stray header tap can never silently destroy a
+                            // hand-built order. Drag keeps working on the result.
+                            if (!key) return;
+                            setPendingBoardSort(key); // styled DHQ dialog below confirms + applies
+                            return;
+                        }
+                        setBoardSort(prev => prev.key === key ? { ...prev, dir: prev.dir * -1 } : { key, dir: SORT_ASC_KEYS.includes(key) ? 1 : -1 });
+                    };
                     const sortHdr = { cursor: 'pointer', userSelect: 'none' };
                     const renderCompactBoard = (players, isDhq) => {
                         // Auto cross-off players already taken in the live draft (parallel to
                         // the live Command Center board), merged with manual "Off" marks.
-                        const liveDrafted = (() => {
-                            try {
-                                const lid = window.S?.currentLeagueId || currentLeague?.league_id || currentLeague?.id;
-                                return window.DraftCC?.state?.loadFromLocal?.(lid, 'live-sync')?.draftedPids || null;
-                            } catch (e) { return null; }
-                        })();
+                        // liveDraftedPids is kept current by the wr:live-draft-picks listener
+                        // above, so this re-renders the instant a pick lands in the live draft.
+                        const liveDrafted = liveDraftedPids;
                         const boardGridCols = isSeasonalDraft
-                            ? '58px minmax(220px, 1.25fr) 96px 88px 68px 72px 64px minmax(156px, 0.95fr) 92px'
+                            ? '58px minmax(220px, 1.25fr) 96px 88px 68px 84px 72px 64px minmax(156px, 0.95fr) 92px'
                             : '58px minmax(205px, 1.15fr) minmax(128px, 0.82fr) 88px 64px 58px 82px 64px 58px minmax(156px, 0.95fr) 92px';
                         const boardHeaderCell = (label, key, extra = {}) => (
                             <div onClick={key ? () => toggleSort(key) : undefined} style={{ ...sortHdr, ...extra }}>
@@ -3408,7 +3571,7 @@
                             <span style={{ display: 'inline-flex', alignItems: 'center', minHeight: 16, padding: '0 5px', borderRadius: 4, background: bg || 'var(--ov-3, rgba(255,255,255,0.045))', color: color || 'var(--silver)', fontSize: 'var(--text-micro)', fontFamily: 'var(--font-body)', fontWeight: 800, whiteSpace: 'nowrap' }}>{label}</span>
                         );
                         const snapshotCell = (value, color, extra = {}) => (
-                            <div style={{ padding: '4px 7px', minWidth: 0, ...extra }}>
+                            <div style={{ padding: '4px 7px', minWidth: 0, textAlign: 'center', ...extra }}>
                                 <strong style={{ display: 'block', color: color || 'var(--white)', fontFamily: 'var(--font-body)', fontSize: '0.72rem', lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{value || '-'}</strong>
                             </div>
                         );
@@ -3416,7 +3579,7 @@
                         const detailBox = { border: '1px solid var(--ov-4, rgba(255,255,255,0.07))', background: 'var(--ov-2, rgba(255,255,255,0.025))', borderRadius: 'var(--card-radius-sm)', padding: '9px 10px', minWidth: 0 };
 
                         return (
-		                        <div style={{ background: 'var(--black)', border: '1px solid var(--acc-fill3, rgba(212,175,55,0.15))', borderRadius: 'var(--card-radius-sm)', maxHeight: 'none', overflowX: 'auto', WebkitOverflowScrolling: 'touch', overflowY: 'visible' }}>
+		                        <div style={{ background: 'var(--black)', border: '1px solid var(--acc-fill3, rgba(212,175,55,0.15))', borderRadius: 'var(--card-radius-sm)', maxHeight: 'none', overflowX: 'auto', WebkitOverflowScrolling: 'touch', overflowY: 'clip' }}>
 	                          {/* Phone-tier tap-target bump for the ▲/▼ board-move fallback
 	                              (mobile plan D7/D10): HTML5 drag is inert on iOS, so these
 	                              buttons are the only reorder path — 16×14px is untappable.
@@ -3443,24 +3606,36 @@
 	                              .wr-brd-move .wr-brd-move-btn:first-child::after{top:-12px;}
 	                              .wr-brd-move .wr-brd-move-btn:last-child::after{bottom:-12px;}
 	                          }`}</style>
-	                          <div style={{ minWidth: '100%' }}>
+	                          <div
+	                            style={{ minWidth: '100%' }}
+	                            onDragOver={!isDhq ? handleDragOver : undefined}
+	                            onDrop={!isDhq ? (e) => { e.preventDefault(); handleListDrop(players); } : undefined}>
                             <div style={{ display: 'grid', gridTemplateColumns: boardGridCols, minHeight: '34px', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', borderBottom: '2px solid var(--acc-line1, rgba(212,175,55,0.2))', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, color: 'var(--gold)', fontFamily: 'var(--font-body)', textTransform: 'uppercase', alignItems: 'center', position: 'sticky', top: 0, zIndex: 1 }}>
                                 <div style={{ textAlign: 'center' }}>#</div>
                                 {boardHeaderCell('Player', 'name', { padding: '0 8px' })}
-                                {boardHeaderCell(isSeasonalDraft ? 'NFL Team' : 'College', isSeasonalDraft ? 'team' : 'school', { padding: '0 8px' })}
-                                {boardHeaderCell(valueShortLabel, 'dhq', { padding: '0 8px' })}
-                                {boardHeaderCell('Rank', 'rank', { padding: '0 8px' })}
-                                {boardHeaderCell('Tier', 'tier', { padding: '0 8px' })}
-                                {showDraftCapitalColumn && boardHeaderCell('Draft', 'draft', { padding: '0 8px' })}
-                                {showDraftCapitalColumn && boardHeaderCell('Team', 'team', { padding: '0 8px' })}
-                                {boardHeaderCell('Age', 'age', { padding: '0 8px' })}
-                                {boardHeaderCell('Profile', 'size', { padding: '0 8px' })}
+                                {boardHeaderCell(isSeasonalDraft ? 'NFL Team' : 'College', isSeasonalDraft ? 'team' : 'school', { padding: '0 8px', textAlign: 'center' })}
+                                {boardHeaderCell(valueShortLabel, 'dhq', { padding: '0 8px', textAlign: 'center' })}
+                                {boardHeaderCell('Rank', 'rank', { padding: '0 8px', textAlign: 'center' })}
+                                {/* Real market ADP (lab port) — display-only "market says" column,
+                                    redraft boards only; no real dynasty/rookie ADP source exists. */}
+                                {isSeasonalDraft && boardHeaderCell('Mkt ADP', 'adp', { padding: '0 8px', whiteSpace: 'nowrap', textAlign: 'center' })}
+                                {boardHeaderCell('Tier', 'tier', { padding: '0 8px', textAlign: 'center' })}
+                                {showDraftCapitalColumn && boardHeaderCell('Draft', 'draft', { padding: '0 8px', textAlign: 'center' })}
+                                {showDraftCapitalColumn && boardHeaderCell('Team', 'team', { padding: '0 8px', textAlign: 'center' })}
+                                {boardHeaderCell('Age', 'age', { padding: '0 8px', textAlign: 'center' })}
+                                {boardHeaderCell('Profile', 'size', { padding: '0 8px', textAlign: 'center' })}
                                 <div style={{ textAlign: 'center' }}>{isDhq ? 'Open' : 'Board'}</div>
                             </div>
                             {players.map((r, idx) => {
                                 const pos = normPos(r.p.position) || r.p.position;
                                 const dhqC = r.dhq >= 7000 ? 'var(--good)' : r.dhq >= 4000 ? 'var(--k-3498db, #3498db)' : r.dhq >= 2000 ? 'var(--silver)' : 'var(--ov-8, rgba(255,255,255,0.3))';
-                                const isDrafted = draftedPids.has(r.pid) || !!(liveDrafted && liveDrafted[r.pid]);
+                                // Match on Sleeper pid (how the live draft keys picks) and
+                                // fall back to the CSV prospect id for rookies that aren't
+                                // linked to a Sleeper player.
+                                const isDrafted = draftedPids.has(r.pid)
+                                    || liveDrafted.has(r.pid) || liveDrafted.has(String(r.pid))
+                                    || (r.csv?.pid != null && liveDrafted.has(String(r.csv.pid)))
+                                    || !!(sleeperLivePids && (sleeperLivePids.has(String(r.pid)) || (r.csv?.pid != null && sleeperLivePids.has(String(r.csv.pid)))));
                                 const tag = boardTags[r.pid];
                                 const note = boardNotes[r.pid] || '';
                                 const isExp = expandedDraftPid === r.pid;
@@ -3529,15 +3704,27 @@
                                     });
                                     return next;
                                 });
+                                const bbShowNow = bbRoundSize >= 4 && !boardQuery && !boardPosFilter
+                                    && (boardMode === 'my' || (boardSort.key === 'dhq' && boardSort.dir === -1));
+                                const bbRank = bbRankByPid.get(r.pid);
+                                const bbPrevRank = idx > 0 ? (bbRankByPid.get(players[idx - 1].pid) || 0) : 0;
                                 return (
                                     <React.Fragment key={r.pid}>
+                                    {bbRank ? boardRoundMarkers(bbPrevRank, bbRank, bbShowNow) : null}
                                     <div
                                         data-draft-pid={r.pid}
                                         data-reorder-key={r.pid}
                                         draggable={!isDhq}
-                                        onDragStart={!isDhq ? () => handleDragStart(r.pid) : undefined}
+                                        onDragStart={!isDhq ? (e) => handleDragStart(e, r.pid) : undefined}
+                                        // dragover/drop MUST sit on the row itself: iOS Safari
+                                        // never fired `drop` when only the container carried them
+                                        // (owner: "you can move the player but he will not drop
+                                        // into a position", reproduced in WebKit 2026-08-19). The
+                                        // container keeps a copy purely as the past-the-last-row
+                                        // fallback.
                                         onDragOver={!isDhq ? handleDragOver : undefined}
-                                        onDrop={!isDhq ? () => handleDrop(r.pid) : undefined}
+                                        onDrop={!isDhq ? (e) => { e.preventDefault(); e.stopPropagation(); handleListDrop(players); } : undefined}
+                                        onDragEnd={!isDhq ? () => { if (window.WR?.listDrag) window.WR.listDrag.end(); setDragPid(null); } : undefined}
                                         onClick={openPlayerDetail}
                                         style={{ display: 'grid', gridTemplateColumns: boardGridCols, alignItems: 'center', minHeight: '42px', opacity: isDrafted ? 0.35 : 1, borderBottom: isExp ? 'none' : '1px solid var(--ov-3, rgba(255,255,255,0.035))', cursor: 'pointer', background: isExp ? 'var(--acc-fill1, rgba(212,175,55,0.065))' : idx % 2 === 1 ? 'var(--ov-1, rgba(255,255,255,0.016))' : 'transparent', transition: 'background 0.1s', position: 'relative' }}
                                         onMouseEnter={e => { if (!isExp) e.currentTarget.style.background = 'var(--acc-fill1, rgba(212,175,55,0.04))'; }}
@@ -3569,12 +3756,20 @@
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                                                     <strong style={{ color: 'var(--white)', fontSize: '0.76rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textDecoration: isDrafted ? 'line-through' : 'none' }}>{pName(r.p)}</strong>
                                                     {chip(pos, posColors[pos] || 'var(--silver)', (posColors[pos] || 'var(--k-666666, #666666)') + '22')}
+                                                    {bbShowNow && bbRank && bbUserPicks.has(bbRank) && (
+                                                        <span title={'Your pick: ' + bbPickLabel(bbRank) + ' (#' + bbRank + ' overall)'}
+                                                            style={{ marginLeft: 8, flexShrink: 0, color: 'var(--gold)', fontSize: '0.7rem', lineHeight: 1 }}>◆</span>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>
                                         {snapshotCell(isSeasonalDraft ? (team || 'FA') : (college || 'School TBD'), isSeasonalDraft && team ? 'var(--good)' : 'var(--silver)')}
                                         {snapshotCell(r.dhq > 0 ? r.dhq.toLocaleString() : '-', dhqC)}
                                         {snapshotCell(rankStr)}
+                                        {isSeasonalDraft && (() => {
+                                            const adp = typeof window.App?.getRedraftAdp === 'function' ? window.App.getRedraftAdp(String(r.pid)) : null;
+                                            return snapshotCell(adp && typeof adp.adp === 'number' ? adp.adp.toFixed(1) : '-', 'var(--silver)');
+                                        })()}
                                         {snapshotCell(tierStr)}
                                         {showDraftCapitalColumn && snapshotCell(draftStr || 'Capital TBD', draftCol)}
                                         {showDraftCapitalColumn && snapshotCell(team || 'TBD', team ? 'var(--good)' : 'var(--silver)')}
@@ -3602,6 +3797,7 @@
                                                         {[
                                                             [valueShortLabel, r.dhq > 0 ? r.dhq.toLocaleString() : '-'],
                                                             ['Rank', rankStr],
+                                                            ...(isSeasonalDraft ? [['Mkt ADP', (() => { const g = window.App?.getRedraftAdp?.(String(r.pid)); return g && typeof g.adp === 'number' && g.adp > 0 ? g.adp.toFixed(1) : '—'; })()]] : []),
                                                             ['Tier', tierStr],
                                                             ...(showDraftCapitalColumn ? [['Draft', draftStr || 'Capital TBD']] : []),
                                                             ['Team', team || 'TBD'],
@@ -3651,8 +3847,8 @@
                                                         <a href={(isSeasonalDraft ? 'https://www.pro-football-reference.com/search/search.fcgi?search=' : 'https://www.sports-reference.com/cfb/search/search.fcgi?search=') + encodeURIComponent(pName(r.p))} target="_blank" rel="noopener" title={isSeasonalDraft ? 'Open Pro Football Reference player search in a new tab' : 'Open Sports Reference college stats in a new tab'} onClick={e => e.stopPropagation()} style={{ padding: '7px 10px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', background: 'rgba(52,152,219,0.12)', color: 'var(--k-3498db, #3498db)', border: '1px solid rgba(52,152,219,0.3)', borderRadius: 6, textDecoration: 'none', fontWeight: 800 }}>{isSeasonalDraft ? 'PRO STATS' : 'COLLEGE STATS'}</a>
                                                         <a href={'https://www.youtube.com/results?search_query=' + encodeURIComponent(pName(r.p) + ' highlights ' + leagueSeason)} target="_blank" rel="noopener" onClick={e => e.stopPropagation()} style={{ padding: '7px 10px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', background: 'rgba(231,76,60,0.12)', color: 'var(--bad)', border: '1px solid rgba(231,76,60,0.3)', borderRadius: 6, textDecoration: 'none', fontWeight: 800 }}>HIGHLIGHTS</a>
                                                         <a href={'https://www.fantasypros.com/nfl/players/' + encodeURIComponent(((r.p.first_name || '') + '-' + (r.p.last_name || '')).toLowerCase().replace(/[^a-z-]/g, '')) + '.php'} target="_blank" rel="noopener" title="Open FantasyPros player news and profile in a new tab" aria-label={'Open FantasyPros news for ' + pName(r.p)} onClick={e => e.stopPropagation()} style={{ padding: '7px 10px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', background: 'rgba(52,152,219,0.15)', color: 'var(--k-3498db, #3498db)', border: '1px solid rgba(52,152,219,0.3)', borderRadius: 6, textDecoration: 'none', fontWeight: 800 }}>FANTASYPROS NEWS</a>
-                                                        {/* AI scouting report — one-shot, ask once (chat handoff retired) → Pro */}
-                                                        {isPro && !aiScoutReports[r.pid]?.text && <button type="button" onClick={e => {
+                                                        {/* AI scouting chat entry point → Pro (clean absence for free; hidden while the chat is retired, core.js WR_ALEX_CHAT) */}
+                                                        {isPro && window.WR_ALEX_CHAT !== false && <button type="button" onClick={e => {
                                                             e.stopPropagation();
                                                             const name = pName(r.p);
                                                             const sections = [];
@@ -3663,16 +3859,14 @@
                                                             if (cs.notes) sections.push(cs.notes);
                                                             const fullText = sections.join('\n\n') || cs.summary || '';
                                                             window.dispatchEvent(new CustomEvent('wr:scouting-generate', { detail: { pid: r.pid, playerName: name, pos, college, summary: cs.summary || '', fullText } }));
-                                                            requestAiScoutReport(r, pos, college, team, age, rankStr, tierStr, isSeasonalDraft);
-                                                        }} disabled={aiScoutReports[r.pid]?.loading} style={{ padding: '7px 10px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', background: 'rgba(124,107,248,0.15)', color: 'var(--purple)', border: '1px solid rgba(124,107,248,0.3)', borderRadius: 6, cursor: 'pointer', fontWeight: 800 }}>{aiScoutReports[r.pid]?.loading ? 'THINKING…' : 'ASK ALEX'}</button>}
+                                                            if (typeof sendReconMessage === 'function') {
+                                                                setReconPanelOpen(true);
+                                                                const context = isSeasonalDraft ? (posLabel(pos) + ', ' + (team || 'FA') + ', age ' + (age || 'unknown') + ', ' + rankStr + ' board rank, ' + tierStr + ' tier') : (posLabel(pos) + ', ' + college);
+                                                                sendReconMessage('Give me a full ' + (isSeasonalDraft ? 'redraft NFL player scouting report' : 'rookie scouting report') + ' on ' + name + ' (' + context + '). Include role, production profile, weekly floor, ceiling, risk, comparable players, and where I should draft him in this league format.');
+                                                            }
+                                                        }} style={{ padding: '7px 10px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', background: 'rgba(124,107,248,0.15)', color: 'var(--purple)', border: '1px solid rgba(124,107,248,0.3)', borderRadius: 6, cursor: 'pointer', fontWeight: 800 }}>ASK ALEX</button>}
                                                         <button type="button" onClick={e => { e.stopPropagation(); setExpandedDraftPid(null); }} style={{ padding: '7px 10px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', background: 'transparent', color: 'var(--silver)', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: 6, cursor: 'pointer', fontWeight: 800 }}>COLLAPSE</button>
                                                     </div>
-                                                    {aiScoutReports[r.pid]?.error && (
-                                                        <div style={{ marginTop: 8, fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--bad)' }}>Alex couldn't generate a report: {aiScoutReports[r.pid].error}</div>
-                                                    )}
-                                                    {aiScoutReports[r.pid]?.text && (
-                                                        <div style={{ marginTop: 8, padding: '9px 10px', background: 'rgba(124,107,248,0.05)', border: '1px solid rgba(124,107,248,0.2)', borderRadius: 6, fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{aiScoutReports[r.pid].text}</div>
-                                                    )}
                                                 </div>
                                             </div>
                                         </div>
@@ -3694,10 +3888,113 @@
                         { k: 'dhq', label: 'Default Board', sub: valueShortLabel + ' value rank', detail: 'Canonical value order from the value engine.' },
                         // Strategy-fit re-rank lane is an optimizer output → Pro-only lane.
                         ...(isPro ? [{ k: 'ai', label: 'AI Recommended', sub: 'GM strategy fit', detail: 'Re-ranked for your strategy, roster pressure, and league format.' }] : []),
-                        { k: 'my', label: 'User Board', sub: 'editable front office board', detail: myBoardOrder.length ? 'Manual order with your notes, tags, and draft prep.' : (isPro ? 'Starts from AI Recommended, then becomes yours when edited.' : 'Starts from the value order, then becomes yours when edited.') },
+                        { k: 'my', label: 'My Draft Board', sub: 'editable front office board', detail: myBoardOrder.length ? 'Manual order with your notes, tags, and draft prep.' : (isPro ? 'Starts from AI Recommended, then becomes yours when edited.' : 'Starts from the value order, then becomes yours when edited.') },
                     ];
                     const activeBoardInfo = boardModeOptions.find(opt => opt.k === boardMode) || boardModeOptions[0];
                     const allBoardPlayers = boardMode === 'my' ? myBoardPlayers : boardMode === 'ai' ? aiBoardPlayers : dhqBoardPlayers;
+                    // ── ROUND BREAKERS + YOUR-PICK MARKERS (owner feature 2026-08-17) ──
+                    // League-specific round rules every numTeams players, your picks
+                    // marked on the line and at the exact overall rank — driven by
+                    // draftProjectionMeta, so traded picks and snake order are truth.
+                    // Only on the pure board: search, position tabs or a re-sorted
+                    // Default Board make index-based rounds a lie.
+                    const bbMeta = draftProjectionMeta || {};
+                    const bbRoundSize = Math.max(0, Number(bbMeta.numTeams) || 0);
+                    const bbTotalRounds = Math.max(0, Number(bbMeta.rounds) || 0);
+                    const bbMyRid = myRoster?.roster_id;
+                    const bbUserPicks = (() => {
+                        const out = new Set();
+                        if (!bbRoundSize || !bbTotalRounds) return out;
+                        const own = bbMeta.pickOwnership || {};
+                        const snake = (bbMeta.draftType || 'snake') !== 'linear';
+                        for (let rd = 1; rd <= bbTotalRounds; rd++) {
+                            for (let slot = 1; slot <= bbRoundSize; slot++) {
+                                const cell = own[rd + '-' + slot];
+                                const mine = cell && cell.rosterId != null ? sameId(cell.rosterId, bbMyRid) : slot === Number(bbMeta.mySlot);
+                                if (!mine) continue;
+                                const inRound = snake && rd % 2 === 0 ? bbRoundSize + 1 - slot : slot;
+                                out.add((rd - 1) * bbRoundSize + inRound);
+                            }
+                        }
+                        return out;
+                    })();
+                    const bbRankByPid = new Map(allBoardPlayers.map((r, i) => [r.pid, i + 1]));
+                    const bbPickLabel = (o) => (Math.floor((o - 1) / bbRoundSize) + 1) + '.' + String(((o - 1) % bbRoundSize) + 1).padStart(2, '0');
+                    // League-specific position chips for the round lines: tap to declare
+                    // "this round I'm going RB" — saved with the board (and the vault).
+                    const bbPositions = (() => {
+                        const rp = (currentLeague?.roster_positions || []).map(String);
+                        const out = [{ key: 'QB', label: 'QB' }, { key: 'RB', label: 'RB' }, { key: 'WR', label: 'WR' }, { key: 'TE', label: 'TE' }];
+                        if (rp.includes('K')) out.push({ key: 'K', label: 'K' });
+                        if (rp.includes('DEF')) out.push({ key: 'DEF', label: 'D/ST' });
+                        if (rp.some(p => ['DL', 'LB', 'DB', 'IDP_FLEX', 'IDP'].includes(p))) out.push({ key: 'IDP', label: 'IDP' });
+                        return out;
+                    })();
+                    // Single-select (owner call 2026-08-18): one position per round —
+                    // a new pick replaces the old; tapping the current one clears it.
+                    const toggleRoundPlan = (round, key) => setRoundPlans(prev => {
+                        const out = { ...prev };
+                        if ((prev[round] || [])[0] === key) delete out[round]; else out[round] = [key];
+                        return out;
+                    });
+                    const bbMarkerFont = { fontFamily: 'var(--font-body)', letterSpacing: '0.12em', textTransform: 'uppercase', fontWeight: 800 };
+                    const boardRoundMarkers = (prevRank, rank, showBreakersNow) => {
+                        if (!showBreakersNow || !bbRoundSize || rank <= prevRank || rank - prevRank > 500) return null;
+                        const out = [];
+                        const lastRank = bbTotalRounds ? bbTotalRounds * bbRoundSize : Infinity;
+                        for (let n = prevRank + 1; n <= rank; n++) {
+                            if (n > lastRank) {
+                                if (n === lastRank + 1) out.push(
+                                    <div key={'bbend' + n} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px 4px', color: 'var(--silver)', opacity: 0.55, fontSize: 'var(--text-micro, 0.6875rem)', ...bbMarkerFont }}>
+                                        <span style={{ flex: 1, height: 1, background: 'var(--acc-line1, rgba(212,175,55,0.25))' }} />
+                                        <span>END OF DRAFT · {bbTotalRounds} ROUNDS</span>
+                                        <span style={{ flex: 1, height: 1, background: 'var(--acc-line1, rgba(212,175,55,0.25))' }} />
+                                    </div>
+                                );
+                                continue;
+                            }
+                            const round = Math.floor((n - 1) / bbRoundSize) + 1;
+                            if ((n - 1) % bbRoundSize === 0) {
+                                out.push(
+                                    <div key={'bbrd' + n} style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 12, minHeight: 30, padding: round === 1 ? '3px 12px' : '8px 12px 3px', borderBottom: '1px solid var(--gold)', background: 'var(--acc-fill3, rgba(212,175,55,0.06))' }}>
+                                        <span style={{ color: 'var(--gold)', fontSize: '0.78rem', whiteSpace: 'nowrap', ...bbMarkerFont }}>ROUND {round}</span>
+                                        {(() => {
+                                            // Far-right target toggle (owner call 2026-08-18): collapsed it
+                                            // shows ONLY the chosen position; tapping a chip picks AND
+                                            // closes. Reopen to change or add.
+                                            const plan = roundPlans[round] || [];
+                                            const isOpen = openPlanRound === round;
+                                            const planLabels = plan.map(k => (bbPositions.find(ps => ps.key === k) || { label: k }).label);
+                                            return (
+                                                <span style={{ display: 'inline-flex', gap: 6, marginLeft: 'auto', alignSelf: 'center', alignItems: 'center' }}>
+                                                    <span style={{ color: 'var(--silver)', opacity: 0.75, fontSize: 'var(--text-micro, 0.6875rem)', ...bbMarkerFont }}>POSITIONAL TARGET</span>
+                                                    {isOpen && bbPositions.map(ps => {
+                                                        const on = plan.includes(ps.key);
+                                                        return (
+                                                            <button key={ps.key} type="button" onClick={() => { toggleRoundPlan(round, ps.key); setOpenPlanRound(null); }}
+                                                                style={{ padding: '2px 8px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', fontWeight: 800, letterSpacing: '0.06em', borderRadius: 5, cursor: 'pointer', lineHeight: 1.6,
+                                                                    border: '1px solid ' + (on ? 'var(--gold)' : 'var(--ov-5, rgba(255,255,255,0.1))'),
+                                                                    background: on ? 'var(--acc-fill2, rgba(212,175,55,0.16))' : 'transparent',
+                                                                    color: on ? 'var(--gold)' : 'var(--silver)' }}>{ps.label}</button>
+                                                        );
+                                                    })}
+                                                    <button type="button" onClick={() => setOpenPlanRound(isOpen ? null : round)}
+                                                        title={plan.length ? 'Round ' + round + ' target: ' + planLabels.join(', ') + ' — tap to change' : 'Pick a position target for round ' + round}
+                                                        style={{ padding: '2px 8px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', fontWeight: 800, letterSpacing: '0.06em', borderRadius: 5, cursor: 'pointer', lineHeight: 1.6,
+                                                            border: '1px solid ' + (plan.length ? 'var(--gold)' : 'var(--ov-5, rgba(255,255,255,0.1))'),
+                                                            background: plan.length ? 'var(--acc-fill2, rgba(212,175,55,0.16))' : 'transparent',
+                                                            color: plan.length ? 'var(--gold)' : 'var(--silver)', opacity: plan.length || isOpen ? 1 : 0.7 }}>
+                                                        {plan.length ? planLabels.join(' · ') : 'TARGET'} {isOpen ? '▴' : '▾'}
+                                                    </button>
+                                                </span>
+                                            );
+                                        })()}
+                                    </div>
+                                );
+                            }
+                        }
+                        return out.length ? out : null;
+                    };
                     // Combined drafted lookup (manual "Off" set + live-sync drafted map), hoisted
                     // here so the "Hide drafted" toggle can drop rows when building the visible
                     // list — mirrors the per-row isDrafted inside renderCompactBoard (L2565).
@@ -3707,7 +4004,7 @@
                             return window.DraftCC?.state?.loadFromLocal?.(lid, 'live-sync')?.draftedPids || null;
                         } catch (e) { return null; }
                     })();
-                    const isRowDrafted = (r) => draftedPids.has(r.pid) || !!(liveDraftedMap && liveDraftedMap[r.pid]);
+                    const isRowDrafted = (r) => draftedPids.has(r.pid) || !!(liveDraftedMap && liveDraftedMap[r.pid]) || !!(sleeperLivePids && sleeperLivePids.has(String(r.pid)));
                     const boardQuery = boardSearch.trim().toLowerCase();
                     let visibleBoardPlayers = allBoardPlayers;
                     if (hideDrafted) visibleBoardPlayers = visibleBoardPlayers.filter(r => !isRowDrafted(r));
@@ -3724,13 +4021,14 @@
                     // stays byte-identical. Same state, same setters everywhere:
                     // boardMode/setBoardMode, boardSearch, boardPosFilter, team/round
                     // filters, hideDrafted (wr_bb_hide_drafted), boardTags/boardNotes,
-                    // expandedDraftPid. The USER BOARD lane keeps the shipped
-                    // renderCompactBoard table so the custom-board ▲/▼ reorder path
-                    // (handleBoardMove + the ≤767 .wr-brd-move-btn bump) ships as-is.
+                    // expandedDraftPid. The MY DRAFT BOARD lane rides the same
+                    // AssetRow cards as every lane, with a per-row drag grip for
+                    // reorder (owner ask 2026-08-15 — the compact-table ▲/▼
+                    // fallback read as huge buttons on phone and is gone here).
                     if (_phone) {
                         const MONO = 'var(--font-mono, "JetBrains Mono", monospace)';
                         const MICRO = 'var(--text-micro, 0.6875rem)';
-                        const phChipBtn = (on, color) => ({ padding: '9px 12px', minHeight: '44px', fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.04em', cursor: 'pointer', borderRadius: 'var(--card-radius-xs, 5px)', fontFamily: 'var(--font-body)', border: '1px solid ' + (on ? (color || 'var(--acc-line2, rgba(212,175,55,0.4))') : 'rgba(255,255,255,0.14)'), background: on ? 'rgba(212,175,55,0.12)' : 'transparent', color: on ? (color || 'var(--gold)') : 'var(--silver)' });
+                        const phChipBtn = (on, color) => ({ padding: '9px 12px', minHeight: '44px', fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.04em', cursor: 'pointer', borderRadius: '5px', fontFamily: 'var(--font-body)', border: '1px solid ' + (on ? (color || 'var(--acc-line2, rgba(212,175,55,0.4))') : 'rgba(255,255,255,0.14)'), background: on ? 'rgba(212,175,55,0.12)' : 'transparent', color: on ? (color || 'var(--gold)') : 'var(--silver)' });
                         const phDossier = (r) => {
                             const pos = normPos(r.p.position) || r.p.position;
                             const cs = r.csv || {};
@@ -3816,25 +4114,45 @@
                                 if (next) window.OD?.trackDraftPlayerExpanded?.(r.pid, { platform: 'warroom', module: 'draft', leagueId: window.S?.currentLeagueId || null, metadata: { boardMode, source: 'draft_board' } });
                                 return next;
                             });
+                            // My-lane rows carry a 44px drag grip (owner ask 2026-08-15:
+                            // the ▲/▼ compact-table fallback read as "huge buttons" on
+                            // phone — the pointer-based grip is the one reorder path now,
+                            // same as the live room's my lane).
+                            const gp = boardMode === 'my' && window.WR && window.WR.dragReorderGrip
+                                ? window.WR.dragReorderGrip({ key: r.pid, onDrop: handleGripDrop }) : null;
+                            const rowEl = React.createElement(window.WR.AssetRow, {
+                                pos,
+                                name: pName(r.p),
+                                tag: ['#' + (idx + 1), isSeasonalDraft ? (team || 'FA') : (college || 'School TBD'), showDraftCapitalColumn && draftStr ? draftStr : null].filter(Boolean).join(' · '),
+                                slots: [
+                                    { label: valueShortLabel, value: r.dhq > 0 ? r.dhq.toLocaleString() : '—' },
+                                    ...(isSeasonalDraft ? [(() => { const g = window.App?.getRedraftAdp?.(String(r.pid)); return { label: 'ADP', value: g && typeof g.adp === 'number' && g.adp > 0 ? g.adp.toFixed(1) : '—', tone: 'mute' }; })()] : []),
+                                    { label: 'Rank', value: rankStr, tone: 'mute' },
+                                ],
+                                verdict: isDrafted
+                                    ? <span style={{ fontFamily: MONO, fontSize: MICRO, fontWeight: 700, padding: '3px 8px', borderRadius: '5px', border: '1px solid var(--bad)', color: 'var(--bad)', whiteSpace: 'nowrap' }}>GONE</span>
+                                    : tagDef
+                                        ? <span style={{ fontFamily: MONO, fontSize: MICRO, fontWeight: 700, padding: '3px 8px', borderRadius: '5px', border: '1px solid ' + tagDef.color, color: tagDef.color, whiteSpace: 'nowrap', textTransform: 'uppercase' }}>{tagDef.label}</span>
+                                        : null,
+                                accent: tag === 'must' || tag === 'target' ? 'gold' : tag === 'avoid' ? 'risk' : undefined,
+                                struck: isDrafted,
+                                expanded: isExp,
+                                onClick: toggle,
+                            }, isExp ? phDossier(r) : null);
                             return (
-                                <div key={r.pid} style={isDrafted ? { opacity: 0.45 } : undefined}>
-                                    {React.createElement(window.WR.AssetRow, {
-                                        pos,
-                                        name: pName(r.p),
-                                        tag: ['#' + (idx + 1), isSeasonalDraft ? (team || 'FA') : (college || 'School TBD'), showDraftCapitalColumn && draftStr ? draftStr : null].filter(Boolean).join(' · '),
-                                        slots: [
-                                            { label: valueShortLabel, value: r.dhq > 0 ? r.dhq.toLocaleString() : '—' },
-                                            { label: 'Rank', value: rankStr, tone: 'mute' },
-                                        ],
-                                        verdict: isDrafted
-                                            ? <span style={{ fontFamily: MONO, fontSize: MICRO, fontWeight: 700, padding: '3px 8px', borderRadius: 'var(--card-radius-xs, 5px)', border: '1px solid var(--bad)', color: 'var(--bad)', whiteSpace: 'nowrap' }}>GONE</span>
-                                            : tagDef
-                                                ? <span style={{ fontFamily: MONO, fontSize: MICRO, fontWeight: 700, padding: '3px 8px', borderRadius: 'var(--card-radius-xs, 5px)', border: '1px solid ' + tagDef.color, color: tagDef.color, whiteSpace: 'nowrap', textTransform: 'uppercase' }}>{tagDef.label}</span>
-                                                : null,
-                                        accent: tag === 'must' || tag === 'target' ? 'gold' : tag === 'avoid' ? 'risk' : undefined,
-                                        expanded: isExp,
-                                        onClick: toggle,
-                                    }, isExp ? phDossier(r) : null)}
+                                <div key={r.pid} data-reorder-key={r.pid} style={isDrafted ? { opacity: 0.45 } : undefined}>
+                                    {gp ? (
+                                        // Slim 22px grip rail (owner ask 2026-08-15 — 40px read
+                                        // as wasted space). Tappability survives the diet: the
+                                        // coarse-pointer .wr-drag-grip::after halo is a fixed
+                                        // 44×44 centered hit area regardless of visual width.
+                                        <div style={{ display: 'grid', gridTemplateColumns: '22px minmax(0,1fr)', gap: 5, alignItems: 'stretch' }}>
+                                            <button type="button" className="wr-drag-grip" title="Hold and drag to reorder" aria-label={'Drag ' + pName(r.p) + ' to reorder'}
+                                                {...gp}
+                                                style={{ ...gp.style, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '44px', border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: 6, background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)', fontSize: '0.72rem', lineHeight: 1, padding: 0 }}>≡</button>
+                                            <div style={{ minWidth: 0 }}>{rowEl}</div>
+                                        </div>
+                                    ) : rowEl}
                                 </div>
                             );
                         };
@@ -3851,7 +4169,7 @@
                         // rendered right under the pill row — no modal sheet. Lane/Pos are
                         // single-select (apply + close); Filters bundles search/team/round.
                         const phBoardPanelWrap = (body) => (
-                            <div style={{ background: 'var(--black, #121217)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.22))', borderRadius: 'var(--card-radius-sm, 8px)', padding: '10px 11px', display: 'flex', flexDirection: 'column', gap: '9px' }}>{body}</div>
+                            <div style={{ background: 'var(--black, #121217)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.22))', borderRadius: '8px', padding: '10px 11px', display: 'flex', flexDirection: 'column', gap: '9px' }}>{body}</div>
                         );
                         const phBoardPanelLbl = (t) => <div style={{ fontFamily: MONO, fontSize: MICRO, fontWeight: 700, color: 'var(--silver)', opacity: 0.6, letterSpacing: '0.1em', textTransform: 'uppercase' }}>{t}</div>;
                         let phBoardPanelEl = null;
@@ -3879,9 +4197,9 @@
                             phBoardPanelEl = phBoardPanelWrap(
                                 <React.Fragment>
                                     {phBoardPanelLbl('Search')}
-                                    <input type="text" value={boardSearch} onChange={e => setBoardSearch(e.target.value)} placeholder="Players, teams, colleges..." style={{ width: '100%', padding: '9px 12px', minHeight: '44px', fontSize: '16px', fontFamily: 'var(--font-body)', background: 'var(--ov-2, rgba(255,255,255,0.03))', color: 'var(--white)', border: '1px solid ' + (boardSearch ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--ov-5, rgba(255,255,255,0.08))'), borderRadius: 'var(--card-radius, 10px)', outline: 'none', boxSizing: 'border-box' }} />
+                                    <input type="text" value={boardSearch} onChange={e => setBoardSearch(e.target.value)} placeholder="Players, teams, colleges..." style={{ width: '100%', padding: '9px 12px', minHeight: '44px', fontSize: '16px', fontFamily: 'var(--font-body)', background: 'var(--ov-2, rgba(255,255,255,0.03))', color: 'var(--white)', border: '1px solid ' + (boardSearch ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--ov-5, rgba(255,255,255,0.08))'), borderRadius: '10px', outline: 'none', boxSizing: 'border-box' }} />
                                     {phBoardPanelLbl('NFL team')}
-                                    <select value={boardTeamFilter} onChange={e => setBoardTeamFilter(e.target.value)} style={{ width: '100%', padding: '9px 10px', minHeight: '44px', fontSize: '0.78rem', fontFamily: 'var(--font-mono)', background: 'var(--charcoal, #0e0e12)', color: boardTeamFilter ? 'var(--gold)' : 'var(--silver)', border: '1px solid ' + (boardTeamFilter ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--ov-6, rgba(255,255,255,0.1))'), borderRadius: 'var(--card-radius-sm, 8px)', cursor: 'pointer', outline: 'none' }}>
+                                    <select value={boardTeamFilter} onChange={e => setBoardTeamFilter(e.target.value)} style={{ width: '100%', padding: '9px 10px', minHeight: '44px', fontSize: '0.78rem', fontFamily: 'var(--font-mono)', background: 'var(--charcoal, #0e0e12)', color: boardTeamFilter ? 'var(--gold)' : 'var(--silver)', border: '1px solid ' + (boardTeamFilter ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--ov-6, rgba(255,255,255,0.1))'), borderRadius: '6px', cursor: 'pointer', outline: 'none' }}>
                                         <option value="">All teams</option>
                                         {availableTeams.map(t => <option key={t} value={t}>{t}</option>)}
                                     </select>
@@ -3898,8 +4216,6 @@
                                     <button type="button" style={{ ...phChipBtn(false), marginTop: '2px' }} onClick={() => { setBoardSearch(''); setBoardPosFilter(''); setBoardTeamFilter(''); setBoardRoundFilter(''); }}>Reset</button>
                                 </React.Fragment>
                             );
-                        } else if (phBoardPanel === 'gameplan') {
-                            phBoardPanelEl = phBoardPanelWrap(renderDraftGameplan());
                         }
                         return (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -3908,24 +4224,29 @@
                                     <span style={{ color: 'var(--silver)', opacity: 0.6, fontSize: MICRO, fontFamily: MONO, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{activeBoardInfo.label} · {visibleBoardPlayers.length} players</span>
                                 </div>
                                 <div className="wr-hscroll" style={{ display: 'flex', gap: '6px', overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch' }}>
-                                    {React.createElement(window.WR.FilterPill, { label: 'Lane', value: activeBoardInfo.label, onClick: () => setPhBoardPanel(p => p === 'lane' ? null : 'lane') })}
+                                    {/* Board-picker pill shows the active board's name alone —
+                                        the 'Lane' prefix read as jargon (owner ask 2026-08-15).
+                                        Rides label (unclamped) rather than value (96px clamp
+                                        would ellipsize 'My Draft Board'). */}
+                                    {React.createElement(window.WR.FilterPill, { label: activeBoardInfo.label, value: null, onClick: () => setPhBoardPanel(p => p === 'lane' ? null : 'lane') })}
                                     {React.createElement(window.WR.FilterPill, { label: 'Pos', value: boardPosFilter || 'ALL', onClick: () => setPhBoardPanel(p => p === 'pos' ? null : 'pos') })}
                                     {React.createElement(window.WR.FilterPill, { label: 'Filters', value: [boardTeamFilter, boardRoundFilter && ('R' + boardRoundFilter).replace('RUDFA', 'UDFA'), boardSearch && '"' + boardSearch + '"'].filter(Boolean).join(' · ') || null, onClick: () => setPhBoardPanel(p => p === 'filters' ? null : 'filters') })}
-                                    {skinFeatures.showDraftGameplan !== false && React.createElement(window.WR.FilterPill, { label: 'Plan', value: gameplanArch !== 'balanced' ? gameplanArch : null, onClick: () => setPhBoardPanel(p => p === 'gameplan' ? null : 'gameplan') })}
                                     {React.createElement(window.WR.FilterPill, { label: 'Hide drafted', value: hideDrafted ? 'ON' : null, onClick: toggleHideDrafted })}
                                 </div>
                                 {phBoardPanelEl}
-                                {boardMode === 'my' ? (
-                                    <React.Fragment>
-                                        <div style={{ color: 'var(--gold)', opacity: 0.72, fontSize: MICRO, fontFamily: MONO }}>{'↕'} Tap ▲ / ▼ in the # column to reorder your board</div>
-                                        {renderCompactBoard(visibleBoardPlayers, false)}
-                                    </React.Fragment>
-                                ) : phGroups.length ? (
+                                {/* My lane rides the same AssetRow cards as every other
+                                    lane (owner ask 2026-08-15) — the old compact-table
+                                    detour existed only for the ▲/▼ reorder fallback,
+                                    which the per-row drag grip replaces. */}
+                                {boardMode === 'my' && (
+                                    <div style={{ color: 'var(--gold)', opacity: 0.72, fontSize: MICRO, fontFamily: MONO }}>{'↕'} Hold ≡ and drag to reorder your board</div>
+                                )}
+                                {phGroups.length ? (
                                     React.createElement(window.WR.CardList, {
                                         groups: phGroups.map(g => ({ label: g.key, sub: g.rows.length + (g.rows.length === 1 ? ' player' : ' players'), rows: g.rows })),
                                     })
                                 ) : (
-                                    <div style={{ padding: '14px', border: '1px dashed var(--ov-6, rgba(255,255,255,0.12))', borderRadius: 'var(--card-radius, 10px)', color: 'var(--silver)', opacity: 0.7, fontSize: '0.78rem' }}>No players match filter</div>
+                                    <div style={{ padding: '14px', border: '1px dashed var(--ov-6, rgba(255,255,255,0.12))', borderRadius: '9px', color: 'var(--silver)', opacity: 0.7, fontSize: '0.78rem' }}>No players match filter</div>
                                 )}
                                 {/* Pick inventory in view while ranking (P4) */}
                                 {myPicks.length > 0 && (
@@ -3936,13 +4257,13 @@
                                         </div>
                                         <div className="wr-kpi-strip">
                                             {currentCapitalRow.picks.map((pk, i) => (
-                                                <div key={currentCapitalRow.year + '-' + pk.round + '-' + i} style={{ background: 'var(--black, #121217)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 'var(--card-radius, 10px)', padding: '9px 11px' }}>
+                                                <div key={currentCapitalRow.year + '-' + pk.round + '-' + i} style={{ background: 'var(--black, #121217)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '9px', padding: '9px 11px' }}>
                                                     <div style={{ fontFamily: MONO, fontSize: MICRO, color: 'var(--text-muted, #8B8B96)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Round {pk.round}</div>
                                                     <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.3rem', fontWeight: 700, color: 'var(--white)', lineHeight: 1.15, marginTop: '2px' }}>{fmtPick(pk)}</div>
                                                     <div style={{ fontFamily: MONO, fontSize: MICRO, color: 'var(--silver)', opacity: 0.65 }}>{pk.own ? 'native' : 'acquired'}</div>
                                                 </div>
                                             ))}
-                                            <div style={{ background: 'var(--black, #121217)', border: '1px solid rgba(212,175,55,0.3)', borderRadius: 'var(--card-radius, 10px)', padding: '9px 11px' }}>
+                                            <div style={{ background: 'var(--black, #121217)', border: '1px solid rgba(212,175,55,0.3)', borderRadius: '9px', padding: '9px 11px' }}>
                                                 <div style={{ fontFamily: MONO, fontSize: MICRO, color: 'var(--text-muted, #8B8B96)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Capital</div>
                                                 <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.3rem', fontWeight: 700, color: 'var(--gold)', lineHeight: 1.15, marginTop: '2px' }}>{fmtDhq(totalPickCapital)}</div>
                                                 <div style={{ fontFamily: MONO, fontSize: MICRO, color: 'var(--silver)', opacity: 0.65 }}>{valueShortLabel}</div>
@@ -3997,16 +4318,6 @@
                             </div>
                         </section>
 
-                        {/* Draft Gameplan — single source of truth for the archetype that
-                            shapes AI Recommended here AND the pick recommendations in Mock
-                            Draft Center / Follow Live Draft (both just read the same
-                            GM Strategy field this card writes). Lives on Big Board — the
-                            page every draft flow actually starts from — not buried inside
-                            a live/mock session or the (now non-dynasty-hidden) War Room. */}
-                        {skinFeatures.showDraftGameplan !== false && (
-                            <div style={{ marginBottom: 12 }}>{renderDraftGameplan()}</div>
-                        )}
-
                         {/* Player search */}
                         <div style={{ position: 'relative', marginBottom: '8px' }}>
                             <input
@@ -4014,7 +4325,7 @@
                                 value={boardSearch}
                                 onChange={e => setBoardSearch(e.target.value)}
                                 placeholder="Search players, teams, colleges..."
-                                style={{ width: '100%', padding: '9px 30px 9px 12px', minHeight: '44px', fontSize: '0.8rem', fontFamily: 'var(--font-body)', background: 'var(--ov-2, rgba(255,255,255,0.03))', color: 'var(--white)', border: '1px solid ' + (boardSearch ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--ov-5, rgba(255,255,255,0.08))'), borderRadius: 'var(--card-radius, 10px)', outline: 'none', boxSizing: 'border-box' }}
+                                style={{ width: '100%', padding: '9px 30px 9px 12px', minHeight: '44px', fontSize: '0.8rem', fontFamily: 'var(--font-body)', background: 'var(--ov-2, rgba(255,255,255,0.03))', color: 'var(--white)', border: '1px solid ' + (boardSearch ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--ov-5, rgba(255,255,255,0.08))'), borderRadius: '10px', outline: 'none', boxSizing: 'border-box' }}
                             />
                             {boardSearch && (
                                 <button onClick={() => setBoardSearch('')} style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: 'var(--silver)', cursor: 'pointer', fontSize: '1rem', lineHeight: 1, padding: '4px' }} aria-label="Clear search">{'×'}</button>
@@ -4023,9 +4334,9 @@
 
                         {/* Position filters */}
                         <div style={{ display: 'flex', gap: '4px', marginBottom: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
-                            <button onClick={() => setBoardPosFilter('')} style={{ padding: '4px 10px', minHeight: '44px', fontSize: '0.72rem', fontFamily: 'var(--font-body)', borderRadius: 'var(--card-radius-lg, 14px)', cursor: 'pointer', border: '1px solid ' + (!boardPosFilter ? 'var(--acc-line2, rgba(212,175,55,0.3))' : 'var(--ov-5, rgba(255,255,255,0.08))'), background: !boardPosFilter ? 'var(--acc-fill2, rgba(212,175,55,0.12))' : 'transparent', color: !boardPosFilter ? 'var(--gold)' : 'var(--silver)' }}>Master</button>
+                            <button onClick={() => setBoardPosFilter('')} style={{ padding: '4px 10px', minHeight: '44px', fontSize: '0.72rem', fontFamily: 'var(--font-body)', borderRadius: '14px', cursor: 'pointer', border: '1px solid ' + (!boardPosFilter ? 'var(--acc-line2, rgba(212,175,55,0.3))' : 'var(--ov-5, rgba(255,255,255,0.08))'), background: !boardPosFilter ? 'var(--acc-fill2, rgba(212,175,55,0.12))' : 'transparent', color: !boardPosFilter ? 'var(--gold)' : 'var(--silver)' }}>Master</button>
                             {[...(typeof getLeaguePositions === 'function' ? getLeaguePositions() : ['QB','RB','WR','TE','K','DEF','DL','LB','DB']), ...(window.App?.getLeagueFlexGroups?.() || [])].map(pos => (
-                                <button key={pos} onClick={() => setBoardPosFilter(boardPosFilter === pos ? '' : pos)} style={{ padding: '4px 10px', minHeight: '44px', fontSize: '0.72rem', fontFamily: 'var(--font-body)', borderRadius: 'var(--card-radius-lg, 14px)', cursor: 'pointer', border: '1px solid ' + (boardPosFilter === pos ? (posColors[pos] || 'var(--k-666666, #666666)') + '55' : 'var(--ov-5, rgba(255,255,255,0.08))'), background: boardPosFilter === pos ? (posColors[pos] || 'var(--k-666666, #666666)') + '18' : 'transparent', color: boardPosFilter === pos ? posColors[pos] : 'var(--silver)' }}>{window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos)}</button>
+                                <button key={pos} onClick={() => setBoardPosFilter(boardPosFilter === pos ? '' : pos)} style={{ padding: '4px 10px', minHeight: '44px', fontSize: '0.72rem', fontFamily: 'var(--font-body)', borderRadius: '14px', cursor: 'pointer', border: '1px solid ' + (boardPosFilter === pos ? (posColors[pos] || 'var(--k-666666, #666666)') + '55' : 'var(--ov-5, rgba(255,255,255,0.08))'), background: boardPosFilter === pos ? (posColors[pos] || 'var(--k-666666, #666666)') + '18' : 'transparent', color: boardPosFilter === pos ? posColors[pos] : 'var(--silver)' }}>{window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos)}</button>
                             ))}
                             <span style={{ marginLeft: 'auto', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.4 }}>Click row to expand {'\u00B7'} Hold ≡ to drag — or use arrows — to reorder My Board</span>
                         </div>
@@ -4034,7 +4345,7 @@
                         <div style={{ display: 'flex', gap: '8px', marginBottom: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.6, fontFamily: 'var(--font-body)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Team</span>
-                                <select value={boardTeamFilter} onChange={e => setBoardTeamFilter(e.target.value)} style={{ padding: '3px 6px', minHeight: '44px', fontSize: '0.7rem', fontFamily: 'var(--font-mono)', background: 'var(--ov-3, rgba(255,255,255,0.04))', color: boardTeamFilter ? 'var(--gold)' : 'var(--silver)', border: '1px solid ' + (boardTeamFilter ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--ov-6, rgba(255,255,255,0.1))'), borderRadius: 'var(--card-radius-sm, 8px)', cursor: 'pointer', outline: 'none' }}>
+                                <select value={boardTeamFilter} onChange={e => setBoardTeamFilter(e.target.value)} style={{ padding: '3px 6px', minHeight: '44px', fontSize: '0.7rem', fontFamily: 'var(--font-mono)', background: 'var(--ov-3, rgba(255,255,255,0.04))', color: boardTeamFilter ? 'var(--gold)' : 'var(--silver)', border: '1px solid ' + (boardTeamFilter ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--ov-6, rgba(255,255,255,0.1))'), borderRadius: '6px', cursor: 'pointer', outline: 'none' }}>
                                     <option value="">All teams</option>
                                     {availableTeams.map(t => <option key={t} value={t}>{t}</option>)}
                                 </select>
@@ -4053,35 +4364,50 @@
 	                                    { k: '7', label: 'R7' },
 	                                    { k: 'UDFA', label: 'UDFA' },
 	                                ].map(opt => (
-	                                    <button key={opt.k} onClick={() => setBoardRoundFilter(boardRoundFilter === opt.k ? '' : opt.k)} style={{ padding: '3px 8px', minHeight: '44px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', borderRadius: 'var(--card-radius, 10px)', cursor: 'pointer', border: '1px solid ' + (boardRoundFilter === opt.k ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--ov-5, rgba(255,255,255,0.08))'), background: boardRoundFilter === opt.k ? 'var(--acc-fill3, rgba(212,175,55,0.14))' : 'transparent', color: boardRoundFilter === opt.k ? 'var(--gold)' : 'var(--silver)' }}>{opt.label}</button>
+	                                    <button key={opt.k} onClick={() => setBoardRoundFilter(boardRoundFilter === opt.k ? '' : opt.k)} style={{ padding: '3px 8px', minHeight: '44px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', borderRadius: '10px', cursor: 'pointer', border: '1px solid ' + (boardRoundFilter === opt.k ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--ov-5, rgba(255,255,255,0.08))'), background: boardRoundFilter === opt.k ? 'var(--acc-fill3, rgba(212,175,55,0.14))' : 'transparent', color: boardRoundFilter === opt.k ? 'var(--gold)' : 'var(--silver)' }}>{opt.label}</button>
 	                                ))}
 	                            </div>
 	                            )}
                             {(boardTeamFilter || boardRoundFilter) && (
-                                <button onClick={() => { setBoardTeamFilter(''); setBoardRoundFilter(''); }} style={{ marginLeft: 'auto', padding: '3px 10px', minHeight: '44px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', background: 'transparent', color: 'var(--silver)', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: 'var(--card-radius, 10px)', cursor: 'pointer' }}>Clear</button>
+                                <button onClick={() => { setBoardTeamFilter(''); setBoardRoundFilter(''); }} style={{ marginLeft: 'auto', padding: '3px 10px', minHeight: '44px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', background: 'transparent', color: 'var(--silver)', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: '10px', cursor: 'pointer' }}>Clear</button>
                             )}
-                            <button type="button" onClick={toggleHideDrafted} title="Hide players who have already been drafted" style={{ marginLeft: (boardTeamFilter || boardRoundFilter) ? '6px' : 'auto', padding: '3px 10px', minHeight: '44px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', borderRadius: 'var(--card-radius, 10px)', cursor: 'pointer', whiteSpace: 'nowrap', border: '1px solid ' + (hideDrafted ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--ov-6, rgba(255,255,255,0.1))'), background: hideDrafted ? 'var(--acc-fill3, rgba(212,175,55,0.14))' : 'transparent', color: hideDrafted ? 'var(--gold)' : 'var(--silver)' }}>{hideDrafted ? '✓ Hide drafted' : 'Hide drafted'}</button>
+                            <button type="button" onClick={toggleHideDrafted} title="Hide players who have already been drafted" style={{ marginLeft: (boardTeamFilter || boardRoundFilter) ? '6px' : 'auto', padding: '3px 10px', minHeight: '44px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', borderRadius: '10px', cursor: 'pointer', whiteSpace: 'nowrap', border: '1px solid ' + (hideDrafted ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--ov-6, rgba(255,255,255,0.1))'), background: hideDrafted ? 'var(--acc-fill3, rgba(212,175,55,0.14))' : 'transparent', color: hideDrafted ? 'var(--gold)' : 'var(--silver)' }}>{hideDrafted ? '✓ Hide drafted' : 'Hide drafted'}</button>
                         </div>
 
                         <div style={{ marginBottom: '14px' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', marginBottom: 8, color: 'var(--silver)', opacity: 0.65, fontSize: 'var(--text-micro, 0.6875rem)' }}>
-                                <span>{activeBoardInfo.label} - {Math.min(boardVisibleCount, visibleBoardPlayers.length)} of {visibleBoardPlayers.length} visible players</span>
-                                <span>{boardMode === 'my' ? 'Hold ≡ (or drag a row) to reorder - click a player for notes' : 'Switch to User Board to edit rank order'}</span>
+                                <span>{activeBoardInfo.label} - {visibleBoardPlayers.length} visible players</span>
+                                <span>{boardMode === 'my' ? 'Hold ≡ (or drag a row) to reorder - click a player for notes' : 'Switch to My Draft Board to edit rank order'}</span>
                             </div>
-                            <div style={{ maxHeight: '640px', overflowY: 'auto', borderRadius: 'var(--card-radius-sm)' }}>
-                                {renderCompactBoard(visibleBoardPlayers.slice(0, boardVisibleCount), boardMode !== 'my')}
-                            </div>
-                            {boardVisibleCount < visibleBoardPlayers.length && (
-                                <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 10 }}>
-                                    <button type="button" onClick={() => setBoardVisibleCount(c => c + BOARD_PAGE_SIZE)} style={{ padding: '8px 16px', minHeight: '40px', fontSize: '0.76rem', fontFamily: 'var(--font-body)', fontWeight: 700, borderRadius: 'var(--card-radius-sm, 8px)', cursor: 'pointer', border: '1px solid var(--acc-line3, rgba(212,175,55,0.4))', background: 'var(--acc-fill2, rgba(212,175,55,0.1))', color: 'var(--gold)' }}>
-                                        Show {Math.min(BOARD_PAGE_SIZE, visibleBoardPlayers.length - boardVisibleCount)} more
-                                    </button>
-                                    <button type="button" onClick={() => setBoardVisibleCount(visibleBoardPlayers.length)} style={{ padding: '8px 16px', minHeight: '40px', fontSize: '0.76rem', fontFamily: 'var(--font-body)', borderRadius: 'var(--card-radius-sm, 8px)', cursor: 'pointer', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', background: 'transparent', color: 'var(--silver)' }}>
-                                        Show all {visibleBoardPlayers.length}
-                                    </button>
-                                </div>
-                            )}
+                            {renderCompactBoard(visibleBoardPlayers, boardMode !== 'my')}
                         </div>
+
+                        {pendingBoardSort && (() => {
+                            const SORT_LABELS = { name: 'Player Name', school: isSeasonalDraft ? 'NFL Team' : 'College', team: 'NFL Team', dhq: valueShortLabel, rank: 'Rank', adp: 'Mkt ADP', tier: 'Tier', draft: 'Draft Capital', age: 'Age', size: 'Profile', speed: 'Speed', weight: 'Weight', pos: 'Position' };
+                            const label = SORT_LABELS[pendingBoardSort] || 'this column';
+                            const applyPendingSort = () => {
+                                const key = pendingBoardSort;
+                                const dir = SORT_ASC_KEYS.includes(key) ? 1 : -1;
+                                const sorted = [...myBoardPlayers].sort(boardCompare(key, dir)).map(r => r.pid);
+                                const inSorted = new Set(sorted.map(String));
+                                const rest = (myOrder || []).filter(pid => !inSorted.has(String(pid)));
+                                setMyBoardOrder([...sorted, ...rest]);
+                                setPendingBoardSort(null);
+                            };
+                            return (
+                                <div onClick={() => setPendingBoardSort(null)} style={{ position: 'fixed', inset: 0, zIndex: 95000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(6,8,12,0.72)', backdropFilter: 'blur(3px)', padding: '24px' }}>
+                                    <div onClick={e => e.stopPropagation()} style={{ width: 'min(30rem, 100%)', background: 'linear-gradient(180deg, var(--bg-secondary, #14161c) 0%, var(--black, #0b0d12) 100%)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.35))', borderRadius: 14, boxShadow: '0 18px 60px rgba(0,0,0,0.6)', padding: '22px 22px 18px', fontFamily: 'var(--font-body)' }}>
+                                        <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 900, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gold)', marginBottom: 8 }}>My Draft Board</div>
+                                        <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--white)', marginBottom: 8 }}>Rearrange your board by {label}?</div>
+                                        <div style={{ fontSize: '0.85rem', lineHeight: 1.55, color: 'var(--silver)', marginBottom: 18 }}>Your current custom order will be replaced with the {label} order. You can still drag players to fine-tune afterward — and this syncs to your other devices like any edit.</div>
+                                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                                            <button type="button" onClick={() => setPendingBoardSort(null)} style={{ padding: '10px 16px', borderRadius: 8, border: '1px solid var(--ov-6, rgba(255,255,255,0.14))', background: 'transparent', color: 'var(--silver)', fontFamily: 'var(--font-body)', fontWeight: 800, fontSize: '0.85rem', cursor: 'pointer' }}>Cancel</button>
+                                            <button type="button" onClick={applyPendingSort} style={{ padding: '10px 18px', borderRadius: 8, border: '1px solid var(--acc-line1, rgba(212,175,55,0.5))', background: 'var(--gold, #d4af37)', color: '#0b0d12', fontFamily: 'var(--font-body)', fontWeight: 900, fontSize: '0.85rem', cursor: 'pointer' }}>Rearrange Board</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })()}
 
                     </div>
                     );

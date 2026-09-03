@@ -43,7 +43,6 @@ function LineupTab({
     const [applyOpen, setApplyOpen] = React.useState(false);      // phone-only: WR.ActionBar apply/push sheet (inert off-phone)
     const [phoneView, setPhoneView] = React.useState('week');     // phone Game Day: 'week' (matchup + lineup) | 'season' (outlook + schedule)
     const [appliedMoves, setAppliedMoves] = React.useState(null); // phone: swap list shown after Apply Optimal ({sl,cur,opt,gain}[])
-    const [explainPid, setExplainPid] = React.useState(null);     // "why this number" ledger target (Pro; tap a projection)
     // Game Day view (owner ruling 2026-07-30: Season Odds belongs here, not in
     // Analytics). Phone: This Week | Season | Odds. Desktop already shows the
     // season rail alongside the lineup, so it only needs This Week | Odds.
@@ -150,24 +149,6 @@ function LineupTab({
     // ── Game Day Central: DvP, season schedule rail, Alex note, MFL push ──
     const [seasonData, setSeasonData] = React.useState(null);
     const [note, setNote] = React.useState('');
-    // Game-plan expansion — one-shot follow-up on the ambient note (replaced
-    // the old "ASK" chat handoff). Reuses the same AlexVoice.enhance()
-    // template-first pattern the note itself already uses.
-    const [gameplanTake, setGameplanTake] = React.useState(null); // null | {loading} | {text}
-    async function askGameplanTake() {
-        if (typeof window.AlexVoice?.enhance !== 'function') return;
-        setGameplanTake({ loading: true });
-        const facts = buildNoteFacts();
-        if (!facts) { setGameplanTake(null); return; }
-        const text = await window.AlexVoice.enhance({
-            type: 'start-sit',
-            message: 'Give me a fuller game-plan for this week in 3-4 sentences — the start/sit calls worth a second look, where I can attack this matchup, and what would change your read before kickoff. Natural prose, no lists, no sign-off.',
-            context: JSON.stringify(facts.ctx),
-            fallback: null,
-            cacheKey: 'gd-plan-v1-' + lineupKey + '-w' + facts.week,
-        });
-        setGameplanTake(text ? { text } : null);
-    }
     const [submit, setSubmit] = React.useState({ status: 'idle', msg: '' });
     // Real DvP: spin up the SOS engine (18-week defense-vs-position rankings),
     // then bump ctxTick so projections recompute with matchup context applied.
@@ -177,6 +158,18 @@ function LineupTab({
         let alive = true;
         SOS.initialize(currentLeague && currentLeague.season, playersData, () => { if (alive) setCtxTick(t => t + 1); });
         return () => { alive = false; };
+    }, [lineupKey]);
+
+    // Load Sleeper's own published weekly projections so start/sit uses the same
+    // number the owner sees in Sleeper (scored to this league), then recompute.
+    React.useEffect(() => {
+        const SP = window.App && window.App.SleeperProj;
+        if (!SP || !SP.loadCurrent) return;
+        let alive = true;
+        SP.loadCurrent(currentLeague && currentLeague.season).then(wk => { if (alive && wk) setCtxTick(t => t + 1); }).catch(() => {});
+        const onProj = () => { if (alive) setCtxTick(t => t + 1); };
+        window.addEventListener('wr:proj-updated', onProj);
+        return () => { alive = false; window.removeEventListener('wr:proj-updated', onProj); };
     }, [lineupKey]);
 
     // Full-season schedule + win projection for the right rail. Wait until the
@@ -297,12 +290,6 @@ function LineupTab({
         }
         return () => { alive = false; };
     }, [lineupKey, ctxTick, oppRosterId, _projReady, seasonData]);
-
-    // Invalidate the game-plan expansion on the same signals the note above
-    // regenerates on — otherwise a stale plan for last week or a different
-    // league keeps showing, with the trigger button permanently hidden and
-    // no way to refresh it.
-    React.useEffect(() => { setGameplanTake(null); }, [lineupKey, ctxTick, oppRosterId, _projReady, seasonData]);
 
     // MFL is the only platform with a public lineup-write API (Sleeper has none).
     const _plat = (window.App && window.App.Matchup && window.App.Matchup._platform) ? window.App.Matchup._platform(currentLeague) : 'sleeper';
@@ -449,8 +436,8 @@ function LineupTab({
 
     const formWinLabel = formWindow === 'season' ? 'SZN' : 'L' + formWindow;
     // Phone: hit-padding, not bigger glyphs (plan D7) — action buttons hit 44px.
-    const winBtn = active => ({ padding: isPhone ? '9px 12px' : '3px 8px', fontSize: fz('0.64rem'), fontWeight: 700, letterSpacing: '0.03em', cursor: 'pointer', borderRadius: 'var(--card-radius-xs, 5px)', border: `1px solid ${active ? GOLD : LINE}`, background: active ? 'rgba(212,175,55,0.14)' : 'transparent', color: active ? GOLD : SILVER });
-    const actBtn = { padding: isPhone ? '11px 16px' : '5px 12px', minHeight: isPhone ? '44px' : undefined, fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.04em', cursor: 'pointer', borderRadius: 'var(--card-radius-xs, 5px)', border: `1px solid ${LINE}`, background: 'transparent', color: SILVER };
+    const winBtn = active => ({ padding: isPhone ? '9px 12px' : '3px 8px', fontSize: fz('0.64rem'), fontWeight: 700, letterSpacing: '0.03em', cursor: 'pointer', borderRadius: '4px', border: `1px solid ${active ? GOLD : LINE}`, background: active ? 'rgba(212,175,55,0.14)' : 'transparent', color: active ? GOLD : SILVER });
+    const actBtn = { padding: isPhone ? '11px 16px' : '5px 12px', minHeight: isPhone ? '44px' : undefined, fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.04em', cursor: 'pointer', borderRadius: '5px', border: `1px solid ${LINE}`, background: 'transparent', color: SILVER };
 
     function wxTag(weather) {
         if (!weather) return null;
@@ -492,10 +479,8 @@ function LineupTab({
                 {wxTag(weather)}
                 {status ? <span style={{ color: status === 'BYE' ? SILVER : AMBER, fontSize: fz('0.62rem'), marginLeft: '6px', fontWeight: 700 }}>{status}</span> : null}
             </span>
-            <span style={{ textAlign: 'right', ...(pro && pts ? { cursor: 'pointer' } : {}) }}
-                title={pro && pts ? 'Why this number — tap for the projection ledger' : undefined}
-                onClick={pro && pts ? (e => { e.stopPropagation(); setExplainPid(pid); }) : undefined}>
-                <span style={{ color: TEXT, fontWeight: 700, fontVariantNumeric: 'tabular-nums', ...(pro && pts ? { borderBottom: '1px dotted rgba(212,175,55,0.5)' } : {}) }}>{pts ? (pts[objective] || 0).toFixed(1) : '—'}</span>
+            <span style={{ textAlign: 'right' }}>
+                <span style={{ color: TEXT, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{pts ? (pts[objective] || 0).toFixed(1) : '—'}</span>
                 {pro && pts ? <span style={{ display: 'block', color: SILVER, opacity: 0.6, fontSize: fz('0.56rem'), fontVariantNumeric: 'tabular-nums' }}>{pts.floor.toFixed(0)}–{pts.ceiling.toFixed(0)}</span> : null}
             </span>
             {pro ? <span style={{ textAlign: 'center' }}><span title={opp && opp.abbr ? ('vs ' + opp.abbr) : ('Matchup ' + grade)} style={{ fontWeight: 700, color: gradeColor(grade), fontSize: '0.78rem' }}>{grade}</span></span> : null}
@@ -506,120 +491,6 @@ function LineupTab({
             </React.Fragment>) : null}
         </React.Fragment>);
     }
-
-    // ── "Why this number" — projection ledger (Pro; tap any Proj cell) ──
-    // Re-derives the projection stage by stage via WeeklyProj.explainPlayer:
-    // baseline → DvP → Vegas → weather → availability — then scores the same
-    // stat line under a neutral 0.5-PPR baseline. The closing line is the
-    // league-scoring edge: identical stat line, your rules vs generic.
-    const ledgerNode = (() => {
-        if (!explainPid || !pro) return null;
-        const MONO = 'var(--font-mono, "JetBrains Mono", monospace)';
-        const close = () => setExplainPid(null);
-        const ex = WP.explainPlayer
-            ? WP.explainPlayer(explainPid, { playersData, statsData, priorData: stats2025Data, scoring: result.scoring, week: result.week })
-            : null;
-        const meta = pmeta(explainPid);
-        const proj = projOf(explainPid);
-        const pts = proj && proj.points;
-        const num = v => (v == null ? '—' : (Math.round(v * 10) / 10).toFixed(1));
-        const deltaCol = d => d > 0.05 ? GREEN : d < -0.05 ? RED : SILVER;
-        const band = pts && pts.ceiling > pts.floor ? Math.max(0, Math.min(1, (pts.median - pts.floor) / (pts.ceiling - pts.floor))) : 0.5;
-        const content = (
-            <div style={{ fontFamily: 'var(--font-body)', minWidth: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '10px', flexWrap: 'wrap' }}>
-                    <span style={{ fontWeight: 700, color: TEXT, fontSize: fz('0.95rem') }}>{meta.name}</span>
-                    <span style={{ color: SILVER, fontSize: fz('0.7rem') }}>{meta.pos}{meta.team ? ' · ' + meta.team : ''}{ex && ex.opponent ? ' · vs ' + ex.opponent : ''} · Wk {result.week}</span>
-                </div>
-                {!ex ? (
-                    <div style={{ color: SILVER, fontSize: fz('0.78rem') }}>No ledger for this player yet — it needs a stat baseline or a published analyst line.</div>
-                ) : (
-                    <React.Fragment>
-                        {ex.stages.map((s, i) => (
-                            <div key={s.key} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 52px 52px', gap: '8px', alignItems: 'center', padding: '6px 0', borderBottom: `1px solid ${LINE}` }}>
-                                <span style={{ minWidth: 0 }}>
-                                    <span style={{ display: 'block', color: TEXT, fontWeight: 600, fontSize: fz('0.76rem') }}>{s.label}</span>
-                                    <span style={{ display: 'block', color: SILVER, opacity: 0.75, fontSize: fz('0.62rem'), fontFamily: MONO }}>{s.detail}</span>
-                                </span>
-                                <span style={{ textAlign: 'right', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', color: deltaCol(s.delta || 0), fontSize: fz('0.72rem') }}>
-                                    {i === 0 ? '' : (s.delta > 0 ? '+' : '') + num(s.delta)}
-                                </span>
-                                <span style={{ textAlign: 'right', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', color: TEXT, fontWeight: i === ex.stages.length - 1 ? 700 : 400, fontSize: fz('0.74rem') }}>{num(s.pts)}</span>
-                            </div>
-                        ))}
-                        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 104px', gap: '8px', alignItems: 'center', padding: '8px 0', borderBottom: `1px solid ${LINE}` }}>
-                            <span>
-                                <span style={{ display: 'block', color: GOLD, fontWeight: 700, fontSize: fz('0.76rem') }}>Your league's scoring</span>
-                                <span style={{ display: 'block', color: SILVER, opacity: 0.75, fontSize: fz('0.62rem'), fontFamily: MONO }}>same stat line · 0.5-PPR baseline scores it {num(ex.standardPts)}</span>
-                            </span>
-                            <span style={{ textAlign: 'right', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', color: GOLD, fontWeight: 700, fontSize: fz('0.85rem') }}>
-                                {num(ex.leaguePts)} <span style={{ fontSize: fz('0.66rem'), color: ex.scoringEdge >= 0 ? GREEN : RED }}>({ex.scoringEdge > 0 ? '+' : ''}{num(ex.scoringEdge)})</span>
-                            </span>
-                        </div>
-                        {pts ? (
-                            <div style={{ marginTop: '10px' }}>
-                                <div style={{ position: 'relative', height: '8px', background: '#0C0E13', border: '1px solid rgba(255,255,255,0.09)', borderRadius: '3px' }}>
-                                    <i style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, background: 'rgba(93,173,226,0.16)', borderRadius: '3px' }} />
-                                    <b style={{ position: 'absolute', top: '-3px', bottom: '-3px', width: '2px', left: 'calc(' + Math.round(band * 100) + '% - 1px)', background: GOLD }} />
-                                </div>
-                                <div style={{ fontFamily: MONO, fontSize: fz('0.62rem'), color: SILVER, marginTop: '5px', fontVariantNumeric: 'tabular-nums' }}>
-                                    {pts.floor.toFixed(1)} floor — <span style={{ color: GOLD }}>{pts.median.toFixed(1)} proj</span> — {pts.ceiling.toFixed(1)} ceiling
-                                </div>
-                            </div>
-                        ) : null}
-                        {ex.provider ? (
-                            <div style={{ color: SILVER, opacity: 0.7, fontSize: fz('0.62rem'), fontFamily: MONO, marginTop: '8px' }}>
-                                Anchored to the published analyst line, which already prices the matchup — DvP is not double-counted.
-                            </div>
-                        ) : null}
-                        {/* Usage context — not part of the point ledger above, just the
-                            opportunity signal (targets, red zone looks, snap share) behind
-                            it, from window.App.StatCatalog off this season's raw stat line. */}
-                        {(() => {
-                            const SC = window.App?.StatCatalog;
-                            const st = statsData[explainPid] || {};
-                            if (!SC || !(st.gp > 0)) return null;
-                            const pos = meta.pos;
-                            const items = [];
-                            const push = (key, opts) => { const v = SC.computeStat(key, st, opts); if (v != null) items.push({ stat: SC.statByKey(key), v }); };
-                            if (['RB', 'WR', 'TE'].includes(pos)) { push('targets', { perGame: true }); push('rzTouches', { perGame: true }); push('snapPct'); }
-                            else if (pos === 'QB') { push('rushAtt', { perGame: true }); push('cmpPct'); push('rzPassAtt', { perGame: true }); }
-                            else if (['DL', 'LB', 'DB'].includes(pos)) { push('tackles', { perGame: true }); push('defSnapPct'); }
-                            if (!items.length) return null;
-                            return (
-                                <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: `1px solid ${LINE}` }}>
-                                    <div style={{ fontFamily: MONO, fontSize: fz('0.62rem'), letterSpacing: '0.06em', textTransform: 'uppercase', color: SILVER, marginBottom: '6px' }}>Usage this season</div>
-                                    <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap' }}>
-                                        {items.map(({ stat, v }) => (
-                                            <div key={stat.key} style={{ display: 'flex', flexDirection: 'column' }}>
-                                                <span style={{ fontFamily: MONO, fontSize: fz('0.9rem'), fontWeight: 700, color: GOLD }}>{SC.formatStat(v, stat.format)}</span>
-                                                <span style={{ fontSize: fz('0.6rem'), color: SILVER, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{stat.short}</span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            );
-                        })()}
-                    </React.Fragment>
-                )}
-            </div>
-        );
-        const overlay = (
-            <div onClick={close} style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-                <div onClick={e => e.stopPropagation()} style={{ background: PANEL, border: `1px solid ${LINE}`, borderLeft: `3px solid ${GOLD}`, borderRadius: 'var(--card-radius-sm, 8px)', padding: '16px 18px', maxWidth: '480px', width: '100%', maxHeight: '80vh', overflowY: 'auto' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', marginBottom: '6px' }}>
-                        <span style={{ fontFamily: MONO, fontSize: fz('0.66rem'), fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: GOLD }}>Why this number</span>
-                        <button onClick={close} style={{ marginLeft: 'auto', background: 'none', border: `1px solid ${LINE}`, borderRadius: 'var(--card-radius-xs, 5px)', color: SILVER, cursor: 'pointer', padding: '3px 9px', fontSize: fz('0.7rem') }}>✕</button>
-                    </div>
-                    {content}
-                </div>
-            </div>
-        );
-        const Sheet = window.WR && window.WR.Sheet;
-        return Sheet
-            ? <Sheet open onClose={close} title="Why this number" desktop={overlay}>{content}</Sheet>
-            : overlay;
-    })();
 
     const projTip = 'Projected points — optimizing for your ' + (objective === 'ceiling' ? 'ceiling (upside)' : objective === 'floor' ? 'floor (safe)' : 'median (balanced)') + ' strategy';
     const headerRow = (
@@ -684,9 +555,9 @@ function LineupTab({
         if (!isMfl) return null;
         const s = submit.status;
         // Phone: 16px input font (iOS Safari zooms on focus below 16px) + 44px height.
-        const inputStyle = { flex: '1 1 130px', minWidth: 0, padding: isPhone ? '10px 12px' : '7px 10px', minHeight: isPhone ? '44px' : undefined, background: 'var(--charcoal, #0e0e12)', border: `1px solid ${LINE}`, borderRadius: 'var(--card-radius-xs, 5px)', color: TEXT, fontSize: isPhone ? '16px' : '0.8rem' };
+        const inputStyle = { flex: '1 1 130px', minWidth: 0, padding: isPhone ? '10px 12px' : '7px 10px', minHeight: isPhone ? '44px' : undefined, background: 'var(--charcoal, #0e0e12)', border: `1px solid ${LINE}`, borderRadius: '5px', color: TEXT, fontSize: isPhone ? '16px' : '0.8rem' };
         return (
-            <div style={{ background: PANEL, border: `1px solid ${LINE}`, borderRadius: 'var(--card-radius-sm, 8px)', padding: '12px 16px', marginBottom: '14px' }}>
+            <div style={{ background: PANEL, border: `1px solid ${LINE}`, borderRadius: '6px', padding: '12px 16px', marginBottom: '14px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
                     <div style={{ fontSize: '0.66rem', letterSpacing: '0.07em', color: GOLD, fontWeight: 700 }}>PUSH LINEUP TO MFL</div>
                     {mflCookie ? <span onClick={mflDisconnect} style={{ fontSize: fz('0.62rem'), color: SILVER, cursor: 'pointer', padding: isPhone ? '12px 0 12px 12px' : 0 }}>● connected · disconnect</span> : null}
@@ -741,7 +612,7 @@ function LineupTab({
         return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', position: isNarrow ? 'static' : 'sticky', top: '16px' }}>
                 {/* Season outlook (or a pre-season placeholder when no schedule yet) */}
-                <div style={{ background: PANEL, border: `1px solid ${LINE}`, borderRadius: 'var(--card-radius-sm, 8px)', padding: '14px 16px' }}>
+                <div style={{ background: PANEL, border: `1px solid ${LINE}`, borderRadius: '6px', padding: '14px 16px' }}>
                     <div style={{ fontSize: fz('0.64rem'), letterSpacing: '0.07em', color: SILVER, fontWeight: 600 }}>SEASON OUTLOOK</div>
                     {!pro ? (
                         // Free: raw current record only — proj record / PF / win% are
@@ -780,7 +651,7 @@ function LineupTab({
 
                 {/* Bye watch — the weeks you're thinnest (works with or without a schedule) */}
                 {byeWatch.length ? (
-                    <div style={{ background: PANEL, border: `1px solid ${LINE}`, borderRadius: 'var(--card-radius-sm, 8px)', padding: '12px 16px' }}>
+                    <div style={{ background: PANEL, border: `1px solid ${LINE}`, borderRadius: '6px', padding: '12px 16px' }}>
                         <div style={{ fontSize: fz('0.64rem'), letterSpacing: '0.07em', color: SILVER, fontWeight: 600, marginBottom: '6px' }}>BYE WATCH</div>
                         {byeWatch.map(bw => (
                             <div key={bw.week} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px', padding: '3px 0', fontSize: '0.74rem' }}>
@@ -797,7 +668,7 @@ function LineupTab({
                 ) : null}
 
                 {/* Week-by-week schedule */}
-                <div style={{ background: PANEL, border: `1px solid ${LINE}`, borderRadius: 'var(--card-radius-sm, 8px)', overflow: 'hidden' }}>
+                <div style={{ background: PANEL, border: `1px solid ${LINE}`, borderRadius: '6px', overflow: 'hidden' }}>
                     <div style={{ padding: '9px 14px', borderBottom: `1px solid ${LINE}`, fontSize: fz('0.64rem'), letterSpacing: '0.07em', color: SILVER, fontWeight: 600 }}>SCHEDULE</div>
                     {scheduleUnset ? (
                         <div style={{ padding: '10px 14px', color: SILVER, fontSize: '0.74rem', opacity: 0.8, lineHeight: 1.5 }}>{pro ? 'Opponents + weekly win% appear here once your league posts the schedule.' : 'Opponents appear here once your league posts the schedule.'}</div>
@@ -876,7 +747,7 @@ function LineupTab({
 
         // Matchup-grade verdict chip (Pro interpretation — mirrors the Mtch column gate).
         const gradeChip = (grade) => (
-            <span style={{ fontFamily: MONO, fontSize: MICRO, fontWeight: 700, padding: '3px 8px', borderRadius: 'var(--card-radius-xs, 5px)', border: '1px solid ' + gradeColor(grade), color: gradeColor(grade), whiteSpace: 'nowrap' }}>{grade}</span>
+            <span style={{ fontFamily: MONO, fontSize: MICRO, fontWeight: 700, padding: '3px 8px', borderRadius: '5px', border: '1px solid ' + gradeColor(grade), color: gradeColor(grade), whiteSpace: 'nowrap' }}>{grade}</span>
         );
 
         // P1 slot row — the shipped phone column-set (GRID above: slot /
@@ -943,7 +814,7 @@ function LineupTab({
         );
 
         const kpiTile = (label, value, sub, valColor) => (
-            <div key={label} style={{ background: 'var(--black, #121217)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 'var(--card-radius, 10px)', padding: '9px 11px' }}>
+            <div key={label} style={{ background: 'var(--black, #121217)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '9px', padding: '9px 11px' }}>
                 <div style={{ fontFamily: MONO, fontSize: MICRO, color: 'var(--text-muted, #8B8B96)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</div>
                 <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.3rem', fontWeight: 700, color: valColor || TEXT, lineHeight: 1.15, marginTop: '2px', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
                 {sub ? <div style={{ fontFamily: MONO, fontSize: MICRO, color: SILVER, opacity: 0.65, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '110px' }}>{sub}</div> : null}
@@ -959,7 +830,6 @@ function LineupTab({
 
         return (
             <div style={{ padding: '14px var(--wr-phone-gutter, 12px) 72px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {ledgerNode}
                 {/* This Week ⇄ Season toggle (owner ask) — week = matchup +
                     lineup; season = outlook + schedule. */}
                 <div className="wr-seg">
@@ -983,6 +853,7 @@ function LineupTab({
                     their-ideal and the breakdown stay Pro (existing gates). */}
                 {matchup ? (
                     <React.Fragment>
+                        {goldDiv('Matchup · vs ' + matchup.oppName)}
                         <div className="wr-kpi-strip">
                             {pro ? [
                                 kpiTile('Win%', matchup.fc.winPct == null ? '—' : matchup.fc.winPct + '%', matchup.fc.margin == null ? null : (matchup.fc.margin >= 0 ? '+' : '') + matchup.fc.margin.toFixed(1) + ' margin', winColor),
@@ -994,27 +865,27 @@ function LineupTab({
                                 kpiTile('Them', matchup.oppCurTotal > 0 ? matchup.oppCurTotal.toFixed(1) : '—', 'current lineup'),
                             ]}
                         </div>
-                        {!pro && GatedRow ? <GatedRow title="Win probability + matchup breakdown" sub="Projected margin, slot-by-slot edges and position-strength bars" feature={STARTSIT_FEAT} /> : null}
-                        {/* Matchup breakdown (position-strength + slot-by-slot) was
-                            dropped from phone entirely on 2026-07-12 as "noise on a
-                            small screen" — re-added 2026-08-09 (owner feedback: no way
-                            to view the opponent's lineup on mobile, and this read is
-                            one of the strongest parts of the tab). It lives in a Sheet
-                            instead of inline (matches the P3/P6 pattern used elsewhere
-                            on this phone branch) and the slot-by-slot rows are stacked
-                            2-line cards, not the desktop 4-column grid — that grid's
-                            name columns collapse to ~106px at 390px width, which
-                            truncates the points value along with the name. */}
-                        {pro && matchup ? (
-                            <div role="button" tabIndex={0} onClick={() => setShowOpp(true)}
-                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: '44px', padding: '0 2px', cursor: 'pointer' }}>
-                                <span style={{ fontFamily: MONO, fontSize: '0.76rem', fontWeight: 600, color: GOLD }}>View their lineup · slot-by-slot</span>
-                                <span aria-hidden="true" style={{ color: SILVER, fontSize: '0.9rem' }}>›</span>
-                            </div>
-                        ) : null}
+                        {!pro && GatedRow ? <GatedRow title="Win probability" sub="Projected margin and your win odds this week" feature={STARTSIT_FEAT} /> : null}
+                        {/* Matchup breakdown (toggle + position-strength / slot-by-slot
+                            panel) removed on phone (owner ask 2026-07-12) — the Win% ·
+                            You · Them · Their-ideal KPI row above carries the matchup
+                            read; the verbose breakdown was noise on a small screen.
+                            Desktop Game Day is a separate render and is untouched. */}
                     </React.Fragment>
                 ) : null}
 
+                {/* Alex game-day note as a card (note state is Pro-gated upstream: free = '') */}
+                {note ? (
+                    <div style={{ background: PANEL, border: `1px solid ${LINE}`, borderLeft: `3px solid ${GOLD}`, borderRadius: '6px', padding: '12px 14px', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                        <span style={{ fontSize: fz('0.6rem'), fontWeight: 800, letterSpacing: '0.08em', color: GOLD, marginTop: '3px', whiteSpace: 'nowrap' }}>ALEX ·</span>
+                        <span style={{ fontSize: '0.86rem', color: TEXT, lineHeight: 1.5 }}>{note}</span>
+                        {/* Ask Alex follow-up: opens recon chat pre-loaded with the game-plan ask (crossover, owner ask 2026-07-13) */}
+                        {window.WR_ALEX_CHAT !== false && <button onClick={() => {
+                            const msg = 'Walk me through my Week ' + result.week + ' game plan' + (matchup && matchup.oppName ? ' against ' + matchup.oppName : '') + ' — the start/sit calls worth a second look, where I can attack this matchup, and what would change your read before kickoff.';
+                            try { window.dispatchEvent(new CustomEvent('wr:ask-alex', { detail: { message: msg } })); } catch (e) { /* chat seam unavailable */ }
+                        }} style={{ flexShrink: 0, alignSelf: 'flex-start', background: 'rgba(212,175,55,0.08)', border: '1px solid rgba(212,175,55,0.35)', borderRadius: '5px', color: GOLD, fontFamily: MONO, fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.05em', padding: '4px 8px', cursor: 'pointer', whiteSpace: 'nowrap' }}>💬 ASK</button>}
+                    </div>
+                ) : null}
 
                 {/* Optimizer + working lineup, below the matchup lead. */}
                 {heroEl}
@@ -1052,62 +923,6 @@ function LineupTab({
                     ) : null}
                 </Sheet>
 
-                {/* Opponent-lineup breakdown sheet (re-added 2026-08-09 — see
-                    comment above the trigger). Position strength reuses the
-                    desktop grid as-is (it fits 390px cleanly: fixed columns
-                    total ~162px + gaps, leaving a real bar). Slot-by-slot is
-                    reflowed into stacked 2-line cards (you on top, them below)
-                    instead of the desktop 4-column grid, whose name columns
-                    would collapse to ~106px and cut off the points value. */}
-                <Sheet open={showOpp && pro} onClose={() => setShowOpp(false)} title={matchup ? 'vs ' + matchup.oppName : 'Opponent lineup'} desktop={null}>
-                    {matchup ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '4px 14px 10px' }}>
-                            <div style={{ fontSize: '0.74rem', color: SILVER, lineHeight: 1.5, marginBottom: '4px' }}>
-                                {/* MFL never exposes platform starters — 0 means "unknown". */}
-                                Their lineup: current {matchup.oppCurTotal > 0 ? matchup.oppCurTotal.toFixed(1) : '—'} · ideal {matchup.oppIdealTotal.toFixed(1)}
-                                {matchup.oppCurTotal > 0 && matchup.oppIdealTotal - matchup.oppCurTotal > 0.5 ? <span style={{ color: AMBER }}> · {(matchup.oppIdealTotal - matchup.oppCurTotal).toFixed(1)} on their bench</span> : null}
-                            </div>
-                            <div style={{ fontFamily: MONO, fontSize: MICRO, letterSpacing: '0.06em', color: SILVER, marginBottom: '4px' }}>POSITION STRENGTH · your projected pts vs theirs</div>
-                            {matchup.posStrength.map(ps => {
-                                const tot = (ps.mine + ps.theirs) || 1, myShare = ps.mine / tot * 100, meLead = ps.mine >= ps.theirs;
-                                return <div key={ps.pos} style={{ display: 'grid', gridTemplateColumns: '34px 52px 1fr 52px', gap: '8px', alignItems: 'center', padding: '4px 0' }}>
-                                    <span style={{ fontSize: '0.66rem', fontWeight: 700, color: GOLD }}>{ps.pos}</span>
-                                    <span style={{ textAlign: 'right', fontSize: '0.78rem', fontWeight: meLead ? 700 : 400, color: meLead ? GREEN : SILVER, fontVariantNumeric: 'tabular-nums' }}>{ps.mine.toFixed(1)}</span>
-                                    <span style={{ position: 'relative', height: '6px', background: 'var(--ov-3, rgba(255,255,255,0.05))', borderRadius: '3px' }}>
-                                        <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: myShare + '%', background: meLead ? 'rgba(46,204,113,0.5)' : 'rgba(212,175,55,0.32)', borderRadius: '3px' }} />
-                                        <span style={{ position: 'absolute', left: '50%', top: '-2px', bottom: '-2px', width: '1px', background: 'var(--ov-6, rgba(255,255,255,0.18))' }} />
-                                    </span>
-                                    <span style={{ textAlign: 'left', fontSize: '0.78rem', fontWeight: !meLead ? 700 : 400, color: !meLead ? RED : SILVER, fontVariantNumeric: 'tabular-nums' }}>{ps.theirs.toFixed(1)}</span>
-                                </div>;
-                            })}
-                            <div style={{ fontFamily: MONO, fontSize: MICRO, letterSpacing: '0.06em', color: SILVER, margin: '14px 0 6px' }}>SLOT-BY-SLOT · you lead {matchup.myEdges} of {matchup.slotCount}</div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                {matchup.h2h.map((r, i) => {
-                                    const me = pmeta(r.myPid), them = pmeta(r.theirPid);
-                                    const meWin = r.myMed > r.theirMed, theyWin = r.theirMed > r.myMed;
-                                    const edgeLabel = meWin ? '+' + (r.myMed - r.theirMed).toFixed(1) + ' you' : theyWin ? '+' + (r.theirMed - r.myMed).toFixed(1) + ' them' : 'even';
-                                    return (
-                                        <div key={i} style={{ background: 'var(--black, #121217)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 'var(--card-radius, 10px)', padding: '8px 11px' }}>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
-                                                <span style={{ fontFamily: MONO, fontSize: MICRO, fontWeight: 700, color: GOLD, letterSpacing: '0.04em' }}>{r.slot.replace('_', ' ')}</span>
-                                                <span style={{ fontFamily: MONO, fontSize: MICRO, fontWeight: 700, color: meWin ? GREEN : theyWin ? RED : SILVER }}>{edgeLabel}</span>
-                                            </div>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', padding: '1px 0' }}>
-                                                <span style={{ minWidth: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.82rem', color: meWin ? TEXT : SILVER, fontWeight: meWin ? 600 : 400 }}>{r.myPid ? me.name : '— empty'}</span>
-                                                <span style={{ flexShrink: 0, fontFamily: MONO, fontSize: '0.78rem', fontWeight: 700, color: meWin ? GREEN : SILVER, fontVariantNumeric: 'tabular-nums' }}>{r.myMed.toFixed(1)}</span>
-                                            </div>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', padding: '1px 0' }}>
-                                                <span style={{ minWidth: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.82rem', color: theyWin ? TEXT : SILVER, fontWeight: theyWin ? 600 : 400 }}>{r.theirPid ? them.name : '— empty'}</span>
-                                                <span style={{ flexShrink: 0, fontFamily: MONO, fontSize: '0.78rem', fontWeight: 700, color: theyWin ? RED : SILVER, fontVariantNumeric: 'tabular-nums' }}>{r.theirMed.toFixed(1)}</span>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    ) : null}
-                </Sheet>
-
                 {/* P6 apply/push sheet — the MFL push card re-homes here on
                     phone (never inline); same handlers, same submit machine. */}
                 <Sheet open={applyOpen} onClose={() => setApplyOpen(false)} title="Working lineup" desktop={null}>
@@ -1136,7 +951,7 @@ function LineupTab({
                                 const outN = m.cur ? pmeta(m.cur).name : 'Empty';
                                 const inN = m.opt ? pmeta(m.opt).name : 'Empty';
                                 return (
-                                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 10px', background: PANEL, border: `1px solid ${LINE}`, borderRadius: 'var(--card-radius-sm, 8px)' }}>
+                                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 10px', background: PANEL, border: `1px solid ${LINE}`, borderRadius: '8px' }}>
                                         <span style={{ fontFamily: MONO, fontSize: MICRO, fontWeight: 700, color: GOLD, minWidth: '44px', whiteSpace: 'nowrap' }}>{m.sl.slotName.replace('_', ' ')}</span>
                                         <span style={{ flex: 1, minWidth: 0, fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
                                             <span style={{ color: m.cur ? SILVER : 'var(--text-muted, #8B8B96)', textDecoration: m.cur ? 'line-through' : 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{outN}</span>
@@ -1169,7 +984,7 @@ function LineupTab({
     // beside the lineup, so it needs no separate "Season" view — only a way
     // to reach the odds. Rendered in both desktop branches below.
     const gdSeg = (
-        <div style={{ display: 'inline-flex', border: `1px solid ${LINE}`, borderRadius: 'var(--card-radius-sm, 8px)', overflow: 'hidden', marginBottom: '14px' }}>
+        <div style={{ display: 'inline-flex', border: `1px solid ${LINE}`, borderRadius: '6px', overflow: 'hidden', marginBottom: '14px' }}>
             {[['week', 'This Week'], ['odds', 'Season Odds']].map(([k, label]) => (
                 <button key={k} onClick={() => setGdView(k)}
                     style={{ padding: '7px 15px', cursor: 'pointer', border: 'none', background: gdView === k ? 'var(--acc-fill2, rgba(212,175,55,0.12))' : 'transparent', color: gdView === k ? GOLD : SILVER, fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', fontFamily: 'var(--font-mono, monospace)' }}>
@@ -1198,27 +1013,10 @@ function LineupTab({
 
     return (
         <div style={{ maxWidth: '1240px', margin: '0 auto', padding: '20px 16px 60px' }}>
-            {ledgerNode}
             {gdSeg}
-            {/* Alex's game-day note */}
-            {note ? (
-                <div style={{ background: PANEL, border: `1px solid ${LINE}`, borderLeft: `3px solid ${GOLD}`, borderRadius: 'var(--card-radius-sm, 8px)', padding: '12px 16px', marginBottom: '14px' }}>
-                    <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-                        <span style={{ fontSize: fz('0.6rem'), fontWeight: 800, letterSpacing: '0.08em', color: GOLD, marginTop: '3px', whiteSpace: 'nowrap' }}>ALEX ·</span>
-                        <span style={{ fontSize: '0.86rem', color: TEXT, lineHeight: 1.5 }}>{note}</span>
-                        {/* Game-plan expansion — one-shot, ask once (chat retired). */}
-                        {!gameplanTake?.text && (
-                            <button onClick={askGameplanTake} disabled={gameplanTake?.loading}
-                                style={{ flexShrink: 0, alignSelf: 'flex-start', background: 'rgba(212,175,55,0.08)', border: '1px solid rgba(212,175,55,0.35)', borderRadius: 'var(--card-radius-xs, 5px)', color: GOLD, fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.05em', padding: '4px 8px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                                {gameplanTake?.loading ? '…' : '✨ MORE FROM ALEX'}
-                            </button>
-                        )}
-                    </div>
-                    {gameplanTake?.text && (
-                        <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: `1px solid ${LINE}`, fontSize: '0.86rem', color: TEXT, opacity: 0.9, lineHeight: 1.5 }}>{gameplanTake.text}</div>
-                    )}
-                </div>
-            ) : null}
+            {/* Alex's game-day note removed from the top of DESKTOP Game Day per
+                owner request (#229, 2026-07-17). The PHONE layout keeps its note
+                card + Ask Alex crossover (owner ask 2026-07-13) above. */}
 
             <div style={{ display: 'grid', gridTemplateColumns: isNarrow ? '1fr' : '1fr 300px', gap: '16px', alignItems: 'start' }}>
                 <div style={{ minWidth: 0 }}>
@@ -1226,7 +1024,7 @@ function LineupTab({
                     {/* Hero — Pro: Your lineup vs Optimal. Free: raw working total
                         (sum of the slots the user set) + optimizer teaser; the
                         optimal total / bench delta are optimizer outputs. */}
-                    <div style={{ background: PANEL, border: `1px solid ${LINE}`, borderRadius: 'var(--card-radius-sm, 8px)', padding: '18px 20px', marginBottom: '14px' }}>
+                    <div style={{ background: PANEL, border: `1px solid ${LINE}`, borderRadius: '6px', padding: '18px 20px', marginBottom: '14px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
                     <div>
                         <div style={{ fontSize: '0.72rem', letterSpacing: '0.08em', color: SILVER, fontWeight: 600 }}>WEEK {result.week} · GAME DAY CENTRAL</div>
@@ -1276,7 +1074,7 @@ function LineupTab({
                 probability, margin, position strength and the slot-by-slot
                 breakdown are Pro. */}
             {matchup && !pro ? (
-                <div style={{ background: PANEL, border: `1px solid ${LINE}`, borderRadius: 'var(--card-radius-sm, 8px)', padding: '16px 20px', marginBottom: '14px' }}>
+                <div style={{ background: PANEL, border: `1px solid ${LINE}`, borderRadius: '6px', padding: '16px 20px', marginBottom: '14px' }}>
                     <div style={{ fontSize: '0.7rem', letterSpacing: '0.08em', color: SILVER, fontWeight: 600 }}>WEEK {result.week} MATCHUP · vs {matchup.oppName}</div>
                     <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginTop: '8px', flexWrap: 'wrap' }}>
                         <span style={{ fontSize: '1.5rem', fontWeight: 700, color: TEXT, fontVariantNumeric: 'tabular-nums' }}>{matchup.fc.projMe.toFixed(1)}</span>
@@ -1292,7 +1090,7 @@ function LineupTab({
                     ) : null}
                 </div>
             ) : matchup ? (
-                <div style={{ background: PANEL, border: `1px solid ${LINE}`, borderRadius: 'var(--card-radius-sm, 8px)', padding: '16px 20px', marginBottom: '14px' }}>
+                <div style={{ background: PANEL, border: `1px solid ${LINE}`, borderRadius: '6px', padding: '16px 20px', marginBottom: '14px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
                         <div style={{ minWidth: 0 }}>
                             <div style={{ fontSize: '0.7rem', letterSpacing: '0.08em', color: SILVER, fontWeight: 600 }}>WEEK {result.week} MATCHUP · vs {matchup.oppName}</div>
@@ -1354,7 +1152,7 @@ function LineupTab({
             ) : null}
 
             {/* Unified interactive lineup table */}
-            <div style={{ background: PANEL, border: `1px solid ${LINE}`, borderRadius: 'var(--card-radius-sm, 8px)', overflow: 'hidden' }}>
+            <div style={{ background: PANEL, border: `1px solid ${LINE}`, borderRadius: '6px', overflow: 'hidden' }}>
                 <div style={{ padding: '10px 14px', borderBottom: `1px solid ${LINE}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                     <span style={{ fontSize: '0.7rem', letterSpacing: '0.08em', color: SILVER, fontWeight: 600 }}>STARTING LINEUP · tap a slot to set it</span>
                     <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>

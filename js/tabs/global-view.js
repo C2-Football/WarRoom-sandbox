@@ -1,60 +1,6 @@
 // js/tabs/global-view.js - Empire portfolio command center
 // Cross-league asset allocation, exposure, age-window, pick capital, and drilldown workspaces.
 
-// Empire rail nav icons — same hand-flattened Lucide-path convention as
-// league-detail.js's NAV_ICON_PATHS (no icon library is installed in this
-// app; this is the established dependency-free pattern). Four of these reuse
-// the exact paths already proven there (home/zap/briefcase/target) rather
-// than re-deriving new ones for concepts that already have a tested icon.
-const EMPIRE_ICON_PATHS = {
-    // house — league-detail.js NAV_ICON_PATHS.home
-    home: ['m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z', 'M9 22V12h6v10'],
-    // zap — league-detail.js NAV_ICON_PATHS.gameday
-    zap: ['M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z'],
-    // briefcase — league-detail.js NAV_ICON_PATHS.office
-    briefcase: ['M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16', 'M4 6h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z'],
-    // target — league-detail.js NAV_ICON_PATHS.strategy
-    target: ['M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0Z', 'M18 12a6 6 0 1 1-12 0 6 6 0 0 1 12 0Z', 'M14 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0Z'],
-    // layers — stacked leagues
-    layers: ['m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z', 'm22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65', 'm22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65'],
-    // trending-up — the asset floor/market
-    trendingUp: ['M22 7 13.5 15.5 8.5 10.5 2 17', 'M16 7h6v6'],
-    // bar-chart-2 — a computed index/score
-    barChart: ['M18 20V10', 'M12 20V4', 'M6 20v-6'],
-    // alert-triangle — risk/warning
-    alertTriangle: ['m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z', 'M12 9v4', 'M12 17h.01'],
-    // map (folded map)
-    map: ['M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4Z', 'M8 2v16', 'M16 6v16'],
-    // search — scouting
-    search: ['M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z', 'm21 21-4.3-4.3'],
-    // trophy — season outlook (playoff/title odds)
-    trophy: ['M6 9H4.5a2.5 2.5 0 0 1 0-5H6', 'M18 9h1.5a2.5 2.5 0 0 0 0-5H18', 'M4 22h16', 'M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22', 'M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22', 'M18 2H6v7a6 6 0 0 0 12 0z'],
-    // repeat — league-detail.js NAV_ICON_PATHS.trade, reused for the same concept
-    trade: ['m16 3 4 4-4 4', 'M20 7H4', 'm8 21-4-4 4-4', 'M4 17h16'],
-};
-
-// Empire-scoped "which leagues count toward my totals" toggle — same
-// opt-out-map pattern + never-return-empty safety rule as Commissioner
-// Office's commish-prefs.js (isManaged/setManaged), but that module is
-// hardcoded to its own commish_prefs_v1 key/namespace and bundled with
-// commish-only fields (domainsOff, items, etc.) — not reusable as-is, so
-// this is a small independent equivalent scoped to Empire's own key.
-const EMPIRE_PREFS_KEY = 'dhq_empire_league_prefs_v1';
-function readEmpirePrefs() {
-    try { return JSON.parse(localStorage.getItem(EMPIRE_PREFS_KEY) || '{}') || {}; } catch (e) { return {}; }
-}
-function isEmpireLeagueOn(leagueId, prefs) {
-    return !((prefs && prefs.off) || {})[String(leagueId)];
-}
-function setEmpireLeagueOn(leagueId, on) {
-    const p = readEmpirePrefs();
-    p.off = p.off || {};
-    const k = String(leagueId);
-    if (on) delete p.off[k]; else p.off[k] = 1;
-    localStorage.setItem(EMPIRE_PREFS_KEY, JSON.stringify(p));
-    return p;
-}
-
 function buildEmpirePortfolioModel(input) {
     input = input || {};
     const allLeagues = input.allLeagues || [];
@@ -146,17 +92,6 @@ function buildEmpirePortfolioModel(input) {
         if (!myRoster) return;
 
         const rosterPlayers = myRoster.players || [];
-        // A pre-draft league with an empty roster (a genuine startup, or an
-        // existing league between seasons before its next draft) previously
-        // fell straight through to status:'unknown'/totalDHQ:0 — visually and
-        // programmatically identical to a real data-quality problem (broken
-        // sync, failed assessment). Gate on BOTH the league's real Sleeper
-        // phase and an empty roster (not roster-emptiness alone), so a
-        // genuinely broken/unsynced roster in an active league doesn't get
-        // mislabeled as "just pre-draft." Same phase definition league-skin.js
-        // already uses elsewhere in this app (phase === 'pre_draft'/'drafting').
-        const leaguePhase = league?.status || league?.metadata?.status || '';
-        const preDraftEmpty = (leaguePhase === 'pre_draft' || leaguePhase === 'drafting') && rosterPlayers.length === 0;
         // Health/tier must come from the per-league assessment. app.js runs
         // assessAllTeams(league.rosters, …, league, …) with the explicit league object and
         // stashes the result on league.empireAssessments. Prefer that over the single-league
@@ -169,36 +104,24 @@ function buildEmpirePortfolioModel(input) {
         let assessment = leagueAssessments.find(a => sameId(a.rosterId, myRoster.roster_id) || sameId(a.ownerId, myRoster.owner_id)) || null;
         if (!assessment && typeof assessTeam === 'function') assessment = assessTeam(myRoster.roster_id, league);
         if (assessment) assessedLeagueCount++;
-        // Nulled for a pre-draft empty roster same as the eliminated-roster
-        // case below — there's genuinely nothing to assess yet, not a broken
-        // read, and this keeps it out of avgHealth via the same mechanism.
-        const healthScore = preDraftEmpty ? null : (assessment?.healthScore ?? null);
-        const tier = preDraftEmpty ? 'PRE_DRAFT' : (assessment?.tier || 'UNKNOWN');
-        const status = preDraftEmpty ? 'pre_draft' : statusFromTier(tier);
+        const healthScore = assessment?.healthScore ?? null;
+        const tier = assessment?.tier || 'UNKNOWN';
+        const status = statusFromTier(tier);
         strategyTotals[status] = (strategyTotals[status] || 0) + 1;
         const wins = myRoster.settings?.wins || league?.wins || 0;
         const losses = myRoster.settings?.losses || league?.losses || 0;
-        // CHOPPED leagues never accrue a W-L record (no matchups) and an
-        // eliminated roster's health score comes from an empty, waivers-
-        // released roster — neither means what it means in every other
-        // format. Read it once here so every downstream aggregate/display
-        // can treat this province honestly instead of quietly averaging in
-        // a permanent 0-0 or a garbage health number.
-        const Chopped = window.App?.Chopped;
-        const isChopped = !!(Chopped && Chopped.isChopped(league));
-        const canTrade = !isChopped && Number(league?.settings?.disable_trades || 0) !== 1;
-        const isEliminated = isChopped && Chopped.isEliminated(myRoster);
-        const chopState = isChopped ? Chopped.state({ league, rosters }) : null;
-        const recordLabel = !isChopped ? (wins + '-' + losses)
-            : isEliminated ? ('Chopped wk ' + Chopped.eliminatedWeek(myRoster))
-            : ((chopState?.aliveCount || 0) + ' of ' + (chopState?.teams || rosters.length) + ' alive');
         const totalDHQ = rosterPlayers.reduce((sum, pid) => sum + (scores[pid] || 0), 0);
         const ranked = rosters.slice().sort((a, b) => {
             const av = (a.players || []).reduce((sum, pid) => sum + (scores[pid] || 0), 0);
             const bv = (b.players || []).reduce((sum, pid) => sum + (scores[pid] || 0), 0);
             return bv - av;
         });
-        const powerRank = ranked.findIndex(r => sameId(r.roster_id, myRoster.roster_id)) + 1;
+        // One rank (2026-09-02): the shared blended powerRank when the empire
+        // assessment pass has it — the old sort here was pure asset value
+        // wearing the name powerRank, so Empire could say #2 while the brief
+        // said #8. Asset order stays as the engine-less fallback.
+        const _ea = (league?.empireAssessments || []).find(a => sameId(a.rosterId, myRoster.roster_id));
+        const powerRank = (_ea && _ea.powerRank) || (ranked.findIndex(r => sameId(r.roster_id, myRoster.roster_id)) + 1);
         const province = {
             id: leagueId(league),
             name: league?.name || 'League',
@@ -208,21 +131,9 @@ function buildEmpirePortfolioModel(input) {
             teams: rosters.length || league?.total_rosters || 0,
             wins,
             losses,
-            preDraftEmpty,
-            isChopped,
-            canTrade,
-            isEliminated,
-            eliminatedWeek: isEliminated ? Chopped.eliminatedWeek(myRoster) : null,
-            aliveCount: chopState?.aliveCount ?? null,
-            recordLabel,
             totalDHQ,
             avgDHQ: rosterPlayers.length ? Math.round(totalDHQ / rosterPlayers.length) : 0,
-            // An eliminated roster's health score is computed off an empty,
-            // waivers-released roster — not signal, not even a low signal.
-            // Nulling it here (rather than at each of the ~6 display sites)
-            // makes every existing `healthScore ?? 'No read'` fallback do
-            // the right thing automatically, and keeps it out of avgHealth.
-            healthScore: isEliminated ? null : healthScore,
+            healthScore,
             tier,
             tierColor: tierColor(tier),
             status,
@@ -369,11 +280,7 @@ function buildEmpirePortfolioModel(input) {
     const positionAllocation = finalizeTotals(positionTotals);
     const ageAllocation = finalizeTotals(ageTotals);
     const tierAllocation = finalizeTotals(tierTotals);
-    // CHOPPED provinces never accrue a W-L record — their wins/losses are
-    // permanently 0-0 by format, not "hasn't played yet". Summing them in
-    // would silently drag the aggregate win% toward 0 as the season goes on
-    // in every OTHER league while this one sits at a structural 0-0.
-    const totalRecord = provinces.filter(p => !p.isChopped).reduce((sum, p) => ({ wins: sum.wins + p.wins, losses: sum.losses + p.losses }), { wins: 0, losses: 0 });
+    const totalRecord = provinces.reduce((sum, p) => ({ wins: sum.wins + p.wins, losses: sum.losses + p.losses }), { wins: 0, losses: 0 });
     const assessedHealth = provinces.map(p => p.healthScore).filter(v => v != null);
     const avgHealth = assessedHealth.length ? Math.round(assessedHealth.reduce((sum, v) => sum + v, 0) / assessedHealth.length) : null;
     const pickYears = {};
@@ -947,10 +854,6 @@ function buildProvincesMap(input) {
     fringe: { label: 'Crossroads', color: 'var(--warn)' },
     rebuild: { label: 'Rebuild', color: 'var(--bad)' },
     unknown: { label: 'Unread', color: 'var(--silver)' },
-    // Distinct from 'unknown' — nothing's broken here, there's just nothing
-    // to assess yet. Neutral tone, not the "something needs your attention"
-    // silver 'Unread' reads as.
-    pre_draft: { label: 'Pre-Draft', color: 'var(--silver)' },
   };
 
   const maxDHQ = provinces.reduce((m, p) => Math.max(m, p.totalDHQ || 0), 0) || 1;
@@ -993,7 +896,6 @@ function buildProvincesMap(input) {
     crossroads: provinces.filter(p => p.status === 'fringe').length,
     rebuilds: provinces.filter(p => p.status === 'rebuild').length,
     unread: provinces.filter(p => !statusMeta[p.status] || p.status === 'unknown').length,
-    preDraft: provinces.filter(p => p.status === 'pre_draft').length,
     totalDHQ: provinces.reduce((s, p) => s + (p.totalDHQ || 0), 0),
     totalRecord: provinces.reduce((s, p) => ({ wins: s.wins + (p.wins || 0), losses: s.losses + (p.losses || 0) }), { wins: 0, losses: 0 }),
   };
@@ -1127,10 +1029,6 @@ function buildEmpireRolodex(leagues, myUserId, calcPosture) {
         const dnaMap = league.empireDna || {};
         const leagueName = league.name || 'League';
         const leagueId = league.id || league.league_id || '';
-        const rawType = league.type ?? league.league_type ?? league.settings?.type;
-        const normalizedType = (typeof window !== 'undefined' && window.App?.LeagueSkin?.normalizeType?.(rawType))
-            || ({ 0: 'redraft', 1: 'keeper', 2: 'dynasty', 3: 'chopped' }[String(rawType)] || String(rawType || '').toLowerCase());
-        const canTrade = normalizedType !== 'chopped' && Number(league?.settings?.disable_trades || 0) !== 1;
         assessments.forEach(a => {
             if (sameId(a.ownerId, myUserId)) return;
             const dnaKey = dnaMap[a.ownerId] || null;
@@ -1140,7 +1038,6 @@ function buildEmpireRolodex(leagues, myUserId, calcPosture) {
                 ownerId: a.ownerId,
                 ownerName: a.ownerName || a.teamName || 'Owner',
                 leagueId, leagueName,
-                canTrade,
                 tier: a.tier || 'UNKNOWN',
                 posture: posture.label || posture.key,
                 postureKey: posture.key,
@@ -1182,10 +1079,6 @@ function buildEmpireMoves(input) {
     const exposureCut = Math.max(2, Math.ceil(totalLeagues * 0.6));
 
     leagues.forEach(league => {
-        const rawType = league.type ?? league.league_type ?? league.settings?.type;
-        const normalizedType = (typeof window !== 'undefined' && window.App?.LeagueSkin?.normalizeType?.(rawType))
-            || ({ 0: 'redraft', 1: 'keeper', 2: 'dynasty', 3: 'chopped' }[String(rawType)] || String(rawType || '').toLowerCase());
-        if (normalizedType === 'chopped' || Number(league?.settings?.disable_trades || 0) === 1) return;
         const assessments = league.empireAssessments || [];
         if (!assessments.length) return;
         const leagueId = league.id || league.league_id || '';
@@ -1199,6 +1092,15 @@ function buildEmpireMoves(input) {
         // SELL lanes — my post-window or over-exposed assets → a buyer who needs that position.
         (model.assets || [])
             .filter(as => as.leagueId === leagueId && as.dhq > 0 && (as.agePhase === 'post' || as.exposureCount >= exposureCut))
+            // One voice (audit 2026-09-02): never build a "Sell X" card for a
+            // player the shared engine holds — untouchables, manual calls and
+            // the IDP-starter shield all live in getPlayerAction.
+            .filter(as => {
+                try {
+                    const pa = window.App?.getPlayerAction?.(as.pid);
+                    return !pa || /^SELL/.test(pa.action || '');
+                } catch (e) { return true; }
+            })
             .sort((a, b) => b.dhq - a.dhq)
             .slice(0, 2)
             .forEach(asset => {
@@ -1375,7 +1277,7 @@ function buildEmpireActionQueue(model, rolodex) {
     });
 
     // 3. Post-window vets sitting on rebuild rosters → sell before value bleeds.
-    provinces.filter(p => p.status === 'rebuild' && p.canTrade !== false).forEach(p => {
+    provinces.filter(p => p.status === 'rebuild').forEach(p => {
         const vet = assets
             .filter(a => a.leagueId === p.id && a.agePhase === 'post' && a.dhq > 0)
             .sort((a, b) => b.dhq - a.dhq)[0];
@@ -1397,7 +1299,7 @@ function buildEmpireActionQueue(model, rolodex) {
     // 4. Cross-league owner edges — the moat. Surface the most exploitable
     // buyers/sellers across every league as concrete buy/sell-window moves.
     (rolodex || [])
-        .filter(o => o.canTrade !== false && (o.postureKey === 'SELLER' || o.postureKey === 'DESPERATE'))
+        .filter(o => o.postureKey === 'SELLER' || o.postureKey === 'DESPERATE')
         .slice(0, 2)
         .forEach(o => {
             const desperate = o.postureKey === 'DESPERATE';
@@ -1425,7 +1327,7 @@ function buildEmpireBrief(model, userName) {
     if (!model || !model.totals) return '';
     const topSignal = (model.signals || []).find(s => s.type !== 'data' && s.type !== 'balance');
     return topSignal
-        ? 'Top of my list: ' + topSignal.title + (topSignal.metric ? ' (' + topSignal.metric + ')' : '') + '.'
+        ? 'Top of my list: ' + topSignal.title.toLowerCase() + (topSignal.metric ? ' (' + topSignal.metric + ')' : '') + '.'
         : 'No single risk is dominating the portfolio right now.';
 }
 
@@ -1440,134 +1342,69 @@ function empirePercent(part, total) {
     return total > 0 ? Math.round((part / total) * 100) : 0;
 }
 
-// Same 0-100 healthScore band League Map's cellColor() already uses — kept
-// identical so a team doesn't read "healthy" in one surface and "shaky" in another.
-function empireHealthColor(hp) {
-    if (hp == null) return 'var(--silver)';
-    return hp >= 90 ? 'var(--gold)' : hp >= 80 ? 'var(--good)' : hp >= 70 ? 'var(--warn)' : 'var(--bad)';
-}
-
-// Same shape/sort League Detail computes for its `standings` prop (wins,
-// then fewest losses, then points-for) — Trade Desk needs it to price
-// contend/rebuild posture the same way it does from inside a single league.
-// Empire already has the full league object per province, so this is a
-// plain re-derivation, not a fetch.
-function empireStandingsFor(league) {
-    return ((league && league.rosters) || []).map(roster => {
-        const user = (league.users || []).find(u => u.user_id === roster.owner_id);
-        return {
-            rosterId: roster.roster_id,
-            userId: roster.owner_id,
-            displayName: user?.display_name || user?.username || 'Unknown',
-            avatar: user?.avatar,
-            teamName: roster.metadata?.team_name || user?.metadata?.team_name || '',
-            wins: roster.settings?.wins || 0,
-            losses: roster.settings?.losses || 0,
-            ties: roster.settings?.ties || 0,
-            pointsFor: roster.settings?.fpts || 0,
-            division: roster.settings?.division || 0,
-        };
-    }).sort((a, b) => {
-        if (b.wins !== a.wins) return b.wins - a.wins;
-        if (a.losses !== b.losses) return a.losses - b.losses;
-        return b.pointsFor - a.pointsFor;
-    });
-}
-
 function EmpireStyles() {
     return (
         <style>{`
             .empire-root { min-height: 100vh; background: var(--page-bg); color: var(--text-primary, var(--k-f4f1e8, #f4f1e8)); font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
-            /* The app-wide "subdued logo" watermark (index.html body::before) is
-               position:fixed with an explicit z-index, which stacks it ABOVE
-               plain in-flow content like these panels — so even fully opaque
-               panel backgrounds couldn't block it; it was painting over them,
-               not showing through a gap. Suppress it here instead of touching
-               the global rule other tabs still use it on. */
-            body:has(.empire-root)::before { opacity: 0; }
             .empire-root.is-local-preview .empire-topbar { padding-top: 28px; min-height: 72px; }
-            .empire-header { position: sticky; top: 0; z-index: 60; background: var(--surf-solid, rgb(7,7,7)); border-bottom: 1px solid var(--acc-line1, rgb(53,45,21)); box-shadow: 0 12px 32px rgb(5,5,7); }
-            .empire-topbar { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 10px 24px; border-bottom: 1px solid var(--ov-4, rgb(22,22,24)); box-sizing: border-box; }
-            .empire-back, .empire-ghost, .empire-filter, .empire-row-btn, .empire-action { border: 1px solid var(--ov-6, rgb(33,33,35)); background: var(--ov-3, rgb(17,17,20)); color: var(--ov-9, rgb(186,186,187)); border-radius: var(--card-radius-sm); cursor: pointer; font-family: inherit; transition: border-color 120ms, background 120ms, transform 120ms, color 120ms; }
+            .empire-header { position: sticky; top: 0; z-index: 60; background: var(--surf-solid, rgba(7,7,7,0.98)); border-bottom: 1px solid var(--acc-line1, rgba(212,175,55,0.22)); box-shadow: 0 12px 32px rgba(0,0,0,0.35); }
+            .empire-topbar { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 10px 24px; border-bottom: 1px solid var(--ov-4, rgba(255,255,255,0.055)); box-sizing: border-box; }
+            .empire-back, .empire-ghost, .empire-filter, .empire-row-btn, .empire-action { border: 1px solid var(--ov-6, rgba(255,255,255,0.1)); background: var(--ov-3, rgba(255,255,255,0.035)); color: var(--ov-9, rgba(255,255,255,0.72)); border-radius: var(--card-radius-sm); cursor: pointer; font-family: inherit; transition: border-color 120ms, background 120ms, transform 120ms, color 120ms; }
             .empire-back { width: 34px; height: 28px; font-size: var(--text-body, 1rem); }
-            .empire-back:hover, .empire-ghost:hover, .empire-filter:hover, .empire-row-btn:hover, .empire-action:hover { border-color: var(--acc-line3, rgb(110,92,33)); background: var(--acc-fill1, rgb(22,20,14)); color: var(--k-f7e9b0, #f7e9b0); }
+            .empire-back:hover, .empire-ghost:hover, .empire-filter:hover, .empire-row-btn:hover, .empire-action:hover { border-color: var(--acc-line3, rgba(212,175,55,0.5)); background: var(--acc-fill1, rgba(212,175,55,0.07)); color: var(--k-f7e9b0, #f7e9b0); }
             .empire-title { display: flex; flex-direction: column; min-width: 0; }
             .empire-title strong { color: var(--gold); font-family: var(--font-title); font-size: 1rem; letter-spacing: 0.1em; text-transform: uppercase; line-height: 1; }
-            .empire-title span { color: var(--ov-9, rgb(127,127,128)); font-size: var(--text-label, 0.75rem); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-            .empire-user { margin-left: auto; color: var(--ov-9, rgb(144,144,145)); font-size: var(--text-label, 0.75rem); white-space: nowrap; }
-            .empire-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: 0; padding: 0 24px; background: linear-gradient(90deg, var(--acc-fill1, rgb(19,17,13)), rgb(10,13,16), rgb(12,11,19)); }
-            .empire-kpi { min-width: 0; padding: 10px 12px; border-right: 1px solid var(--ov-4, rgb(22,22,24)); }
+            .empire-title span { color: var(--ov-9, rgba(255,255,255,0.48)); font-size: var(--text-label, 0.75rem); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            .empire-user { margin-left: auto; color: var(--ov-9, rgba(255,255,255,0.55)); font-size: var(--text-label, 0.75rem); white-space: nowrap; }
+            .empire-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: 0; padding: 0 24px; background: linear-gradient(90deg, var(--acc-fill1, rgba(212,175,55,0.055)), rgba(78,205,196,0.025), rgba(124,107,248,0.035)); }
+            .empire-kpi { min-width: 0; padding: 10px 12px; border-right: 1px solid var(--ov-4, rgba(255,255,255,0.055)); }
             .empire-kpi strong { display: block; font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace; color: var(--white, var(--k-ffffff, #ffffff)); font-size: 1.05rem; line-height: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
             .empire-kpi span { display: block; margin-top: 5px; color: var(--gold); font-size: var(--text-micro); font-weight: 800; letter-spacing: 0.11em; text-transform: uppercase; }
-            .empire-kpi em { display: block; margin-top: 2px; color: var(--ov-8, rgb(112,112,113)); font-style: normal; font-size: var(--text-micro); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-            .empire-filters { display: flex; gap: 7px; align-items: center; flex-wrap: wrap; }
+            .empire-kpi em { display: block; margin-top: 2px; color: var(--ov-8, rgba(255,255,255,0.42)); font-style: normal; font-size: var(--text-micro); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            .empire-filters { display: flex; gap: 7px; align-items: center; flex-wrap: wrap; padding: 9px 24px 10px; background: rgba(0,0,0,0.32); }
             .empire-filter-label { color: var(--gold); font-size: var(--text-micro); font-weight: 900; letter-spacing: 0.13em; text-transform: uppercase; margin-right: 2px; }
-            .empire-filter { min-height: 28px; padding: 5px 10px; font-size: var(--text-label, 0.75rem); font-weight: 800; color: var(--ov-9, rgb(136,136,138)); }
-            .empire-filter.is-active { border-color: var(--tone, var(--k-d4af37, #d4af37)); background: color-mix(in srgb, var(--tone, var(--k-d4af37, #d4af37)) 16%, #08080b); color: var(--tone, var(--k-d4af37, #d4af37)); }
-            .empire-clear { margin-left: auto; border-color: rgb(93,34,30); color: var(--k-e74c3c, #e74c3c); }
+            .empire-filter { min-height: 28px; padding: 5px 10px; font-size: var(--text-label, 0.75rem); font-weight: 800; color: var(--ov-9, rgba(255,255,255,0.52)); }
+            .empire-filter.is-active { border-color: var(--tone, var(--k-d4af37, #d4af37)); background: color-mix(in srgb, var(--tone, var(--k-d4af37, #d4af37)) 16%, transparent); color: var(--tone, var(--k-d4af37, #d4af37)); }
+            .empire-clear { margin-left: auto; border-color: rgba(231,76,60,0.38); color: var(--k-e74c3c, #e74c3c); }
             .empire-shell { max-width: 1760px; margin: 0 auto; padding: 18px 24px 40px; }
-            .empire-viewbar { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; min-height: 44px; margin-bottom: 12px; padding: 8px 10px; border: 1px solid var(--ov-4, rgb(24,24,27)); border-radius: var(--card-radius); background: rgb(6,6,8); }
-            .empire-viewbar-spacer { flex: 1 1 auto; }
-            .empire-filter-toggle { display: inline-flex; align-items: center; gap: 7px; }
-            .empire-filter-toggle b { display: inline-grid; min-width: 18px; height: 18px; place-items: center; padding: 0 4px; border-radius: 99px; background: var(--gold); color: var(--black); font: 900 var(--text-micro) / 18px var(--font-mono); }
-            .empire-advanced-filters { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; margin: -4px 0 12px; padding: 12px; border: 1px solid var(--acc-fill2, rgb(32,28,16)); border-radius: var(--card-radius); background: linear-gradient(180deg, rgb(15,14,13), rgb(12,12,15)); }
-            .empire-filter-group { min-width: 0; }
-            .empire-filter-group .empire-filter-label { display: block; margin: 0 0 8px; }
-            .empire-filter-group .empire-filters { align-items: stretch; }
-            .empire-command-deck { display: grid; grid-template-columns: minmax(300px,0.78fr) minmax(460px,1.22fr); gap: 12px; margin-bottom: 12px; align-items: stretch; }
-            .empire-command-deck .empire-panel { padding: 16px; }
-            .empire-command-primary { position: relative; overflow: hidden; background: radial-gradient(circle at 92% 5%, rgb(25,23,47), #08080b 42%), linear-gradient(135deg, rgb(24,21,15), rgb(12,12,15)); }
-            .empire-command-primary::after { content: ''; position: absolute; right: -34px; bottom: -58px; width: 180px; height: 180px; border: 1px solid rgb(26,23,15); border-radius: 50%; pointer-events: none; }
-            .empire-command-kicker { color: var(--gold); font-size: var(--text-micro); font-weight: 900; letter-spacing: 0.14em; text-transform: uppercase; }
-            .empire-command-focus { position: relative; z-index: 1; margin: 9px 0 14px; color: var(--white, #fff); font-family: var(--font-title); font-size: clamp(1.15rem, 1.8vw, 1.55rem); line-height: 1.26; }
-            .empire-command-meta { position: relative; z-index: 1; color: var(--ov-9, rgb(151,151,153)); font-size: var(--text-label, 0.75rem); line-height: 1.45; }
-            .empire-priority-list { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; }
-            .empire-priority-list .empire-signal { min-height: 112px; display: flex; flex-direction: column; }
-            .empire-priority-list .empire-signal-top { align-items: flex-start; }
-            .empire-priority-list .empire-signal-top strong { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
-            .empire-priority-list .empire-signal span { flex: 1; }
-            .empire-section-footer { display: flex; justify-content: flex-end; margin-top: 9px; }
             /* ── Terminal chrome: left rail + Empire Wire ticker + LIVE ── */
             .empire-root.is-terminal { padding-left: 52px; box-sizing: border-box; }
             .empire-rail { position: fixed; left: 0; top: 0; bottom: 0; width: 52px; z-index: 80;
-                background: linear-gradient(180deg, var(--off-black, #070707), rgb(7,7,7));
-                border-right: 1px solid var(--acc-line1, rgb(53,45,21));
+                background: linear-gradient(180deg, var(--off-black, #070707), rgba(7,7,7,0.96));
+                border-right: 1px solid var(--acc-line1, rgba(212,175,55,0.22));
                 display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 0; }
-            .empire-rail-btn { position: relative; width: 38px; height: 38px; display: flex; align-items: center; justify-content: center;
-                border: 1px solid transparent; border-radius: var(--card-radius-sm, 8px); background: transparent;
-                color: var(--ov-9, rgb(144,144,145)); font-size: 1.15rem; cursor: pointer; transition: all 0.15s; }
-            .empire-rail-btn:hover { color: var(--gold); border-color: var(--acc-line2, rgb(69,58,24)); background: var(--acc-fill1, rgb(20,18,14)); }
-            .empire-rail-btn:first-child { color: var(--gold); border-color: var(--acc-line1, rgb(53,45,21)); background: var(--acc-fill1, rgb(18,16,13)); }
-            .empire-rail-btn::after { content: attr(aria-label); position: absolute; left: 45px; top: 50%; z-index: 100; transform: translate(6px,-50%); width: max-content; max-width: 190px; padding: 6px 9px; border: 1px solid var(--acc-line2, rgb(69,58,24)); border-radius: var(--card-radius-sm); background: rgb(7,7,7); box-shadow: 0 8px 22px rgb(4,4,6); color: var(--k-f7e9b0, #f7e9b0); font-size: var(--text-label, 0.75rem); font-weight: 800; pointer-events: none; opacity: 0; transition: opacity 120ms, transform 120ms; }
-            .empire-rail-btn:hover::after, .empire-rail-btn:focus-visible::after { opacity: 1; transform: translate(0,-50%); }
+            .empire-rail-btn { width: 38px; height: 38px; display: flex; align-items: center; justify-content: center;
+                border: 1px solid transparent; border-radius: var(--card-radius-sm, 6px); background: transparent;
+                color: var(--ov-9, rgba(255,255,255,0.55)); font-size: 1.15rem; cursor: pointer; transition: all 0.15s; }
+            .empire-rail-btn:hover { color: var(--gold); border-color: var(--acc-line2, rgba(212,175,55,0.3)); background: var(--acc-fill1, rgba(212,175,55,0.06)); }
             .empire-rail-spacer { flex: 1; }
             .empire-live { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-micro); font-weight: 800; letter-spacing: 0.12em; color: var(--good); text-transform: uppercase; }
             .empire-live::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--good); animation: empire-pulse 1.8s infinite; }
-            @keyframes empire-pulse { 0% { box-shadow: 0 0 0 0 rgb(27,106,62); } 70% { box-shadow: 0 0 0 6px rgb(8,8,11); } 100% { box-shadow: 0 0 0 0 rgb(8,8,11); } }
-            .empire-wire { overflow: hidden; white-space: nowrap; min-height: 28px; margin-top: 18px; background: rgb(8,8,12); border: 1px solid var(--ov-5, rgb(30,30,33)); border-radius: var(--card-radius-sm); padding: 5px 0; display: flex; align-items: center; position: relative; z-index: 1; }
-            .empire-wire-tag { position: relative; z-index: 2; flex-shrink: 0; padding: 0 14px; font-size: var(--text-micro); font-weight: 900; letter-spacing: 0.14em; color: var(--gold); text-transform: uppercase; background: rgb(8,8,12); border-right: 1px solid var(--ov-4, rgb(28,28,31)); }
-            .empire-wire-track { position: relative; z-index: 1; display: inline-block; white-space: nowrap; animation: empire-wire-scroll 48s linear infinite; }
+            @keyframes empire-pulse { 0% { box-shadow: 0 0 0 0 rgba(46,204,113,0.5); } 70% { box-shadow: 0 0 0 6px rgba(46,204,113,0); } 100% { box-shadow: 0 0 0 0 rgba(46,204,113,0); } }
+            .empire-wire { overflow: hidden; white-space: nowrap; background: rgba(0,0,0,0.34); border-bottom: 1px solid var(--ov-4, rgba(255,255,255,0.055)); padding: 5px 0; display: flex; align-items: center; }
+            .empire-wire-tag { flex-shrink: 0; padding: 0 14px; font-size: var(--text-micro); font-weight: 900; letter-spacing: 0.14em; color: var(--gold); text-transform: uppercase; border-right: 1px solid var(--ov-4, rgba(255,255,255,0.08)); }
+            .empire-wire-track { display: inline-block; white-space: nowrap; animation: empire-wire-scroll 48s linear infinite; }
             .empire-wire:hover .empire-wire-track { animation-play-state: paused; }
-            .empire-wire-item { display: inline-block; padding: 0 22px; font-size: var(--text-label, 0.75rem); color: var(--ov-9, rgb(161,161,162)); }
-            .empire-wire-item::before { content: '\\25C6'; color: var(--acc-line3, rgb(110,92,33)); margin-right: 22px; font-size: 0.6rem; vertical-align: middle; }
+            .empire-wire-item { display: inline-block; padding: 0 22px; font-size: var(--text-label, 0.75rem); color: var(--ov-9, rgba(255,255,255,0.62)); }
+            .empire-wire-item::before { content: '\\25C6'; color: var(--acc-line3, rgba(212,175,55,0.5)); margin-right: 22px; font-size: 0.6rem; vertical-align: middle; }
             @keyframes empire-wire-scroll { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
             @media (max-width: 1023px) { .empire-root.is-terminal { padding-left: 0; } .empire-rail { display: none; } }
             /* ── Asset Floor: exposure matrix + DHQ heat tiles ── */
             .empire-floor-matrix { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 6px; margin-bottom: 12px; }
-            .empire-expo-row { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(60px, 1fr) auto; gap: 10px; align-items: center; text-align: left; border: 1px solid var(--ov-4, rgb(25,25,28)); background: var(--ov-1, rgb(14,14,17)); border-radius: var(--card-radius-sm, 8px); padding: 7px 10px; cursor: pointer; color: inherit; font-family: inherit; }
-            .empire-expo-row:hover { border-color: var(--acc-line3, rgb(90,75,29)); }
+            .empire-expo-row { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(60px, 1fr) auto; gap: 10px; align-items: center; text-align: left; border: 1px solid var(--ov-4, rgba(255,255,255,0.07)); background: var(--ov-1, rgba(255,255,255,0.024)); border-radius: var(--card-radius-sm, 6px); padding: 7px 10px; cursor: pointer; color: inherit; font-family: inherit; }
+            .empire-expo-row:hover { border-color: var(--acc-line3, rgba(212,175,55,0.4)); }
             .empire-expo-name strong { display: block; color: var(--white, var(--k-ffffff, #fff)); font-size: var(--text-label, 0.75rem); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-            .empire-expo-name span { display: block; color: var(--ov-8, rgb(132,132,133)); font-size: var(--text-micro); }
-            .empire-expo-track { height: 6px; background: var(--ov-4, rgb(28,28,31)); border-radius: 3px; overflow: hidden; }
+            .empire-expo-name span { display: block; color: var(--ov-8, rgba(255,255,255,0.5)); font-size: var(--text-micro); }
+            .empire-expo-track { height: 6px; background: var(--ov-4, rgba(255,255,255,0.08)); border-radius: 3px; overflow: hidden; }
             .empire-expo-fill { height: 100%; border-radius: 3px; }
             .empire-expo-row b { font-family: var(--font-mono); font-size: var(--text-label, 0.75rem); white-space: nowrap; }
             .empire-tilegrid { display: flex; flex-wrap: wrap; gap: 4px; }
-            .empire-tile { flex: 1 1 70px; min-width: 64px; max-width: 170px; min-height: 46px; display: flex; flex-direction: column; justify-content: center; border: 1px solid var(--ov-5, rgb(28,28,31)); border-radius: var(--card-radius-sm, 8px); background: var(--ov-1, rgb(14,14,17)); padding: 6px 8px; cursor: pointer; overflow: hidden; }
-            .empire-tile:hover { background: var(--ov-2, rgb(18,18,21)); }
+            .empire-tile { flex: 1 1 70px; min-width: 64px; max-width: 170px; min-height: 46px; display: flex; flex-direction: column; justify-content: center; border: 1px solid var(--ov-5, rgba(255,255,255,0.08)); border-radius: var(--card-radius-sm, 6px); background: var(--ov-1, rgba(255,255,255,0.024)); padding: 6px 8px; cursor: pointer; overflow: hidden; }
+            .empire-tile:hover { background: var(--ov-2, rgba(255,255,255,0.04)); }
             .empire-tile-name { font-size: var(--text-micro); color: var(--white, var(--k-ffffff, #fff)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-            .empire-tile-dhq { font-size: var(--text-micro); font-family: var(--font-mono); color: var(--ov-9, rgb(161,161,162)); margin-top: 2px; }
-.empire-threat-row { display: grid; grid-template-columns: 28px minmax(120px, 1.2fr) minmax(120px, 1fr) minmax(120px, 0.9fr) minmax(160px, 1.4fr); gap: 12px; align-items: center; text-align: left; border: 1px solid var(--ov-4, rgb(25,25,28)); border-left: 3px solid var(--tone, var(--gold)); background: var(--ov-1, rgb(14,14,17)); border-radius: var(--card-radius-sm, 8px); padding: 9px 12px; cursor: pointer; color: inherit; font-family: inherit; width: 100%; }
-            .empire-threat-row:hover { border-color: var(--acc-line3, rgb(90,75,29)); background: var(--ov-2, rgb(19,19,22)); }
+            .empire-tile-dhq { font-size: var(--text-micro); font-family: var(--font-mono); color: var(--ov-9, rgba(255,255,255,0.62)); margin-top: 2px; }
+.empire-threat-row { display: grid; grid-template-columns: 28px minmax(120px, 1.2fr) minmax(120px, 1fr) minmax(120px, 0.9fr) minmax(160px, 1.4fr); gap: 12px; align-items: center; text-align: left; border: 1px solid var(--ov-4, rgba(255,255,255,0.07)); border-left: 3px solid var(--tone, var(--gold)); background: var(--ov-1, rgba(255,255,255,0.024)); border-radius: var(--card-radius-sm, 6px); padding: 9px 12px; cursor: pointer; color: inherit; font-family: inherit; width: 100%; }
+            .empire-threat-row:hover { border-color: var(--acc-line3, rgba(212,175,55,0.4)); background: var(--ov-2, rgba(255,255,255,0.045)); }
             .empire-threat-rank { font-family: var(--font-mono); font-size: 1.05rem; font-weight: 900; color: var(--tone, var(--gold)); text-align: center; }
             .empire-threat-id { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
             .empire-threat-id strong { color: var(--white); font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1587,107 +1424,86 @@ function EmpireStyles() {
                 .empire-threat-counter { grid-area: counter; }
             }
 .empire-provmap { display: flex; flex-wrap: wrap; gap: 6px; }
-            .empire-prov-tile { flex: 1 1 150px; min-width: 140px; max-width: 320px; min-height: 92px; display: flex; flex-direction: column; justify-content: space-between; gap: 6px; border: 1px solid var(--tone, var(--silver)); border-left-width: 3px; border-radius: var(--card-radius-sm, 8px); background: var(--ov-1, rgb(14,14,17)); padding: 8px 10px; cursor: pointer; overflow: hidden; text-align: left; transition: background 0.12s ease; }
-            .empire-prov-tile:hover { background: var(--ov-2, rgb(18,18,21)); }
+            .empire-prov-tile { flex: 1 1 150px; min-width: 140px; max-width: 320px; min-height: 92px; display: flex; flex-direction: column; justify-content: space-between; gap: 6px; border: 1px solid var(--tone, var(--silver)); border-left-width: 3px; border-radius: var(--card-radius-sm, 6px); background: var(--ov-1, rgba(255,255,255,0.024)); padding: 8px 10px; cursor: pointer; overflow: hidden; text-align: left; transition: background 0.12s ease; }
+            .empire-prov-tile:hover { background: var(--ov-2, rgba(255,255,255,0.04)); }
             .empire-prov-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
             .empire-prov-name { font-size: var(--text-label, 0.75rem); color: var(--white, #fff); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
             .empire-prov-status { font-size: var(--text-micro); color: var(--tone, var(--silver)); flex: none; text-transform: uppercase; letter-spacing: 0.04em; }
-            .empire-prov-mid { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--text-micro); color: var(--ov-9, rgb(161,161,162)); }
+            .empire-prov-mid { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--text-micro); color: var(--ov-9, rgba(255,255,255,0.62)); }
             .empire-prov-tier { font-weight: 600; }
             .empire-prov-rank { font-family: var(--font-mono); }
             .empire-prov-rec { font-family: var(--font-mono); }
             .empire-prov-foot { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
             .empire-prov-dhq { font-family: var(--font-mono); font-size: var(--text-label, 0.75rem); color: var(--white, #fff); }
-            .empire-prov-health { font-family: var(--font-mono); font-size: var(--text-micro); color: var(--ov-9, rgb(161,161,162)); }
+            .empire-prov-health { font-family: var(--font-mono); font-size: var(--text-micro); color: var(--ov-9, rgba(255,255,255,0.62)); }
             .empire-main-grid { display: grid; grid-template-columns: minmax(270px, 0.84fr) minmax(420px, 1.34fr) minmax(290px, 0.92fr); gap: 12px; align-items: start; }
             .empire-bridge { display: grid; grid-template-columns: minmax(320px, 1.05fr) minmax(280px, 0.95fr); gap: 12px; margin-bottom: 12px; align-items: start; }
             .empire-brief { display: flex; gap: 11px; }
-            .empire-brief-av { width: 38px; height: 38px; flex: 0 0 auto; border-radius: var(--card-radius, 10px); background: linear-gradient(135deg, var(--k-7c6bf8, #7c6bf8), var(--k-4ecdc4, #4ecdc4)); display: grid; place-items: center; font-family: var(--font-title); font-weight: 700; font-size: 1.05rem; color: var(--k-0a0a0c, #0a0a0c); }
+            .empire-brief-av { width: 38px; height: 38px; flex: 0 0 auto; border-radius: 10px; background: linear-gradient(135deg, var(--k-7c6bf8, #7c6bf8), var(--k-4ecdc4, #4ecdc4)); display: grid; place-items: center; font-family: var(--font-title); font-weight: 700; font-size: 1.05rem; color: var(--k-0a0a0c, #0a0a0c); }
             .empire-brief-meta { color: var(--purple); font-size: var(--text-micro); font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
-            .empire-brief-body { color: var(--ov-9, rgb(176,176,177)); font-size: var(--text-body, 1rem); line-height: 1.5; margin-top: 5px; }
+            .empire-brief-body { color: var(--ov-9, rgba(255,255,255,0.68)); font-size: var(--text-body, 1rem); line-height: 1.5; margin-top: 5px; }
             .empire-rolodex { margin-bottom: 12px; }
             .empire-rolodex-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; }
-            .empire-panel { min-width: 0; border: 1px solid var(--acc-fill3, rgb(37,31,17)); background: linear-gradient(180deg, var(--ov-2, rgb(15,15,18)), var(--ov-1, rgb(11,11,14))); border-radius: var(--card-radius); padding: 12px; }
-            .empire-panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding-bottom: 8px; margin-bottom: 10px; border-bottom: 1px solid var(--acc-fill2, rgb(32,28,16)); }
+            .empire-panel { min-width: 0; border: 1px solid var(--acc-fill3, rgba(212,175,55,0.14)); background: linear-gradient(180deg, var(--ov-2, rgba(255,255,255,0.028)), var(--ov-1, rgba(255,255,255,0.014))); border-radius: var(--card-radius); padding: 12px; }
+            .empire-panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding-bottom: 8px; margin-bottom: 10px; border-bottom: 1px solid var(--acc-fill2, rgba(212,175,55,0.12)); }
             .empire-panel-head strong { color: var(--gold); font-family: var(--font-title); font-size: var(--text-title, 1.125rem); letter-spacing: 0.08em; text-transform: uppercase; }
-            .empire-panel-head em { color: var(--ov-9, rgb(122,122,123)); font-style: normal; font-size: var(--text-label, 0.75rem); text-align: right; }
+            .empire-panel-head em { color: var(--ov-9, rgba(255,255,255,0.46)); font-style: normal; font-size: var(--text-label, 0.75rem); text-align: right; }
             .empire-stack { display: flex; flex-direction: column; gap: 8px; }
-            .empire-bar-row { display: grid; grid-template-columns: 52px minmax(0,1fr) 46px; gap: 8px; align-items: center; color: var(--ov-9, rgb(161,161,162)); font-size: var(--text-label, 0.75rem); min-width: 0; }
+            .empire-bar-row { display: grid; grid-template-columns: 52px minmax(0,1fr) 46px; gap: 8px; align-items: center; color: var(--ov-9, rgba(255,255,255,0.62)); font-size: var(--text-label, 0.75rem); min-width: 0; }
             .empire-bar-row strong { color: var(--bar, var(--k-d4af37, #d4af37)); font-family: var(--font-mono); font-size: var(--text-label, 0.75rem); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-            .empire-track { height: 8px; border-radius: 99px; background: var(--ov-4, rgb(22,22,24)); overflow: hidden; }
+            .empire-track { height: 8px; border-radius: 99px; background: var(--ov-4, rgba(255,255,255,0.055)); overflow: hidden; }
             .empire-fill { height: 100%; border-radius: 99px; background: var(--bar, var(--k-d4af37, #d4af37)); min-width: 2px; }
-            .empire-signal { text-align: left; border: 1px solid var(--ov-4, rgb(25,25,28)); border-left: 3px solid var(--tone, var(--k-d4af37, #d4af37)); background: var(--ov-2, rgb(14,14,17)); color: inherit; border-radius: var(--card-radius-sm); padding: 10px; cursor: pointer; font-family: inherit; }
-            .empire-signal:hover { border-color: color-mix(in srgb, var(--tone, var(--k-d4af37, #d4af37)) 56%, var(--ov-5, rgb(28,28,31))); background: color-mix(in srgb, var(--tone, var(--k-d4af37, #d4af37)) 7%, #08080b); }
+            .empire-signal { text-align: left; border: 1px solid var(--ov-4, rgba(255,255,255,0.07)); border-left: 3px solid var(--tone, var(--k-d4af37, #d4af37)); background: var(--ov-2, rgba(255,255,255,0.026)); color: inherit; border-radius: var(--card-radius-sm); padding: 10px; cursor: pointer; font-family: inherit; }
+            .empire-signal:hover { border-color: color-mix(in srgb, var(--tone, var(--k-d4af37, #d4af37)) 56%, var(--ov-5, rgba(255,255,255,0.08))); background: color-mix(in srgb, var(--tone, var(--k-d4af37, #d4af37)) 7%, transparent); }
             .empire-signal-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
             .empire-signal strong { color: var(--white, var(--k-ffffff, #ffffff)); font-size: var(--text-body, 1rem); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
             .empire-signal b { color: var(--tone, var(--k-d4af37, #d4af37)); font-family: var(--font-mono); font-size: var(--text-body, 1rem); white-space: nowrap; }
-            .empire-signal span { display: block; color: var(--ov-9, rgb(151,151,153)); font-size: var(--text-label, 0.75rem); line-height: 1.35; margin-top: 4px; }
+            .empire-signal span { display: block; color: var(--ov-9, rgba(255,255,255,0.58)); font-size: var(--text-label, 0.75rem); line-height: 1.35; margin-top: 4px; }
             .empire-signal em { display: block; color: var(--tone, var(--k-d4af37, #d4af37)); font-style: normal; font-size: var(--text-micro); margin-top: 6px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; }
-            .empire-move-card { border: 1px solid var(--ov-4, rgb(25,25,28)); border-left: 3px solid var(--tone, var(--gold)); background: var(--ov-2, rgb(14,14,17)); border-radius: var(--card-radius-sm); padding: 11px; }
-            .empire-move-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
-            .empire-move-head strong { color: var(--white); font-size: var(--text-body, 1rem); line-height: 1.35; }
-            .empire-move-head b { flex: none; color: var(--tone, var(--gold)); font-family: var(--font-mono); font-size: var(--text-label, 0.75rem); }
-            .empire-move-card > p { margin: 5px 0 0; color: var(--ov-9, rgb(151,151,153)); font-size: var(--text-label, 0.75rem); line-height: 1.45; }
-            .empire-move-meta { margin-top: 7px; color: var(--tone, var(--gold)); font-size: var(--text-micro); font-weight: 800; letter-spacing: 0.07em; text-transform: uppercase; }
-            .empire-decision-controls { display: grid; grid-template-columns: minmax(120px,0.8fr) minmax(130px,0.8fr) minmax(110px,0.65fr) auto; gap: 7px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--ov-4, rgb(24,24,27)); }
-            .empire-decision-controls select, .empire-decision-controls input, .empire-decision-note { min-width: 0; box-sizing: border-box; border: 1px solid var(--ov-6, rgb(33,33,35)); border-radius: var(--card-radius-sm); background: rgb(5,5,7); color: var(--white); font: 700 var(--text-label, 0.75rem) var(--font-body); padding: 7px 9px; }
-            .empire-decision-note { width: 100%; min-height: 58px; margin-top: 7px; resize: vertical; font-weight: 500; line-height: 1.4; }
-            .empire-decision-row { border-left: 3px solid var(--tone, var(--gold)); padding: 8px 10px; background: var(--ov-1, rgb(14,14,17)); border-radius: var(--card-radius-sm); }
-            .empire-decision-row strong { display: block; color: var(--white); font-size: var(--text-label, 0.75rem); line-height: 1.35; }
-            .empire-decision-row span { display: block; margin-top: 4px; color: var(--ov-9, rgb(136,136,138)); font-size: var(--text-micro); }
-            .empire-league-card { width: 100%; display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 10px; text-align: left; border: 1px solid var(--ov-4, rgb(25,25,28)); border-left: 3px solid var(--tone, var(--k-d4af37, #d4af37)); background: var(--ov-1, rgb(14,14,17)); border-radius: var(--card-radius-sm); padding: 9px; color: inherit; cursor: pointer; font-family: inherit; }
-            .empire-league-card:hover { border-color: var(--acc-line3, rgb(106,88,32)); background: var(--acc-fill1, rgb(17,16,13)); }
+            .empire-league-card { width: 100%; display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 10px; text-align: left; border: 1px solid var(--ov-4, rgba(255,255,255,0.07)); border-left: 3px solid var(--tone, var(--k-d4af37, #d4af37)); background: var(--ov-1, rgba(255,255,255,0.024)); border-radius: var(--card-radius-sm); padding: 9px; color: inherit; cursor: pointer; font-family: inherit; }
+            .empire-league-card:hover { border-color: var(--acc-line3, rgba(212,175,55,0.48)); background: var(--acc-fill1, rgba(212,175,55,0.045)); }
             .empire-league-card strong { display: block; color: var(--white, var(--k-ffffff, #ffffff)); font-size: var(--text-body, 1rem); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-            .empire-league-card span, .empire-league-card em { display: block; color: var(--ov-9, rgb(136,136,138)); font-size: var(--text-label, 0.75rem); font-style: normal; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            .empire-league-card span, .empire-league-card em { display: block; color: var(--ov-9, rgba(255,255,255,0.52)); font-size: var(--text-label, 0.75rem); font-style: normal; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
             .empire-league-card b { color: var(--tone, var(--k-d4af37, #d4af37)); font-family: var(--font-mono); font-size: var(--text-label, 0.75rem); white-space: nowrap; }
-            .empire-health-mini { display: flex; align-items: center; justify-content: flex-end; gap: 5px; margin-top: 5px; }
-            .empire-health-track { width: 42px; height: 4px; border-radius: 2px; background: var(--ov-4, rgb(33,33,35)); overflow: hidden; flex: none; }
-            .empire-health-fill { height: 100%; border-radius: 2px; }
-            .empire-health-num { font-family: var(--font-mono); font-size: var(--text-micro); white-space: nowrap; }
             .empire-quality-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; margin-top: 12px; }
-            .empire-quality { border: 1px solid var(--ov-4, rgb(24,24,27)); background: rgb(7,7,9); border-radius: var(--card-radius-sm); padding: 9px; border-left: 3px solid var(--tone, var(--k-d4af37, #d4af37)); min-width: 0; }
-            .empire-quality span { display: block; color: var(--ov-9, rgb(132,132,133)); font-size: var(--text-micro); font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+            .empire-quality { border: 1px solid var(--ov-4, rgba(255,255,255,0.065)); background: rgba(0,0,0,0.18); border-radius: var(--card-radius-sm); padding: 9px; border-left: 3px solid var(--tone, var(--k-d4af37, #d4af37)); min-width: 0; }
+            .empire-quality span { display: block; color: var(--ov-9, rgba(255,255,255,0.5)); font-size: var(--text-micro); font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
             .empire-quality strong { display: block; color: var(--white, var(--k-ffffff, #ffffff)); font-size: var(--text-label, 0.75rem); margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-            .empire-quality em { display: block; color: var(--ov-9, rgb(136,136,138)); font-style: normal; font-size: var(--text-label, 0.75rem); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-            .empire-workspace { margin-top: 12px; border: 1px solid var(--acc-fill3, rgb(37,31,17)); border-radius: var(--card-radius); background: var(--ov-1, rgb(12,12,15)); overflow: hidden; }
+            .empire-quality em { display: block; color: var(--ov-9, rgba(255,255,255,0.52)); font-style: normal; font-size: var(--text-label, 0.75rem); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            .empire-workspace { margin-top: 12px; border: 1px solid var(--acc-fill3, rgba(212,175,55,0.14)); border-radius: var(--card-radius); background: var(--ov-1, rgba(255,255,255,0.018)); overflow: hidden; }
             .empire-workspace-head, .empire-table-head, .empire-asset-row { display: grid; grid-template-columns: minmax(180px,1.3fr) 46px 54px 76px 78px 72px minmax(140px,1fr); gap: 8px; align-items: center; }
-            .empire-workspace-head { display: flex; justify-content: space-between; gap: 12px; padding: 11px 12px; border-bottom: 1px solid var(--acc-fill2, rgb(32,28,16)); }
+            .empire-workspace-head { display: flex; justify-content: space-between; gap: 12px; padding: 11px 12px; border-bottom: 1px solid var(--acc-fill2, rgba(212,175,55,0.12)); }
             .empire-workspace-head strong { color: var(--gold); font-family: var(--font-title); font-size: var(--text-title, 1.125rem); letter-spacing: 0.08em; text-transform: uppercase; }
             .empire-sort-row { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
             .empire-ghost { padding: 5px 9px; font-size: var(--text-label, 0.75rem); font-weight: 800; }
-            .empire-ghost.is-active { color: var(--gold); border-color: var(--acc-line3, rgb(100,83,31)); background: var(--acc-fill2, rgb(24,21,15)); }
-            .empire-table-head { padding: 7px 12px; color: var(--gold); background: var(--acc-fill1, rgb(17,16,13)); font-size: var(--text-micro); font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; }
-            .empire-asset-row { width: 100%; min-height: 34px; border: 0; border-bottom: 1px solid var(--ov-3, rgb(17,17,20)); background: transparent; color: var(--ov-9, rgb(171,171,172)); padding: 6px 12px; text-align: left; font-family: inherit; font-size: var(--text-label, 0.75rem); cursor: pointer; }
-            .empire-asset-row:nth-child(even) { background: var(--ov-1, rgb(11,11,14)); }
-            .empire-asset-row:hover { background: var(--acc-fill1, rgb(19,17,13)); }
+            .empire-ghost.is-active { color: var(--gold); border-color: var(--acc-line3, rgba(212,175,55,0.45)); background: var(--acc-fill2, rgba(212,175,55,0.08)); }
+            .empire-table-head { padding: 7px 12px; color: var(--gold); background: var(--acc-fill1, rgba(212,175,55,0.045)); font-size: var(--text-micro); font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; }
+            .empire-asset-row { width: 100%; min-height: 34px; border: 0; border-bottom: 1px solid var(--ov-3, rgba(255,255,255,0.035)); background: transparent; color: var(--ov-9, rgba(255,255,255,0.66)); padding: 6px 12px; text-align: left; font-family: inherit; font-size: var(--text-label, 0.75rem); cursor: pointer; }
+            .empire-asset-row:nth-child(even) { background: var(--ov-1, rgba(255,255,255,0.012)); }
+            .empire-asset-row:hover { background: var(--acc-fill1, rgba(212,175,55,0.055)); }
             .empire-player-cell { display: flex; align-items: center; gap: 7px; min-width: 0; }
             .empire-player-cell img { width: 22px; height: 22px; object-fit: cover; border-radius: 50%; flex: 0 0 auto; }
             .empire-player-cell strong, .empire-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-            .empire-pill { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; border-radius: var(--card-radius-sm); padding: 2px 5px; color: var(--tone, var(--k-d4af37, #d4af37)); background: color-mix(in srgb, var(--tone, var(--k-d4af37, #d4af37)) 16%, #08080b); font-size: var(--text-micro); font-weight: 900; }
-            .empire-empty { border: 1px dashed var(--acc-line1, rgb(53,45,21)); border-radius: var(--card-radius); padding: 20px; text-align: center; color: var(--ov-9, rgb(146,146,148)); font-size: var(--text-body, 1rem); }
+            .empire-pill { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; border-radius: var(--card-radius-sm); padding: 2px 5px; color: var(--tone, var(--k-d4af37, #d4af37)); background: color-mix(in srgb, var(--tone, var(--k-d4af37, #d4af37)) 16%, transparent); font-size: var(--text-micro); font-weight: 900; }
+            .empire-empty { border: 1px dashed var(--acc-line1, rgba(212,175,55,0.22)); border-radius: var(--card-radius); padding: 20px; text-align: center; color: var(--ov-9, rgba(255,255,255,0.56)); font-size: var(--text-body, 1rem); }
             .empire-empty strong { display: block; color: var(--gold); font-family: var(--font-title); font-size: 1rem; margin-bottom: 5px; }
             .empire-detail { max-width: 1380px; margin: 0 auto; padding: 18px 24px 42px; }
-            .empire-detail-hero { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 18px; align-items: center; border: 1px solid var(--acc-fill3, rgb(45,38,19)); background: linear-gradient(135deg, var(--acc-fill1, rgb(22,20,14)), rgb(10,14,16), rgb(12,11,19)); border-radius: var(--card-radius); padding: 14px; margin-bottom: 12px; }
+            .empire-detail-hero { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 18px; align-items: center; border: 1px solid var(--acc-fill3, rgba(212,175,55,0.18)); background: linear-gradient(135deg, var(--acc-fill1, rgba(212,175,55,0.07)), rgba(78,205,196,0.028), rgba(124,107,248,0.035)); border-radius: var(--card-radius); padding: 14px; margin-bottom: 12px; }
             .empire-detail-hero h1 { margin: 0; color: var(--white, var(--k-ffffff, #ffffff)); font-family: var(--font-title); font-size: 1.45rem; letter-spacing: 0.04em; }
-            .empire-detail-hero p { margin: 4px 0 0; color: var(--ov-9, rgb(151,151,153)); font-size: var(--text-body, 1rem); }
+            .empire-detail-hero p { margin: 4px 0 0; color: var(--ov-9, rgba(255,255,255,0.58)); font-size: var(--text-body, 1rem); }
             .empire-detail-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px,1fr)); gap: 8px; margin-bottom: 12px; }
-            .empire-metric { border: 1px solid var(--ov-4, rgb(24,24,27)); background: var(--ov-1, rgb(14,14,17)); border-radius: var(--card-radius-sm); padding: 9px; min-width: 0; }
-            .empire-metric span { display: block; color: var(--ov-9, rgb(132,132,133)); font-size: var(--text-micro); text-transform: uppercase; letter-spacing: 0.09em; font-weight: 800; }
+            .empire-metric { border: 1px solid var(--ov-4, rgba(255,255,255,0.065)); background: var(--ov-1, rgba(255,255,255,0.024)); border-radius: var(--card-radius-sm); padding: 9px; min-width: 0; }
+            .empire-metric span { display: block; color: var(--ov-9, rgba(255,255,255,0.5)); font-size: var(--text-micro); text-transform: uppercase; letter-spacing: 0.09em; font-weight: 800; }
             .empire-metric strong { display: block; color: var(--white, var(--k-ffffff, #ffffff)); font-family: var(--font-mono); font-size: var(--text-body, 1rem); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-            .empire-action { padding: 7px 11px; font-size: var(--text-label, 0.75rem); font-weight: 900; color: var(--gold); border-color: var(--acc-line2, rgb(73,61,25)); background: var(--acc-fill1, rgb(21,19,14)); }
+            .empire-action { padding: 7px 11px; font-size: var(--text-label, 0.75rem); font-weight: 900; color: var(--gold); border-color: var(--acc-line2, rgba(212,175,55,0.32)); background: var(--acc-fill1, rgba(212,175,55,0.065)); }
             .empire-slice-grid { display: grid; grid-template-columns: minmax(260px,0.7fr) minmax(0,1.3fr); gap: 12px; }
             @media(max-width:1439px) {
                 .empire-main-grid { grid-template-columns: minmax(0,1fr) minmax(0,1fr); }
                 .empire-center { grid-column: 1 / -1; grid-row: 1; }
-                .empire-command-deck { grid-template-columns: minmax(280px,0.7fr) minmax(0,1.3fr); }
                 .empire-workspace-head, .empire-table-head, .empire-asset-row { grid-template-columns: minmax(150px,1fr) 42px 46px 66px 66px 56px minmax(110px,0.8fr); }
             }
             @media(max-width:1023px) {
-                .empire-main-grid, .empire-slice-grid, .empire-bridge, .empire-command-deck { grid-template-columns: 1fr; }
-                .empire-advanced-filters { grid-template-columns: 1fr; }
-                .empire-priority-list { grid-template-columns: 1fr; }
-                .empire-priority-list .empire-signal { min-height: 0; }
-                .empire-decision-controls { grid-template-columns: 1fr 1fr; }
+                .empire-main-grid, .empire-slice-grid, .empire-bridge { grid-template-columns: 1fr; }
                 .empire-workspace-head { align-items: flex-start; flex-direction: column; }
                 .empire-table-head, .empire-asset-row { grid-template-columns: minmax(140px,1fr) 40px 46px 58px 58px; }
                 .empire-table-head div:nth-child(n+6), .empire-asset-row div:nth-child(n+6) { display: none; }
@@ -1695,16 +1511,9 @@ function EmpireStyles() {
             }
             @media(max-width:767px) {
                 .empire-topbar { padding: 9px 14px; }
-                .empire-kpis { display: flex; overflow-x: auto; padding-left: 14px; padding-right: 14px; scroll-snap-type: x proximity; }
-                .empire-kpi { flex: 0 0 138px; scroll-snap-align: start; }
+                .empire-kpis, .empire-filters { padding-left: 14px; padding-right: 14px; }
                 .empire-shell, .empire-detail { padding-left: 14px; padding-right: 14px; }
                 .empire-user { display: none; }
-                .empire-live { display: none; }
-                .empire-title span { display: none; }
-                .empire-viewbar { flex-wrap: nowrap; overflow-x: auto; }
-                .empire-viewbar-spacer { display: none; }
-                .empire-wire { display: none; }
-                .empire-decision-controls { grid-template-columns: 1fr; }
             }
             @media(pointer: coarse) {
                 .empire-back { width: 44px; min-height: 44px; }
@@ -1717,30 +1526,12 @@ function EmpireStyles() {
     );
 }
 
-function EmpireDashboard({ allLeagues, playersData, sleeperUserId, onEnterLeague, onBack, onRefresh, refreshing, hasNonSleeperLeagues }) {
-    const { useState, useMemo, useCallback, useEffect, useRef } = React;
+function EmpireDashboard({ allLeagues, playersData, sleeperUserId, onEnterLeague, onBack }) {
+    const { useState, useMemo, useCallback } = React;
     const emptyFilters = { league: '', status: '', position: '', agePhase: '', tier: '', exposure: '', assetType: '' };
     const [filters, setFilters] = useState(emptyFilters);
     const [sort, setSort] = useState('dhq');
     const [detail, setDetail] = useState(null);
-    const [filtersOpen, setFiltersOpen] = useState(false);
-    const [decisionTick, setDecisionTick] = useState(0);
-    // Arbitrage board default: owned rows only. The board is sorted
-    // mine-first regardless, but a portfolio with a deep player pool can
-    // bury your own leverage under market-only rows without this.
-    const [arbMineOnly, setArbMineOnly] = useState(true);
-    const [arbExpanded, setArbExpanded] = useState(false);
-    // Which leagues count toward Empire's totals — a persisted opt-out
-    // (setEmpireLeagueOn), distinct from filters.league below (a single-
-    // league "show only this one" drill-down lens, not a standing exclude).
-    // Never silently collapses to zero leagues, same safety rule Commissioner
-    // Office's managedFilter already established for its own toggle.
-    const [prefsTick, setPrefsTick] = useState(0);
-    const enabledLeagues = useMemo(() => {
-        const prefs = readEmpirePrefs();
-        const on = (allLeagues || []).filter(l => isEmpireLeagueOn(l.league_id || l.id, prefs));
-        return on.length ? on : (allLeagues || []);
-    }, [allLeagues, prefsTick]);
     const normPos = window.App?.normPos || (p => p);
     // KNOWN APPROXIMATION (H5): playerScores come from the one LeagueIntel currently loaded,
     // so all leagues' Empire DHQ (Empire Value, asset values, move math) are scored in that
@@ -1749,88 +1540,12 @@ function EmpireDashboard({ allLeagues, playersData, sleeperUserId, onEnterLeague
     // A league-neutral DHQ-scale score is a deferred engine refinement (fcValue is FC-scale +
     // sparse, so it can't simply be swapped in without breaking the DHQ scale).
     const scores = window.App?.LI?.playerScores || {};
-    // ── MARK TO LEAGUE ───────────────────────────────────────────────
-    // H5 above is why this exists: `scores` is one league's book applied to
-    // all of them. EmpireValues re-prices every league on its OWN scoring,
-    // roster slots and team count, which is the only thing the value doctrine
-    // allows to move a price — and the spread between those books IS the
-    // arbitrage. Purely additive: `scores` still drives the existing model,
-    // so nothing below changes shape if this returns null.
-    // Empire runs at the HUB, above any single league, so the per-league
-    // hydrate bridge (window.S.priorData / projectionsData) is empty here.
-    // The inputs it needs are league-INDEPENDENT — one season of prior stats
-    // and one projection set serve every league — so fetch them once.
-    const [markData, setMarkData] = useState(null);
-    useEffect(() => {
-        let alive = true;
-        (async () => {
-            const bridge = window.S || {};
-            if (Object.keys(bridge.projectionsData || {}).length) {
-                setMarkData({ prior: bridge.priorData || {}, proj: bridge.projectionsData || {}, stats: bridge.statsData || {} });
-                return;
-            }
-            try {
-                const season = String(bridge.nflState?.season || new Date().getFullYear());
-                const prevSeason = String(Number(season) - 1);
-                const [proj, prior] = await Promise.all([
-                    window.fetchSeasonProjections ? window.fetchSeasonProjections(season).catch(() => ({})) : Promise.resolve({}),
-                    window.fetchSeasonStats ? window.fetchSeasonStats(prevSeason).catch(() => ({})) : Promise.resolve({}),
-                ]);
-                if (alive) setMarkData({ prior: prior || {}, proj: proj || {}, stats: {} });
-            } catch (e) { if (alive) setMarkData({ prior: {}, proj: {}, stats: {} }); }
-        })();
-        return () => { alive = false; };
-    }, []);
-
-    // Live NFL scores for the wire ticker — the same ESPN scoreboard proxy
-    // NflContext already uses for matchup context, just read for score/state
-    // instead of odds/weather. Refetches every 60s so the "LIVE" badge next
-    // to the wire is honest on a Sunday; harmless/no-op the rest of the week
-    // since ESPN just keeps returning the same completed/scheduled games.
-    const [nflScores, setNflScores] = useState([]);
-    useEffect(() => {
-        let alive = true;
-        const NC = window.App?.NflContext;
-        if (!NC?.loadScores) return undefined;
-        const tick = async () => {
-            const week = window.App?.WeeklyProj?.currentWeek?.() || 1;
-            const season = window.S?.nflState?.season;
-            try {
-                const games = await NC.loadScores(week, season);
-                if (alive) setNflScores(games);
-            } catch (e) { /* ticker just skips scores this cycle */ }
-        };
-        tick();
-        const id = setInterval(tick, 60000);
-        return () => { alive = false; clearInterval(id); };
-    }, []);
-
-    const marks = useMemo(() => {
-        if (!markData) return null;
-        try {
-            return window.App?.EmpireValues?.build?.({
-                leagues: enabledLeagues,
-                playersData,
-                statsData: markData.stats,
-                priorData: markData.prior,
-                projectionsData: markData.proj,
-                playerScores: window.App?.LI?.playerScores || null,
-                myUserId: sleeperUserId,
-            }) || null;
-        } catch (e) { window.wrLog?.('empire.marks', e); return null; }
-    }, [enabledLeagues, playersData, markData, sleeperUserId, window.App?.LI_LOADED]);
-    // Does this empire contain any long-horizon league? Dynasty vocabulary
-    // (contend/rebuild postures, age lenses) only means something if so.
-    const hasLongTerm = useMemo(() => (enabledLeagues || []).some(l => {
-        const ty = Number(l?.settings?.type);
-        return ty === 1 || ty === 2;
-    }), [enabledLeagues]);
     const posColors = window.App?.POS_COLORS || {};
     const scoreKey = Object.keys(scores).length + ':' + (window.App?.LI_LOADED ? 'ready' : 'loading');
     const userName = window.S?.user?.display_name || window.S?.user?.username || 'Commander';
 
     const model = useMemo(() => buildEmpirePortfolioModel({
-        allLeagues: enabledLeagues,
+        allLeagues,
         playersData,
         sleeperUserId,
         scores,
@@ -1843,103 +1558,17 @@ function EmpireDashboard({ allLeagues, playersData, sleeperUserId, onEnterLeague
         assessTeam: typeof window.assessTeamFromGlobal === 'function' ? window.assessTeamFromGlobal : null,
         nowYear: new Date().getFullYear(),
         liLoaded: !!window.App?.LI_LOADED,
-    }), [enabledLeagues, playersData, sleeperUserId, scoreKey]);
+    }), [allLeagues, playersData, sleeperUserId, scoreKey]);
 
-    const rolodex = useMemo(() => buildEmpireRolodex(enabledLeagues, sleeperUserId), [enabledLeagues, scoreKey]);
+    const rolodex = useMemo(() => buildEmpireRolodex(allLeagues, sleeperUserId), [allLeagues, scoreKey]);
     const actionQueue = useMemo(() => buildEmpireActionQueue(model, rolodex), [model, rolodex]);
     const briefText = useMemo(() => buildEmpireBrief(model, userName), [model, userName]);
-    const empireGrudges = useMemo(() => buildEmpireGrudges(enabledLeagues), [enabledLeagues]);
-    const moves = useMemo(() => buildEmpireMoves({ leagues: enabledLeagues, model, scores, playersData, myUserId: sleeperUserId, normPos, tradeEngine: window.App?.TradeEngine, grudges: empireGrudges }), [enabledLeagues, model, scoreKey, empireGrudges]);
+    const empireGrudges = useMemo(() => buildEmpireGrudges(allLeagues), [allLeagues]);
+    const moves = useMemo(() => buildEmpireMoves({ leagues: allLeagues, model, scores, playersData, myUserId: sleeperUserId, normPos, tradeEngine: window.App?.TradeEngine, grudges: empireGrudges }), [allLeagues, model, scoreKey, empireGrudges]);
     const consolidation = useMemo(() => buildEmpireConsolidation(moves, model), [moves, model]);
-    const decisionApi = window.App?.EmpireDecisions || null;
-    const decisions = useMemo(() => decisionApi?.list?.() || [], [decisionTick]);
-    const decisionSummary = useMemo(() => decisionApi?.summary?.(decisions) || { total: 0, active: 0, closed: 0, won: 0, lost: 0, realizedDelta: 0 }, [decisions]);
-    const decisionForMove = useCallback((move) => decisionApi?.byMove?.(move) || null, [decisionTick]);
-    const trackDecision = useCallback((move) => { decisionApi?.track?.(move, { nowMs: Date.now() }); setDecisionTick(t => t + 1); }, []);
-    const updateDecision = useCallback((id, patch) => { decisionApi?.update?.(id, patch, { nowMs: Date.now() }); setDecisionTick(t => t + 1); }, []);
-    const removeDecision = useCallback((id) => { decisionApi?.remove?.(id); setDecisionTick(t => t + 1); }, []);
-    const empireLeagueIds = useMemo(() => (enabledLeagues || []).map(l => l.id || l.league_id).filter(Boolean), [enabledLeagues]);
+    const empireLeagueIds = useMemo(() => (allLeagues || []).map(l => l.id || l.league_id).filter(Boolean), [allLeagues]);
     const empireDelta = useMemo(() => (window.WrSnapshots && typeof window.WrSnapshots.empireDelta === 'function') ? window.WrSnapshots.empireDelta(empireLeagueIds) : null, [empireLeagueIds, scoreKey]);
     const bridge = useMemo(() => buildCommandBridge({ model, actionQueue, brief: briefText, empireDelta }), [model, actionQueue, briefText, empireDelta]);
-
-    // ── Season Outlook: playoff/title odds per league ───────────────────
-    // Reuses the exact engine + gating Game Day's single-league panel
-    // (season-odds-panel.js) already established — App.Luck.build for the
-    // weekly-score ledger, App.PlayoffOdds.fetchFuturePairs + .simulate for
-    // the Monte Carlo itself — rather than a second implementation. A
-    // league only gets real odds once it has at least 2 played weeks (a
-    // 0-1-game fitted score distribution is meaningless, same guard the
-    // single-league panel uses); CHOPPED leagues (no bracket) and leagues
-    // with no playoff bracket configured are skipped entirely rather than
-    // shown a fabricated field. Runs once per league id, not on every
-    // model recompute.
-    const outlookRunRef = useRef({});
-    const [seasonOutlook, setSeasonOutlook] = useState({});
-    useEffect(() => {
-        const Luck = window.App?.Luck, PO = window.App?.PlayoffOdds, WP = window.App?.WeeklyProj;
-        if (!Luck || !PO || !WP) return;
-        (model?.provinces || []).forEach(p => {
-            const lid = p.id;
-            if (!lid || outlookRunRef.current[lid]) return;
-            if (p.preDraftEmpty || p.isChopped) return;
-            const league = p.league;
-            const playoffTeams = Number(league?.settings?.playoff_teams) || 0;
-            if (playoffTeams <= 0) return;
-            outlookRunRef.current[lid] = true;
-            setSeasonOutlook(prev => ({ ...prev, [lid]: { status: 'loading' } }));
-            (async () => {
-                try {
-                    const ledger = await Luck.build({ league });
-                    const playedWeeks = ledger.weeks.length;
-                    const curWk = WP.currentWeek();
-                    const pws = Number(league.settings?.playoff_week_start) || 15;
-                    const lastReg = Math.max(1, Math.min(18, pws - 1));
-                    // Same load-bearing guard as the single-league panel: fewer
-                    // than 2 games fitted, or the regular season already over
-                    // (curWk past lastReg) — no honest sim to run either way.
-                    if (playedWeeks < 2 || curWk > lastReg) {
-                        setSeasonOutlook(prev => ({ ...prev, [lid]: { status: 'unavailable', playedWeeks } }));
-                        return;
-                    }
-                    const futurePairs = await PO.fetchFuturePairs({ league, fromWeek: curWk, toWeek: lastReg });
-                    const sim = PO.simulate({ league, ledger, futurePairs, myRosterId: p.roster?.roster_id, sims: 10000 });
-                    setSeasonOutlook(prev => ({ ...prev, [lid]: { status: sim ? 'ready' : 'unavailable', sim, playedWeeks } }));
-                } catch (e) {
-                    window.wrLog?.('empire.seasonOutlook', e);
-                    setSeasonOutlook(prev => ({ ...prev, [lid]: { status: 'error' } }));
-                }
-            })();
-        });
-    }, [model]);
-
-    // ── Trade Desk: reuses the exact single-league TradeCalcTab component
-    // (js/trade-calc.js), not a second trade builder — that module is
-    // deferred behind the 'trade' module-loader group the same way League
-    // Detail's own Trade Center loads it. Kick the load the moment Trade
-    // Desk opens (before a league is even picked) so it's usually already
-    // warm by the time one is chosen.
-    const [tradeModuleReady, setTradeModuleReady] = useState(!!window.wrModuleGroupLoaded?.('trade'));
-    useEffect(() => {
-        if (detail?.type !== 'tradeDesk' || tradeModuleReady) return;
-        window.wrLoadModuleGroup?.('trade')
-            .then(() => setTradeModuleReady(true))
-            .catch(e => window.wrLog?.('empire.tradeDesk.load', e));
-    }, [detail?.type, tradeModuleReady]);
-
-    // Brief "Synced" confirmation on the Refresh button once a refresh
-    // (parent-owned: refreshEmpirePortfolio in app.js) completes, so the
-    // action has visible closure beyond the button label flipping back.
-    const [justSynced, setJustSynced] = useState(false);
-    const wasRefreshingRef = useRef(false);
-    useEffect(() => {
-        if (wasRefreshingRef.current && !refreshing) {
-            setJustSynced(true);
-            const t = setTimeout(() => setJustSynced(false), 2500);
-            wasRefreshingRef.current = false;
-            return () => clearTimeout(t);
-        }
-        wasRefreshingRef.current = !!refreshing;
-    }, [refreshing]);
 
     const setFilter = useCallback((key, value) => {
         setFilters(prev => ({ ...prev, [key]: prev[key] === value ? '' : value }));
@@ -1984,11 +1613,7 @@ function EmpireDashboard({ allLeagues, playersData, sleeperUserId, onEnterLeague
         };
         assets.sort(sorters[sort] || sorters.dhq);
         const totalDHQ = assets.reduce((sum, a) => sum + a.dhq, 0);
-        // CHOPPED provinces never accrue a W-L record — their wins/losses are
-        // permanently 0-0 by format, not "hasn't played yet". Summing them in
-        // would silently drag the aggregate win% toward 0 as the season goes
-        // on in every OTHER league while this one sits at a structural 0-0.
-        const totalRecord = provinces.filter(p => !p.isChopped).reduce((sum, p) => ({ wins: sum.wins + p.wins, losses: sum.losses + p.losses }), { wins: 0, losses: 0 });
+        const totalRecord = provinces.reduce((sum, p) => ({ wins: sum.wins + p.wins, losses: sum.losses + p.losses }), { wins: 0, losses: 0 });
         const healths = provinces.map(p => p.healthScore).filter(v => v != null);
         const avgHealth = healths.length ? Math.round(healths.reduce((sum, v) => sum + v, 0) / healths.length) : null;
         return { provinces, assets, picks, totalDHQ, totalRecord, avgHealth };
@@ -1996,18 +1621,8 @@ function EmpireDashboard({ allLeagues, playersData, sleeperUserId, onEnterLeague
 
     const activeFilters = Object.values(filters).filter(Boolean).length;
     const hasNoResults = !filtered.provinces.length && !filtered.assets.length && !filtered.picks.length;
-    // Empire Wire ticker — scrolling headline feed from live NFL scores /
-    // the portfolio signals / priority queue / moves, in that order (scores
-    // lead the same way a real sports ticker does). A live/final game shows
-    // its score; a game that hasn't kicked yet shows the kickoff time
-    // instead, same as ESPN's own ticker — never a fabricated "0-0".
-    const scoreItems = (nflScores || []).slice(0, 8).map(g => {
-        if (g.state === 'in') return g.away + ' ' + g.awayScore + ' - ' + g.home + ' ' + g.homeScore + ' · ' + (g.shortDetail || 'Live');
-        if (g.state === 'post') return g.away + ' ' + g.awayScore + ', ' + g.home + ' ' + g.homeScore + ' (Final)';
-        return g.away + ' @ ' + g.home + ' · ' + (g.shortDetail || 'Scheduled');
-    });
+    // Empire Wire ticker — scrolling headline feed from the live signals / priority queue / moves.
     const wireItems = [
-        ...scoreItems,
         ...(model.signals || []).filter(s => s.type !== 'data' && s.type !== 'balance').slice(0, 5).map(s => s.title + (s.metric ? ' · ' + s.metric : '')),
         ...(actionQueue || []).slice(0, 3).map(a => a.title),
         ...(moves || []).slice(0, 2).map(m => m.title),
@@ -2158,7 +1773,7 @@ function EmpireDashboard({ allLeagues, playersData, sleeperUserId, onEnterLeague
                                     <button key={asset.leagueId} className="empire-league-card" style={{ '--tone': province?.tierColor || 'var(--k-d4af37, #d4af37)' }} type="button" onClick={() => setDetail({ type: 'league', leagueId: asset.leagueId })}>
                                         <div>
                                             <strong>{asset.leagueName}</strong>
-                                            <span>{province?.tier || 'UNKNOWN'} - {province?.recordLabel || ((province?.wins || 0) + '-' + (province?.losses || 0))} - HP {province?.healthScore ?? 'No read'}</span>
+                                            <span>{province?.tier || 'UNKNOWN'} - {province?.wins || 0}-{province?.losses || 0} - HP {province?.healthScore ?? 'No read'}</span>
                                             <em>{province?.needs?.length ? 'Needs: ' + province.needs.join(', ') : 'No critical need flagged'}</em>
                                         </div>
                                         <b>{asset.dhq > 0 ? empireCompact(asset.dhq) : 'No DHQ'}</b>
@@ -2191,11 +1806,11 @@ function EmpireDashboard({ allLeagues, playersData, sleeperUserId, onEnterLeague
                     <section className="empire-detail-hero">
                         <div>
                             <h1>{province.name}</h1>
-                            <p>{province.preDraftEmpty ? 'Pre-Draft' : province.tier} - {province.recordLabel} - rank {province.powerRank || '-'} of {province.teams || '-'}</p>
+                            <p>{province.tier} - {province.wins}-{province.losses} - rank {province.powerRank || '-'} of {province.teams || '-'}</p>
                         </div>
                     </section>
                     <div className="empire-detail-metrics">
-                        <div className="empire-metric"><span>Total DHQ</span><strong>{province.totalDHQ > 0 ? empireCompact(province.totalDHQ) : (province.preDraftEmpty ? 'Pre-Draft' : 'No DHQ')}</strong></div>
+                        <div className="empire-metric"><span>Total DHQ</span><strong>{province.totalDHQ > 0 ? empireCompact(province.totalDHQ) : 'No DHQ'}</strong></div>
                         <div className="empire-metric"><span>Health</span><strong>{province.healthScore ?? 'No read'}</strong></div>
                         <div className="empire-metric"><span>Pick Capital</span><strong>{province.pickCount} picks</strong></div>
                         <div className="empire-metric"><span>Premium Picks</span><strong>{province.premiumPickCount}</strong></div>
@@ -2280,7 +1895,6 @@ function EmpireDashboard({ allLeagues, playersData, sleeperUserId, onEnterLeague
     const renderMovesDetail = () => {
         const sells = moves.filter(m => m.type === 'sell');
         const buys = moves.filter(m => m.type === 'buy');
-        const decisionTone = status => status === 'WON' ? 'var(--good)' : status === 'LOST' ? 'var(--bad)' : status === 'PROPOSED' ? 'var(--purple)' : status === 'PASSED' ? 'var(--silver)' : 'var(--gold)';
         return (
             <div className={rootClassName} data-testid="empire-root">
                 <EmpireStyles />
@@ -2297,23 +1911,17 @@ function EmpireDashboard({ allLeagues, playersData, sleeperUserId, onEnterLeague
                             <p>{moves.length} portfolio-optimal {moves.length === 1 ? 'move' : 'moves'} · ranked by value × acceptance</p>
                         </div>
                     </section>
-                    <div className="empire-detail-metrics" data-testid="empire-decision-summary">
-                        <div className="empire-metric"><span>Tracked</span><strong>{decisionSummary.total}</strong></div>
-                        <div className="empire-metric"><span>Active</span><strong style={{ color: decisionSummary.active ? 'var(--gold)' : 'var(--good)' }}>{decisionSummary.active}</strong></div>
-                        <div className="empire-metric"><span>Closed Record</span><strong>{decisionSummary.won}-{decisionSummary.lost}</strong></div>
-                        <div className="empire-metric"><span>Realized Δ</span><strong style={{ color: decisionSummary.realizedDelta >= 0 ? 'var(--good)' : 'var(--bad)' }}>{decisionSummary.realizedDelta > 0 ? '+' : ''}{empireCompact(decisionSummary.realizedDelta)} DHQ</strong></div>
-                    </div>
                     {consolidation ? (
                         <section className="empire-panel" style={{ marginBottom: 12 }}>
                             <div className="empire-panel-head"><strong>Consolidation Plan</strong><em>{consolidation.sells} sell → {consolidation.buys} buy · one campaign</em></div>
                             <div className="empire-stack">
                                 {consolidation.steps.map((s, i) => (
-                                    <div key={i} style={{ border: '1px solid var(--ov-4, rgb(25,25,28))', borderLeft: '3px solid ' + s.tone, borderRadius: 7, padding: 10, background: 'var(--ov-1, rgb(14,14,17))' }}>
+                                    <div key={i} style={{ border: '1px solid var(--ov-4, rgba(255,255,255,0.07))', borderLeft: '3px solid ' + s.tone, borderRadius: 7, padding: 10, background: 'var(--ov-1, rgba(255,255,255,0.024))' }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
                                             <strong style={{ color: 'var(--white, var(--k-ffffff, #ffffff))', fontSize: 'var(--text-body, 1rem)' }}>{s.title}</strong>
                                             <b style={{ color: s.tone, fontFamily: "var(--font-mono)", fontSize: 'var(--text-micro)', fontWeight: 800, letterSpacing: '0.1em' }}>{s.phase}</b>
                                         </div>
-                                        <span style={{ display: 'block', color: 'var(--ov-9, rgb(151,151,153))', fontSize: 'var(--text-label, 0.75rem)', lineHeight: 1.45, marginTop: 5 }}>{s.detail}</span>
+                                        <span style={{ display: 'block', color: 'var(--ov-9, rgba(255,255,255,0.58))', fontSize: 'var(--text-label, 0.75rem)', lineHeight: 1.45, marginTop: 5 }}>{s.detail}</span>
                                     </div>
                                 ))}
                             </div>
@@ -2323,69 +1931,32 @@ function EmpireDashboard({ allLeagues, playersData, sleeperUserId, onEnterLeague
                         <section className="empire-workspace" style={{ marginTop: 0 }}>
                             <div className="empire-workspace-head"><strong>Ranked Moves</strong><span>{sells.length} sell · {buys.length} buy</span></div>
                             <div className="empire-stack" style={{ padding: 12 }}>
-                                {moves.length ? moves.map((m, i) => {
-                                    const d = decisionForMove(m);
-                                    const tone = m.type === 'sell' ? 'var(--k-5dade2, #5dade2)' : 'var(--k-2ecc71, #2ecc71)';
-                                    return (
-                                        <div key={i} className="empire-move-card" data-testid="empire-move-card" style={{ '--tone': tone }}>
-                                            <div className="empire-move-head"><strong>{m.title}</strong><b>{m.accept}% accept</b></div>
-                                            <p>{m.why}</p>
-                                            <div className="empire-move-meta">{m.leagueName} · {m.posture} · +{empireCompact(m.value)} estimated DHQ</div>
-                                            {d ? (
-                                                <React.Fragment>
-                                                    <div className="empire-decision-controls">
-                                                        <select aria-label={'Status for ' + m.title} value={d.status} onChange={e => updateDecision(d.id, { status: e.target.value })}>
-                                                            {(decisionApi?.STATUSES || []).map(s => <option key={s} value={s}>{s}</option>)}
-                                                        </select>
-                                                        <input aria-label={'Review date for ' + m.title} type="date" value={d.reviewAt || ''} onChange={e => updateDecision(d.id, { reviewAt: e.target.value })} />
-                                                        <input aria-label={'Realized DHQ for ' + m.title} type="number" value={d.actualDelta == null ? '' : d.actualDelta} placeholder="Realized Δ" onChange={e => updateDecision(d.id, { actualDelta: e.target.value === '' ? null : e.target.value })} />
-                                                        <button className="empire-action" type="button" onClick={() => m.pid && setDetail({ type: 'player', pid: m.pid })}>Player</button>
-                                                    </div>
-                                                    <textarea key={d.id + ':' + d.updatedAt} className="empire-decision-note" aria-label={'Decision note for ' + m.title} defaultValue={d.note || ''} placeholder="What are you waiting for? What happened?" onBlur={e => updateDecision(d.id, { note: e.target.value })} />
-                                                    <div className="empire-section-footer"><button className="empire-ghost" type="button" onClick={() => removeDecision(d.id)}>Remove from journal</button></div>
-                                                </React.Fragment>
-                                            ) : (
-                                                <div className="empire-section-footer">
-                                                    <button className="empire-ghost" type="button" onClick={() => m.pid && setDetail({ type: 'player', pid: m.pid })}>View player</button>
-                                                    <button className="empire-action" type="button" onClick={() => trackDecision(m)}>Track decision</button>
-                                                </div>
-                                            )}
-                                        </div>
-                                    );
-                                }) : (
+                                {moves.length ? moves.map((m, i) => (
+                                    <button key={i} type="button" className="empire-signal" style={{ '--tone': m.type === 'sell' ? 'var(--k-5dade2, #5dade2)' : 'var(--k-2ecc71, #2ecc71)' }} onClick={() => m.pid && setDetail({ type: 'player', pid: m.pid })}>
+                                        <div className="empire-signal-top"><strong>{m.title}</strong><b>{m.accept}% accept</b></div>
+                                        <span>{m.why}</span>
+                                        <em>{m.leagueName} · {m.posture} · {empireCompact(m.value)} DHQ</em>
+                                    </button>
+                                )) : (
                                     <div className="empire-empty"><strong>No clear moves yet</strong>Cross-league moves appear once opponent assessments finish loading. Open the dashboard for a moment, then return.</div>
                                 )}
                             </div>
                         </section>
-                        <div className="empire-stack">
-                            <section className="empire-panel" data-testid="empire-decision-journal">
-                                <div className="empire-panel-head"><strong>Decision Journal</strong><em>{decisionSummary.active} active · {decisionSummary.closed} closed</em></div>
-                                <div className="empire-stack">
-                                    {decisions.length ? decisions.slice(0, 8).map(d => (
-                                        <div key={d.id} className="empire-decision-row" style={{ '--tone': decisionTone(d.status) }}>
-                                            <strong>{d.title}</strong>
-                                            <span style={{ color: decisionTone(d.status), fontWeight: 800 }}>{d.status}{d.actualDelta != null ? ' · ' + (d.actualDelta > 0 ? '+' : '') + empireCompact(d.actualDelta) + ' DHQ' : ''}</span>
-                                            <span>{d.leagueName}{d.reviewAt ? ' · review ' + d.reviewAt : ''}</span>
+                        <section className="empire-panel">
+                            <div className="empire-panel-head"><strong>Owner Rolodex</strong><em>by edge</em></div>
+                            <div className="empire-stack">
+                                {rolodex.filter(o => o.exploit >= 6).slice(0, 8).map((o, i) => (
+                                    <button key={o.leagueId + ':' + o.ownerId + ':' + i} className="empire-league-card" style={{ '--tone': o.postureColor }} type="button" onClick={() => setDetail({ type: 'owner', ownerId: o.ownerId, leagueId: o.leagueId })}>
+                                        <div>
+                                            <strong>{o.ownerName}</strong>
+                                            <span>{o.leagueName} · {o.posture}</span>
+                                            <em>{o.edge}</em>
                                         </div>
-                                    )) : <div className="empire-empty"><strong>No tracked decisions</strong>Track a ranked move to preserve the recommendation, set a review date and record the outcome.</div>}
-                                </div>
-                            </section>
-                            <section className="empire-panel">
-                                <div className="empire-panel-head"><strong>Owner Rolodex</strong><em>by edge</em></div>
-                                <div className="empire-stack">
-                                    {rolodex.filter(o => o.exploit >= 6).slice(0, 8).map((o, i) => (
-                                        <button key={o.leagueId + ':' + o.ownerId + ':' + i} className="empire-league-card" style={{ '--tone': o.postureColor }} type="button" onClick={() => setDetail({ type: 'owner', ownerId: o.ownerId, leagueId: o.leagueId })}>
-                                            <div>
-                                                <strong>{o.ownerName}</strong>
-                                                <span>{o.leagueName} · {o.posture}</span>
-                                                <em>{o.edge}</em>
-                                            </div>
-                                            <b>{o.exploit}</b>
-                                        </button>
-                                    ))}
-                                </div>
-                            </section>
-                        </div>
+                                        <b>{o.exploit}</b>
+                                    </button>
+                                ))}
+                            </div>
+                        </section>
                     </div>
                 </main>
             </div>
@@ -2423,7 +1994,6 @@ function EmpireDashboard({ allLeagues, playersData, sleeperUserId, onEnterLeague
                     <div className="empire-topbar">
                         <button className="empire-back" type="button" onClick={() => setDetail(null)}>{"<"}</button>
                         <div className="empire-title"><strong>Negotiation HUD</strong><span>{theirA?.ownerName || theirA?.teamName || 'Owner'} · {league?.name || 'League'}</span></div>
-                        <button className="empire-action" type="button" style={{ marginLeft: 'auto', borderColor: 'rgba(155,138,251,0.4)', color: 'var(--purple)', background: 'rgb(15,13,20)' }} onClick={() => setDetail({ type: 'tradeDesk', leagueId, seedOwnerId: ownerId })}>Propose Trade</button>
                         {league?.league ? <button className="empire-action" type="button" onClick={() => onEnterLeague(league.league || league)}>Open League</button> : null}
                     </div>
                 </div>
@@ -2509,7 +2079,7 @@ function EmpireDashboard({ allLeagues, playersData, sleeperUserId, onEnterLeague
 
 const renderThreatDetail = () => {
   const board = buildThreatBoard({
-    leagues: enabledLeagues,
+    leagues: allLeagues,
     myUserId: sleeperUserId,
     tradeEngine: (window.App && window.App.TradeEngine) || {},
     dnaMeta: EMPIRE_DNA_META,
@@ -2641,181 +2211,6 @@ const renderWarDetail = () => {
                 <p style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', marginTop: 4, lineHeight: 1.5 }}>
                     Windows are a <b style={{ color: 'var(--gold)', fontFamily: 'var(--font-mono)' }}>current</b> read from tier, status, record, health and power rank — not a multi-year forecast. {s.lowConfidenceCount > 0 ? s.lowConfidenceCount + ' league' + (s.lowConfidenceCount === 1 ? ' has' : 's have') + ' thin signal (early season / no rank); treat those as a watch.' : ''}
                 </p>
-            </main>
-        </div>
-    );
-};
-
-// ── Season Outlook — Monte Carlo playoff/title odds, per league ────────
-// Reads the seasonOutlook state the useEffect above fills in (one sim per
-// eligible league, run once). Unlike every other Empire detail view this
-// isn't a synchronous pure builder off model.provinces alone — the sim
-// itself is async — so this stays a closure over component state rather
-// than a module-scope build* function like buildWarTable/buildProvincesMap.
-const renderOutlookDetail = () => {
-    const provinces = model?.provinces || [];
-    const rows = provinces.map(p => {
-        if (p.preDraftEmpty) return { id: p.id, name: p.name, skip: 'Pre-draft — no season to project yet.' };
-        if (p.isChopped) return { id: p.id, name: p.name, skip: 'Chopped format runs a survival model, not a playoff bracket.' };
-        const playoffTeams = Number(p.league?.settings?.playoff_teams) || 0;
-        if (playoffTeams <= 0) return { id: p.id, name: p.name, skip: 'No playoff bracket configured for this league.' };
-        const o = seasonOutlook[p.id];
-        if (!o || o.status === 'loading') return { id: p.id, name: p.name, record: p.recordLabel, loading: true };
-        if (o.status === 'error') return { id: p.id, name: p.name, record: p.recordLabel, skip: 'Simulation failed to load — try refreshing.' };
-        if (o.status === 'unavailable') {
-            const pw = o.playedWeeks || 0;
-            return { id: p.id, name: p.name, record: p.recordLabel, skip: pw < 2 ? 'Opens once 2 weeks are played (' + pw + ' so far).' : 'Regular season is over.' };
-        }
-        const sim = o.sim;
-        const mine = sim && sim.rows.find(r => String(r.rosterId) === String(p.roster?.roster_id));
-        if (!mine) return { id: p.id, name: p.name, record: p.recordLabel, skip: 'Could not place your roster in the sim.' };
-        return {
-            id: p.id, name: p.name, record: p.recordLabel,
-            projRecord: mine.projWins + '-' + mine.projLosses,
-            playoffPct: mine.playoffPct, titlePct: mine.titlePct, byePct: mine.byePct, avgSeed: mine.avgSeed,
-            fieldSize: sim.playoffTeams,
-        };
-    });
-    const ready = rows.filter(r => r.playoffPct != null);
-    const bestOdds = ready.length ? ready.reduce((a, b) => (b.playoffPct > a.playoffPct ? b : a)) : null;
-    const bestTitle = ready.length ? ready.reduce((a, b) => (b.titlePct > a.titlePct ? b : a)) : null;
-    const pctColor = pct => pct >= 50 ? 'var(--good)' : pct >= 25 ? 'var(--warn)' : 'var(--bad)';
-    return (
-        <div className={rootClassName} data-testid="empire-root">
-            <EmpireStyles />
-            <div className="empire-header">
-                <div className="empire-topbar">
-                    <button className="empire-back" type="button" onClick={() => setDetail(null)}>{"<"}</button>
-                    <div className="empire-title"><strong>Season Outlook</strong><span>Monte Carlo playoff &amp; title odds · once a league has games on the board</span></div>
-                    <div className="empire-user">{userName}</div>
-                </div>
-            </div>
-            <main className="empire-detail">
-                <section className="empire-detail-hero">
-                    <div>
-                        <h1>{ready.length} of {rows.length} <span style={{ fontSize: '1rem', color: 'var(--silver)' }}>leagues simulated</span></h1>
-                        <p>
-                            {bestOdds ? bestOdds.name + ' leads the empire at ' + bestOdds.playoffPct + '% playoff odds' : 'No leagues have enough games played yet.'}
-                            {bestTitle && bestTitle.titlePct > 0 ? ' · best title shot: ' + bestTitle.name + ' (' + bestTitle.titlePct + '%)' : ''}
-                        </p>
-                    </div>
-                </section>
-
-                <section className="empire-panel">
-                    <div className="empire-panel-head"><strong>Every League</strong><em>{ready.length} live · {rows.length - ready.length} not yet</em></div>
-                    {rows.length ? (
-                        <div className="empire-stack">
-                            {rows.map(row => (
-                                <button key={row.id} className="empire-league-card" type="button" onClick={() => setDetail({ type: 'league', leagueId: row.id })}>
-                                    <div>
-                                        <strong>{row.name}</strong>
-                                        {row.record ? (
-                                            <span>{row.record}{row.projRecord ? ' → proj ' + row.projRecord : ''}{row.fieldSize ? ' · ' + row.fieldSize + '-team field' : ''}</span>
-                                        ) : null}
-                                        {row.skip ? <em>{row.skip}</em> : row.loading ? <em>Simulating 10,000 seasons…</em> : null}
-                                    </div>
-                                    {row.playoffPct != null ? (
-                                        <div style={{ textAlign: 'right' }}>
-                                            <b style={{ color: pctColor(row.playoffPct) }}>{row.playoffPct}% playoffs</b>
-                                            <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)' }}>
-                                                {row.titlePct}% title{row.byePct != null ? ' · ' + row.byePct + '% bye' : ''}{row.avgSeed != null ? ' · avg seed ' + row.avgSeed : ''}
-                                            </div>
-                                        </div>
-                                    ) : null}
-                                </button>
-                            ))}
-                        </div>
-                    ) : (
-                        <div className="empire-empty"><strong>No leagues to read</strong>Sync rosters or check league connections, then the outlook fills in.</div>
-                    )}
-                </section>
-
-                <p style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', marginTop: 4, lineHeight: 1.5 }}>
-                    Monte Carlo simulation (10,000 seasons per league) using each roster's actual weekly scoring this season, plus Sleeper's already-posted future matchups — the same engine and methodology as the single-league Season Odds panel in Game Day. Needs at least 2 played weeks before a league shows odds; Chopped leagues run a survival model instead and aren't included here.
-                </p>
-            </main>
-        </div>
-    );
-};
-
-// renderTradeDeskDetail — the whole Trade Center module (js/trade-calc.js),
-// mounted from Empire instead of a second trade builder. Trades are
-// inherently single-league (rosters are disjoint across leagues), so this
-// is a two-step view: pick a league, then the real TradeCalcTab renders
-// with that league's data — same component, same props League Detail
-// already feeds it, just resolved from Empire's already-loaded provinces
-// instead of a page navigation. seedOwnerId/seedPid (from an Owner Rolodex
-// "Propose Trade" or an Arbitrage row's "Trade Desk" button) land the
-// builder pre-armed instead of empty.
-const renderTradeDeskDetail = (d) => {
-    const leagueId = d?.leagueId;
-    const provinces = model?.provinces || [];
-
-    if (!leagueId) {
-        const tradeable = provinces.filter(p => !p.preDraftEmpty && Number(p.league?.settings?.disable_trades || 0) !== 1);
-        return (
-            <div className={rootClassName} data-testid="empire-root">
-                <EmpireStyles />
-                <div className="empire-header">
-                    <div className="empire-topbar">
-                        <button className="empire-back" type="button" onClick={() => setDetail(null)}>{"<"}</button>
-                        <div className="empire-title"><strong>Trade Desk</strong><span>Pick a league to build a proposal in</span></div>
-                        <div className="empire-user">{userName}</div>
-                    </div>
-                </div>
-                <main className="empire-detail">
-                    <section className="empire-panel">
-                        <div className="empire-panel-head"><strong>Your Leagues</strong><em>{tradeable.length} tradeable</em></div>
-                        <div className="empire-stack">
-                            {tradeable.length ? tradeable.map(p => (
-                                <button key={p.id} className="empire-league-card" style={{ '--tone': p.tierColor }} type="button" onClick={() => setDetail({ type: 'tradeDesk', leagueId: p.id })}>
-                                    <div><strong>{p.name}</strong><span>{p.tier} - {p.recordLabel}</span></div>
-                                </button>
-                            )) : <div className="empire-empty"><strong>No tradeable leagues</strong>Every league is either pre-draft or has trades disabled.</div>}
-                        </div>
-                    </section>
-                </main>
-            </div>
-        );
-    }
-
-    const province = provinces.find(p => String(p.id) === String(leagueId));
-    const currentLeague = province?.league;
-    const myRoster = province?.roster;
-    const standings = currentLeague ? empireStandingsFor(currentLeague) : [];
-    const leagueSkin = currentLeague ? (window.App?.LeagueSkin?.build?.({
-        league: currentLeague, profile: null, rosters: currentLeague.rosters || [], myRoster, draft: null, nflState: window.S?.nflState,
-    }) || null) : null;
-
-    return (
-        <div className={rootClassName} data-testid="empire-root">
-            <EmpireStyles />
-            <div className="empire-header">
-                <div className="empire-topbar">
-                    <button className="empire-back" type="button" onClick={() => setDetail({ type: 'tradeDesk' })}>{"<"}</button>
-                    <div className="empire-title"><strong>Trade Desk</strong><span>{province?.name || 'League'}</span></div>
-                    <div className="empire-user">{userName}</div>
-                </div>
-            </div>
-            <main className="empire-detail">
-                {!currentLeague ? (
-                    <div className="empire-empty"><strong>League not found</strong>Pick a different league.</div>
-                ) : !tradeModuleReady ? (
-                    <div className="empire-empty"><strong>Loading Trade Desk…</strong></div>
-                ) : (
-                    <TradeCalcTab
-                        playersData={playersData}
-                        statsData={markData?.stats || {}}
-                        myRoster={myRoster}
-                        standings={standings}
-                        currentLeague={currentLeague}
-                        leagueSkin={leagueSkin}
-                        sleeperUserId={sleeperUserId}
-                        viewMode="analyst"
-                        seedOwnerId={d.seedOwnerId}
-                        seedPid={d.seedPid}
-                    />
-                )}
             </main>
         </div>
     );
@@ -2957,7 +2352,7 @@ const renderScoutDetail = () => {
                   <b>{r.age || '—'}</b>
                   <b style={{ fontFamily: 'var(--font-mono)' }}>{empireCompact(r.dhq)}</b>
                   <div className="empire-expo-track" title={r.exposureCount + ' of ' + board.leagueCount + ' leagues'}>
-                    <div className="empire-expo-fill" style={{ width: Math.min(100, r.exposurePct) + '%', background: r.multiLeague ? r.agePhaseColor : 'var(--ov-6, rgb(70,70,72))' }} />
+                    <div className="empire-expo-fill" style={{ width: Math.min(100, r.exposurePct) + '%', background: r.multiLeague ? r.agePhaseColor : 'var(--ov-6, rgba(255,255,255,0.25))' }} />
                   </div>
                   <b style={{ color: r.exposurePct >= 50 ? 'var(--bad)' : r.multiLeague ? 'var(--gold)' : 'var(--silver)' }}>{r.exposureCount}×</b>
                 </button>
@@ -2976,8 +2371,6 @@ const renderScoutDetail = () => {
 
     if (detail?.type === 'threat') return renderThreatDetail();
     if (detail?.type === 'war') return renderWarDetail();
-    if (detail?.type === 'outlook') return renderOutlookDetail();
-    if (detail?.type === 'tradeDesk') return renderTradeDeskDetail(detail);
     if (detail?.type === 'provinces') return renderProvincesDetail();
     if (detail?.type === 'scout') return renderScoutDetail();
     if (detail?.type === 'index') return renderIndexDetail();
@@ -2992,27 +2385,21 @@ const renderScoutDetail = () => {
             <EmpireStyles />
             <nav className="empire-rail" aria-label="Empire sections">
                 {[
-                    { icon: 'home', t: 'Command Bridge', go: () => window.scrollTo({ top: 0, behavior: 'smooth' }) },
-                    { icon: 'zap', t: 'Empire Moves', go: () => setDetail({ type: 'moves' }) },
-                    { icon: 'layers', t: 'Allocation & Leagues', go: () => document.querySelector('.empire-main-grid')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) },
-                    { icon: 'trendingUp', t: 'Asset Floor', go: () => document.querySelector('.empire-floor')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) },
-                    { icon: 'barChart', t: 'Empire Index', go: () => setDetail({ type: 'index' }) },
-                    { icon: 'alertTriangle', t: 'Threat Board', go: () => setDetail({ type: 'threat' }) },
-                    { icon: 'target', t: 'War Table', go: () => setDetail({ type: 'war' }) },
-                    { icon: 'trophy', t: 'Season Outlook', go: () => setDetail({ type: 'outlook' }) },
-                    { icon: 'trade', t: 'Trade Desk', go: () => setDetail({ type: 'tradeDesk' }) },
-                    { icon: 'map', t: 'Provinces Map', go: () => setDetail({ type: 'provinces' }) },
-                    { icon: 'search', t: 'Scout Board', go: () => setDetail({ type: 'scout', groupBy: 'none', sortBy: 'dhq' }) },
-                    { icon: 'briefcase', t: 'Asset Workspace', go: () => document.querySelector('.empire-workspace')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) },
+                    { g: '▦', t: 'Command Bridge', go: () => window.scrollTo({ top: 0, behavior: 'smooth' }) },
+                    { g: '⚡', t: 'Empire Moves', go: () => setDetail({ type: 'moves' }) },
+                    { g: '◧', t: 'Allocation & Leagues', go: () => document.querySelector('.empire-main-grid')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) },
+                    { g: '◰', t: 'Asset Floor', go: () => document.querySelector('.empire-floor')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) },
+                    { g: 'β', t: 'Empire Index', go: () => setDetail({ type: 'index' }) },
+                    { g: '⊿', t: 'Threat Board', go: () => setDetail({ type: 'threat' }) },
+                    { g: '⌖', t: 'War Table', go: () => setDetail({ type: 'war' }) },
+                    { g: '◳', t: 'Provinces Map', go: () => setDetail({ type: 'provinces' }) },
+                    { g: '◎', t: 'Scout Board', go: () => setDetail({ type: 'scout', groupBy: 'none', sortBy: 'dhq' }) },
+                    { g: '≣', t: 'Asset Workspace', go: () => document.querySelector('.empire-workspace')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) },
                 ].map(it => (
-                    <button key={it.t} className="empire-rail-btn" type="button" title={it.t} aria-label={it.t} onClick={it.go}>
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ width: 18, height: 18 }}>
-                            {(EMPIRE_ICON_PATHS[it.icon] || EMPIRE_ICON_PATHS.home).map((d, i) => <path key={i} d={d} />)}
-                        </svg>
-                    </button>
+                    <button key={it.t} className="empire-rail-btn" type="button" title={it.t} aria-label={it.t} onClick={it.go}>{it.g}</button>
                 ))}
                 <div className="empire-rail-spacer" />
-                {typeof window.ProTierIcon === 'function' ? <div style={{ width: 24, height: 24 }}>{React.createElement(window.ProTierIcon, { size: 24 })}</div> : null}
+                {typeof window.ProTierIcon === 'function' ? <div style={{ width: 24, height: 24, opacity: 0.7 }}>{React.createElement(window.ProTierIcon, { size: 24 })}</div> : null}
             </nav>
             <header className="empire-header">
                 <div className="empire-topbar">
@@ -3022,85 +2409,45 @@ const renderScoutDetail = () => {
                         <span>{model.totals.leagues} leagues · asset allocation · exposure · pick capital</span>
                     </div>
                     <span className="empire-live" style={{ marginLeft: 12 }}>Live</span>
-                    <button className="empire-action" type="button" style={{ marginLeft: 'auto' }} disabled={!!refreshing} onClick={onRefresh}
-                        title={hasNonSleeperLeagues ? "Re-syncs Sleeper leagues' rosters, standings and scoring — ESPN/MFL leagues update on their own connection cycle" : "Re-sync every league's rosters, standings and scoring"}>
-                        {refreshing ? 'Refreshing…' : justSynced ? 'Synced ✓' : 'Refresh Leagues'}
-                    </button>
+                    <button className="empire-action" type="button" style={{ marginLeft: 'auto', borderColor: 'rgba(155,138,251,0.4)', color: 'var(--purple)', background: 'rgba(155,138,251,0.08)' }} onClick={() => setDetail({ type: 'moves' })}>⚡ Empire Moves{moves.length ? ' · ' + moves.length : ''}</button>
                     <div className="empire-user">{userName}</div>
                 </div>
+                {wireItems.length ? (
+                    <div className="empire-wire">
+                        <span className="empire-wire-tag">Empire Wire</span>
+                        <div className="empire-wire-track">
+                            {wireItems.map((w, i) => <span key={'a' + i} className="empire-wire-item">{w}</span>)}
+                            {wireItems.map((w, i) => <span key={'b' + i} className="empire-wire-item">{w}</span>)}
+                        </div>
+                    </div>
+                ) : null}
                 <div className="empire-kpis" data-testid="empire-command-strip">
                     {/* Command Bridge KPI strip — empire-wide overview (mockup contract), with
                         week-over-week deltas from the snapshot store. Lens filters drive the asset
                         table below, not these portfolio-level KPIs. */}
                     {bridge.kpis.map(kpiTile)}
                 </div>
-            </header>
-
-            <main className="empire-shell">
-                <div className="empire-viewbar" aria-label="Empire portfolio views">
-                    <span className="empire-filter-label">View</span>
+                <div className="empire-filters">
+                    <span className="empire-filter-label">Lenses</span>
                     {lensButton('All', {}, 'var(--gold)')}
                     {lensButton('High Exposure', { exposure: 'multi', assetType: 'players' }, 'var(--purple)')}
                     {lensButton('Post-window', { agePhase: 'post' }, 'var(--bad)')}
+                    {lensButton('Peak Assets', { agePhase: 'peak' }, 'var(--good)')}
                     {lensButton('Picks', { assetType: 'picks' }, 'var(--purple)')}
-                    <span className="empire-viewbar-spacer" />
+                    {lensButton('Contenders', { status: 'contender' }, 'var(--good)')}
+                    {lensButton('Rebuilds', { status: 'rebuild' }, 'var(--bad)')}
+                    <span className="empire-filter-label">Pos</span>
+                    {['QB','RB','WR','TE','K','DEF','DL','LB','DB'].map(pos => filterButton('position', pos, window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos), posColors[pos]))}
+                    <span className="empire-filter-label">Age</span>
+                    {filterButton('agePhase', 'build', 'Build', 'var(--k-4ecdc4, #4ecdc4)')}
+                    {filterButton('agePhase', 'peak', 'Peak', 'var(--k-2ecc71, #2ecc71)')}
+                    {filterButton('agePhase', 'value', 'Value', 'var(--k-f0a500, #f0a500)')}
+                    {filterButton('agePhase', 'post', 'Post-window', 'var(--k-e74c3c, #e74c3c)')}
                     {activeFilters > 0 && <button className="empire-filter empire-clear" type="button" onClick={clearFilters}>Clear {activeFilters}</button>}
-                    <button className={'empire-filter empire-filter-toggle' + (filtersOpen ? ' is-active' : '')} type="button" aria-expanded={filtersOpen} onClick={() => setFiltersOpen(v => !v)}>
-                        Filters {activeFilters > 0 ? <b>{activeFilters}</b> : null} <span aria-hidden="true">{filtersOpen ? '−' : '+'}</span>
-                    </button>
                 </div>
-                {filtersOpen ? (
-                    <div className="empire-advanced-filters" data-testid="empire-advanced-filters">
-                        <div className="empire-filter-group">
-                            <span className="empire-filter-label">Strategy</span>
-                            <div className="empire-filters">
-                                {lensButton('Peak Assets', { agePhase: 'peak' }, 'var(--good)')}
-                                {hasLongTerm ? lensButton('Contenders', { status: 'contender' }, 'var(--good)') : null}
-                                {hasLongTerm ? lensButton('Rebuilds', { status: 'rebuild' }, 'var(--bad)') : null}
-                            </div>
-                        </div>
-                        <div className="empire-filter-group">
-                            <span className="empire-filter-label">Position</span>
-                            <div className="empire-filters">
-                                {['QB','RB','WR','TE','K','DEF','DL','LB','DB'].map(pos => filterButton('position', pos, window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos), posColors[pos]))}
-                            </div>
-                        </div>
-                        <div className="empire-filter-group">
-                            <span className="empire-filter-label">Age Window</span>
-                            <div className="empire-filters">
-                                {filterButton('agePhase', 'build', 'Build', 'var(--k-4ecdc4, #4ecdc4)')}
-                                {filterButton('agePhase', 'peak', 'Peak', 'var(--k-2ecc71, #2ecc71)')}
-                                {filterButton('agePhase', 'value', 'Value', 'var(--k-f0a500, #f0a500)')}
-                                {filterButton('agePhase', 'post', 'Post-window', 'var(--k-e74c3c, #e74c3c)')}
-                            </div>
-                        </div>
-                        {/* Which leagues count toward Empire's totals at all — a
-                            persisted on/off per league, separate from the lenses
-                            above (those re-slice the SAME data, this decides what
-                            data is in the pool to begin with). */}
-                        <div className="empire-filter-group">
-                            <span className="empire-filter-label">Leagues</span>
-                            <div className="empire-filters">
-                                {(() => {
-                                    const empirePrefs = readEmpirePrefs();
-                                    return (allLeagues || []).map(l => {
-                                        const lid = l.league_id || l.id;
-                                        const on = isEmpireLeagueOn(lid, empirePrefs);
-                                        return (
-                                            <button key={lid} type="button"
-                                                className={'empire-filter' + (on ? ' is-active' : '')}
-                                                style={{ '--tone': 'var(--gold)' }}
-                                                title={on ? 'Included in Empire totals — click to exclude' : 'Excluded from Empire totals — click to include'}
-                                                onClick={() => { setEmpireLeagueOn(lid, !on); setPrefsTick(t => t + 1); }}>
-                                                {l.name}
-                                            </button>
-                                        );
-                                    });
-                                })()}
-                            </div>
-                        </div>
-                    </div>
-                ) : null}
+            </header>
+
+            <main className="empire-shell">
                 {hasNoResults ? (
                     <div className="empire-empty" data-testid="empire-empty-state">
                         <strong>No portfolio results match this view</strong>
@@ -3109,17 +2456,21 @@ const renderScoutDetail = () => {
                     </div>
                 ) : (
                     <>
-                        <section className="empire-command-deck" data-testid="empire-bridge">
-                            <div className="empire-panel empire-command-primary">
-                                <div className="empire-panel-head"><strong>Empire Brief</strong><em>Alex · {userName}</em></div>
-                                <div className="empire-command-kicker">Today's command read</div>
-                                <div className="empire-command-focus">{briefText}</div>
-                                <div className="empire-command-meta">Across {model.totals.leagues} leagues · {actionQueue.length} ranked moves · {model.totals.pickCount} picks under management</div>
+                        <section className="empire-bridge" data-testid="empire-bridge">
+                            <div className="empire-panel">
+                                <div className="empire-panel-head"><strong>Alex — Empire Brief</strong><em>{userName}</em></div>
+                                <div className="empire-brief">
+                                    <div className="empire-brief-av">A</div>
+                                    <div>
+                                        <div className="empire-brief-meta">Command read · all leagues</div>
+                                        <div className="empire-brief-body">{briefText}</div>
+                                    </div>
+                                </div>
                             </div>
                             <div className="empire-panel">
-                                <div className="empire-panel-head"><strong>Priority Queue</strong><em>the next {Math.min(3, actionQueue.length)} moves</em></div>
-                                <div className="empire-priority-list">
-                                    {actionQueue.length ? actionQueue.slice(0, 3).map((action, i) => (
+                                <div className="empire-panel-head"><strong>Priority Queue</strong><em>{actionQueue.length} ranked moves</em></div>
+                                <div className="empire-stack">
+                                    {actionQueue.length ? actionQueue.map((action, i) => (
                                         <button key={i} type="button" className="empire-signal" style={{ '--tone': signalTone(action.severity) }} onClick={() => actionForQueue(action)}>
                                             <div className="empire-signal-top"><strong>{action.title}</strong>{action.metric ? <b>{action.metric}</b> : null}</div>
                                             <span>{action.detail}</span>
@@ -3127,77 +2478,8 @@ const renderScoutDetail = () => {
                                         </button>
                                     )) : <div className="empire-empty"><strong>Portfolio is clean</strong>No high-leverage moves flagged right now.</div>}
                                 </div>
-                                {actionQueue.length > 3 ? <div className="empire-section-footer"><button className="empire-action" type="button" onClick={() => setDetail({ type: 'moves' })}>View all {actionQueue.length} moves →</button></div> : null}
                             </div>
                         </section>
-                        {/* ── THE ARBITRAGE BOARD ─────────────────────────
-                            Every league marked to its own book, so the same
-                            player carries a different price in each — and the
-                            spread is a trade only a portfolio can see. */}
-                        {marks && marks.arbitrage.length ? (() => {
-                            const mineTotal = marks.arbitrage.reduce((n, a) => n + (a.spreadMine ? 1 : 0), 0);
-                            const availableRows = arbMineOnly ? marks.arbitrage.filter(a => a.spreadMine) : marks.arbitrage;
-                            const rows = availableRows.slice(0, arbExpanded ? 12 : 3);
-                            return (
-                            <section className="empire-bridge" data-testid="empire-arbitrage">
-                                <div className="empire-panel" style={{ gridColumn: '1 / -1' }}>
-                                    <div className="empire-panel-head">
-                                        <strong>Arbitrage — same player, different books</strong>
-                                        <em>{marks.arbitrage.length} spreads · {mineTotal} touch your roster · {Object.keys(marks.byLeague).length} leagues marked</em>
-                                    </div>
-                                    {mineTotal > 0 ? (
-                                        <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-                                            <button type="button" onClick={() => setArbMineOnly(true)}
-                                                className={'empire-filter' + (arbMineOnly ? ' is-active' : '')}>Mine ({mineTotal})</button>
-                                            <button type="button" onClick={() => setArbMineOnly(false)}
-                                                className={'empire-filter' + (!arbMineOnly ? ' is-active' : '')}>All ({marks.arbitrage.length})</button>
-                                        </div>
-                                    ) : null}
-                                    <div className="empire-stack">
-                                        {rows.length ? rows.map(a => {
-                                            const ownedLegs = (a.legs || []).filter(leg => leg.mine);
-                                            return (
-                                            <div key={a.pid} role="button" tabIndex={0} className="empire-signal" style={{ '--tone': 'var(--purple)', cursor: 'pointer' }}
-                                                onClick={() => setDetail && setDetail({ type: 'player', pid: a.pid })}
-                                                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDetail && setDetail({ type: 'player', pid: a.pid }); } }}>
-                                                <div className="empire-signal-top">
-                                                    <strong>{a.name}{a.pos ? ' · ' + a.pos : ''}</strong>
-                                                    {a.spreadMine ? <b style={{ color: 'var(--gold)' }}>YOURS</b> : null}
-                                                    <b>+{a.spreadPct}%</b>
-                                                </div>
-                                                <span>
-                                                    Worth <b>{a.high.value.toLocaleString()}</b> in {a.high.name} vs <b>{a.low.value.toLocaleString()}</b> in {a.low.name} — {a.gap.toLocaleString()} of value between your own books.
-                                                </span>
-                                                {/* Ownership FACTS, not a buy-here-sell-there instruction — these
-                                                    are independent player pools and nobody can move him between
-                                                    them. Leverage where you hold him, intel where you don't. */}
-                                                <em>{a.note}</em>
-                                                {ownedLegs.length ? (
-                                                    <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
-                                                        {ownedLegs.map(leg => (
-                                                            <button key={leg.leagueId} type="button" className="empire-ghost" style={{ fontSize: 'var(--text-micro)', padding: '3px 8px' }}
-                                                                onClick={e => { e.stopPropagation(); setDetail({ type: 'tradeDesk', leagueId: leg.leagueId, seedPid: a.pid }); }}>
-                                                                Trade Desk · {leg.name}
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                ) : null}
-                                            </div>
-                                            );
-                                        }) : <div className="empire-empty"><strong>No owned spreads right now</strong>Nothing you roster carries a big enough gap between leagues. Switch to "All" for market intel.</div>}
-                                    </div>
-                                    <div className="empire-brief-meta" style={{ marginTop: 10, textTransform: 'none', letterSpacing: 0, fontWeight: 500, color: 'var(--ov-7, rgb(132,132,133))' }}>
-                                        League-scored seasonal prices — each league priced on its own scoring, roster slots and team count. Not a dynasty valuation. Leagues are independent player pools: a spread is a trade-leverage read on your OWN rostered asset, never an instruction to move him between leagues.
-                                    </div>
-                                    {availableRows.length > 3 ? (
-                                        <div className="empire-section-footer">
-                                            <button className="empire-action" type="button" onClick={() => setArbExpanded(v => !v)}>{arbExpanded ? 'Show less' : 'Show ' + Math.min(12, availableRows.length) + ' opportunities'} {arbExpanded ? '↑' : '↓'}</button>
-                                        </div>
-                                    ) : null}
-                                </div>
-                            </section>
-                            );
-                        })() : null}
                         {rolodex.length ? (
                             <section className="empire-panel empire-rolodex" data-testid="empire-rolodex">
                                 <div className="empire-panel-head"><strong>Owner Rolodex</strong><em>{rolodex.length} owners across {model.totals.leagues} leagues · ranked by edge</em></div>
@@ -3252,21 +2534,10 @@ const renderScoutDetail = () => {
                                             <button key={province.id} className="empire-league-card" style={{ '--tone': province.tierColor }} type="button" onClick={() => setDetail({ type: 'league', leagueId: province.id })}>
                                                 <div>
                                                     <strong>{province.name}</strong>
-                                                    <span>
-                                                        {province.preDraftEmpty ? 'Pre-Draft' : province.tier} - {province.recordLabel} - HP{' '}
-                                                        <b style={{ color: empireHealthColor(province.healthScore) }}>{province.healthScore ?? 'No read'}</b>
-                                                    </span>
+                                                    <span>{province.tier} - {province.wins}-{province.losses} - HP {province.healthScore ?? 'No read'}</span>
                                                     <em>{province.pickCount} picks - {province.premiumPickCount} premium - #{province.powerRank || '-'}/{province.teams || '-'}</em>
                                                 </div>
-                                                <div style={{ textAlign: 'right' }}>
-                                                    <b>{province.totalDHQ > 0 ? empireCompact(province.totalDHQ) : (province.preDraftEmpty ? 'Pre-Draft' : 'No DHQ')}</b>
-                                                    {!province.preDraftEmpty && province.healthScore != null ? (
-                                                        <div className="empire-health-mini">
-                                                            <div className="empire-health-track"><div className="empire-health-fill" style={{ width: province.healthScore + '%', background: empireHealthColor(province.healthScore) }} /></div>
-                                                            <span className="empire-health-num" style={{ color: empireHealthColor(province.healthScore) }}>{province.healthScore}</span>
-                                                        </div>
-                                                    ) : null}
-                                                </div>
+                                                <b>{province.totalDHQ > 0 ? empireCompact(province.totalDHQ) : 'No DHQ'}</b>
                                             </button>
                                         )) : <div className="empire-empty"><strong>No leagues</strong>Reset filters or check roster sync.</div>}
                                 </div>
@@ -3299,7 +2570,7 @@ const renderScoutDetail = () => {
                             <div className="empire-workspace-head">
                                 <div>
                                     <strong>Asset Workspace</strong>
-                                    <div style={{ color: 'var(--ov-9, rgb(132,132,133))', fontSize: 'var(--text-label, 0.75rem)', marginTop: 2 }}>{filtered.assets.length} players - {filtered.picks.length} picks - {activeFilters ? activeFilters + ' filters' : 'full portfolio'}</div>
+                                    <div style={{ color: 'var(--ov-9, rgba(255,255,255,0.5))', fontSize: 'var(--text-label, 0.75rem)', marginTop: 2 }}>{filtered.assets.length} players - {filtered.picks.length} picks - {activeFilters ? activeFilters + ' filters' : 'full portfolio'}</div>
                                 </div>
                                 <div className="empire-sort-row">
                                     {['dhq', 'exposure', 'age', 'position', 'league'].map(key => (
@@ -3330,15 +2601,6 @@ const renderScoutDetail = () => {
                         </section>
                     </>
                 )}
-                {wireItems.length ? (
-                    <div className="empire-wire" aria-label="Empire Wire">
-                        <span className="empire-wire-tag">Empire Wire</span>
-                        <div className="empire-wire-track">
-                            {wireItems.map((w, i) => <span key={'a' + i} className="empire-wire-item">{w}</span>)}
-                            {wireItems.map((w, i) => <span key={'b' + i} className="empire-wire-item">{w}</span>)}
-                        </div>
-                    </div>
-                ) : null}
             </main>
         </div>
     );
@@ -3388,13 +2650,6 @@ function buildCommandBridge(input) {
     const games = (rec.wins || 0) + (rec.losses || 0);
     const winPctStr = games ? ('.' + String(Math.round((rec.wins / games) * 1000)).padStart(3, '0')).replace('.1000', '1.000') : '—';
     const playoffSpots = provinces.filter(inPlayoffSpot).length;
-    // Chopped leagues never accrue a W-L record (totalRecord already excludes
-    // them above) — surface that on the tile itself rather than let the KPI
-    // silently look like a 3-league record when it is really across 4.
-    const choppedProvinces = provinces.filter(p => p.isChopped);
-    const choppedNote = choppedProvinces.length
-        ? choppedProvinces.length + ' on survival rules (' + choppedProvinces.map(p => p.isEliminated ? 'chopped wk ' + p.eliminatedWeek : (p.aliveCount || '?') + ' of ' + p.teams + ' alive').join(', ') + ')'
-        : null;
 
     const dhqDelta = delta ? delta.totalDHQDelta : null;
     // prevDHQ must come from the delta's own universe (leagues that have a prior snapshot),
@@ -3409,7 +2664,7 @@ function buildCommandBridge(input) {
           sub: 'DHQ across ' + (totals.leagues || 0) + ' leagues',
           delta: dhqDelta != null ? { dir: dir(dhqDelta), pct: dhqPct } : null },
         { key: 'record', label: 'Record', value: (rec.wins || 0) + '–' + (rec.losses || 0),
-          sub: winPctStr + (games ? ' · ' + playoffSpots + ' in playoff spots' : '') + (choppedNote ? ' · ' + choppedNote : '') },
+          sub: winPctStr + (games ? ' · ' + playoffSpots + ' in playoff spots' : '') },
         { key: 'health', label: 'Avg Health', value: totals.avgHealth != null ? String(totals.avgHealth) : '—',
           tone: healthTone(totals.avgHealth),
           sub: healthDelta == null ? 'no prior week yet'

@@ -197,28 +197,6 @@
         if (rounds) patch.rounds = rounds;
         if (draft.settings?.teams) patch.leagueSize = draft.settings.teams;
         if (draft.type) patch.draftType = draft.type;
-
-        // Real Sleeper auction draft — mirror the mock-auction's proven
-        // variant/auctionPoolSource split (grading needs state.variant ===
-        // 'auction' to read pick.amount; the real pool-format is preserved
-        // separately since nothing else here depends on state.variant for
-        // pool building the way the local mock does).
-        if (draft.type === 'auction') {
-            patch.draftMechanic = 'auction';
-            patch.auctionPoolSource = variant;
-            patch.variant = 'auction';
-            // Sleeper's real starting-budget field for auction drafts — public
-            // API convention is settings.budget; fall back to the existing
-            // $200 default if it's absent or the live key differs.
-            const budget = Number(draft.settings?.budget) > 0 ? Number(draft.settings.budget) : 200;
-            patch.auctionBudget = budget;
-            const rosters = window.S?.rosters || currentLeague?.rosters || [];
-            const teamBudgets = {};
-            rosters.forEach(r => {
-                if (r?.roster_id != null) teamBudgets[r.roster_id] = { total: budget, spent: 0, remaining: budget };
-            });
-            patch.teamBudgets = teamBudgets;
-        }
         return patch;
     }
 
@@ -264,6 +242,53 @@
         };
     }
 
+    // Seasonal saves (redraft/best_ball/startup) bake their player pool at
+    // creation, so pool-builder fixes never reach an already-saved room —
+    // owner report 2026-08-15: a mock kept its retired-kicker pool after the
+    // starter-only kicker rebuild shipped, while the Draft tab's feeder
+    // (which rebuilds every load) showed the fixed list. Rebuild the pool
+    // with the CURRENT builder on every resume — minus players already
+    // drafted — so the live room always mirrors the feeder. The size guard
+    // protects saved pools from an engine that hasn't scored yet (a cold
+    // load would otherwise swap a full board for a near-empty one).
+    function refreshSeasonalPoolFromEngine(saved, stateFns, playersData) {
+        const seasonal = saved && (saved.variant === 'redraft' || saved.variant === 'best_ball' || saved.variant === 'startup');
+        if (!seasonal || saved.phase === 'complete' || !stateFns?.buildPool) return saved;
+        let freshPool = null;
+        try {
+            const totalPicks = Number(saved.rounds || 0) * Number(saved.leagueSize || 0);
+            freshPool = stateFns.buildPool({
+                variant: saved.variant,
+                playersData,
+                maxSize: saved.variant === 'redraft' ? Math.max(300, totalPicks + 80) : 200,
+            });
+        } catch (e) {}
+        const savedSize = (saved.originalPool && saved.originalPool.length) || (saved.pool && saved.pool.length) || 0;
+        if (!freshPool || freshPool.length < 100 || freshPool.length < savedSize * 0.5) return saved;
+        const drafted = {};
+        (saved.picks || []).forEach(p => { if (p?.pid) drafted[p.pid] = (drafted[p.pid] || 0) + 1; });
+        const copies = Math.max(1, Number(saved.playerCopies) || 1);
+        // Drafted names NEVER leave the board — they show struck through
+        // (big-board re-adds them from originalPool). Carry over the old row
+        // for any drafted player the fresh builder no longer includes (junk
+        // pick from a pre-fix pool, or a player who fell below the rebuilt
+        // cut) so his lined-through row survives the rebuild.
+        const freshIds = new Set(freshPool.map(p => String(p?.pid)));
+        const oldRows = new Map();
+        [...(saved.originalPool || []), ...(saved.pool || [])].forEach(p => {
+            if (p?.pid != null && !oldRows.has(String(p.pid))) oldRows.set(String(p.pid), p);
+        });
+        const carryover = Object.keys(drafted)
+            .filter(pid => !freshIds.has(String(pid)) && oldRows.has(String(pid)))
+            .map(pid => oldRows.get(String(pid)));
+        const fullPool = freshPool.concat(carryover);
+        return {
+            ...saved,
+            pool: fullPool.filter(p => p?.pid != null && (drafted[p.pid] || 0) < copies),
+            originalPool: fullPool.slice(),
+        };
+    }
+
     function DraftCommandCenter({ playersData, myRoster, currentLeague, draftRounds: propRounds, forcedMode, autoStartLiveToken }) {
         const stateFns = window.DraftCC.state;
 
@@ -303,7 +328,7 @@
         }, [leagueIdForFetch]);
 
         // Default setup from real Sleeper draft data
-        const rawDraftMeta = React.useMemo(() => {
+        const draftMeta = React.useMemo(() => {
             const rosters = window.S?.rosters || currentLeague?.rosters || [];
             const users = window.S?.leagueUsers || currentLeague?.users || [];
             const myUid = window.S?.user?.user_id || '';
@@ -541,12 +566,13 @@
                 let saved = stateFns.loadFromLocal(currentLeague?.league_id || currentLeague?.id, forcedMode);
                 if (saved && saved.phase !== 'setup') {
                     saved = refreshRookieValuesFromEngine(saved, stateFns, playersData);
+                    saved = refreshSeasonalPoolFromEngine(saved, stateFns, playersData);
                     // Recompose personas — we strip them on save, so rehydrate from the live DNA map
                     const leagueId = currentLeague?.league_id || currentLeague?.id || '';
                     let draftDnaMap = {};
                     try {
                         if (window.DraftHistory?.loadDraftDNA) {
-                            draftDnaMap = window.DraftCC.persona.remapDraftDnaByRosterId(window.DraftHistory.loadDraftDNA(leagueId) || {});
+                            draftDnaMap = window.DraftHistory.loadDraftDNA(leagueId) || {};
                         }
                     } catch (e) {}
                     saved.personas = window.DraftCC.persona.composeAllPersonas(leagueId, draftDnaMap);
@@ -572,20 +598,18 @@
                 }
                 // Phase 5+: prefer the league's scheduled upcoming draft settings
                 // so Solo defaults match whatever's actually scheduled in Sleeper.
-                // Uses rawDraftMeta (not the override-merged draftMeta below) —
-                // there's no user-customized slot order yet on first mount.
-                const upcoming = rawDraftMeta.upcomingSettings;
+                const upcoming = draftMeta.upcomingSettings;
                 const initial = stateFns.initialDraftState({
                     leagueId: currentLeague?.league_id || currentLeague?.id || '',
                     season: currentLeague?.season,
                     rounds: upcoming?.rounds || propRounds || 5,
-                    leagueSize: upcoming?.teams || rawDraftMeta.numTeams,
+                    leagueSize: upcoming?.teams || draftMeta.numTeams,
                     // Multi-copy leagues (MFL rostersPerPlayer) — 1 elsewhere.
                     playerCopies: currentLeague?.settings?.player_copies || 1,
-                    draftType: upcoming?.type || rawDraftMeta.draftType || 'snake',
-                    variant: upcoming?.variant || rawDraftMeta.draftVariant || 'startup',
+                    draftType: upcoming?.type || draftMeta.draftType || 'snake',
+                    variant: upcoming?.variant || draftMeta.draftVariant || 'startup',
                     userRosterId: myRoster?.roster_id,
-                    userSlot: rawDraftMeta.mySlot,
+                    userSlot: draftMeta.mySlot,
                     // Honor forced mode (e.g., live-sync from the Follow Live Draft tab)
                     mode: forcedMode || 'solo',
                 });
@@ -615,16 +639,6 @@
                     strategyProfile,
                 };
             }
-        );
-
-        // Mock-only slot order override (Setup screen's reorder list) layered on
-        // top of the real computed draftMeta. Every other reference in this file
-        // reads `draftMeta` (not `rawDraftMeta`) so the override reaches both the
-        // Setup preview AND the actual pick order onStartDraft builds — same
-        // source, no separate propagation path to keep in sync.
-        const draftMeta = React.useMemo(
-            () => stateFns.applyCustomSlotOrder(rawDraftMeta, state.customSlotOrder),
-            [rawDraftMeta, state.customSlotOrder]
         );
 
         // Resume banner is only shown when we're still in setup phase but have a saved draft
@@ -692,6 +706,36 @@
             }, 500);
             return () => clearTimeout(saveTimerRef.current);
         }, [state]);
+
+
+        // Broadcast live-draft picks so a player taken in the live draft shows
+        // struck-through on the Draft tab's User Board too (the live board already
+        // strikes from state.draftedPids). We send the pick set on its own channel —
+        // kept separate from the board-edit sync and from the User Board's manual
+        // "Off" marks — so the prep board reflects the live draft without either side
+        // clobbering the other. Only live-sync drafts feed this; mocks stay
+        // hypothetical and never cross off the prep board.
+        const draftedSyncRef = React.useRef(null);
+        React.useEffect(() => {
+            if (state.mode !== 'live-sync') return;
+            const leagueId = state.leagueId || currentLeague?.league_id || currentLeague?.id;
+            if (!leagueId) return;
+            const drafted = Object.keys(state.draftedPids || {});
+            const sig = drafted.slice().sort().join(',');
+            if (sig === draftedSyncRef.current) return; // no pick change since last sync
+            // Don't clear the User Board's seeded picks with the initial empty set
+            // before live state hydrates — only emit empty once we've sent real picks
+            // (i.e. a genuine undo back to zero).
+            if (drafted.length === 0 && draftedSyncRef.current === null) return;
+            draftedSyncRef.current = sig;
+            if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+                try {
+                    window.dispatchEvent(new CustomEvent('wr:live-draft-picks', {
+                        detail: { leagueId, variant: state.variant || 'startup', drafted },
+                    }));
+                } catch (e) { /* CustomEvent unsupported — non-fatal */ }
+            }
+        }, [state.draftedPids, state.mode, state.leagueId, state.variant, currentLeague]);
 
         // Current slot + whose turn is it
         // isUserTurn prefers rosterId match (post-trade ownership), but falls back
@@ -806,7 +850,6 @@
         // After each completed pick, roll for a trade offer. Cooldown prevents spam.
         const lastOfferIdxRef = React.useRef(-Infinity);
         const lastPickCountRef = React.useRef(0);
-        const snapshottedPickIdsRef = React.useRef(new Set());
         React.useEffect(() => {
             // CPU trade offers are persona-simulated negotiations (likelihood,
             // psych taxes) → Pro. Free mocks stay pure BPA pick-making.
@@ -841,36 +884,6 @@
             return () => clearTimeout(t);
         }, [state.currentIdx, state.phase, state.mode, state.activeOffer, state.proposerDrawer]);
 
-        // ── Value-history snapshot ───────────────────────────────────
-        // Freeze each REAL pick's DHQ value the moment it lands, so a trade
-        // or a rank rebuild months later can't silently re-price draft day.
-        // live-sync only: mock/CPU practice runs share this league's real
-        // league_id, and must never write here — a practice draft would
-        // collide with (and permanently block, via the one-row-per-week
-        // upsert) the real draft's snapshot for that player/week. pick.dhq
-        // is already resolved via resolvePlayerDhq at pick time (state.js
-        // MAKE_PICK / the live-sync mapper below) — reuse it as-is so the
-        // snapshot matches exactly what the grid showed at pick time,
-        // rather than recomputing against whatever the engine says now.
-        React.useEffect(() => {
-            if (state.mode !== 'live-sync') return;
-            if (typeof window.OD?.recordValueSnapshot !== 'function') return;
-            const isRedraft = !!window.App?.PlayerValue?.isRedraftActive?.();
-            const curWeek = Number(window.S?.nflState?.display_week || window.S?.nflState?.week || 0);
-            (state.picks || []).forEach(pick => {
-                if (!pick?.id || !pick?.pid || snapshottedPickIdsRef.current.has(pick.id)) return;
-                snapshottedPickIdsRef.current.add(pick.id);
-                if (pick.dhq == null || pick.dhq <= 0) return;
-                window.OD.recordValueSnapshot({
-                    leagueId: state.leagueId, playerId: pick.pid,
-                    season: Number(state.season) || new Date().getFullYear(), week: curWeek,
-                    ts: pick.ts ? new Date(pick.ts).toISOString() : undefined,
-                    value: pick.dhq, valueType: isRedraft ? 'redraft' : 'dynasty', source: 'draft',
-                    context: { pickSlot: `${pick.round}.${String(pick.slot).padStart(2, '0')}`, overall: pick.overall },
-                });
-            });
-        }, [state.picks, state.mode, state.leagueId]);
-
         // ── Phase 5: Live Sync polling loop ─────────────────────────
         // When mode==='live-sync' and phase==='drafting', start polling the
         // Sleeper draft every 5s. Each new pick is converted to our state.pick
@@ -885,14 +898,7 @@
             if (!window.DraftCC.liveSync) return;
 
             const normPos = window.App?.normPos || (p => p);
-            // Format-aware: resolvePlayerDhq is redraft-first (ROS values on a
-            // redraft board), and its explicit ros-zero is honored — never
-            // fall back to dynasty pricing for a redraft 0.
-            const getDHQ = (pid) => {
-                const resolved = window.DraftCC?.state?.resolvePlayerDhq?.({ pid });
-                if (resolved && (resolved.value > 0 || resolved.source === 'ros-zero')) return resolved.value;
-                return window.App?.LI?.playerScores?.[pid] || 0;
-            };
+            const getDHQ = (pid) => window.App?.LI?.playerScores?.[pid] || 0;
 
             const initialPickNo = Math.max(
                 Number(state.liveSync?.lastPickNo || 0),
@@ -1512,7 +1518,7 @@
             let draftDnaMap = {};
             try {
                 if (window.DraftHistory?.loadDraftDNA) {
-                    draftDnaMap = window.DraftCC.persona.remapDraftDnaByRosterId(window.DraftHistory.loadDraftDNA(leagueId) || {});
+                    draftDnaMap = window.DraftHistory.loadDraftDNA(leagueId) || {};
                 }
             } catch (e) {}
             const personas = window.DraftCC.persona.composeAllPersonas(leagueId, draftDnaMap);
@@ -1601,41 +1607,6 @@
                 })
                 : null;
 
-            // Auction seeding — applied via setupPatch (shallow-merged by the
-            // START_DRAFT reducer) rather than earlier in activeState, so pool
-            // building and draftContext/format-adapter resolution above still
-            // see the REAL pool source (redraft/startup/rookie). Only after the
-            // draft is actually starting does state.variant flip to 'auction'
-            // (grading reads it; context.js's format-adapter lookup never does,
-            // since it already ran against the real variant above).
-            let auctionPatch = null;
-            if (activeState.draftMechanic === 'auction') {
-                const budget = Math.max(1, Number(activeState.auctionBudget) || 200);
-                const teamBudgets = {};
-                Object.values(draftMeta.slotToRoster || {}).forEach(info => {
-                    if (info.rosterId != null) teamBudgets[info.rosterId] = { total: budget, spent: 0, remaining: budget };
-                });
-                const rosterPositions = draftContext?.leagueFormat?.rosterSlots
-                    || currentLeague?.roster_positions
-                    || currentLeague?.rosterPositions
-                    || [];
-                const marketValues = stateFns.buildAuctionMarketValues(pool, {
-                    leagueSize: activeState.leagueSize,
-                    rounds: activeState.rounds,
-                    auctionBudget: budget,
-                    rosterPositions,
-                });
-                auctionPatch = {
-                    variant: 'auction',
-                    auctionPoolSource: activeState.variant,
-                    auctionBudget: budget,
-                    teamBudgets,
-                    marketValues,
-                    nominatorIdx: 0,
-                    nomination: null,
-                };
-            }
-
             dispatch({
                 type: 'START_DRAFT',
                 pool,
@@ -1650,7 +1621,7 @@
                 narrative,
                 replay,
                 liveDraftStatus,
-                setupPatch: (overridePatch || auctionPatch) ? { ...(overridePatch || {}), ...(auctionPatch || {}) } : null,
+                setupPatch: overridePatch || null,
             });
 
             // Phase 2: async DraftHistory sync (mirrors Scout draft-ui.js:1977)
@@ -1658,9 +1629,8 @@
                 window.DraftHistory.syncDraftDNA(leagueId).then(map => {
                     if (!map) return;
                     const normalize = window.DraftCC.persona.normalizeDraftDna;
-                    const byRosterId = window.DraftCC.persona.remapDraftDnaByRosterId(map);
                     const payload = {};
-                    Object.entries(byRosterId).forEach(([rid, raw]) => {
+                    Object.entries(map).forEach(([rid, raw]) => {
                         payload[rid] = normalize(raw);
                     });
                     dispatch({ type: 'MERGE_DRAFT_DNA', payload });
@@ -1679,8 +1649,6 @@
             state.draftTuning,
             state.strategyProfile,
             state.analystScenario,
-            state.draftMechanic,
-            state.auctionBudget,
             draftMeta,
             playersData,
             currentLeague,
@@ -1766,7 +1734,7 @@
             let draftDnaMap = {};
             try {
                 if (window.DraftHistory?.loadDraftDNA) {
-                    draftDnaMap = window.DraftCC.persona.remapDraftDnaByRosterId(window.DraftHistory.loadDraftDNA(leagueId) || {});
+                    draftDnaMap = window.DraftHistory.loadDraftDNA(leagueId) || {};
                 }
             } catch (e) {}
             const personas = window.DraftCC.persona.composeAllPersonas(leagueId, draftDnaMap);
@@ -1898,7 +1866,7 @@
             let draftDnaMap = {};
             try {
                 if (window.DraftHistory?.loadDraftDNA) {
-                    draftDnaMap = window.DraftCC.persona.remapDraftDnaByRosterId(window.DraftHistory.loadDraftDNA(leagueId) || {});
+                    draftDnaMap = window.DraftHistory.loadDraftDNA(leagueId) || {};
                 }
             } catch (e) {}
             const personas = window.DraftCC.persona.composeAllPersonas(leagueId, draftDnaMap);
@@ -2161,7 +2129,7 @@
                         padding: 'var(--space-md) var(--space-lg)',
                         background: 'linear-gradient(90deg, var(--acc-fill2, rgba(212,175,55,0.12)), var(--acc-fill1, rgba(212,175,55,0.02)))',
                         border: '1px solid var(--acc-line2, rgba(212,175,55,0.35))',
-                        borderRadius: 'var(--card-radius-sm, 8px)',
+                        borderRadius: '8px',
                         marginBottom: 'var(--card-gap)',
                         display: 'flex',
                         alignItems: 'center',
@@ -2284,100 +2252,13 @@
                                 </select>
                             </div>
                             <div>
-                                <div className="draft-setup-label">Draft Mechanic</div>
-                                <div className="draft-setup-choice" style={{ minHeight: '44px' }}>
-                                    <button type="button" className={state.draftMechanic !== 'auction' ? 'is-active' : ''} onClick={() => update({ draftMechanic: 'turns' })}>Turns</button>
-                                    <button type="button" className={state.draftMechanic === 'auction' ? 'is-active' : ''} onClick={() => update({ draftMechanic: 'auction' })}>Auction</button>
-                                </div>
-                            </div>
-                            {state.draftMechanic !== 'auction' ? (
-                            <div>
                                 <div className="draft-setup-label">Draft Order</div>
                                 <select value={state.draftType} onChange={e => update({ draftType: e.target.value })} style={selStyle}>
                                     <option value="snake" style={{ background: 'var(--k-111111, #111111)' }}>Snake</option>
                                     <option value="linear" style={{ background: 'var(--k-111111, #111111)' }}>Linear</option>
                                 </select>
                             </div>
-                            ) : (
-                            <div>
-                                <div className="draft-setup-label">Starting Budget</div>
-                                <input type="number" min="1" max="9999" value={state.auctionBudget} onChange={e => update({ auctionBudget: Math.max(1, Number(e.target.value) || 200) })} style={selStyle} />
-                            </div>
-                            )}
                         </div>
-
-                        {/* Team Order (owner ask) — who sits in which slot, mock-only.
-                            Distinct from "Draft Order" above (that's snake vs linear —
-                            the turn PATTERN; this is WHICH team picks from which slot).
-                            Defaults to the league's real draft_order / win-sort/MFL
-                            result (draftMeta.slotToRoster) until the user reorders,
-                            at which point state.customSlotOrder overrides it end to
-                            end — same draftMeta the preview below AND onStartDraft
-                            both read, so there's nothing else to keep in sync.
-                            Doubles as auction Nomination Order — same "ordered list
-                            of teams" concept either way, only the label changes. */}
-                        {(() => {
-                            const slotOrder = Array.from({ length: state.leagueSize || 0 }, (_, i) => draftMeta.slotToRoster?.[i + 1]?.rosterId ?? null);
-                            // Quiet hint that real draft learning is active for this
-                            // league — reads straight from the cached sync (no need
-                            // to wait for personas, which don't compose until the
-                            // draft actually starts). Blank when there's genuinely
-                            // nothing real to infer from yet (e.g. a startup league).
-                            let dnaByRosterId = {};
-                            try {
-                                const leagueIdForDna = currentLeague?.league_id || currentLeague?.id || '';
-                                const raw = window.DraftHistory?.loadDraftDNA ? window.DraftHistory.loadDraftDNA(leagueIdForDna) : null;
-                                if (raw) dnaByRosterId = window.DraftCC.persona.remapDraftDnaByRosterId(raw);
-                            } catch (e) {}
-                            const moveSlot = (i, dir) => {
-                                const j = i + dir;
-                                if (j < 0 || j >= slotOrder.length) return;
-                                const next = slotOrder.slice();
-                                [next[i], next[j]] = [next[j], next[i]];
-                                update({ customSlotOrder: next });
-                            };
-                            const shuffleOrder = () => {
-                                const next = slotOrder.slice();
-                                for (let i = next.length - 1; i > 0; i--) {
-                                    const j = Math.floor(Math.random() * (i + 1));
-                                    [next[i], next[j]] = [next[j], next[i]];
-                                }
-                                update({ customSlotOrder: next });
-                            };
-                            return (
-                                <div style={{ marginTop: 12 }}>
-                                    <div className="draft-setup-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                        <span>{state.draftMechanic === 'auction' ? 'Nomination Order' : 'Team Order'}{state.customSlotOrder ? ' (custom)' : ''}</span>
-                                        <span style={{ display: 'flex', gap: 6 }}>
-                                            <button type="button" onClick={shuffleOrder} style={{ padding: '3px 9px', border: '1px solid var(--acc-line2, rgba(212,175,55,0.32))', borderRadius: 5, background: 'transparent', color: 'var(--gold)', fontFamily: FONT_UI, fontSize: '0.66rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', cursor: 'pointer' }}>Shuffle</button>
-                                            {state.customSlotOrder && (
-                                                <button type="button" onClick={() => update({ customSlotOrder: null })} style={{ padding: '3px 9px', border: '1px solid var(--ov-6, rgba(255,255,255,0.12))', borderRadius: 5, background: 'transparent', color: 'var(--silver)', fontFamily: FONT_UI, fontSize: '0.66rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', cursor: 'pointer' }}>Reset</button>
-                                            )}
-                                        </span>
-                                    </div>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3, maxHeight: 220, overflowY: 'auto', border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', borderRadius: 6, padding: 4 }}>
-                                        {slotOrder.map((rosterId, i) => {
-                                            const slot = i + 1;
-                                            const info = draftMeta.slotToRoster?.[slot] || {};
-                                            const isMine = slot === draftMeta.mySlot;
-                                            return (
-                                                <div key={rosterId ?? ('empty-' + slot)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', borderRadius: 4, background: isMine ? 'rgba(212,175,55,0.08)' : 'transparent' }}>
-                                                    <span style={{ width: 22, flex: 'none', fontFamily: 'var(--font-mono, monospace)', fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.7 }}>{slot}</span>
-                                                    <span style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.78rem', color: isMine ? 'var(--gold)' : 'var(--white)', fontWeight: isMine ? 700 : 400 }}>
-                                                        {info.ownerName || 'Team ' + slot}{isMine ? ' (YOU)' : ''}
-                                                        {!isMine && dnaByRosterId[rosterId]?.label && (
-                                                            <em style={{ marginLeft: 6, fontStyle: 'normal', fontSize: '0.62rem', color: 'var(--silver)', opacity: 0.6 }}>· {dnaByRosterId[rosterId].label}</em>
-                                                        )}
-                                                    </span>
-                                                    <button type="button" aria-label={'Move ' + (info.ownerName || 'team ' + slot) + ' up'} disabled={i === 0} onClick={() => moveSlot(i, -1)} style={{ width: 26, height: 26, flex: 'none', border: '1px solid var(--ov-6, rgba(255,255,255,0.12))', borderRadius: 4, background: 'transparent', color: i === 0 ? 'var(--text-disabled, #444)' : 'var(--silver)', cursor: i === 0 ? 'default' : 'pointer', fontSize: '0.7rem', lineHeight: 1 }}>▲</button>
-                                                    <button type="button" aria-label={'Move ' + (info.ownerName || 'team ' + slot) + ' down'} disabled={i === slotOrder.length - 1} onClick={() => moveSlot(i, 1)} style={{ width: 26, height: 26, flex: 'none', border: '1px solid var(--ov-6, rgba(255,255,255,0.12))', borderRadius: 4, background: 'transparent', color: i === slotOrder.length - 1 ? 'var(--text-disabled, #444)' : 'var(--silver)', cursor: i === slotOrder.length - 1 ? 'default' : 'pointer', fontSize: '0.7rem', lineHeight: 1 }}>▼</button>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            );
-                        })()}
 
                         {state.mode !== 'manual' ? (
                             <>
@@ -2590,7 +2471,7 @@
             padding: '7px 9px',
             background: 'var(--ov-3, rgba(255,255,255,0.04))',
             border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))',
-            borderRadius: 'var(--card-radius-sm, 8px)',
+            borderRadius: '6px',
             color: 'var(--white)',
             fontSize: 'var(--text-micro, 0.6875rem)',
             fontFamily: FONT_UI,
@@ -2599,7 +2480,7 @@
         };
         const chipStyle = activeChip => ({
             padding: '5px 8px',
-            borderRadius: 'var(--card-radius-xs, 5px)',
+            borderRadius: '5px',
             border: '1px solid ' + (activeChip ? 'var(--acc-line3, rgba(212,175,55,0.46))' : 'var(--ov-5, rgba(255,255,255,0.08))'),
             background: activeChip ? 'var(--acc-fill2, rgba(212,175,55,0.13))' : 'var(--ov-2, rgba(255,255,255,0.025))',
             color: activeChip ? 'var(--gold)' : 'var(--silver)',
@@ -2637,7 +2518,7 @@
                                 padding: '7px 10px',
                                 background: 'var(--ov-3, rgba(255,255,255,0.04))',
                                 border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))',
-                                borderRadius: 'var(--card-radius-sm, 8px)',
+                                borderRadius: '6px',
                                 color: 'var(--white)',
                                 fontSize: '0.76rem',
                                 fontFamily: FONT_UI,
@@ -2653,7 +2534,7 @@
                                 background: 'var(--gold)',
                                 color: 'var(--black)',
                                 border: '1px solid var(--gold)',
-                                borderRadius: 'var(--card-radius-sm, 8px)',
+                                borderRadius: '6px',
                                 cursor: 'pointer',
                                 fontSize: '0.72rem',
                                 fontFamily: FONT_UI,
@@ -2666,7 +2547,7 @@
                                     background: 'rgba(46,204,113,0.12)',
                                     color: 'var(--k-2ecc71, #2ecc71)',
                                     border: '1px solid rgba(46,204,113,0.35)',
-                                    borderRadius: 'var(--card-radius-sm, 8px)',
+                                    borderRadius: '6px',
                                     cursor: 'pointer',
                                     fontSize: '0.72rem',
                                     fontFamily: FONT_UI,
@@ -2680,7 +2561,7 @@
                         padding: '10px 12px',
                         background: 'var(--ov-2, rgba(255,255,255,0.025))',
                         border: '1px solid var(--acc-fill2, rgba(212,175,55,0.12))',
-                        borderRadius: 'var(--card-radius-sm, 8px)',
+                        borderRadius: '8px',
                     }}>
                         {!active && (
                             <div style={{ color: 'var(--silver)', opacity: 0.62, fontSize: '0.72rem', lineHeight: 1.55 }}>
@@ -2700,7 +2581,7 @@
                                         padding: '8px 9px',
                                         background: 'var(--acc-fill1, rgba(212,175,55,0.055))',
                                         border: '1px solid var(--acc-fill3, rgba(212,175,55,0.16))',
-                                        borderRadius: 'var(--card-radius-sm, 8px)',
+                                        borderRadius: '7px',
                                     }}>
                                         <div style={{ color: 'var(--gold)', fontSize: 'var(--text-micro, 0.6875rem)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 900, fontFamily: FONT_UI, marginBottom: 3 }}>Report Brief</div>
                                         <div style={{ color: 'var(--white)', fontSize: 'var(--text-micro, 0.6875rem)', lineHeight: 1.35, fontFamily: FONT_UI }}>{brief.headline}</div>
@@ -2728,7 +2609,7 @@
                                     {reports.map(r => (
                                         <button key={r.id} type="button" onClick={() => setActiveId(r.id)} style={{
                                             padding: '3px 7px',
-                                            borderRadius: 'var(--card-radius-xs, 5px)',
+                                            borderRadius: '4px',
                                             border: '1px solid ' + (active.id === r.id ? 'var(--acc-line3, rgba(212,175,55,0.45))' : 'var(--ov-5, rgba(255,255,255,0.08))'),
                                             background: active.id === r.id ? 'var(--acc-fill2, rgba(212,175,55,0.12))' : 'transparent',
                                             color: active.id === r.id ? 'var(--gold)' : 'var(--silver)',
@@ -2919,7 +2800,7 @@
                     marginTop: '6px',
                     background: 'var(--ov-2, rgba(255,255,255,0.025))',
                     border: '1px solid var(--acc-fill2, rgba(212,175,55,0.12))',
-                    borderRadius: 'var(--card-radius-sm, 8px)',
+                    borderRadius: '8px',
                 }}>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(118px, 1fr))', gap: 6 }}>
                         {presets.map(preset => {
@@ -3025,7 +2906,7 @@
                     marginTop: '6px',
                     background: 'var(--ov-2, rgba(255,255,255,0.025))',
                     border: '1px solid var(--acc-fill2, rgba(212,175,55,0.12))',
-                    borderRadius: 'var(--card-radius-sm, 8px)',
+                    borderRadius: '8px',
                 }}>
                     {rows.map(row => {
                         const value = t[row.key] ?? (row.key === 'ownerDna' ? 70 : row.key === 'classValue' ? 65 : row.key === 'needFit' ? 60 : row.key === 'tradeActivity' ? 50 : 45);
@@ -3081,7 +2962,7 @@
                                 padding: '10px 8px',
                                 background: isActive ? 'var(--acc-fill3, rgba(212,175,55,0.15))' : 'var(--ov-2, rgba(255,255,255,0.03))',
                                 border: '1px solid ' + (isActive ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--ov-5, rgba(255,255,255,0.08))'),
-                                borderRadius: 'var(--card-radius-sm, 8px)',
+                                borderRadius: '6px',
                                 color: isActive ? 'var(--gold)' : 'var(--silver)',
                                 fontSize: '0.72rem',
                                 fontWeight: 600,
@@ -3123,7 +3004,7 @@
                                 padding: '10px 14px',
                                 background: isActive ? 'var(--acc-fill2, rgba(212,175,55,0.12))' : 'var(--ov-2, rgba(255,255,255,0.03))',
                                 border: '1px solid ' + (isActive ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--ov-5, rgba(255,255,255,0.08))'),
-                                borderRadius: 'var(--card-radius-sm, 8px)',
+                                borderRadius: '6px',
                                 color: 'var(--white)',
                                 cursor: 'pointer',
                                 textAlign: 'left',
@@ -3199,7 +3080,7 @@
                         padding: '10px 14px',
                         background: 'var(--ov-1, rgba(255,255,255,0.02))',
                         border: '1px solid var(--ov-3, rgba(255,255,255,0.05))',
-                        borderRadius: 'var(--card-radius-xs, 5px)',
+                        borderRadius: '5px',
                     }}>
                         {progress || 'Loading drafts from Sleeper…'}
                     </div>
@@ -3209,7 +3090,7 @@
                         padding: '10px 14px',
                         background: 'rgba(231,76,60,0.08)',
                         border: '1px solid rgba(231,76,60,0.25)',
-                        borderRadius: 'var(--card-radius-sm, 8px)',
+                        borderRadius: '6px',
                         fontSize: '0.72rem',
                         color: 'var(--k-e74c3c, #e74c3c)',
                     }}>
@@ -3221,7 +3102,7 @@
                         padding: '10px 14px',
                         background: 'rgba(240,165,0,0.08)',
                         border: '1px solid rgba(240,165,0,0.3)',
-                        borderRadius: 'var(--card-radius-sm, 8px)',
+                        borderRadius: '6px',
                         fontSize: '0.72rem',
                         color: 'var(--k-f0a500, #f0a500)',
                         marginBottom: '6px',
@@ -3251,7 +3132,7 @@
                                         padding: '8px 12px',
                                         background: isActive ? 'var(--acc-fill3, rgba(212,175,55,0.14))' : 'var(--ov-2, rgba(255,255,255,0.03))',
                                         border: '1px solid ' + (isActive ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--ov-5, rgba(255,255,255,0.08))'),
-                                        borderRadius: 'var(--card-radius-xs, 5px)',
+                                        borderRadius: '5px',
                                         color: 'var(--white)',
                                         cursor: 'pointer',
                                         textAlign: 'left',
@@ -3306,7 +3187,7 @@
                                         padding: '5px 10px',
                                         background: 'var(--ov-1, rgba(255,255,255,0.015))',
                                         border: '1px dashed var(--ov-3, rgba(255,255,255,0.05))',
-                                        borderRadius: 'var(--card-radius-xs, 5px)',
+                                        borderRadius: '4px',
                                         color: 'var(--silver)',
                                         cursor: 'not-allowed',
                                         fontFamily: FONT_UI,
@@ -3484,7 +3365,7 @@
                         padding: '10px 14px',
                         background: 'var(--ov-1, rgba(255,255,255,0.02))',
                         border: '1px solid var(--ov-3, rgba(255,255,255,0.05))',
-                        borderRadius: 'var(--card-radius-xs, 5px)',
+                        borderRadius: '5px',
                     }}>
                         Loading upcoming drafts…
                     </div>
@@ -3494,7 +3375,7 @@
                         padding: '10px 14px',
                         background: 'rgba(240,165,0,0.08)',
                         border: '1px solid rgba(240,165,0,0.3)',
-                        borderRadius: 'var(--card-radius-sm, 8px)',
+                        borderRadius: '6px',
                         fontSize: '0.72rem',
                         color: 'var(--k-f0a500, #f0a500)',
                         lineHeight: 1.5,
@@ -3525,7 +3406,7 @@
                                         padding: '10px 12px',
                                         background: isActive ? 'var(--acc-fill3, rgba(212,175,55,0.14))' : 'var(--ov-2, rgba(255,255,255,0.03))',
                                         border: '1px solid ' + (isActive ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--ov-5, rgba(255,255,255,0.08))'),
-                                        borderRadius: 'var(--card-radius-xs, 5px)',
+                                        borderRadius: '5px',
                                         color: 'var(--white)',
                                         cursor: 'pointer',
                                         textAlign: 'left',
@@ -3542,7 +3423,7 @@
                                     )}
                                     <div style={{ flex: 1, minWidth: 0 }}>
                                         <div style={{ fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                            {d.season} · {d.type === 'auction' ? <b style={{ color: 'var(--gold)' }}>AUCTION</b> : (d.type || 'snake')} · {d.settings?.rounds || '?'}R × {d.settings?.teams || '?'}T
+                                            {d.season} · {d.type || 'snake'} · {d.settings?.rounds || '?'}R × {d.settings?.teams || '?'}T
                                         </div>
                                         <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.6, marginTop: '2px' }}>
                                             {d.leagueName} · {startStr}
@@ -3612,7 +3493,7 @@
                             padding: '6px 10px',
                             background: 'var(--ov-2, rgba(255,255,255,0.03))',
                             border: '1px solid var(--ov-4, rgba(255,255,255,0.06))',
-                            borderRadius: 'var(--card-radius-xs, 5px)',
+                            borderRadius: '4px',
                             fontFamily: FONT_UI,
                             fontSize: '0.72rem',
                         }}>
@@ -3667,8 +3548,7 @@
 
     function MyDraftRosterPanel({ state }) {
         const players = window.S?.players || {};
-        // valueMap proxies to ROS values in redraft leagues, dynasty elsewhere.
-        const scores = (window.App?.PlayerValue?.valueMap ? window.App.PlayerValue.valueMap() : null) || window.App?.LI?.playerScores || {};
+        const scores = window.App?.LI?.playerScores || {};
         const rosters = window.S?.rosters || [];
         const normPos = window.App?.normPos || (p => p);
         const posColors = window.App?.POS_COLORS || {
@@ -3760,6 +3640,47 @@
             return m;
         }, [rosterRows]);
 
+        // Lineup slots (owner ask 2026-08-15, modeled on Sleeper's team view):
+        // the league's actual starting slots plus bench/IR/taxi counts,
+        // filling as picks land so open QB/RB/BN requirements stay visible.
+        const lineupSlots = React.useMemo(() => {
+            const league = window.S?.leagues?.find(l => l.league_id === window.S?.currentLeagueId) || window.S?.league || {};
+            const rp = (league.roster_positions || []).map(x => String(x || '').toUpperCase());
+            if (!rp.length) return null;
+            const DEFS = {
+                QB: { label: 'QB', elig: ['QB'] }, RB: { label: 'RB', elig: ['RB'] },
+                WR: { label: 'WR', elig: ['WR'] }, TE: { label: 'TE', elig: ['TE'] },
+                K: { label: 'K', elig: ['K'] }, DEF: { label: 'D/ST', elig: ['DEF'] },
+                DL: { label: 'DL', elig: ['DL'] }, LB: { label: 'LB', elig: ['LB'] }, DB: { label: 'DB', elig: ['DB'] },
+                FLEX: { label: 'FLX', elig: ['RB', 'WR', 'TE'] },
+                SUPER_FLEX: { label: 'SFLX', elig: ['QB', 'RB', 'WR', 'TE'] },
+                REC_FLEX: { label: 'WRT', elig: ['WR', 'TE'] },
+                WRRB_FLEX: { label: 'W/R', elig: ['RB', 'WR'] },
+                IDP_FLEX: { label: 'IDP', elig: ['DL', 'LB', 'DB'] },
+            };
+            const starters = [];
+            let benchCount = 0, irCount = 0, taxiCount = 0;
+            rp.forEach(raw => {
+                if (raw === 'BN') { benchCount++; return; }
+                if (raw === 'IR') { irCount++; return; }
+                if (raw === 'TAXI') { taxiCount++; return; }
+                const def = DEFS[raw] || { label: raw, elig: [raw] };
+                starters.push({ label: def.label, elig: def.elig, badge: def.elig[0], player: null });
+            });
+            const sorted = [...rosterRows].sort((a, b) => (b.dhq || 0) - (a.dhq || 0));
+            const taken = new Set();
+            // Exact-position slots claim players first, then flex slots — both
+            // best-value-first, mirroring how an owner actually fills a lineup.
+            [starters.filter(sl => sl.elig.length === 1), starters.filter(sl => sl.elig.length > 1)].forEach(group => {
+                group.forEach(sl => {
+                    const row = sorted.find(r => !taken.has(r) && sl.elig.includes(r.pos));
+                    if (row) { sl.player = row; taken.add(row); }
+                });
+            });
+            const bench = sorted.filter(r => !taken.has(r));
+            return { starters, benchCount, irCount, taxiCount, bench };
+        }, [rosterRows]);
+
         const totalDhq = rosterRows.reduce((sum, r) => sum + (r.dhq || 0), 0);
         const pickDhq = myPicks.reduce((sum, p) => sum + (p.dhq || 0), 0);
         const positions = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'DL', 'LB', 'DB'].filter(pos => grouped[pos]?.length)
@@ -3773,7 +3694,7 @@
                 padding: '8px 10px',
                 background: 'var(--black)',
                 border: 'var(--card-border)',
-                borderRadius: 'var(--card-radius-sm, 8px)',
+                borderRadius: '8px',
                 overflow: 'hidden',
                 fontFamily: FONT_UI,
             }}>
@@ -3782,17 +3703,53 @@
                     <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.65 }}>{myPicks.length} picks</span>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '8px', flexShrink: 0 }}>
-                    <div style={{ padding: '6px 8px', background: 'var(--acc-fill1, rgba(212,175,55,0.06))', border: '1px solid var(--acc-fill3, rgba(212,175,55,0.14))', borderRadius: 'var(--card-radius-xs, 5px)' }}>
+                    <div style={{ padding: '6px 8px', background: 'var(--acc-fill1, rgba(212,175,55,0.06))', border: '1px solid var(--acc-fill3, rgba(212,175,55,0.14))', borderRadius: '5px' }}>
                         <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.65, textTransform: 'uppercase' }}>Roster DHQ</div>
                         <div style={{ fontFamily: FONT_MONO, color: 'var(--gold)', fontWeight: 700, fontSize: '0.84rem' }}>{fmt(totalDhq)}</div>
                     </div>
-                    <div style={{ padding: '6px 8px', background: 'rgba(46,204,113,0.06)', border: '1px solid rgba(46,204,113,0.14)', borderRadius: 'var(--card-radius-xs, 5px)' }}>
+                    <div style={{ padding: '6px 8px', background: 'rgba(46,204,113,0.06)', border: '1px solid rgba(46,204,113,0.14)', borderRadius: '5px' }}>
                         <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.65, textTransform: 'uppercase' }}>Draft Added</div>
                         <div style={{ fontFamily: FONT_MONO, color: 'var(--k-2ecc71, #2ecc71)', fontWeight: 700, fontSize: '0.84rem' }}>{fmt(pickDhq)}</div>
                     </div>
                 </div>
 
                 <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain', paddingRight: '3px' }}>
+                    {lineupSlots && (
+                        <div style={{ marginBottom: '10px' }}>
+                            <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>Lineup</div>
+                            {lineupSlots.starters.map((sl, i) => (
+                                <div key={'slot' + i} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '3px 2px', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.035))' }}>
+                                    <span style={{ width: 36, textAlign: 'center', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, padding: '2px 0', borderRadius: 4, background: (posColors[sl.badge] || 'var(--k-666666, #666666)') + '22', color: posColors[sl.badge] || 'var(--silver)', flexShrink: 0 }}>{sl.label}</span>
+                                    {sl.player
+                                        ? <span style={{ flex: 1, minWidth: 0, fontSize: '0.72rem', color: 'var(--white)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{shortName(sl.player.name)}{sl.player.isPick ? <span style={{ color: 'var(--k-2ecc71, #2ecc71)', marginLeft: 5, fontSize: 'var(--text-micro, 0.6875rem)' }}>{sl.player.source}</span> : null}</span>
+                                        : <span style={{ flex: 1, fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.4 }}>Empty</span>}
+                                    {sl.player ? <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)' }}>{fmt(sl.player.dhq)}</span> : null}
+                                </div>
+                            ))}
+                            {lineupSlots.benchCount > 0 && (
+                                <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '8px 0 4px' }}>Bench</div>
+                            )}
+                            {Array.from({ length: lineupSlots.benchCount }, (_, bi) => {
+                                const row = lineupSlots.bench[bi] || null;
+                                return (
+                                    <div key={'bn' + bi} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '3px 2px', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.035))' }}>
+                                        <span style={{ width: 36, textAlign: 'center', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, padding: '2px 0', borderRadius: 4, background: 'var(--ov-3, rgba(255,255,255,0.045))', color: 'var(--silver)', flexShrink: 0 }}>BN</span>
+                                        {row
+                                            ? <span style={{ flex: 1, minWidth: 0, fontSize: '0.72rem', color: 'var(--white)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{shortName(row.name)}{row.isPick ? <span style={{ color: 'var(--k-2ecc71, #2ecc71)', marginLeft: 5, fontSize: 'var(--text-micro, 0.6875rem)' }}>{row.source}</span> : null}</span>
+                                            : <span style={{ flex: 1, fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.4 }}>Empty</span>}
+                                        {row ? <span style={{ fontFamily: FONT_MONO, fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)' }}>{fmt(row.dhq)}</span> : null}
+                                    </div>
+                                );
+                            })}
+                            {(lineupSlots.irCount > 0 || lineupSlots.taxiCount > 0 || lineupSlots.bench.length > lineupSlots.benchCount) && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '4px 2px 0', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.75 }}>
+                                    {lineupSlots.irCount ? <span>IR {lineupSlots.irCount}</span> : null}
+                                    {lineupSlots.taxiCount ? <span>{lineupSlots.irCount ? '\u00B7 ' : ''}Taxi {lineupSlots.taxiCount}</span> : null}
+                                    {lineupSlots.bench.length > lineupSlots.benchCount ? <span>{'\u00B7'} +{lineupSlots.bench.length - lineupSlots.benchCount} overflow</span> : null}
+                                </div>
+                            )}
+                        </div>
+                    )}
                     <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>Build By Position</div>
                     {positions.length === 0 && (
                         <div style={{ padding: '12px', textAlign: 'center', color: 'var(--silver)', opacity: 0.45, fontSize: '0.7rem' }}>Your mock picks will appear here.</div>
@@ -3871,7 +3828,7 @@
                 flexDirection: 'column',
                 background: 'var(--ov-1, rgba(255,255,255,0.02))',
                 border: '1px solid var(--acc-fill3, rgba(212,175,55,0.14))',
-                borderRadius: 'var(--card-radius-sm, 8px)',
+                borderRadius: '8px',
                 overflow: 'hidden',
             }}>
                 <div style={{
@@ -3915,7 +3872,7 @@
                                 alignItems: 'center',
                                 minHeight: 34,
                                 padding: '5px 7px',
-                                borderRadius: 'var(--card-radius-sm, 8px)',
+                                borderRadius: '6px',
                                 border: '1px solid ' + (isCurrent ? 'var(--acc-line2, rgba(212,175,55,0.34))' : isUser ? 'var(--acc-fill3, rgba(212,175,55,0.18))' : 'var(--ov-3, rgba(255,255,255,0.04))'),
                                 background: isCurrent ? 'var(--acc-fill2, rgba(212,175,55,0.09))' : isUser ? 'var(--acc-fill1, rgba(212,175,55,0.045))' : 'var(--ov-1, rgba(255,255,255,0.012))',
                                 marginBottom: 4,
@@ -3944,7 +3901,7 @@
                                             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                                             background: 'transparent',
                                             border: '1px solid var(--acc-line1, rgba(212,175,55,0.3))',
-                                            borderRadius: 'var(--card-radius-xs, 5px)', color: 'var(--gold)',
+                                            borderRadius: '4px', color: 'var(--gold)',
                                             fontSize: '0.72rem', cursor: 'pointer', lineHeight: 1,
                                         }}
                                     >⇄</button>
@@ -4059,15 +4016,12 @@
             player,
             isUser: isUserTurn,
             reasoning: state.overrideMode
-                ? { primary: state.mode === 'live-sync' ? 'Manual live correction' : 'User override', baseVal: player.dhq, nudges: [] }
+                ? { primary: 'User override', baseVal: player.dhq, nudges: [] }
                 : state.mode === 'manual'
                     ? { primary: 'Manual room entry', baseVal: player.dhq, nudges: [] }
                     : { primary: 'User selection', baseVal: player.dhq, nudges: [] },
             confidence: 1.0,
-            // Reducer also derives 'manual-live' from state.mode when this is null,
-            // but set it explicitly here to match BigBoardPanel.onDraft's contract
-            // (js/draft/big-board.js) now that this fires from live-sync too.
-            source: state.mode === 'live-sync' && state.overrideMode ? 'manual-live' : state.mode === 'manual' ? 'manual-draft' : null,
+            source: state.mode === 'manual' ? 'manual-draft' : null,
         });
     }
 
@@ -4217,30 +4171,7 @@
         const [sortKey, setSortKey] = React.useState('board');
         const [sortDir, setSortDir] = React.useState(-1);
         const boardContext = state.draftContext?.boardContext || {};
-        const isRedraftBoard = state.variant === 'redraft' || state.draftContext?.draftType === 'redraft' || state.draftContext?.leagueFormat?.draftType === 'redraft' || state.auctionPoolSource === 'redraft';
-        // Real market ADP (js/shared/adp-market.js) is a "market says / DHQ says"
-        // companion column, display-only, scoped to redraft + chopped ONLY (MFL
-        // has no real keeper/dynasty ADP data today). state.variant/draftContext
-        // never surface a distinct 'chopped' draft type — detectDraftVariant has
-        // no chopped branch and falls through to the startup/rookie fallback —
-        // so chopped is picked up off the live League Skin singleton instead,
-        // same as draft-room.js's own redraft market-mode check.
-        const ccAdpSkinType = window.App?.LeagueSkin?.getCurrent?.()?.type;
-        const isSeasonalBoard = isRedraftBoard || ccAdpSkinType === 'redraft' || ccAdpSkinType === 'chopped';
-        const ccAdpFor = React.useCallback(player => (
-            isSeasonalBoard && typeof window.App?.getRedraftAdp === 'function' && player?.pid != null
-                ? window.App.getRedraftAdp(String(player.pid))
-                : null
-        ), [isSeasonalBoard]);
-        // adp-market.js fetches + caches once — force a re-render if it lands
-        // after this table's first paint.
-        const [, ccBumpAdpTick] = React.useState(0);
-        React.useEffect(() => {
-            if (!isSeasonalBoard) return undefined;
-            const onAdpLoaded = () => ccBumpAdpTick(t => t + 1);
-            window.addEventListener('wr:adp-loaded', onAdpLoaded);
-            return () => window.removeEventListener('wr:adp-loaded', onAdpLoaded);
-        }, [isSeasonalBoard]);
+        const isRedraftBoard = state.variant === 'redraft' || state.draftContext?.draftType === 'redraft' || state.draftContext?.leagueFormat?.draftType === 'redraft';
         // Free tier: the AI Recommended lane is a strategy-optimizer ranked board →
         // Pro (mirror draft-room.js). Clamp any persisted 'ai' lane back to raw DHQ.
         const boardIsPro = ccIsPro();
@@ -4314,19 +4245,16 @@
                 if (sortKey === 'pos') return sortDir * String(a.pos || '').localeCompare(String(b.pos || ''));
                 if (sortKey === 'team') return sortDir * String(mockPlayerTeam(a)).localeCompare(String(mockPlayerTeam(b)));
                 if (sortKey === 'school') return sortDir * String(mockPlayerSchool(a)).localeCompare(String(mockPlayerSchool(b)));
-                // Lower ADP = earlier/more-valued market pick; players with no
-                // market entry sort last regardless of direction.
-                if (sortKey === 'adp') return sortDir * ((ccAdpFor(a)?.adp ?? Infinity) - (ccAdpFor(b)?.adp ?? Infinity));
                 return a.boardRank - b.boardRank;
             }).slice(0, 72);
-        }, [lanePool, search, posFilter, sortKey, sortDir, ccAdpFor]);
+        }, [lanePool, search, posFilter, sortKey, sortDir]);
         const setHeaderSort = key => {
             setSortKey(prev => {
                 if (prev === key) {
                     setSortDir(dir => dir * -1);
                     return prev;
                 }
-                setSortDir(['rank', 'name', 'pos', 'team', 'school', 'tier', 'adp'].includes(key) ? 1 : -1);
+                setSortDir(['rank', 'name', 'pos', 'team', 'school', 'tier'].includes(key) ? 1 : -1);
                 return key;
             });
         };
@@ -4336,22 +4264,10 @@
                 {label}{sortArrow(key)}
             </button>
         );
-        // Usage: a position-specific stat beyond DHQ (targets/gm, CMP%, tackles,
-        // etc. — window.App.StatCatalog.getTopStat) for VETERAN players in a
-        // redraft/chopped mock (isSeasonalBoard) — always '—' on a rookie-only
-        // board since prospects have no NFL stat line yet, which is the honest
-        // answer there, so it's only wired into the two seasonal grid layouts.
         const boardGridStyle = {
             gridTemplateColumns: isRedraftBoard
-                // isRedraftBoard always implies isSeasonalBoard, so the ADP
-                // track (42px, same width as DHQ) is always appended here.
-                ? '28px minmax(0,1.52fr) 28px 36px 42px 42px 48px 30px 30px 40px'
-                : isSeasonalBoard
-                    // Chopped: same base layout as the default (non-redraft)
-                    // CSS grid — Rank/Player/Pos/NFL/School/DHQ/Fit/Tier/Action
-                    // — with the same extra ADP track inserted after DHQ.
-                    ? '28px minmax(0,1.35fr) 30px 36px minmax(46px,0.7fr) 42px 42px 48px 30px 30px 42px'
-                    : undefined,
+                ? '28px minmax(0,1.52fr) 28px 36px 42px 30px 30px 40px'
+                : undefined,
         };
         return (
             <section className="mock-panel mock-big-board">
@@ -4385,7 +4301,6 @@
                         <option value="rank">Rank</option>
                         <option value="name">Player</option>
                         <option value="dhq">DHQ</option>
-                        {isSeasonalBoard && <option value="adp">ADP</option>}
                         <option value="fit">Fit</option>
                         <option value="tier">Tier</option>
                     </select>
@@ -4397,7 +4312,7 @@
                     ))}
                 </div>
                 <div className="mock-board-head" style={boardGridStyle}>
-                    {headerCell('Rank', 'rank')}{headerCell('Player', 'name')}{headerCell('Pos', 'pos')}{headerCell('NFL', 'team')}{!isRedraftBoard && headerCell('School', 'school')}{headerCell('DHQ', 'dhq')}{isSeasonalBoard && headerCell('ADP', 'adp')}{isSeasonalBoard && <span title="This season's most decision-relevant stat for the player's position">Usage</span>}{headerCell('Fit', 'fit')}{headerCell('Tier', 'tier')}<span>Action</span>
+                    {headerCell('Rank', 'rank')}{headerCell('Player', 'name')}{headerCell('Pos', 'pos')}{headerCell('NFL', 'team')}{!isRedraftBoard && headerCell('School', 'school')}{headerCell('DHQ', 'dhq')}{headerCell('Fit', 'fit')}{headerCell('Tier', 'tier')}<span>Action</span>
                 </div>
                 <div className="mock-board-scroll">
                     {rows.map(player => {
@@ -4413,22 +4328,6 @@
                                 <span>{mockPlayerTeam(player)}</span>
                                 {!isRedraftBoard && <span>{mockPlayerSchool(player)}</span>}
                                 <span className="mock-dhq">{mockFmt(player.dhq)}</span>
-                                {isSeasonalBoard && (
-                                    <span style={{ color: 'var(--k-3498db, #3498db)', fontFamily: 'JetBrains Mono, monospace', fontWeight: 900 }}>
-                                        {ccAdpFor(player) ? ccAdpFor(player).adp.toFixed(1) : ''}
-                                    </span>
-                                )}
-                                {isSeasonalBoard && (() => {
-                                    const SC = window.App?.StatCatalog;
-                                    const stat = SC ? SC.getTopStat(displayPos) : null;
-                                    const raw = stat && window.S?.statsData?.[player.pid];
-                                    const v = raw ? SC.computeStat(stat.key, raw, { perGame: true }) : null;
-                                    return (
-                                        <span title={stat ? stat.label : undefined} style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.7rem', color: v != null ? 'var(--silver)' : 'var(--ov-8, rgba(255,255,255,0.28))' }}>
-                                            {v != null ? SC.formatStat(v, stat.format) + ' ' + stat.short : '—'}
-                                        </span>
-                                    );
-                                })()}
                                 <span className={fitScore >= 70 ? 'is-good' : fitScore >= 45 ? 'is-ok' : ''}>{fitScore ? fitScore : '—'}</span>
                                 <span>{tier}</span>
                                 <button type="button" onClick={e => { e.stopPropagation(); mockMakePick(dispatch, state, isUserTurn, player); }}>{canPick ? 'Draft' : 'Open'}</button>
@@ -4443,7 +4342,7 @@
 
     function MockDecisionDeck({ state, dispatch, isUserTurn, currentSlot, onOpenTradeDesk }) {
         const pool = state.pool || [];
-        const isRedraftBoard = state.variant === 'redraft' || state.draftContext?.draftType === 'redraft' || state.draftContext?.leagueFormat?.draftType === 'redraft' || state.auctionPoolSource === 'redraft';
+        const isRedraftBoard = state.variant === 'redraft' || state.draftContext?.draftType === 'redraft' || state.draftContext?.leagueFormat?.draftType === 'redraft';
         const best = pool[0] || null;
         const safe = pool.find(p => Number(p.tier || p.csv?.tier || 99) <= 2 && p !== best) || pool[1] || best;
         const upside = pool.find(p => (p.fit?.score || 0) >= 55 && p !== best && p !== safe) || pool[2] || best;
@@ -4459,24 +4358,6 @@
                     : Number(player.dhq || 0) >= 2200 ? 'lineup starter'
                         : 'depth value';
             const sd = 'pw:' + (player.pid || player.name) + ':' + lane;
-            // DEF/K play by completely different logic than skill positions —
-            // "role security," "spike weeks," and rookie school/landing-spot
-            // framing (below) don't mean anything for a team defense or a
-            // kicker, whose "player name" is literally an NFL team.
-            if (pos === 'DEF' || pos === 'K') {
-                if (lane === 'safe') return avPick(sd, [
-                    player.name + ' is the safe ' + pos + ' — steady scheme, low week-to-week variance, and ' + valueBand + ' pricing.',
-                    'Boring but reliable: ' + player.name + ' at ' + pos + ', ' + valueBand + ' with little bust risk.',
-                ]);
-                if (lane === 'upside') return avPick(sd, [
-                    player.name + ' is the ' + pos + ' with real matchup-swing equity — the ceiling weeks that actually decide a ' + pos + ' slot.',
-                    'If you want the streaming-proof ' + pos + ', it\'s ' + player.name + ' — the ceiling weeks are real, not theoretical.',
-                ]);
-                return avPick(sd, [
-                    player.name + ' is my ' + pos + ' pick — matchup profile and DHQ both clear what\'s left on the wire.',
-                    'I\'d take ' + player.name + ' here. Best mix of matchup and value left at ' + pos + '.',
-                ]);
-            }
             if (established) {
                 if (lane === 'safe') return avPick(sd, [
                     player.name + ' is the stability play — a proven ' + pos + ' on ' + team + ', ' + valueBand + ' pricing, and a lot less projection risk than the names around him.',
@@ -4504,46 +4385,17 @@
                 'I\'ve got ' + player.name + ' here. It\'s a value-and-fit call, not just "next name up."',
             ]);
         };
-        // Next OPPONENT slot after this pick — skips any of the user's own
-        // future picks, since the point is "who might snipe my target before
-        // I pick again," not a readout of the user's own team. ownerIntel is
-        // precomputed onto the persona at creation (persona.js) so this is a
-        // cheap lookup, not a recompute.
-        const nextOpponentSlot = (state.pickOrder || []).slice((state.currentIdx || 0) + 1)
-            .find(slot => slot?.rosterId != null && String(slot.rosterId) !== String(state.userRosterId || ''));
-        const opponentPersona = nextOpponentSlot ? (state.personas || {})[nextOpponentSlot.rosterId] : null;
-        const opponentTeamName = nextOpponentSlot ? mockTeamName(state, nextOpponentSlot.rosterId, nextOpponentSlot) : '';
-        // Full read of the SAME data the Opponent Intel sidebar panel shows
-        // (opponent-intel.js) — Needs, Prediction Engine (likely pick +
-        // confidence + will-reach), Draft/Trade DNA, Posture, Tier, Health,
-        // Historical Intel. All of it is precomputed on the persona already
-        // (ownerIntel at creation via persona.js, predictions per-round via
-        // the computePredictions loop above) — this is a set of cheap field
-        // reads, not a recompute. The confidence fallback mirrors
-        // opponent-intel.js's predConfidence (that helper isn't exported, so
-        // it's small enough to inline here).
-        const opponentNeeds = (opponentPersona?.assessment?.needs || [])
-            .map(n => (typeof n === 'string' ? n : n?.pos)).filter(Boolean).slice(0, 4);
-        const opponentLikely = opponentPersona?.predictions?.likelyPick || null;
-        const opponentReach = (opponentPersona?.predictions?.willReach || []).slice(0, 3);
-        const opponentConf = (() => {
-            const c = opponentLikely?.confidence;
-            if (typeof c === 'number' && isFinite(c) && c >= 0 && c <= 1) return Math.round(c * 100);
-            const topDelta = Math.abs(opponentReach[0]?.delta || 0);
-            return topDelta ? Math.max(35, Math.min(85, Math.round(40 + (topDelta / 0.25) * 45))) : null;
-        })();
-        const opponentPosture = opponentPersona?.posture?.label || 'Neutral';
-        const opponentTier = opponentPersona?.assessment?.tier || '—';
-        const opponentHealth = opponentPersona?.assessment?.healthScore || 0;
-        const opponentHistorical = window.DraftCC?.context?.summarizeOwnerIntel?.(opponentPersona?.ownerIntel)
-            || (nextOpponentSlot ? opponentTeamName + ' — reading the board now, no history yet.' : 'No opponent picks left to scout.');
-        const opponentTierColor = opponentTier === 'ELITE' ? 'var(--k-2ecc71, #2ecc71)' : opponentTier === 'CONTENDER' ? 'var(--gold)' : opponentTier === 'CROSSROADS' ? 'var(--k-f0a500, #f0a500)' : opponentTier === '—' ? 'var(--silver)' : 'var(--k-e74c3c, #e74c3c)';
-        const opponentHealthColor = opponentHealth >= 70 ? 'var(--k-2ecc71, #2ecc71)' : opponentHealth >= 40 ? 'var(--k-f0a500, #f0a500)' : 'var(--k-e74c3c, #e74c3c)';
+        const tradeWindowText = currentSlot
+            ? avPick('pw:trade:' + slotLabel, [
+                'I\'d pick up the phone if someone overpays. Aim for a top-40 pick or better to move off ' + slotLabel + '.',
+                'Open to moving ' + slotLabel + ' if the price is right — think top-40 pick or better.',
+              ])
+            : 'No active trade window yet.';
         const cards = [
             { key: 'rec', label: 'Recommended Pick', player: best, tone: 'var(--k-2ecc71, #2ecc71)', text: pickWhy(best, 'rec') },
             { key: 'safe', label: 'Safe Pick', player: safe, tone: 'var(--k-3498db, #3498db)', text: pickWhy(safe, 'safe') },
             { key: 'upside', label: 'Upside Swing', player: upside, tone: 'var(--k-9b8afb, #9b8afb)', text: pickWhy(upside, 'upside') },
-            { key: 'opponent', label: 'Opponent Intel', player: null, tone: 'var(--gold)', text: opponentHistorical },
+            { key: 'trade', label: 'Trade Window', player: null, tone: 'var(--gold)', text: tradeWindowText },
         ];
         return (
             <section className="mock-panel mock-decision-deck">
@@ -4556,7 +4408,7 @@
                         const p = card.player;
                         const photo = mockPlayerPhoto(p);
                         return (
-                            <button key={card.key} type="button" className="mock-decision-card" style={{ '--accent': card.tone }} onClick={() => card.key === 'opponent' ? (nextOpponentSlot && dispatch({ type: 'PIN_TEAM', rosterId: nextOpponentSlot.rosterId })) : mockMakePick(dispatch, state, isUserTurn, p)} disabled={card.key === 'opponent' && !nextOpponentSlot} title={card.key === 'opponent' ? 'Pin this team in the Opponent Intel panel for the full read (Draft/Trade DNA included)' : undefined}>
+                            <button key={card.key} type="button" className="mock-decision-card" style={{ '--accent': card.tone }} onClick={() => card.key === 'trade' ? onOpenTradeDesk?.() : mockMakePick(dispatch, state, isUserTurn, p)} disabled={card.key === 'trade' && !onOpenTradeDesk}>
                                 <span>{card.label}</span>
                                 {p ? (
                                     <div className="mock-decision-player">
@@ -4567,60 +4419,15 @@
                                         </div>
                                     </div>
                                 ) : (
-                                    <div className="mock-decision-player is-intel">
-                                        <i>👁</i>
+                                    <div className="mock-decision-player is-trade">
+                                        <i>⇄</i>
                                         <div>
-                                            <strong>{nextOpponentSlot ? opponentTeamName : 'No one on deck'}</strong>
-                                            <em>{nextOpponentSlot ? mockPickLabel(nextOpponentSlot, state.leagueSize) + ' next' : 'Draft is over'}</em>
+                                            <strong>{currentSlot ? 'Value ' + slotLabel : 'No window'}</strong>
+                                            <em>Market: {state.activeOffer ? 'Paused' : 'Open'}</em>
                                         </div>
                                     </div>
                                 )}
-                                {/* Same card footprint as its siblings — a scouting-report
-                                    stat grid instead of a prose paragraph, since 6 facts don't
-                                    fit as sentences in this space. Color-coded like the rest of
-                                    the app (red=need, green=opportunity, tier/health bands) so
-                                    it reads at a glance instead of requiring the words to be
-                                    read. Draft/Trade DNA stay in the full sidebar panel (tap
-                                    pins it there) — the two lowest-signal fields, cut to fit. */}
-                                {card.key === 'opponent' && nextOpponentSlot ? (
-                                    <div style={{ marginTop: '7px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '5px 6px' }}>
-                                        {opponentNeeds.length > 0 && (
-                                            <div>
-                                                <div style={{ fontSize: '0.56rem', fontWeight: 800, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Needs</div>
-                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px', marginTop: '2px' }}>
-                                                    {opponentNeeds.slice(0, 3).map(pos => (
-                                                        <span key={pos} style={{ fontSize: '0.58rem', fontWeight: 800, padding: '0 4px', borderRadius: '3px', background: 'rgba(231,76,60,0.12)', border: '1px solid rgba(231,76,60,0.3)', color: 'var(--k-e74c3c, #e74c3c)' }}>{pos}</span>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-                                        <div>
-                                            <div style={{ fontSize: '0.56rem', fontWeight: 800, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Tier</div>
-                                            <div style={{ fontSize: '0.62rem', fontWeight: 700, color: opponentTierColor, marginTop: '2px' }}>{opponentTier}</div>
-                                        </div>
-                                        {opponentLikely?.pos && (
-                                            <div>
-                                                <div style={{ fontSize: '0.56rem', fontWeight: 800, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Likely</div>
-                                                <div style={{ fontSize: '0.62rem', fontWeight: 700, color: 'var(--white)', marginTop: '2px', lineHeight: 1.2 }}>{opponentLikely.name || opponentLikely.pos}</div>
-                                                <div style={{ fontSize: '0.56rem', color: 'var(--silver)', opacity: 0.75, marginTop: '1px' }}>{opponentLikely.pos}{opponentConf != null ? ' · ' + opponentConf + '%' : ''}</div>
-                                            </div>
-                                        )}
-                                        <div>
-                                            <div style={{ fontSize: '0.56rem', fontWeight: 800, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Health</div>
-                                            <div style={{ fontSize: '0.62rem', fontWeight: 700, color: opponentHealthColor, marginTop: '2px' }}>{opponentHealth}/100</div>
-                                        </div>
-                                        {opponentReach[0] && (
-                                            <div>
-                                                <div style={{ fontSize: '0.56rem', fontWeight: 800, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Reaches</div>
-                                                <div style={{ fontSize: '0.62rem', fontWeight: 700, color: 'var(--k-2ecc71, #2ecc71)', marginTop: '2px' }}>{opponentReach[0].pos} +{Math.round(Math.abs(opponentReach[0].delta || 0) * 100)}%</div>
-                                            </div>
-                                        )}
-                                        <div>
-                                            <div style={{ fontSize: '0.56rem', fontWeight: 800, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Market</div>
-                                            <div style={{ fontSize: '0.62rem', fontWeight: 700, color: 'var(--silver)', marginTop: '2px' }}>{opponentPosture}</div>
-                                        </div>
-                                    </div>
-                                ) : card.key !== 'opponent' ? <p>{card.text}</p> : null}
+                                <p>{card.text}</p>
                             </button>
                         );
                     })}
@@ -4667,40 +4474,10 @@
         );
     }
 
-    // Read-only "just sold" feed for Follow Live Draft against a real Sleeper
-    // auction. Sleeper's public API only exposes COMPLETED picks (no live
-    // in-progress bid state), so this surfaces each sale the moment the ~5s
-    // poll picks it up — never a live bid war, which the API can't provide.
-    // Purely presentational (no dispatches), same pattern as MockPickLog.
-    function LiveAuctionSalesTicker({ state }) {
-        const posColors = window.App?.POS_COLORS || {};
-        const sold = (state.picks || []).filter(p => p.amount != null).slice(-12).reverse();
-        return (
-            <section className="mock-panel mock-pick-log">
-                <div className="mock-panel-head">
-                    <span>Recent Sales</span>
-                    <em>{(state.picks || []).length} sold</em>
-                </div>
-                <div className="mock-log-scroll">
-                    {sold.map(pick => (
-                        <div key={pick.id || pick.overall + '-' + pick.pid} className="mock-log-row" onClick={() => mockOpenPlayer(pick)}>
-                            <span>${pick.amount}</span>
-                            <strong>{mockTeamName(state, pick.rosterId)}</strong>
-                            <em><i style={{ color: posColors[pick.pos] || 'var(--gold)' }}>{pick.pos || '--'}</i> {pick.name}</em>
-                            <b>{mockFmt(pick.dhq)}</b>
-                        </div>
-                    ))}
-                    {!sold.length && <div className="mock-empty">Sales will appear here as they land.</div>}
-                </div>
-            </section>
-        );
-    }
-
     function MockRosterBuildCard({ state, grade }) {
         const players = window.S?.players || {};
         const rosters = window.S?.rosters || [];
-        // valueMap proxies to ROS values in redraft leagues, dynasty elsewhere.
-        const scores = (window.App?.PlayerValue?.valueMap ? window.App.PlayerValue.valueMap() : null) || window.App?.LI?.playerScores || {};
+        const scores = window.App?.LI?.playerScores || {};
         const normPos = window.App?.normPos || (p => p);
         const posColors = window.App?.POS_COLORS || {};
         const myPicks = (state.picks || []).filter(p => p.rosterId === state.userRosterId || p.isUser);
@@ -4809,358 +4586,15 @@
         );
     }
 
-    // ══════════════════════════════════════════════════════════════════
-    // AuctionCockpit — the auction-mechanic counterpart to MockDraftCockpit.
-    // No turn order / currentIdx here: a rotation (customSlotOrder, falling
-    // back to every persona'd rosterId) decides who nominates next, then
-    // ANY team (including CPU) can bid until a real wall-clock countdown
-    // expires and SETTLE_NOMINATION resolves the sale. See the auction plan
-    // (Aug 2026) for the full design — this mirrors MockDraftCockpit's
-    // panel-shell/styling conventions (.mock-panel etc.) but every piece of
-    // *behavior* here is net-new.
-    // ══════════════════════════════════════════════════════════════════
-    function auctionOrder(state) {
-        return (state.customSlotOrder && state.customSlotOrder.length) ? state.customSlotOrder : Object.keys(state.personas || {});
-    }
-    function auctionOpenSlots(state, rosterId) {
-        const filled = (state.teamRosters?.[rosterId] || []).length;
-        return Math.max(0, Number(state.rounds || 0) - filled);
-    }
-    function auctionMaxSafeBid(state, rosterId) {
-        const remaining = Number(state.teamBudgets?.[rosterId]?.remaining ?? 0);
-        const openSlots = auctionOpenSlots(state, rosterId);
-        if (openSlots <= 0) return 0;
-        return Math.max(0, remaining - (openSlots - 1));
-    }
-    // League-wide spend-vs-value multiplier — classic auction "inflation"
-    // tracking. If the room has spent less than the still-undrafted players
-    // are worth on the pre-computed market-value sheet, prices trend up from
-    // here on; if it's spent more, they trend down. Keeps the back half of
-    // the draft self-correcting instead of the market-value table being a
-    // static number that drifts out of sync with reality as money moves.
-    function auctionInflation(state) {
-        const totalRosterSlots = Number(state.leagueSize || 0) * Number(state.rounds || 0);
-        const remainingSlots = Math.max(0, totalRosterSlots - state.picks.length);
-        if (remainingSlots <= 0) return 1;
-        const remainingBudget = Object.values(state.teamBudgets || {}).reduce((s, b) => s + Math.max(0, b.remaining || 0), 0);
-        const stillDraftable = [...(state.pool || [])]
-            .sort((a, b) => (state.marketValues?.[b.pid] || 0) - (state.marketValues?.[a.pid] || 0))
-            .slice(0, remainingSlots);
-        const remainingBaseline = stillDraftable.reduce((s, p) => s + (state.marketValues?.[p.pid] || 1), 0);
-        if (remainingBaseline <= 0) return 1;
-        return Math.max(0.6, Math.min(1.8, remainingBudget / remainingBaseline));
-    }
-
-    function AuctionBudgetPanel({ state }) {
-        const order = auctionOrder(state);
-        return (
-            <section className="mock-panel">
-                <div className="mock-panel-head"><span>Budgets</span><em>${state.auctionBudget} each</em></div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 5, overflowY: 'auto' }}>
-                    {order.map(rosterId => {
-                        const b = state.teamBudgets?.[rosterId] || { total: state.auctionBudget, spent: 0, remaining: state.auctionBudget };
-                        const pct = b.total > 0 ? Math.max(0, Math.min(100, (b.remaining / b.total) * 100)) : 0;
-                        const color = pct > 50 ? 'var(--good, #3fb950)' : pct > 25 ? 'var(--warn, #f0a500)' : 'var(--bad, #e5534b)';
-                        const isMe = String(rosterId) === String(state.userRosterId);
-                        const filled = (state.teamRosters?.[rosterId] || []).length;
-                        return (
-                            <div key={rosterId} style={{ border: '1px solid rgba(255,255,255,0.06)', borderRadius: 6, padding: '6px 9px', background: isMe ? 'rgba(212,175,55,0.06)' : 'transparent' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 6 }}>
-                                    <strong style={{ color: isMe ? 'var(--gold)' : 'var(--white)', fontSize: '0.72rem', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{mockTeamName(state, rosterId)}{isMe ? ' (YOU)' : ''}</strong>
-                                    <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.68rem', color, flex: 'none' }}>${b.remaining}<span style={{ color: 'var(--silver)', opacity: 0.6 }}> / ${b.total}</span></span>
-                                </div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
-                                    <div style={{ flex: '1 1 auto', height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
-                                        <div style={{ width: pct + '%', height: '100%', background: color }} />
-                                    </div>
-                                    <span style={{ flex: 'none', fontSize: '0.6rem', color: 'var(--silver)', opacity: 0.6 }}>{filled}/{state.rounds}</span>
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            </section>
-        );
-    }
-
-    function AuctionNominationPanel({ state, dispatch, nowTick }) {
-        const nom = state.nomination;
-        const order = auctionOrder(state);
-        const nominatorRosterId = order[state.nominatorIdx % Math.max(1, order.length)];
-        const isUserNominator = String(nominatorRosterId) === String(state.userRosterId);
-
-        if (!nom) {
-            return (
-                <section className="mock-panel">
-                    <div className="mock-panel-head"><span>Nomination</span><em>{state.picks.length} / {(state.rounds || 0) * (state.leagueSize || 0)}</em></div>
-                    <div className="mock-empty">
-                        {isUserNominator
-                            ? 'Your turn to nominate — pick a player from the board below.'
-                            : mockTeamName(state, nominatorRosterId) + ' is choosing who to nominate…'}
-                    </div>
-                </section>
-            );
-        }
-
-        const posColors = window.App?.POS_COLORS || {};
-        const msLeft = Math.max(0, nom.deadline - nowTick);
-        const secLeft = Math.ceil(msLeft / 1000);
-        const userCeiling = auctionMaxSafeBid(state, state.userRosterId);
-        const userIsHigh = String(nom.highBidderRosterId) === String(state.userRosterId);
-        const openSlots = auctionOpenSlots(state, state.userRosterId);
-        const canUserBid = !userIsHigh && openSlots > 0 && userCeiling > nom.highBid;
-        const bid = amount => {
-            const clamped = Math.max(nom.highBid + 1, Math.min(userCeiling, amount));
-            if (clamped > nom.highBid) dispatch({ type: 'PLACE_BID', rosterId: state.userRosterId, amount: clamped });
-        };
-        const recent = nom.bids.slice(-5).reverse();
-
-        return (
-            <section className="mock-panel">
-                <div className="mock-panel-head"><span>On the Block</span><em>{state.speed === 'paused' ? '⏸ Paused' : secLeft + 's'}</em></div>
-                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                    <span style={{ fontSize: '0.6rem', fontWeight: 900, color: posColors[nom.pos] || 'var(--gold)', border: '1px solid currentColor', borderRadius: 4, padding: '2px 6px' }}>{nom.pos}</span>
-                    <strong style={{ color: 'var(--white)', fontSize: '0.94rem', flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nom.name}</strong>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 8 }}>
-                    <span style={{ fontSize: '0.64rem', color: 'var(--silver)', opacity: 0.7 }}>High bid — {mockTeamName(state, nom.highBidderRosterId)}{userIsHigh ? ' (YOU)' : ''}</span>
-                    <strong style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '1.3rem', color: 'var(--gold)' }}>${nom.highBid}</strong>
-                </div>
-                <div style={{ height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.08)', overflow: 'hidden', marginTop: 6 }}>
-                    <div style={{ width: (Math.max(0, Math.min(1, msLeft / (state.speed === 'slow' ? 20000 : state.speed === 'fast' ? 6000 : 12000))) * 100) + '%', height: '100%', background: secLeft <= 3 ? 'var(--bad, #e5534b)' : 'var(--gold)', transition: 'width 200ms linear' }} />
-                </div>
-                {canUserBid ? (
-                    <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
-                        {[1, 5, 10].map(inc => (
-                            <button key={inc} type="button" onClick={() => bid(nom.highBid + inc)} disabled={nom.highBid + inc > userCeiling} style={{ padding: '6px 10px', border: '1px solid var(--acc-line2, rgba(212,175,55,0.32))', borderRadius: 5, background: 'transparent', color: 'var(--gold)', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.7rem', fontWeight: 700, cursor: nom.highBid + inc > userCeiling ? 'default' : 'pointer', opacity: nom.highBid + inc > userCeiling ? 0.4 : 1 }}>+${inc}</button>
-                        ))}
-                        <button type="button" onClick={() => bid(userCeiling)} style={{ padding: '6px 10px', border: '1px solid var(--gold)', borderRadius: 5, background: 'var(--gold)', color: 'var(--page-bg, #0A0A0F)', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.7rem', fontWeight: 800, cursor: 'pointer' }}>Max (${userCeiling})</button>
-                    </div>
-                ) : (
-                    <div style={{ marginTop: 10, fontSize: '0.68rem', color: 'var(--silver)', opacity: 0.6 }}>
-                        {userIsHigh ? "You're the high bidder." : openSlots <= 0 ? 'Your roster is full.' : 'Budget-safe max reached — can\'t outbid.'}
-                    </div>
-                )}
-                {recent.length > 0 && (
-                    <div style={{ marginTop: 10, borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 6, display: 'flex', flexDirection: 'column', gap: 3 }}>
-                        {recent.map((b, i) => (
-                            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.62rem', color: 'var(--silver)', opacity: 0.75 }}>
-                                <span>{mockTeamName(state, b.rosterId)}</span>
-                                <span style={{ fontFamily: 'JetBrains Mono, monospace' }}>${b.amount}</span>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </section>
-        );
-    }
-
-    function AuctionBoardTable({ state, dispatch }) {
-        const [search, setSearch] = React.useState('');
-        const [pos, setPos] = React.useState('ALL');
-        const posColors = window.App?.POS_COLORS || {};
-        const order = auctionOrder(state);
-        const nominatorRosterId = order[state.nominatorIdx % Math.max(1, order.length)];
-        const isUserNominator = !state.nomination && String(nominatorRosterId) === String(state.userRosterId);
-        const rows = (state.pool || [])
-            .filter(p => pos === 'ALL' || p.pos === pos)
-            .filter(p => !search || (p.name || '').toLowerCase().includes(search.toLowerCase()))
-            .sort((a, b) => (b.dhq || b.val || 0) - (a.dhq || a.val || 0))
-            .slice(0, 100);
-        const positions = ['ALL', 'QB', 'RB', 'WR', 'TE', 'K', 'DL', 'LB', 'DB'];
-        return (
-            <section className="mock-panel" style={{ minHeight: 0 }}>
-                <div className="mock-panel-head"><span>Player Pool</span><em>{state.pool.length} available</em></div>
-                <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
-                    <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search players…" style={{ flex: '1 1 160px', minHeight: 32, border: '1px solid rgba(212,175,55,0.22)', borderRadius: 5, background: 'rgba(255,255,255,0.045)', color: 'var(--white)', fontSize: '0.74rem', padding: '4px 8px' }} />
-                    {positions.map(p => (
-                        <button key={p} type="button" className={pos === p ? 'is-active' : ''} onClick={() => setPos(p)} style={{ padding: '4px 8px', border: '1px solid rgba(212,175,55,0.22)', borderRadius: 5, background: pos === p ? 'var(--gold)' : 'transparent', color: pos === p ? 'var(--black)' : 'var(--silver)', fontSize: '0.66rem', fontWeight: 700, cursor: 'pointer' }}>{p}</button>
-                    ))}
-                </div>
-                <div className="mock-board-scroll" style={{ overflowY: 'auto', flex: '1 1 auto' }}>
-                    {rows.map(p => {
-                        const openSlots = auctionOpenSlots(state, state.userRosterId);
-                        const canNominate = isUserNominator && openSlots > 0 && auctionMaxSafeBid(state, state.userRosterId) >= 1;
-                        return (
-                            <div key={p.pid} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 34px 56px 70px', gap: 8, alignItems: 'center', padding: '6px 4px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                                <span style={{ color: 'var(--white)', fontSize: '0.76rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
-                                <span style={{ color: posColors[p.pos] || 'var(--gold)', fontSize: '0.68rem', fontWeight: 700 }}>{p.pos}</span>
-                                <span style={{ fontFamily: 'JetBrains Mono, monospace', color: 'var(--gold)', fontSize: '0.72rem', textAlign: 'right' }}>{mockFmt(p.dhq || p.val)}</span>
-                                <button type="button" disabled={!canNominate} onClick={() => dispatch({ type: 'NOMINATE_PLAYER', pid: p.pid, player: p, nominatorRosterId: state.userRosterId })} style={{ padding: '4px 8px', border: '1px solid var(--acc-line2, rgba(212,175,55,0.32))', borderRadius: 5, background: canNominate ? 'rgba(212,175,55,0.10)' : 'transparent', color: canNominate ? 'var(--gold)' : 'var(--text-disabled, #444)', fontSize: '0.62rem', fontWeight: 700, textTransform: 'uppercase', cursor: canNominate ? 'pointer' : 'default' }}>Nominate</button>
-                            </div>
-                        );
-                    })}
-                    {!rows.length && <div className="mock-empty">No players match this filter.</div>}
-                </div>
-            </section>
-        );
-    }
-
-    function AuctionCockpit({ state, dispatch, onExit }) {
-        const [nowTick, setNowTick] = React.useState(Date.now());
-        const isDone = state.phase === 'complete';
-
-        // Countdown display + expiry check. A single interval, mounted ONCE
-        // for the component's whole lifetime (deps: []) rather than re-armed
-        // per bid off state.nomination.deadline — that reschedule-per-bid
-        // version proved genuinely racy live (confirmed repeatedly: several
-        // CPU bids landing within the same second, each resetting the
-        // deadline via PLACE_BID, could leave a stale nomination sitting
-        // well past its expired deadline with nothing left to force a
-        // re-render and re-arm the timer). A stateRef sidesteps the whole
-        // class of stale-closure/effect-teardown races: the interval always
-        // reads the LATEST state on every 200ms tick, however state got
-        // there, and never needs to be torn down and recreated to "see" a
-        // new deadline.
-        const stateRef = React.useRef(state);
-        stateRef.current = state;
-        React.useEffect(() => {
-            const t = setInterval(() => {
-                const s = stateRef.current;
-                if (!s.nomination || s.phase === 'complete') return;
-                if (s.speed === 'paused') return; // deadline is frozen (SET_SPEED) — don't force-settle while paused
-                const now = Date.now();
-                setNowTick(now);
-                if (now >= s.nomination.deadline) dispatch({ type: 'SETTLE_NOMINATION' });
-            }, 200);
-            return () => clearInterval(t);
-        }, []);
-
-        // CPU nomination — when idle and it's a CPU team's turn.
-        React.useEffect(() => {
-            if (state.nomination || isDone) return undefined;
-            if (state.speed === 'paused') return undefined;
-            const order = auctionOrder(state);
-            const nominatorRosterId = order[state.nominatorIdx % Math.max(1, order.length)];
-            if (String(nominatorRosterId) === String(state.userRosterId)) return undefined;
-            const persona = state.personas?.[nominatorRosterId];
-            if (!persona || !window.DraftCC.cpuEngine) return undefined;
-            const delay = state.speed === 'fast' ? 400 : state.speed === 'slow' ? 1600 : 800;
-            const t = setTimeout(() => {
-                const teamRoster = state.teamRosters?.[nominatorRosterId] || [];
-                const pseudoRound = Math.floor(state.picks.length / Math.max(1, state.leagueSize)) + 1;
-                const player = window.DraftCC.cpuEngine.nominateChoice(persona, state.pool, pseudoRound, state.picks.length + 1, { teamRoster, draftTuning: state.draftTuning, rosterId: nominatorRosterId });
-                if (player) dispatch({ type: 'NOMINATE_PLAYER', pid: player.pid, player, nominatorRosterId });
-            }, delay);
-            return () => clearTimeout(t);
-        }, [state.nominatorIdx, !!state.nomination, isDone, state.speed]);
-
-        // CPU bidding — re-evaluates every time the high bid changes; each
-        // eligible CPU bot gets its own staggered timeout so bids land at
-        // slightly different moments instead of a simultaneous wall.
-        React.useEffect(() => {
-            const nom = state.nomination;
-            if (!nom || isDone) return undefined;
-            if (state.speed === 'paused') return undefined;
-            const order = auctionOrder(state);
-            const timers = order
-                .filter(rid => String(rid) !== String(state.userRosterId))
-                .filter(rid => String(rid) !== String(nom.highBidderRosterId))
-                .filter(rid => !nom.passedRosterIds.includes(rid))
-                .map(rid => {
-                    const persona = state.personas?.[rid];
-                    if (!persona || !window.DraftCC.cpuEngine) return null;
-                    const delay = 400 + Math.random() * 800;
-                    return setTimeout(() => {
-                        const teamRoster = state.teamRosters?.[rid] || [];
-                        const budgetCeiling = auctionMaxSafeBid(state, rid);
-                        const pseudoRound = Math.floor(state.picks.length / Math.max(1, state.leagueSize)) + 1;
-                        const result = window.DraftCC.cpuEngine.personaBid(persona, nom, {
-                            teamRoster, draftTuning: state.draftTuning, rosterId: rid,
-                            round: pseudoRound, pickNumber: nom.overall,
-                            auctionBudget: state.teamBudgets?.[rid]?.total ?? state.auctionBudget,
-                            marketValue: state.marketValues?.[nom.pid],
-                            inflation: auctionInflation(state),
-                            budgetCeiling, currentHighBid: nom.highBid,
-                        });
-                        if (result?.willingToBid && result.amount > nom.highBid) {
-                            dispatch({ type: 'PLACE_BID', rosterId: rid, amount: result.amount });
-                        } else {
-                            dispatch({ type: 'PASS_NOMINATION', rosterId: rid });
-                        }
-                    }, delay);
-                })
-                .filter(Boolean);
-            return () => timers.forEach(clearTimeout);
-        }, [state.nomination?.highBid, state.nomination?.highBidderRosterId, isDone, state.speed]);
-
-        if (isDone) {
-            return (
-                <div className="mock-empty" style={{ margin: 20, padding: 24, textAlign: 'center' }}>
-                    <strong style={{ display: 'block', color: 'var(--gold)', fontSize: '1rem', marginBottom: 8 }}>Auction complete</strong>
-                    Every roster is full — {state.picks.length} players sold.
-                    <div style={{ marginTop: 14 }}>
-                        <button type="button" onClick={onExit} style={{ padding: '8px 18px', border: '1px solid var(--gold)', borderRadius: 6, background: 'var(--gold)', color: 'var(--black)', fontWeight: 800, cursor: 'pointer' }}>View Results</button>
-                    </div>
-                </div>
-            );
-        }
-
-        const isPaused = state.speed === 'paused';
-        const auctionBtnStyle = {
-            padding: '5px 12px',
-            background: 'transparent',
-            border: '1px solid var(--ov-6, rgba(255,255,255,0.1))',
-            borderRadius: 'var(--card-radius-xs, 5px)',
-            color: 'var(--silver)',
-            cursor: 'pointer',
-            fontSize: 'var(--text-micro, 0.6875rem)',
-            fontFamily: FONT_UI,
-        };
-        return (
-            <div className="draft-cc-scope" style={{ padding: '4px 2px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
-                    <div style={{ fontSize: '0.72rem', fontWeight: 700, color: isPaused ? 'var(--gold)' : 'var(--silver)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-                        {isPaused ? '⏸ Auction Paused' : 'Live Auction'} · {state.picks.length} / {state.pickOrder?.length || 0} sold
-                    </div>
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                        <button type="button" onClick={() => dispatch({ type: 'SET_SPEED', speed: isPaused ? 'medium' : 'paused' })} style={auctionBtnStyle}>{isPaused ? 'Resume' : 'Pause'}</button>
-                        <select
-                            value={isPaused ? 'medium' : state.speed}
-                            onChange={e => dispatch({ type: 'SET_SPEED', speed: e.target.value })}
-                            style={{ ...auctionBtnStyle, cursor: 'pointer' }}
-                        >
-                            <option value="slow">Slow</option>
-                            <option value="medium">Medium</option>
-                            <option value="fast">Fast</option>
-                        </select>
-                        <button type="button" onClick={onExit} style={auctionBtnStyle}>Cancel &amp; Start Over</button>
-                    </div>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(360px,1fr) minmax(300px,0.62fr)', gap: 12, alignItems: 'start' }}>
-                    <AuctionBoardTable state={state} dispatch={dispatch} />
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                        <AuctionNominationPanel state={state} dispatch={dispatch} nowTick={nowTick} />
-                        <AuctionBudgetPanel state={state} />
-                        <MockPickLog state={state} currentSlot={null} />
-                    </div>
-                </div>
-            </div>
-        );
-    }
-
-    // MockDraftCockpit doubles as the LIVE-SYNC drafting cockpit (isLive=true) —
-    // same rail + decision-deck + big-board/right-stack grid, fed real-Sleeper
-    // data instead of CPU-sim data on the live side. The only genuinely
-    // mock-only assumption here is the CPU pace/timer controls (Speed, Pause,
-    // "Pick Timer") — a real Sleeper draft has no client-side pace to set, so
-    // those swap for a Manual Pick toggle + sync status when isLive. Everything
-    // else (status tiles, MockBigBoardTable/MockPickLog/MockRosterBuildCard/
-    // MockTradeOfferPanel, OpponentIntelPanel) already reads generically off
-    // `state` and already supports live-sync's manual-override pick flow (see
-    // mockMakePick / state.js MAKE_PICK's manual-live source derivation).
-    function MockDraftCockpit({ state, dispatch, isUserTurn, currentSlot, onExit, onPropose, tradeDeskTarget, openTradeDesk, grade, canUndoManualPick, isLive, liveConfidenceCard, liveDecisionDeck, liveTradeWindow, stagedLiveOffers }) {
+    function MockDraftCockpit({ state, dispatch, isUserTurn, currentSlot, onExit, onPropose, tradeDeskTarget, openTradeDesk, grade, canUndoManualPick }) {
         const OpponentIntelPanel = window.DraftCC.OpponentIntelPanel;
         const totalPicks = state.pickOrder?.length || 0;
         const progress = totalPicks ? Math.round(((state.currentIdx || 0) / totalPicks) * 100) : 0;
         const lastPick = state.picks?.[state.picks.length - 1] || null;
         const runReport = mockRunReport(state);
-        // Live-sync has no meaningful userSlot fallback (it's roster-based, not
-        // seat-based) — mirrors the same guard CommandCenterGrid used to apply
-        // in the old fallback layout's own nextUserSlot computation.
         const nextUserSlot = (state.pickOrder || []).slice(state.currentIdx || 0).find(slot =>
             String(slot?.rosterId || '') === String(state.userRosterId || '')
-            || (!isLive && Number(slot?.slot) === Number(state.userSlot))
+            || Number(slot?.slot) === Number(state.userSlot)
         );
         const currentName = currentSlot ? mockTeamName(state, currentSlot.rosterId, currentSlot) : 'Draft Room';
         const currentDisplayName = currentName.length > 36 ? currentName.slice(0, 35) + '...' : currentName;
@@ -5169,65 +4603,33 @@
             { label: 'On Clock', value: currentName, detail: currentSlot ? '#' + (currentSlot.overall || '--') + ' · ' + mockPickLabel(currentSlot, state.leagueSize) : 'No active pick' },
             { label: 'Our Next Pick', value: nextUserSlot ? mockPickLabel(nextUserSlot, state.leagueSize) : 'No pick left', detail: userPicksAwayDetail(nextUserSlot, state.currentIdx) },
             { label: 'Last Pick', value: lastPick ? lastPick.name : 'No picks yet', detail: lastPick ? (lastPick.pos || '--') + ' · DHQ ' + mockFmt(lastPick.dhq) : 'Start the draft' },
-            isLive
-                ? { label: liveConfidenceCard?.label || 'Sync confidence', value: liveConfidenceCard?.value || 'Connecting', detail: liveConfidenceCard?.detail || 'Preparing live mirror' }
-                : { label: 'League Evolution', value: runReport.value, detail: state.activeOffer ? 'Draft paused for negotiation' : runReport.detail, extra: runReport.bullets },
+            { label: 'League Evolution', value: runReport.value, detail: state.activeOffer ? 'Draft paused for negotiation' : runReport.detail, extra: runReport.bullets },
         ];
-        const ownerTell = isLive ? ((liveDecisionDeck?.alerts || []).find(a => a.type === 'owner_tendency') || null) : null;
         return (
             <div className="mock-draft-cockpit draft-cc-scope">
                 <section className="mock-draftcast-rail">
                     <div className="mock-cast-brand">
                         <div>DHQ</div>
                         <span>
-                            <strong>{isLive ? 'DRAFTCAST LIVE' : 'DRAFTCAST MOCK'}</strong>
-                            <em>{isLive ? 'Sleeper mirror' : (state.variant === 'startup' ? 'Dynasty Start Up' : state.variant)} · {state.draftType} · {state.rounds} rounds · {state.leagueSize} teams</em>
-                            <button type="button" onClick={onExit}>{isLive ? 'Exit Live Draft' : 'Mock Upcoming Draft'}</button>
+                            <strong>DRAFTCAST MOCK</strong>
+                            <em>{state.variant === 'startup' ? 'Dynasty Start Up' : state.variant} · {state.draftType} · {state.rounds} rounds · {state.leagueSize} teams</em>
+                            <button type="button" onClick={onExit}>Mock Upcoming Draft</button>
                         </span>
                     </div>
                     <div className="mock-cast-clock">
-                        <span>
-                            {state.activeOffer ? 'TRADE OFFER PAUSED' : 'ON THE CLOCK'}
-                            {isLive && liveConfidenceCard && (
-                                <em title={liveConfidenceCard.detail} style={{ marginLeft: 10, fontStyle: 'normal', fontWeight: 800, color: liveConfidenceCard.tone, letterSpacing: '0.04em' }}>
-                                    {'● '}{liveConfidenceCard.value}
-                                </em>
-                            )}
-                        </span>
+                        <span>{state.activeOffer ? 'TRADE OFFER PAUSED' : 'ON THE CLOCK'}</span>
                         <strong>{currentDisplayName} - Pick {currentSlot ? mockPickLabel(currentSlot, state.leagueSize).replace('R', '') : '--'}</strong>
                         <div><i style={{ width: progress + '%' }} /></div>
                         <em>{state.currentIdx || 0} / {totalPicks || '--'}</em>
                     </div>
                     <div className="mock-cast-controls">
-                        {isLive ? (
-                            <>
-                                <button type="button" onClick={() => dispatch({ type: 'SET_OVERRIDE', enabled: !state.overrideMode })} title={state.overrideMode ? 'Return to read-only Sleeper mirror' : 'Apply the next pick manually from the Big Board'}>
-                                    {state.overrideMode ? 'Manual On' : 'Manual Pick'}
-                                </button>
-                                <button type="button" onClick={openTradeDesk} disabled={!tradeDeskTarget}>Trade Desk</button>
-                                {canUndoManualPick && <button type="button" onClick={() => dispatch({ type: 'UNDO_LAST_PICK', manualOnly: true })}>Undo</button>}
-                                <button type="button" onClick={onExit}>Exit</button>
-                            </>
-                        ) : (
-                            <>
-                                <div><span>Pick Timer</span><strong>{timerLabel}</strong></div>
-                                <button type="button" onClick={() => dispatch({ type: 'SET_SPEED', speed: state.speed === 'paused' ? 'medium' : 'paused' })}>{state.speed === 'paused' ? 'Resume' : 'Pause'}</button>
-                                <label>Speed <select value={state.speed === 'paused' ? 'medium' : state.speed} onChange={e => dispatch({ type: 'SET_SPEED', speed: e.target.value })}><option value="slow">Slow</option><option value="medium">Medium</option><option value="fast">Fast</option></select></label>
-                                <button type="button" onClick={openTradeDesk} disabled={!tradeDeskTarget}>Trade Desk</button>
-                                {canUndoManualPick && <button type="button" onClick={() => dispatch({ type: 'UNDO_LAST_PICK', manualOnly: true })}>Undo</button>}
-                                <button type="button" onClick={onExit}>Exit</button>
-                            </>
-                        )}
+                        <div><span>Pick Timer</span><strong>{timerLabel}</strong></div>
+                        <button type="button" onClick={() => dispatch({ type: 'SET_SPEED', speed: state.speed === 'paused' ? 'medium' : 'paused' })}>{state.speed === 'paused' ? 'Resume' : 'Pause'}</button>
+                        <label>Speed <select value={state.speed === 'paused' ? 'medium' : state.speed} onChange={e => dispatch({ type: 'SET_SPEED', speed: e.target.value })}><option value="slow">Slow</option><option value="medium">Medium</option><option value="fast">Fast</option></select></label>
+                        <button type="button" onClick={openTradeDesk} disabled={!tradeDeskTarget}>Trade Desk</button>
+                        {canUndoManualPick && <button type="button" onClick={() => dispatch({ type: 'UNDO_LAST_PICK', manualOnly: true })}>Undo</button>}
+                        <button type="button" onClick={onExit}>Exit</button>
                     </div>
-                    {/* Alex's live narration + the Manual Pick toggle's read-only vs
-                        override explanation — folded into the rail (not a separate
-                        top-level card) so the "everything about the situation lives
-                        in one card" rule holds for live-sync too. */}
-                    {isLive && (
-                        <div style={{ gridColumn: '1 / -1', padding: '0 16px 12px' }}>
-                            <LiveSyncCommandReadPanel state={state} liveSync={state.liveSync} currentSlot={currentSlot} nextUserSlot={nextUserSlot} trendText={runReport.value} dispatch={dispatch} />
-                        </div>
-                    )}
                     <div className="mock-status-row">
                         {statusTiles.map(tile => (
                             <div key={tile.label} className={tile.extra ? 'has-extra' : ''}>
@@ -5242,51 +4644,30 @@
                             </div>
                         ))}
                     </div>
-                    {/* Decision Deck lives IN the rail card now, right under the
-                        clock/status read — "here's the situation" and "here's
-                        the pick" are one card, not one panel plus a scroll down
-                        to find another. "Take X" = the app picking for you → Pro
-                        (mirrors reconai _rbHero). Live-sync uses the read-only
-                        LiveDecisionDeckPanel instead of MockDecisionDeck — a real
-                        Sleeper draft can't be auto-picked by clicking a card. */}
-                    {isLive ? (
-                        liveDecisionDeck && (
-                            <div style={{ gridColumn: '1 / -1', margin: '12px 16px 14px' }}>
-                                <LiveDecisionDeckPanel deck={liveDecisionDeck} onTrade={openTradeDesk} layoutGap={0} />
-                            </div>
-                        )
-                    ) : ccIsPro() ? (
-                        <MockDecisionDeck state={state} dispatch={dispatch} isUserTurn={isUserTurn} currentSlot={currentSlot} onOpenTradeDesk={openTradeDesk} />
-                    ) : (
-                        <section className="mock-panel mock-decision-deck">
-                            <div className="mock-panel-head">
-                                <span>Alex Decision Deck</span>
-                                <em>Pro</em>
-                            </div>
-                            {window.WrGatedMoreRow
-                                ? React.createElement(window.WrGatedMoreRow, { title: 'Alex hands you the pick', sub: 'Recommended / safe / upside cards each turn are Scout Pro. Draft from the raw board.', feature: 'draft_decision_deck' })
-                                : <div dangerouslySetInnerHTML={{ __html: window.wrLockCard ? window.wrLockCard('Alex Decision Deck', 'draft_decision_deck', 'Per-turn pick recommendations are Scout Pro.') : '' }} />}
-                        </section>
-                    )}
                 </section>
-                {/* Occasional live-only strips — same conditional-strip precedent as
-                    the scenario-narrative strip below, so they don't add permanent
-                    structural rows most of the time. */}
-                {isLive && liveTradeWindow && (
-                    <div style={{ marginBottom: 12 }}>
-                        <LiveTradeWindowBanner tradeWindow={liveTradeWindow} ownerTell={ownerTell} onOpen={() => liveTradeWindow?.rosterId && onPropose(liveTradeWindow.rosterId)} leagueSize={state.leagueSize} layoutGap={0} />
-                    </div>
-                )}
-                {isLive && (stagedLiveOffers || []).length > 0 && (
-                    <StagedLiveOffersPanel offers={stagedLiveOffers} sleeperDraftId={state.sleeperDraftId} dispatch={dispatch} layoutGap={12} />
-                )}
                 {state.scenarioNarrative && (
                     <div className="mock-scenario-strip">{state.scenarioNarrative}</div>
                 )}
                 <div className="mock-cockpit-grid">
                     <MockBigBoardTable state={state} dispatch={dispatch} isUserTurn={isUserTurn} />
-                    <div className={'mock-right-stack' + (state.activeOffer ? ' has-trade-offer' : '')}>
+                    <div className="mock-center-stack">
+                        {/* "Take X" decision deck = the app picking for you → Pro (mirrors reconai _rbHero) */}
+                        {ccIsPro() ? (
+                            <MockDecisionDeck state={state} dispatch={dispatch} isUserTurn={isUserTurn} currentSlot={currentSlot} onOpenTradeDesk={openTradeDesk} />
+                        ) : (
+                            <section className="mock-panel mock-decision-deck">
+                                <div className="mock-panel-head">
+                                    <span>Alex Decision Deck</span>
+                                    <em>Pro</em>
+                                </div>
+                                {window.WrGatedMoreRow
+                                    ? React.createElement(window.WrGatedMoreRow, { title: 'Alex hands you the pick', sub: 'Recommended / safe / upside cards each turn are Scout Pro. Draft from the raw board.', feature: 'draft_decision_deck' })
+                                    : <div dangerouslySetInnerHTML={{ __html: window.wrLockCard ? window.wrLockCard('Alex Decision Deck', 'draft_decision_deck', 'Per-turn pick recommendations are Scout Pro.') : '' }} />}
+                            </section>
+                        )}
                         <MockPickLog state={state} currentSlot={currentSlot} />
+                    </div>
+                    <div className={'mock-right-stack' + (state.activeOffer ? ' has-trade-offer' : '')}>
                         <MockRosterBuildCard state={state} grade={grade} />
                         <MockTradeOfferPanel state={state} dispatch={dispatch} />
                         {OpponentIntelPanel && (
@@ -5308,16 +4689,11 @@
     // passes the freshly built recap + live handlers) AND inline on the Draft
     // War Room from an archived recap (listDraftRecaps), no live state needed.
     // Exposed as window.DraftCC.DraftRecapReport.
-    function DraftRecapReport({ recap, grade: gradeProp, myPicks: myPicksProp, userRosterId, inline, onPinTeam, onSaveRecap, onPrimary, primaryLabel, isDynasty }) {
+    function DraftRecapReport({ recap, grade: gradeProp, myPicks: myPicksProp, userRosterId, inline, onPinTeam, onSaveRecap, onPrimary, primaryLabel }) {
         const stateHelpers = window.DraftCC?.state || {};
         const grade = gradeProp || recap?.grade || { letter: '', totalDHQ: Number(recap?.totalDHQ) || 0 };
         const myPicks = myPicksProp || recap?.picks || [];
-        // Phone always gets the tight, single-column layout regardless of `inline`
-        // (the fullscreen post-draft modal renders this with inline=false even on
-        // phone — it used the roomy desktop padding/row layout and wasted most of
-        // a phone screen's width before this).
-        const compact = inline || bpBucket() === 'mobile';
-        const PAD = compact ? '16px 14px' : '22px 32px';
+        const PAD = inline ? '16px 14px' : '22px 32px';
                     // Build per-position summary from myPicks
                     const posSummary = {};
                     (myPicks || []).forEach(pk => {
@@ -5398,7 +4774,7 @@
                                 background: 'var(--ov-2, rgba(255,255,255,0.03))',
                                 border: '1px solid var(--ov-5, rgba(255,255,255,0.08))',
                                 borderLeft: '3px solid ' + (color || 'var(--acc-line4, rgba(212,175,55,0.55))'),
-                                borderRadius: 'var(--card-radius-sm, 8px)',
+                                borderRadius: '8px',
                                 cursor: onClick ? 'pointer' : 'default',
                                 fontFamily: FONT_UI,
                                 minHeight: '92px',
@@ -5424,15 +4800,16 @@
                                 borderRadius: '16px',
                             }}>
                                 {/* Hero */}
-                                <div style={{ padding: compact ? '14px 14px' : '28px 32px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))', background: 'linear-gradient(135deg, ' + gradeColor + '15, transparent 70%)' }}>
+                                <div style={{ padding: inline ? '20px 14px' : '28px 32px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))', background: 'linear-gradient(135deg, ' + gradeColor + '15, transparent 70%)' }}>
                                     <div style={{ fontSize: '0.7rem', color: 'var(--gold)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '6px' }}>Draft Complete — Recap</div>
-                                    <div style={{ display: 'flex', flexDirection: compact ? 'column' : 'row', alignItems: compact ? 'stretch' : 'center', gap: compact ? '10px' : '24px' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: compact ? '14px' : '0', textAlign: compact ? 'left' : 'center', flexShrink: 0 }}>
-                                            <div style={{ fontFamily: FONT_DISPL, fontSize: compact ? '3.4rem' : '5.5rem', fontWeight: 700, color: gradeColor, lineHeight: 1 }}>{recapPro ? (grade.letter || '—') : '🔒'}</div>
-                                            <div style={{ fontSize: '0.62rem', color: 'var(--silver)', opacity: 0.7, textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: compact ? 0 : '2px' }}>{recapPro ? 'Overall Grade' : 'Grade — Scout Pro'}</div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+                                        <div style={{ textAlign: 'center', flexShrink: 0 }}>
+                                            <div style={{ fontFamily: FONT_DISPL, fontSize: '5.5rem', fontWeight: 700, color: gradeColor, lineHeight: 1 }}>{recapPro ? (grade.letter || '—') : '🔒'}</div>
+                                            <div style={{ fontSize: '0.62rem', color: 'var(--silver)', opacity: 0.7, textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: '2px' }}>{recapPro ? 'Overall Grade' : 'Grade — Scout Pro'}</div>
                                         </div>
                                         <div style={{ flex: 1 }}>
-                                            <div style={{ fontSize: '0.96rem', color: 'var(--white)', lineHeight: 1.5 }}>
+                                            <div style={{ fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.7, lineHeight: 1.45 }}>Grade weighs board value, roster fit, and value vs your expected slots.</div>
+                                            <div style={{ fontSize: '0.96rem', color: 'var(--white)', marginTop: '8px', lineHeight: 1.5 }}>
                                                 Total DHQ: <strong style={{ color: gradeColor }}>{grade.totalDHQ.toLocaleString()}</strong> across {myPicks.length} pick{myPicks.length === 1 ? '' : 's'}
                                             </div>
                                             {totals.length >= 3 && (
@@ -5442,12 +4819,10 @@
                                             )}
                                         </div>
                                         {recapPro && effPct != null && (
-                                            <div style={{ textAlign: 'center', flexShrink: 0, padding: compact ? '10px 14px' : '12px 18px', borderRadius: 'var(--card-radius-lg, 14px)', background: wrAlpha(effColor, '12'), border: '1px solid ' + wrAlpha(effColor, '40'), minWidth: compact ? 0 : '128px', display: compact ? 'flex' : 'block', alignItems: compact ? 'center' : undefined, gap: compact ? '12px' : 0, justifyContent: compact ? 'flex-start' : undefined }}>
-                                                <div style={{ fontFamily: FONT_DISPL, fontSize: compact ? '1.9rem' : '2.6rem', fontWeight: 700, color: effColor, lineHeight: 1 }}>{effPct}%</div>
-                                                <div style={{ textAlign: compact ? 'left' : 'center' }}>
-                                                    <div style={{ fontSize: '0.62rem', color: 'var(--silver)', opacity: 0.85, textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: compact ? 0 : '4px' }}>{gradeBasis === 'vs $ spent' ? <>of expected value{compact ? ' ' : <br/>}for your spend</> : <>of expected DHQ{compact ? ' ' : <br/>}for your slots</>}</div>
-                                                    <div style={{ fontSize: '0.6rem', color: effColor, opacity: 0.9, marginTop: '4px', fontWeight: 700 }}>{effPct >= 100 ? 'NAILED YOUR SLOTS' : effPct >= 85 ? 'SOLID FOR YOUR SLOTS' : 'LEFT VALUE ON BOARD'}</div>
-                                                </div>
+                                            <div style={{ textAlign: 'center', flexShrink: 0, padding: '12px 18px', borderRadius: '12px', background: wrAlpha(effColor, '12'), border: '1px solid ' + wrAlpha(effColor, '40'), minWidth: '128px' }}>
+                                                <div style={{ fontFamily: FONT_DISPL, fontSize: '2.6rem', fontWeight: 700, color: effColor, lineHeight: 1 }}>{effPct}%</div>
+                                                <div style={{ fontSize: '0.62rem', color: 'var(--silver)', opacity: 0.85, textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: '4px' }}>{gradeBasis === 'vs $ spent' ? <>of expected value<br/>for your spend</> : <>of expected DHQ<br/>for your slots</>}</div>
+                                                <div style={{ fontSize: '0.6rem', color: effColor, opacity: 0.9, marginTop: '4px', fontWeight: 700 }}>{effPct >= 100 ? 'NAILED YOUR SLOTS' : effPct >= 85 ? 'SOLID FOR YOUR SLOTS' : 'LEFT VALUE ON BOARD'}</div>
                                             </div>
                                         )}
                                     </div>
@@ -5510,7 +4885,7 @@
                                             {recapPositions.map(s => {
                                                 const pos = s.pos;
                                                 const posCol = (window.App?.POS_COLORS || {})[pos] || 'var(--silver)';
-                                                return <div key={pos} style={{ padding: '10px 12px', background: 'var(--ov-2, rgba(255,255,255,0.03))', borderRadius: 'var(--card-radius-sm, 8px)', borderLeft: '3px solid ' + posCol }}>
+                                                return <div key={pos} style={{ padding: '10px 12px', background: 'var(--ov-2, rgba(255,255,255,0.03))', borderRadius: '8px', borderLeft: '3px solid ' + posCol }}>
                                                     <div style={{ fontSize: '0.82rem', fontWeight: 700, color: posCol, letterSpacing: '0.04em' }}>{window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos)}</div>
                                                     <div style={{ fontFamily: FONT_DISPL, fontSize: '1.2rem', fontWeight: 700, color: 'var(--white)', marginTop: '2px' }}>{s.count}</div>
                                                     <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.7 }}>{s.dhq.toLocaleString()} DHQ</div>
@@ -5535,7 +4910,7 @@
                                                 return <div
                                                     key={i}
                                                     onClick={() => openRecapPlayer(normalized?.pid || pk.pid)}
-                                                    style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '7px 10px', borderRadius: 'var(--card-radius-sm, 8px)', background: 'var(--ov-1, rgba(255,255,255,0.02))', cursor: (normalized?.pid || pk.pid) ? 'pointer' : 'default' }}
+                                                    style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '7px 10px', borderRadius: '6px', background: 'var(--ov-1, rgba(255,255,255,0.02))', cursor: (normalized?.pid || pk.pid) ? 'pointer' : 'default' }}
                                                 >
                                                     <span style={{ fontFamily: FONT_DISPL, fontSize: '0.72rem', color: 'var(--gold)', width: '48px' }}>
                                                         {pk.round && pk.pickInRound ? (pk.round + '.' + String(pk.pickInRound).padStart(2, '0')) : ('#' + (i + 1))}
@@ -5591,7 +4966,7 @@
                                         {tradeVolume.total > 0 ? (
                                             <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                                                 {Object.keys(tradeVolume.byRound).sort((a, b) => Number(a) - Number(b)).map(r => (
-                                                    <span key={r} style={{ padding: '5px 10px', borderRadius: 'var(--card-radius-sm, 8px)', background: 'var(--ov-2, rgba(255,255,255,0.03))', border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)' }}>{Number(r) > 0 ? 'R' + r : 'Other'}: <strong style={{ color: 'var(--white)' }}>{tradeVolume.byRound[r]}</strong></span>
+                                                    <span key={r} style={{ padding: '5px 10px', borderRadius: '6px', background: 'var(--ov-2, rgba(255,255,255,0.03))', border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)' }}>{Number(r) > 0 ? 'R' + r : 'Other'}: <strong style={{ color: 'var(--white)' }}>{tradeVolume.byRound[r]}</strong></span>
                                                 ))}
                                             </div>
                                         ) : <div style={{ fontSize: '0.74rem', color: 'var(--silver)', opacity: 0.6 }}>No pick trades during this draft.</div>}
@@ -5605,7 +4980,7 @@
                                     {recapPro && leagueStorylines.length > 0 && (
                                         <div style={{ display: 'grid', gap: '6px', marginBottom: '12px' }}>
                                             {leagueStorylines.slice(0, 4).map((line, i) => (
-                                                <div key={i} style={{ fontSize: '0.76rem', color: 'var(--silver)', lineHeight: 1.45, padding: '7px 10px', background: 'var(--ov-2, rgba(255,255,255,0.025))', borderRadius: 'var(--card-radius-sm, 8px)' }}>{line}</div>
+                                                <div key={i} style={{ fontSize: '0.76rem', color: 'var(--silver)', lineHeight: 1.45, padding: '7px 10px', background: 'var(--ov-2, rgba(255,255,255,0.025))', borderRadius: '6px' }}>{line}</div>
                                             ))}
                                         </div>
                                     )}
@@ -5615,55 +4990,6 @@
                                                 const isUser = String(team.rosterId) === String(userRosterId);
                                                 const topPlayer = team.topPick || team.picks?.[0];
                                                 const gradeCol = team.grade?.startsWith('A') ? 'var(--k-2ecc71, #2ecc71)' : team.grade?.startsWith('B') ? 'var(--gold)' : team.grade?.startsWith('C') ? 'var(--k-f0a500, #f0a500)' : 'var(--k-e74c3c, #e74c3c)';
-                                                // Contender/Rebuilding is a multi-year trajectory read — real
-                                                // outside dynasty, where every team's roster resets each season.
-                                                const tierBadge = isDynasty && recapPro && teamPower[String(team.rosterId)]?.tier
-                                                    ? <span style={{ marginLeft: '6px', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, color: teamPower[String(team.rosterId)].tierColor || 'var(--silver)' }}>{teamPower[String(team.rosterId)].tier}</span>
-                                                    : null;
-                                                const rowBorder = '1px solid ' + (isUser ? 'var(--acc-line2, rgba(212,175,55,0.28))' : 'var(--ov-4, rgba(255,255,255,0.06))');
-                                                const rowBg = isUser ? 'var(--acc-fill1, rgba(212,175,55,0.07))' : 'var(--ov-1, rgba(255,255,255,0.022))';
-                                                // Compact/phone: the desktop 6-col single-line grid (rank / team
-                                                // name / grade / DHQ / top player / steals-reaches) left almost no
-                                                // room for either name column on a narrow sheet — both team and
-                                                // player names ellipsized down to a few characters. Reflow to two
-                                                // lines instead: team facts on line 1, top-pick facts on line 2,
-                                                // each with the full row width to itself.
-                                                if (compact) {
-                                                    return (
-                                                        <div key={team.rosterId || team.teamName} style={{ padding: '8px 10px', borderRadius: 'var(--card-radius-sm, 8px)', border: rowBorder, background: rowBg }}>
-                                                            <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
-                                                                <span style={{ color: isUser ? 'var(--gold)' : 'var(--silver)', fontFamily: FONT_MONO, fontSize: '0.72rem', fontWeight: 800, flexShrink: 0 }}>#{team.rank}</span>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => { if (onPinTeam) onPinTeam(team.rosterId); }}
-                                                                    style={{ flex: 1, minWidth: 0, padding: 0, border: 'none', background: 'transparent', color: 'var(--white)', textAlign: 'left', cursor: onPinTeam ? 'pointer' : 'default', fontFamily: FONT_UI }}
-                                                                    title={onPinTeam ? 'Pin this team in opponent intel' : undefined}
-                                                                >
-                                                                    <div style={{ fontWeight: 800, fontSize: '0.8rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                                        {team.teamName}
-                                                                        {tierBadge}
-                                                                    </div>
-                                                                </button>
-                                                                <span style={{ color: recapPro ? gradeCol : 'var(--silver)', fontFamily: FONT_DISPL, fontSize: '0.9rem', fontWeight: 900, flexShrink: 0 }}>{recapPro ? team.grade : '🔒'}</span>
-                                                                <span style={{ color: 'var(--silver)', fontSize: '0.66rem', fontFamily: FONT_MONO, flexShrink: 0 }}>{fmtDhq(team.totalDHQ)}</span>
-                                                            </div>
-                                                            <div style={{ marginTop: '3px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                                                                <span style={{ color: 'var(--silver)', opacity: 0.62, fontSize: 'var(--text-micro, 0.6875rem)', flexShrink: 0, whiteSpace: 'nowrap' }}>{team.buildLabel}</span>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => topPlayer?.pid && openRecapPlayer(topPlayer.pid)}
-                                                                    disabled={!topPlayer?.pid}
-                                                                    style={{ flex: '1 1 auto', minWidth: '80px', padding: 0, border: 'none', background: 'transparent', color: topPlayer?.pid ? 'var(--gold)' : 'var(--silver)', textAlign: 'left', cursor: topPlayer?.pid ? 'pointer' : 'default', fontFamily: FONT_UI, fontSize: 'var(--text-micro, 0.6875rem)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
-                                                                >
-                                                                    {topPlayer ? topPlayer.name : 'No top pick'}
-                                                                </button>
-                                                                <span style={{ color: 'var(--silver)', opacity: 0.72, fontSize: 'var(--text-micro, 0.6875rem)', flexShrink: 0, whiteSpace: 'nowrap' }}>
-                                                                    {team.steals?.length || 0} steal{team.steals?.length === 1 ? '' : 's'} · {team.reaches?.length || 0} reach{team.reaches?.length === 1 ? '' : 'es'}
-                                                                </span>
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                }
                                                 return (
                                                     <div key={team.rosterId || team.teamName} style={{
                                                         display: 'grid',
@@ -5671,9 +4997,9 @@
                                                         gap: '10px',
                                                         alignItems: 'center',
                                                         padding: '8px 10px',
-                                                        borderRadius: 'var(--card-radius-sm, 8px)',
-                                                        border: rowBorder,
-                                                        background: rowBg,
+                                                        borderRadius: '7px',
+                                                        border: '1px solid ' + (isUser ? 'var(--acc-line2, rgba(212,175,55,0.28))' : 'var(--ov-4, rgba(255,255,255,0.06))'),
+                                                        background: isUser ? 'var(--acc-fill1, rgba(212,175,55,0.07))' : 'var(--ov-1, rgba(255,255,255,0.022))',
                                                     }}>
                                                         <div style={{ color: isUser ? 'var(--gold)' : 'var(--silver)', fontFamily: FONT_MONO, fontSize: '0.72rem', fontWeight: 800 }}>#{team.rank}</div>
                                                         <button
@@ -5684,7 +5010,8 @@
                                                         >
                                                             <div style={{ fontWeight: 800, fontSize: '0.78rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                                                 {team.teamName}
-                                                                {tierBadge}
+                                                                {/* competitive-tier badge is an assessment read → Pro (Open Q7 ruling) */}
+                                                                {recapPro && teamPower[String(team.rosterId)]?.tier && <span style={{ marginLeft: '6px', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, color: teamPower[String(team.rosterId)].tierColor || 'var(--silver)' }}>{teamPower[String(team.rosterId)].tier}</span>}
                                                             </div>
                                                             <div style={{ color: 'var(--silver)', opacity: 0.62, fontSize: 'var(--text-micro, 0.6875rem)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{team.buildLabel}</div>
                                                         </button>
@@ -5708,10 +5035,9 @@
                                     ) : <div style={{ fontSize: '0.78rem', color: 'var(--silver)', opacity: 0.6 }}>No league picks available for recap.</div>}
                                 </div>
 
-                                {/* Actions — wraps (rather than overflowing off-screen) and
-                                    stacks full-width on phone so every button stays reachable. */}
-                                <div style={{ padding: compact ? '14px 14px 18px' : '18px 32px 24px', display: 'flex', flexWrap: 'wrap', gap: '10px', justifyContent: compact ? 'stretch' : 'flex-end', borderTop: '1px solid var(--ov-4, rgba(255,255,255,0.06))' }}>
-                                    {onSaveRecap && <button onClick={onSaveRecap} style={{ flex: compact ? '1 1 auto' : '0 0 auto', minHeight: '44px', padding: '10px 22px', background: 'var(--acc-fill2, rgba(212,175,55,0.12))', color: 'var(--gold)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.35))', borderRadius: 'var(--card-radius-sm, 8px)', fontFamily: FONT_DISPL, fontSize: '0.86rem', fontWeight: 700, cursor: 'pointer', letterSpacing: '0.04em' }}>SAVE RECAP</button>}
+                                {/* Actions */}
+                                <div style={{ padding: inline ? '14px 14px 18px' : '18px 32px 24px', display: 'flex', gap: '10px', justifyContent: 'flex-end', borderTop: '1px solid var(--ov-4, rgba(255,255,255,0.06))' }}>
+                                    {onSaveRecap && <button onClick={onSaveRecap} style={{ padding: '10px 22px', background: 'var(--acc-fill2, rgba(212,175,55,0.12))', color: 'var(--gold)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.35))', borderRadius: '6px', fontFamily: FONT_DISPL, fontSize: '0.86rem', fontWeight: 700, cursor: 'pointer', letterSpacing: '0.04em' }}>SAVE RECAP</button>}
                                     {/* share/export text embeds the A–F grade + value calls → Pro
                                         (clean absence; save-to-archive above stays free) */}
                                     {recapPro && <button onClick={() => {
@@ -5719,10 +5045,10 @@
                                             const text = stateHelpers.formatDraftShareReport
                                                 ? stateHelpers.formatDraftShareReport(recap)
                                                 : stateHelpers.formatDraftRecapText?.(recap);
-                                            if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(() => alert('Share report copied.')).catch(e => alert('Copy failed: ' + e.message));
+                                            if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(() => alert('Share report copied.'));
                                             else alert('Clipboard unavailable in this browser.');
                                         } catch (e) { alert('Copy failed: ' + e.message); }
-                                    }} style={{ flex: compact ? '1 1 auto' : '0 0 auto', minHeight: '44px', padding: '10px 22px', background: 'var(--ov-3, rgba(255,255,255,0.035))', color: 'var(--silver)', border: '1px solid var(--ov-6, rgba(255,255,255,0.14))', borderRadius: 'var(--card-radius-sm, 8px)', fontFamily: FONT_DISPL, fontSize: '0.86rem', fontWeight: 700, cursor: 'pointer', letterSpacing: '0.04em' }}>COPY REPORT</button>}
+                                    }} style={{ padding: '10px 22px', background: 'var(--ov-3, rgba(255,255,255,0.035))', color: 'var(--silver)', border: '1px solid var(--ov-6, rgba(255,255,255,0.14))', borderRadius: '6px', fontFamily: FONT_DISPL, fontSize: '0.86rem', fontWeight: 700, cursor: 'pointer', letterSpacing: '0.04em' }}>COPY REPORT</button>}
                                     {recapPro && <button onClick={() => {
                                         try {
                                             const text = stateHelpers.formatDraftShareReport
@@ -5733,8 +5059,8 @@
                                             const blob = new Blob([text], { type: 'text/markdown' });
                                             const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'draft-recap-' + Date.now() + '.md'; a.click(); URL.revokeObjectURL(url);
                                         } catch (e) { alert('Export failed: ' + e.message); }
-                                    }} style={{ flex: compact ? '1 1 auto' : '0 0 auto', minHeight: '44px', padding: '10px 22px', background: 'transparent', color: 'var(--silver)', border: '1px solid var(--ov-6, rgba(255,255,255,0.15))', borderRadius: 'var(--card-radius-sm, 8px)', fontFamily: FONT_DISPL, fontSize: '0.86rem', fontWeight: 700, cursor: 'pointer', letterSpacing: '0.04em' }}>EXPORT REPORT</button>}
-                                    {onPrimary && <button onClick={onPrimary} style={{ flex: compact ? '1 1 100%' : '0 0 auto', minHeight: '44px', padding: '10px 22px', background: 'var(--gold)', color: 'var(--black)', border: 'none', borderRadius: 'var(--card-radius-sm, 8px)', fontFamily: FONT_DISPL, fontSize: '0.9rem', fontWeight: 700, cursor: 'pointer', letterSpacing: '0.04em' }}>{primaryLabel || 'DONE'}</button>}
+                                    }} style={{ padding: '10px 22px', background: 'transparent', color: 'var(--silver)', border: '1px solid var(--ov-6, rgba(255,255,255,0.15))', borderRadius: '6px', fontFamily: FONT_DISPL, fontSize: '0.86rem', fontWeight: 700, cursor: 'pointer', letterSpacing: '0.04em' }}>EXPORT REPORT</button>}
+                                    {onPrimary && <button onClick={onPrimary} style={{ padding: '10px 22px', background: 'var(--gold)', color: 'var(--black)', border: 'none', borderRadius: '6px', fontFamily: FONT_DISPL, fontSize: '0.9rem', fontWeight: 700, cursor: 'pointer', letterSpacing: '0.04em' }}>{primaryLabel || 'DONE'}</button>}
                                 </div>
                             </div>
         );
@@ -5750,35 +5076,14 @@
             [state.picks, state.userRosterId]
         );
         const grade = React.useMemo(
-            () => {
-                const g = window.DraftCC.state.gradeDraft(myPicks, state.originalPool, {
-                    assessment: state.personas?.[state.userRosterId]?.assessment,
-                    variant: state.variant,
-                    leagueSize: state.leagueSize,
-                    rounds: state.rounds,
-                    budget: state.auctionBudget,
-                });
-                // Fold in league standing the SAME way the League Grades table's
-                // recapLetter does (85% pick-quality score + 15% intra-league DHQ
-                // percentile) — gradeDraft alone only scores pick-by-pick value vs
-                // expected, with zero awareness of how the WHOLE draft stacked up
-                // against the other teams. Without this, the hero grade shown here
-                // (and on MockRosterBuildCard, which reads this same value) could
-                // show a completely different letter than the League Grades table
-                // for the identical draft — e.g. "A-" here while finishing 9th
-                // percentile showed "B" there, with no visible reason why.
-                try {
-                    const totals = window.DraftCC.state.leagueTotalsFromPicks(state.picks);
-                    const ranked = Object.entries(totals).map(([rid, total]) => ({ rid, total })).sort((a, b) => b.total - a.total);
-                    const rank = ranked.findIndex(r => String(r.rid) === String(state.userRosterId)) + 1;
-                    const percentile = ranked.length > 1 && rank > 0 ? Math.round(((ranked.length - rank) / (ranked.length - 1)) * 100) : 100;
-                    const blended = window.DraftCC.state.recapLetter(percentile, g.avgPickScore, state.variant);
-                    return { ...g, letter: blended.letter, score: blended.score, rawScore: g.score, percentile, leagueRank: rank || null };
-                } catch (e) {
-                    return g;
-                }
-            },
-            [myPicks, state.originalPool, state.personas, state.userRosterId, state.variant, state.leagueSize, state.rounds, state.auctionBudget, state.picks]
+            () => window.DraftCC.state.gradeDraft(myPicks, state.originalPool, {
+                assessment: state.personas?.[state.userRosterId]?.assessment,
+                variant: state.variant,
+                leagueSize: state.leagueSize,
+                rounds: state.rounds,
+                budget: state.auctionBudget,
+            }),
+            [myPicks, state.originalPool, state.personas, state.userRosterId, state.variant, state.leagueSize, state.rounds, state.auctionBudget]
         );
 
         // Belt-and-suspenders: a draft persisted mid-negotiation by a Pro/trial
@@ -5808,7 +5113,7 @@
             padding: '12px 14px',
             background: 'linear-gradient(90deg, var(--surf-solid, rgba(7,9,14,0.98)), var(--surf-solid, rgba(17,23,33,0.96)) 42%, var(--surf-solid, rgba(30,24,10,0.92)))',
             border: '1px solid var(--acc-line2, rgba(212,175,55,0.34))',
-            borderRadius: 'var(--card-radius-sm, 8px)',
+            borderRadius: '8px',
             marginBottom: (L.GRID_GAP) + 'px',
             boxShadow: 'inset 0 -1px 0 var(--ov-3, rgba(255,255,255,0.05)), 0 10px 26px rgba(0,0,0,0.24)',
         };
@@ -6024,21 +5329,9 @@
         // window banner during a live draft only; other phases keep the full header.
         const isLiveDraftHud = state.mode === 'live-sync' && state.phase === 'drafting';
 
-        // Live-sync gets the SAME cockpit as mock/solo/manual/ghost drafting now
-        // (MockDraftCockpit's isLive branch) — except auction, which stays on the
-        // old fallback layout below: AuctionCockpit's nomination/bidding/wall-clock
-        // model is a CPU-simulated mechanic that doesn't (yet) mirror a real
-        // Sleeper auction, so a live auction keeps the AuctionBudgetPanel/
-        // LiveAuctionSalesTicker treatment it already had rather than being routed
-        // into a cockpit that assumes it owns the nomination clock.
-        const isLiveAuctionDrafting = state.mode === 'live-sync' && state.draftMechanic === 'auction';
-        if (state.phase === 'drafting' && !isLiveAuctionDrafting) {
-            const isLive = state.mode === 'live-sync';
+        if (state.mode !== 'live-sync' && state.phase === 'drafting') {
             return (
                 <>
-                    {state.draftMechanic === 'auction'
-                        ? <AuctionCockpit state={state} dispatch={dispatch} onExit={onExit} />
-                        : (
                     <MockDraftCockpit
                         state={state}
                         dispatch={dispatch}
@@ -6050,13 +5343,7 @@
                         openTradeDesk={openTradeDesk}
                         grade={grade}
                         canUndoManualPick={canUndoManualPick}
-                        isLive={isLive}
-                        liveConfidenceCard={isLive ? liveConfidenceCard : null}
-                        liveDecisionDeck={isLive ? liveDecisionDeck : null}
-                        liveTradeWindow={isLive ? liveTradeWindow : null}
-                        stagedLiveOffers={isLive ? (state.stagedLiveOffers || []) : []}
                     />
-                        )}
                     {tradeIsPro && state.activeOffer && TradeModal && <TradeModal state={state} dispatch={dispatch} />}
                     {state.proposerDrawer && TradeProposer && <TradeProposer state={state} dispatch={dispatch} />}
                 </>
@@ -6099,7 +5386,7 @@
                         <div style={{
                             width: 44,
                             height: 44,
-                            borderRadius: 'var(--card-radius-sm, 8px)',
+                            borderRadius: '7px',
                             display: 'grid',
                             placeItems: 'center',
                             background: 'var(--gold)',
@@ -6166,7 +5453,7 @@
                                     alignItems: 'flex-start',
                                     maxWidth: 540,
                                     padding: '4px 8px 4px 7px',
-                                    borderRadius: 'var(--card-radius-sm, 8px)',
+                                    borderRadius: 'var(--card-radius-sm, 6px)',
                                     borderLeft: '2px solid ' + wrAlpha(accent, isHigh ? 'cc' : '55'),
                                     background: isHigh ? wrAlpha(accent, '14') : wrAlpha(ALEX, '0a'),
                                 }}>
@@ -6209,7 +5496,7 @@
                                 minWidth: 0,
                                 border: '1px solid var(--acc-fill3, rgba(212,175,55,0.14))',
                                 background: 'var(--ov-1, rgba(255,255,255,0.024))',
-                                borderRadius: 'var(--card-radius-sm, 8px)',
+                                borderRadius: '7px',
                                 padding: '8px 9px',
                             }}>
                                 <div style={{ color: card.tone, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.09em', marginBottom: 3 }}>{card.label}</div>
@@ -6246,7 +5533,7 @@
                             padding: '4px 10px',
                             background: 'var(--acc-fill2, rgba(212,175,55,0.08))',
                             border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))',
-                            borderRadius: 'var(--card-radius-xs, 5px)',
+                            borderRadius: '4px',
                             fontSize: 'var(--text-micro, 0.6875rem)',
                             fontWeight: 700,
                             color: 'var(--gold)',
@@ -6275,7 +5562,7 @@
                                 padding: '5px 10px',
                                 background: 'var(--ov-2, rgba(255,255,255,0.04))',
                                 border: '1px solid var(--ov-5, rgba(255,255,255,0.08))',
-                                borderRadius: 'var(--card-radius-xs, 5px)',
+                                borderRadius: '4px',
                                 color: 'var(--silver)',
                                 cursor: 'pointer',
                                 fontSize: 'var(--text-micro, 0.6875rem)',
@@ -6297,7 +5584,7 @@
                                 padding: '5px 10px',
                                 background: 'var(--acc-fill2, rgba(212,175,55,0.12))',
                                 border: '1px solid var(--acc-line2, rgba(212,175,55,0.35))',
-                                borderRadius: 'var(--card-radius-xs, 5px)',
+                                borderRadius: '4px',
                                 color: 'var(--gold)',
                                 cursor: 'pointer',
                                 fontSize: 'var(--text-micro, 0.6875rem)',
@@ -6319,7 +5606,7 @@
                                 padding: '5px 10px',
                                 background: 'rgba(155,138,251,0.12)',
                                 border: '1px solid rgba(155,138,251,0.35)',
-                                borderRadius: 'var(--card-radius-xs, 5px)',
+                                borderRadius: '4px',
                                 color: 'rgba(214,208,255,0.98)',
                                 cursor: 'pointer',
                                 fontSize: 'var(--text-micro, 0.6875rem)',
@@ -6359,7 +5646,7 @@
                                 padding: '5px 10px',
                                 background: 'rgba(46,204,113,0.12)',
                                 border: '1px solid rgba(46,204,113,0.3)',
-                                borderRadius: 'var(--card-radius-xs, 5px)',
+                                borderRadius: '4px',
                                 color: 'var(--k-2ecc71, #2ecc71)',
                                 cursor: 'pointer',
                                 fontSize: 'var(--text-micro, 0.6875rem)',
@@ -6378,7 +5665,7 @@
                                 padding: '5px 10px',
                                 background: 'rgba(124,107,248,0.12)',
                                 border: '1px solid rgba(124,107,248,0.3)',
-                                borderRadius: 'var(--card-radius-xs, 5px)',
+                                borderRadius: '4px',
                                 color: 'rgba(155,138,251,0.9)',
                                 cursor: 'pointer',
                                 fontSize: 'var(--text-micro, 0.6875rem)',
@@ -6392,7 +5679,7 @@
                         padding: '5px 12px',
                         background: 'transparent',
                         border: '1px solid var(--ov-6, rgba(255,255,255,0.1))',
-                        borderRadius: 'var(--card-radius-xs, 5px)',
+                        borderRadius: '4px',
                         color: 'var(--silver)',
                         cursor: 'pointer',
                         fontSize: 'var(--text-micro, 0.6875rem)',
@@ -6425,12 +5712,6 @@
                             leagueSize={state.leagueSize}
                             inline
                         />
-                        {state.draftMechanic === 'auction' && (
-                            <>
-                                <AuctionBudgetPanel state={state} />
-                                <LiveAuctionSalesTicker state={state} />
-                            </>
-                        )}
                     </div>
                 ) : (
                     <LiveTradeWindowBanner
@@ -6468,7 +5749,7 @@
                         marginBottom: L.GRID_GAP + 'px',
                         background: 'linear-gradient(90deg, var(--acc-fill3, rgba(212,175,55,0.15)), var(--acc-fill1, rgba(212,175,55,0.02)))',
                         border: '1px solid var(--acc-line2, rgba(212,175,55,0.35))',
-                        borderRadius: 'var(--card-radius-sm, 8px)',
+                        borderRadius: '6px',
                         fontSize: '0.72rem',
                         color: 'var(--gold)',
                         fontWeight: 600,
@@ -6485,7 +5766,7 @@
                         marginBottom: L.GRID_GAP + 'px',
                         background: 'rgba(124,107,248,0.05)',
                         border: '1px solid rgba(124,107,248,0.3)',
-                        borderRadius: 'var(--card-radius-sm, 8px)',
+                        borderRadius: '6px',
                         display: 'flex',
                         alignItems: 'center',
                         gap: '10px',
@@ -6518,7 +5799,7 @@
                     marginBottom: L.GRID_GAP + 'px',
                 }}>
                     <div style={{ minHeight: isCompact ? 'clamp(420px, 50vh, 560px)' : '100%', minWidth: 0 }}>
-                        <BigBoardPanel state={state} dispatch={dispatch} isUserTurn={isUserTurn} showPickAdvisory={true} />
+                        <BigBoardPanel state={state} dispatch={dispatch} isUserTurn={isUserTurn} />
                     </div>
                     <div style={{ minHeight: isCompact ? 'clamp(420px, 50vh, 560px)' : '100%', minWidth: 0 }}>
                         <MyDraftRosterPanel state={state} />
@@ -6588,53 +5869,41 @@
                     <LeagueGradesPanel state={state} onClose={() => setShowLeagueGrades(false)} />
                 )}
 
-                {/* Phase 7: Post-draft recap — full-screen modal with grade + per-position + roster + export.
-                    Phone gets the shared WR.Sheet (close ✕ + swipe-to-dismiss + safe-area handling) —
-                    this used to always render the roomy desktop-centered dialog, which on a phone
-                    screen wasted most of the width and left the action row unreachable off-edge. */}
+                {/* Phase 7: Post-draft recap — full-screen modal with grade + per-position + roster + export */}
                 {state.phase === 'complete' && !recapDismissed && (() => {
                     const stateHelpers = window.DraftCC?.state || {};
                     const recap = stateHelpers.buildDraftRecap
                         ? stateHelpers.buildDraftRecap(state, { grade })
                         : null;
-                    const onSaveRecapNow = () => {
-                        try {
-                            const key = 'wr_draft_recap_' + Date.now();
-                            const payload = stateHelpers.saveDraftRecap
-                                ? stateHelpers.saveDraftRecap(state, { grade, key })
-                                : recap;
-                            if (!payload) localStorage.setItem(key, JSON.stringify(recap || {}));
-                            alert('Draft recap saved to archive (' + key + ')');
-                        } catch (e) { alert('Save failed: ' + e.message); }
-                    };
-                    const recapProps = {
-                        recap,
-                        grade,
-                        myPicks,
-                        userRosterId: state.userRosterId,
-                        // Contender/Rebuilding tags are dynasty-only — a mock's
-                        // "startup"/"rookie" pool is dynasty, "redraft" isn't.
-                        isDynasty: state.variant === 'startup' || state.variant === 'rookie',
-                        onPinTeam: rid => dispatch({ type: 'PIN_TEAM', rosterId: rid }),
-                        onSaveRecap: onSaveRecapNow,
-                        primaryLabel: forcedMode === 'live-sync' ? 'VIEW DRAFT BOARD →' : 'DRAFT AGAIN',
-                        onPrimary: onExit,
-                    };
-                    const Sheet = window.WR && window.WR.Sheet;
-                    const desktopModal = (
+                    // Overlay shell only — the report card itself is the shared
+                    // DraftRecapReport (also rendered inline on the Draft War Room
+                    // post-draft from the archived recap).
+                    return (
                         <div style={{
                             position: 'fixed', inset: 0, background: 'var(--surf-solid, rgba(5,6,9,0.82))',
                             zIndex: 900, display: 'flex', alignItems: 'center', justifyContent: 'center',
                             padding: 'var(--space-xl)', animation: 'wrFadeIn 0.2s ease'
                         }} onClick={e => { if (e.target === e.currentTarget) onExit && onExit(); }}>
-                            <DraftRecapReport {...recapProps} />
+                            <DraftRecapReport
+                                recap={recap}
+                                grade={grade}
+                                myPicks={myPicks}
+                                userRosterId={state.userRosterId}
+                                onPinTeam={rid => dispatch({ type: 'PIN_TEAM', rosterId: rid })}
+                                onSaveRecap={() => {
+                                    try {
+                                        const key = 'wr_draft_recap_' + Date.now();
+                                        const payload = stateHelpers.saveDraftRecap
+                                            ? stateHelpers.saveDraftRecap(state, { grade, key })
+                                            : recap;
+                                        if (!payload) localStorage.setItem(key, JSON.stringify(recap || {}));
+                                        alert('Draft recap saved to archive');
+                                    } catch (e) { alert('Save failed: ' + e.message); }
+                                }}
+                                primaryLabel={forcedMode === 'live-sync' ? 'VIEW DRAFT BOARD →' : 'DRAFT AGAIN'}
+                                onPrimary={onExit}
+                            />
                         </div>
-                    );
-                    if (!Sheet) return desktopModal;
-                    return (
-                        <Sheet open={true} onClose={onExit} title="Draft Recap" height="100dvh" desktop={desktopModal}>
-                            <DraftRecapReport {...recapProps} inline />
-                        </Sheet>
                     );
                 })()}
 
@@ -6908,7 +6177,7 @@
                 background: 'linear-gradient(90deg, rgba(155,138,251,0.07), var(--ov-1, rgba(255,255,255,0.024)) 42%, var(--acc-fill1, rgba(212,175,55,0.045)))',
                 border: '1px solid rgba(155,138,251,0.24)',
                 borderLeft: '3px solid ' + color,
-                borderRadius: 'var(--card-radius-sm, 8px)',
+                borderRadius: '8px',
                 display: 'grid',
                 gridTemplateColumns: dispatch && state.phase === 'drafting' ? 'minmax(0, 1fr) auto' : '1fr',
                 alignItems: 'center',
@@ -6970,7 +6239,7 @@
                 marginBottom: (layoutGap || 8) + 'px',
                 background: 'rgba(124,107,248,0.045)',
                 border: '1px solid rgba(155,138,251,0.24)',
-                borderRadius: 'var(--card-radius-sm, 8px)',
+                borderRadius: '6px',
                 fontFamily: FONT_UI,
             }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 7 }}>
@@ -7024,7 +6293,7 @@
                 padding: '7px 8px',
                 background: 'var(--ov-2, rgba(255,255,255,0.03))',
                 border: '1px solid var(--ov-4, rgba(255,255,255,0.07))',
-                borderRadius: 'var(--card-radius-xs, 5px)',
+                borderRadius: '5px',
             }}>
                 <div style={{ flex: '1 1 240px', minWidth: 0 }}>
                     <div style={{ color: 'var(--white)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -7138,7 +6407,7 @@
                 marginBottom: (layoutGap || 8) + 'px',
                 background: 'var(--ov-1, rgba(255,255,255,0.022))',
                 border: '1px solid var(--acc-line1, rgba(212,175,55,0.22))',
-                borderRadius: 'var(--card-radius-sm, 8px)',
+                borderRadius: '6px',
                 fontFamily: FONT_UI,
             }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
@@ -7175,7 +6444,7 @@
                                     background: tone.bg,
                                     border: '1px solid ' + tone.border,
                                     borderLeft: '3px solid ' + tone.main,
-                                    borderRadius: 'var(--card-radius-xs, 5px)',
+                                    borderRadius: '5px',
                                     textAlign: 'left',
                                     cursor: clickable ? 'pointer' : 'default',
                                     fontFamily: FONT_UI,
@@ -7245,7 +6514,7 @@
                                     padding: '6px 8px',
                                     background: tone.bg,
                                     border: '1px solid ' + tone.border,
-                                    borderRadius: 'var(--card-radius-xs, 5px)',
+                                    borderRadius: '4px',
                                 }}>
                                     <div style={{ color: tone.main, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{alert.title}</div>
                                     <div style={{ color: 'var(--silver)', opacity: 0.8, fontSize: 'var(--text-micro, 0.6875rem)', lineHeight: 1.35, marginTop: 2 }}>{alert.text}</div>
@@ -7276,7 +6545,7 @@
                     marginBottom: inline ? 0 : (layoutGap || 8) + 'px',
                     background: 'rgba(124,107,248,0.055)',
                     border: '1px solid rgba(155,138,251,0.28)',
-                    borderRadius: 'var(--card-radius-sm, 8px)',
+                    borderRadius: '6px',
                     display: 'flex',
                     flexDirection: 'column',
                     gap: '8px',
@@ -7348,7 +6617,7 @@
                             padding: '6px 10px',
                             background: 'rgba(155,138,251,0.14)',
                             border: '1px solid rgba(155,138,251,0.34)',
-                            borderRadius: 'var(--card-radius-xs, 5px)',
+                            borderRadius: '4px',
                             color: 'rgba(214,208,255,0.98)',
                             cursor: 'pointer',
                             fontFamily: FONT_UI,
@@ -7680,7 +6949,7 @@
                         padding: '14px 18px',
                         background: 'rgba(240,165,0,0.08)',
                         border: '1px solid rgba(240,165,0,0.25)',
-                        borderRadius: 'var(--card-radius-sm, 8px)',
+                        borderRadius: '8px',
                         marginBottom: '16px',
                         fontSize: '0.76rem',
                         color: 'var(--k-f0a500, #f0a500)',
@@ -7695,7 +6964,7 @@
                         background: 'var(--gold)',
                         color: 'var(--black)',
                         border: 'none',
-                        borderRadius: 'var(--card-radius-sm, 8px)',
+                        borderRadius: '8px',
                         fontFamily: FONT_DISPL,
                         fontSize: '1rem',
                         fontWeight: 700,
@@ -7718,7 +6987,7 @@
                         tier) — do not double-pad here. */}
                     <MobileClockBar state={state} currentSlot={currentSlot} isUserTurn={isUserTurn} />
                     <div style={{ minHeight: 320, maxHeight: '56vh', marginBottom: 10 }}>
-                        <BigBoardPanel state={state} dispatch={dispatch} isUserTurn={isUserTurn} showPickAdvisory={true} />
+                        <BigBoardPanel state={state} dispatch={dispatch} isUserTurn={isUserTurn} />
                     </div>
                     <div style={{ minHeight: 300, marginBottom: 10 }}>
                         <AlexStreamPanel state={state} dispatch={dispatch} />
@@ -7832,7 +7101,7 @@
                         </section>
                     ))}
                     <div style={{ marginBottom: 10 }}>
-                        <BigBoardPanel state={state} dispatch={dispatch} isUserTurn={isUserTurn} showPickAdvisory={true} />
+                        <BigBoardPanel state={state} dispatch={dispatch} isUserTurn={isUserTurn} />
                     </div>
                 </div>)}
                 {phTab === 'roster' && (
@@ -7924,7 +7193,7 @@
                 <div style={{
                     width: '100%', maxWidth: '720px', maxHeight: '88vh', overflowY: 'auto', overscrollBehavior: 'contain',
                     background: 'var(--k-0a0b0d, #0a0b0d)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.34))',
-                    borderRadius: 'var(--card-radius-lg, 14px)', boxShadow: '0 28px 80px rgba(0,0,0,0.78)', fontFamily: FONT_UI,
+                    borderRadius: '14px', boxShadow: '0 28px 80px rgba(0,0,0,0.78)', fontFamily: FONT_UI,
                 }}>
                     {/* Header */}
                     <div style={{

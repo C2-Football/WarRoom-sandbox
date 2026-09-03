@@ -50,61 +50,21 @@
         return { season: ctx.season, week: ctx.week, ts: Date.now(), teams };
     }
 
-    // Per-player periodic capture — one row per (league, player, week), so a
-    // player who's never traded or drafted still gets a genuine value-over-
-    // time line (draft/trade snapshots alone only ever give two points).
-    // Best-effort only: this fires when someone opens the league in the app,
-    // not on a real schedule — there is no server-side cron in this project
-    // (same limitation the team-aggregate capture above already accepts).
-    // Idempotent server-side (player_value_snapshots' unique constraint), so
-    // reopening the same league/week is a no-op rather than a duplicate row.
-    function capturePlayerValues() {
-        if (typeof window.OD?.recordValueSnapshots !== 'function') return;
-        const S = window.S || (window.App && window.App.S);
-        const LI = window.App && window.App.LI;
-        if (!S || !S.currentLeagueId || !LI || !LI.playerScores) return;
-        const rosters = S.rosters || [];
-        if (!rosters.length) return;
-        const scores = LI.playerScores || {};
-        const ctx = nflContext();
-        const PV = window.App && window.App.PlayerValue;
-        const isRedraft = !!(PV && PV.isRedraftActive && PV.isRedraftActive());
-        const rows = [];
-        const seen = new Set();
-        rosters.forEach(r => {
-            (r.players || []).forEach(pid => {
-                if (seen.has(pid)) return; // a player can't be on two rosters, but guard anyway
-                seen.add(pid);
-                const value = isRedraft ? PV.getValue(pid) : scores[pid];
-                if (value == null || value <= 0) return;
-                rows.push({
-                    leagueId: S.currentLeagueId, playerId: pid,
-                    season: ctx.season, week: ctx.week,
-                    value, valueType: isRedraft ? 'redraft' : 'dynasty', source: 'periodic',
-                });
-            });
-        });
-        if (rows.length) window.OD.recordValueSnapshots(rows);
-    }
-
     // Append / replace this week's row (idempotent per season+week).
     function record() {
         const st = store(); if (!st) return;
         let row = null;
         try { row = captureCurrentLeague(); } catch (e) { row = null; }
-        if (row) {
-            const lid = window.S && window.S.currentLeagueId;
-            if (lid) {
-                const key = KEY(lid);
-                const series = st.get(key, []) || [];
-                const i = series.findIndex(s => String(s.season) === String(row.season) && Number(s.week) === Number(row.week));
-                if (i >= 0) series[i] = row; else series.push(row);
-                series.sort((a, b) => (Number(a.season) - Number(b.season)) || (Number(a.week) - Number(b.week)));
-                while (series.length > MAX_ROWS) series.shift();
-                try { st.set(key, series); } catch (e) { if (window.dhqLog) window.dhqLog('snapshot.record', e); }
-            }
-        }
-        try { capturePlayerValues(); } catch (e) { if (window.dhqLog) window.dhqLog('snapshot.recordPlayers', e); }
+        if (!row) return;
+        const lid = window.S && window.S.currentLeagueId;
+        if (!lid) return;
+        const key = KEY(lid);
+        const series = st.get(key, []) || [];
+        const i = series.findIndex(s => String(s.season) === String(row.season) && Number(s.week) === Number(row.week));
+        if (i >= 0) series[i] = row; else series.push(row);
+        series.sort((a, b) => (Number(a.season) - Number(b.season)) || (Number(a.week) - Number(b.week)));
+        while (series.length > MAX_ROWS) series.shift();
+        try { st.set(key, series); } catch (e) { if (window.dhqLog) window.dhqLog('snapshot.record', e); }
     }
 
     function timeline(lid) { const st = store(); return (st && st.get(KEY(lid), [])) || []; }
@@ -176,5 +136,5 @@
         setTimeout(attach, 200);
     })();
 
-    window.WrSnapshots = { record, timeline, leagueDelta, empireDelta, captureCurrentLeague, capturePlayerValues };
+    window.WrSnapshots = { record, timeline, leagueDelta, empireDelta, captureCurrentLeague };
 })();

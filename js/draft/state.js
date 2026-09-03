@@ -347,26 +347,8 @@
             draftType: opts.draftType || 'snake',
             userRosterId: opts.userRosterId || null,
             userSlot: opts.userSlot || 1,      // 1-indexed
-            // Mock-only slot order override — ordered array of rosterIds (slot 1..N),
-            // set by the Setup screen's draft-order reorder list. null/[] = use the
-            // league's real draft_order (or the win-sorted fallback) untouched.
-            // Doubles as auction nomination order when draftMechanic === 'auction' —
-            // same "ordered array of rosterIds" shape, no separate field needed.
-            customSlotOrder: opts.customSlotOrder || null,
             sleeperDraftId: opts.sleeperDraftId || null,
             liveDraftMeta: opts.liveDraftMeta || null,
-
-            // ── Auction mechanic (separate axis from draftType, which stays
-            // snake/linear and is ignored in auction mode; also separate from
-            // variant, which auction temporarily overrides to 'auction' for
-            // grading purposes — see auctionPoolSource for the real pool source). ──
-            draftMechanic: opts.draftMechanic || 'turns', // 'turns' | 'auction'
-            auctionBudget: Math.max(1, Number(opts.auctionBudget) || 200), // per-team starting $
-            auctionPoolSource: opts.auctionPoolSource || null, // 'startup'|'redraft'|'rookie' — real pool source while variant reads 'auction'
-            teamBudgets: opts.teamBudgets || {},   // { [rosterId]: {total, spent, remaining} }
-            nominatorIdx: opts.nominatorIdx || 0,  // rotation cursor into customSlotOrder
-            nomination: opts.nomination || null,   // live bid state; null when idle — see NOMINATE_PLAYER
-            marketValues: opts.marketValues || {}, // { [pid]: targetPrice } — VBD-based auction dollar values, see buildAuctionMarketValues
 
             // Pool + order
             pool: [],
@@ -520,15 +502,6 @@
     function resolvePlayerDhq(input) {
         const player = input?.player || input || {};
         const pid = input?.pid || input?.player_id || input?.playerId || player.pid || player.player_id || player.playerId || player.sleeperId;
-        // Redraft league with the ROS map built → the board prices on ROS
-        // values ONLY. No dynasty engine, no rookie dynasty ladder, no
-        // attached dynasty numbers — a 0 here means "no projected role this
-        // season" and the position-baseline fallback fills the deep pool.
-        const PV = window.App?.PlayerValue;
-        if (pid != null && PV?.isRedraftActive?.()) {
-            const ros = Number(PV.getValue(pid) || 0);
-            return ros > 0 ? { value: Math.round(ros), source: 'PlayerValue.ros' } : { value: 0, source: 'ros-zero' };
-        }
         if (pid != null) {
             const engine = Number(window.App?.LI?.playerScores?.[pid] || 0);
             if (engine > 0) return { value: Math.round(engine), source: 'App.LI.playerScores' };
@@ -609,10 +582,27 @@
         return opts.fallback || 'startup';
     }
 
+    // Grading replacement level for K/DEF picks (expectedDHQ only — NOT a
+    // pool value). Calibrated to the engine's real kicker range (~90-370 on
+    // the owner's league, 2026-08-15): a mid-pool starter grades ~1.0, elite
+    // legs grade as surplus, JAG legs as mild reaches. DEF sits on the same
+    // provisional scale until engine DEF data says otherwise.
     function redraftPositionBaseline(pos, variant) {
         if (variant !== 'redraft' && variant !== 'best_ball') return 0;
-        if (pos === 'DEF') return 760;
-        if (pos === 'K') return 520;
+        if (pos === 'DEF') return 250;
+        if (pos === 'K') return 230;
+        return 0;
+    }
+    // Pool fallback for a K/DEF the engine hasn't scored yet. MUST stay
+    // BELOW the engine's real scoring range (~90+): the old 520/760
+    // placeholders outranked genuine engine scores, so placeholder-valued
+    // retired legs led the board and the pick deck (owner report
+    // 2026-08-15). Low floors also park unscored K/DEF at the bottom of the
+    // board — where those positions actually get drafted.
+    function redraftPoolFloor(pos, variant) {
+        if (variant !== 'redraft' && variant !== 'best_ball') return 0;
+        if (pos === 'DEF') return 70;
+        if (pos === 'K') return 60;
         return 0;
     }
 
@@ -778,14 +768,8 @@
 
         // Startup/redraft variants — pull from Sleeper DHQ scores, with
         // rookie-data fallback for first-year players not yet scored by LI.
-        // In a REDRAFT league the ROS value map is the only board currency:
-        // build it from the hydrate bridge if no tab has yet, and let
-        // resolvePlayerDhq route every lookup through it (window.dynastyValue
-        // is exactly the dynasty bypass this board must not use).
-        try { window.App?.PlayerValue?.ensureRosFromState?.(); } catch (e) { /* dynasty league or data not hydrated */ }
-        const redraftBoard = !!window.App?.PlayerValue?.isRedraftActive?.();
         const getDHQ = (pid, player, name) => {
-            if (!redraftBoard && typeof window.dynastyValue === 'function') {
+            if (typeof window.dynastyValue === 'function') {
                 const v = window.dynastyValue(pid);
                 if (v > 0) return { value: Math.round(v), source: 'window.dynastyValue' };
             }
@@ -795,7 +779,7 @@
             ? window.getLeaguePositions({ asSet: true })
             : new Set(['QB','RB','WR','TE','K','DEF']);
         const src = playersData || window.S?.players || {};
-        const pool = Object.entries(src)
+        let pool = Object.entries(src)
             .filter(([, p]) => VALID.has(normPos(p.position)) && p.status !== 'Inactive' && (p.first_name || p.full_name))
             .map(([pid, p]) => {
                 const name = p.full_name || `${p.first_name || ''} ${p.last_name || ''}`.trim();
@@ -803,7 +787,7 @@
                 const resolved = getDHQ(pid, p, name);
                 const yearsExpRaw = p.years_exp ?? p.yearsExp;
                 const yearsExp = Number.isFinite(Number(yearsExpRaw)) ? Number(yearsExpRaw) : null;
-                const fallbackValue = redraftPositionBaseline(pos, variant);
+                const fallbackValue = redraftPoolFloor(pos, variant);
                 const dhq = resolved.value || fallbackValue;
                 return {
                     pid,
@@ -821,12 +805,73 @@
                     val: dhq,
                     source: resolved.value ? resolved.source : (fallbackValue ? 'redraft-position-baseline' : resolved.source),
                     csv: null,
+                    searchRank: Number(p.search_rank) || 9999999,
+                    depthOrder: Number(p.depth_chart_order) || 99,
                     photoUrl: 'https://sleepercdn.com/content/nfl/players/thumb/' + pid + '.jpg',
                 };
             })
             .filter(p => p.dhq > 0)
-            .sort((a, b) => b.dhq - a.dhq)
-            .slice(0, maxSize);
+            .sort((a, b) => b.dhq - a.dhq);
+        // Kicker universe = each NFL team's depth-chart starter, nothing else
+        // (owner ruling 2026-08-15). Retired/FA legs and backups leave the
+        // pool ENTIRELY — engine-scored or not — so they can never appear on
+        // a board or in the pick deck. Depth 1 wins each team; search_rank
+        // popularity settles camp battles.
+        if (VALID.has('K')) {
+            const kStarterByTeam = {};
+            pool.forEach(p => {
+                if (p.pos !== 'K' || !p.team || p.team === 'FA') return;
+                const cur = kStarterByTeam[p.team];
+                const better = !cur
+                    || (p.depthOrder || 99) < (cur.depthOrder || 99)
+                    || ((p.depthOrder || 99) === (cur.depthOrder || 99) && (p.searchRank || 9999999) < (cur.searchRank || 9999999));
+                if (better) kStarterByTeam[p.team] = p;
+            });
+            const kStarters = new Set(Object.values(kStarterByTeam).map(p => String(p.pid)));
+            pool = pool.filter(p => p.pos !== 'K' || kStarters.has(String(p.pid)));
+        }
+        // Position floor: K/DEF values sit far below the offense curve, so a
+        // straight top-N value cut produced a board with no kickers or
+        // defenses (owner report 2026-08-15). Keep the value cut, then
+        // guarantee the top squads/legs a seat — mirrors the Draft tab
+        // feeder's position coverage. VALID above already scoped positions
+        // to what this league rosters.
+        {
+            const cut = pool.slice(0, maxSize);
+            const inCut = new Set(cut.map(p => String(p.pid)));
+            // K/DEF all share a flat baseline value, so a value cut can't rank
+            // them. The real universe is one starter per NFL team (owner
+            // ruling 2026-08-15): all 32 team defenses, and each team's
+            // starting kicker read off Sleeper's depth chart (depth 1, with
+            // search_rank popularity as the camp-battle tiebreak).
+            const addRow = (p) => { cut.push(p); inCut.add(String(p.pid)); };
+            // Order floor rows by market ADP when the cached map has it, so
+            // the board lists the kickers/defenses people actually draft
+            // first; popularity (search_rank) breaks the rest.
+            const kdAdp = (p) => {
+                const g = (typeof window !== 'undefined' && window.App && typeof window.App.getRedraftAdp === 'function')
+                    ? window.App.getRedraftAdp(String(p.pid)) : null;
+                return g && g.adp > 0 ? g.adp : 100000;
+            };
+            // Engine kicker/defense scores (App.LI.playerScores — the same
+            // database the Analytics table shows) outrank everything when
+            // loaded; market ADP then popularity break baseline ties for
+            // pools built before the league engine finishes loading.
+            const kdOrder = (x, y) => ((y.dhq || 0) - (x.dhq || 0)) || (kdAdp(x) - kdAdp(y)) || ((x.searchRank || 9999999) - (y.searchRank || 9999999));
+            // Defenses: the 32 team units, complete by definition.
+            pool.filter(p => p.pos === 'DEF' && !inCut.has(String(p.pid))).sort(kdOrder).forEach(addRow);
+            // Kickers: the depth-chart starter for every team; free agents skip.
+            const kByTeam = {};
+            pool.filter(p => p.pos === 'K' && p.team && p.team !== 'FA').forEach(p => {
+                const cur = kByTeam[p.team];
+                const better = !cur
+                    || (p.depthOrder || 99) < (cur.depthOrder || 99)
+                    || ((p.depthOrder || 99) === (cur.depthOrder || 99) && (p.searchRank || 9999999) < (cur.searchRank || 9999999));
+                if (better) kByTeam[p.team] = p;
+            });
+            Object.values(kByTeam).sort(kdOrder).forEach(p => { if (!inCut.has(String(p.pid))) addRow(p); });
+            pool = cut;
+        }
 
         // Synthetic consensusRank for reach/steal detection in startup mode —
         // index in the DHQ-sorted pool is the "consensus" rank order.
@@ -875,113 +920,6 @@
         return order;
     }
 
-    // Applies a mock-only "who sits where" override on top of a computed
-    // draftMeta (the real league draft_order / win-sort / MFL slot result).
-    // customSlotOrder is an ordered array of rosterIds — customSlotOrder[0] is
-    // whoever should hold slot 1, etc. Rebuilds slotToRoster + mySlot from it;
-    // drops the round-by-round traded-pick ownership (pickOwnership: {}) since
-    // a user manually reordering slots for a hypothetical mock has already
-    // stepped outside "what the real league's trade history says" — buildPickOrder
-    // falls back to slotToRoster for every round when pickOwnership is empty,
-    // so every round simply follows the custom order, which is the expected
-    // behavior for a mock. Returns draftMeta unchanged if no override is set.
-    function applyCustomSlotOrder(draftMeta, customSlotOrder) {
-        if (!draftMeta || !Array.isArray(customSlotOrder) || !customSlotOrder.length) return draftMeta;
-        const myRosterId = draftMeta.slotToRoster?.[draftMeta.mySlot]?.rosterId;
-        const slotToRoster = {};
-        customSlotOrder.forEach((rosterId, i) => {
-            const slot = i + 1;
-            const original = Object.values(draftMeta.slotToRoster || {}).find(info => String(info.rosterId) === String(rosterId));
-            slotToRoster[slot] = original ? { ...original } : { rosterId, ownerName: 'Team ' + slot, userId: null };
-        });
-        let mySlot = draftMeta.mySlot;
-        for (const [slot, info] of Object.entries(slotToRoster)) {
-            if (myRosterId != null && String(info.rosterId) === String(myRosterId)) { mySlot = Number(slot); break; }
-        }
-        return { ...draftMeta, slotToRoster, pickOwnership: {}, mySlot };
-    }
-
-    // ── Auction helpers ──────────────────────────────────────────────
-    // Total roster spots a team is buying toward = state.rounds (the Setup
-    // screen's "rounds" field means "roster size" in auction, same as it
-    // means "how many picks you make" in snake — one field, same meaning).
-    // No position-specific slot enforcement (mirrors snake: personaPick only
-    // soft-nudges away from saturated positions via its need penalty, it
-    // never hard-blocks drafting a 4th RB) — just a total-count cap.
-    function openRosterSlotsRemaining(state, rosterId) {
-        const filled = (state.teamRosters?.[rosterId] || []).length;
-        return Math.max(0, Number(state.rounds || 0) - filled);
-    }
-    // Auction bid ceiling a team can safely offer right now: its remaining
-    // budget minus $1 reserved for every OTHER slot it still has to fill
-    // (so it can never legally bid itself unable to complete its roster).
-    function maxSafeBid(state, rosterId) {
-        const remaining = Number(state.teamBudgets?.[rosterId]?.remaining ?? 0);
-        const openSlots = openRosterSlotsRemaining(state, rosterId);
-        if (openSlots <= 0) return 0;
-        return Math.max(0, remaining - (openSlots - 1));
-    }
-    const AUCTION_WINDOW_MS = { slow: 20000, medium: 12000, fast: 6000, paused: 20000 };
-
-    // Real auction dollar values (Value-Based Drafting), computed once at
-    // auction start from the actual pool + the league's real roster/scoring
-    // shape — the "cheat sheet" a live bid ceiling is anchored to, instead of
-    // each bid being computed independently against a team's full remaining
-    // budget with no awareness of the rest of the draft (the bug that let a
-    // single early nomination eat almost an entire $200 budget).
-    //
-    // Per-position replacement level uses window.App.buildMinStarterQuality
-    // (dhq-shared/team-assess.js) — the same flex/superflex/IDP-aware starter
-    // count already used for team-need assessment elsewhere in the app, so
-    // "replacement level" here means the same thing it means everywhere else
-    // this app talks about roster needs.
-    function buildAuctionMarketValues(pool, opts = {}) {
-        const leagueSize = Math.max(1, Number(opts.leagueSize) || 12);
-        const rounds = Math.max(1, Number(opts.rounds) || 15);
-        const budget = Math.max(1, Number(opts.auctionBudget) || 200);
-        const rosterPositions = Array.isArray(opts.rosterPositions) ? opts.rosterPositions : [];
-        const players = Array.isArray(pool) ? pool.filter(p => p && p.pid != null) : [];
-        const marketValues = {};
-        if (!players.length) return marketValues;
-
-        const minStarterQuality = (typeof window !== 'undefined' && window.App?.buildMinStarterQuality)
-            ? window.App.buildMinStarterQuality(rosterPositions)
-            : {};
-
-        // Replacement DHQ per position: the DHQ of the last "starter-quality"
-        // player at that position, league-wide.
-        const byPos = {};
-        players.forEach(p => {
-            const pos = p.pos || 'FLEX';
-            (byPos[pos] || (byPos[pos] = [])).push(p);
-        });
-        const replacementDhq = {};
-        Object.entries(byPos).forEach(([pos, list]) => {
-            const sorted = [...list].sort((a, b) => (b.dhq || b.val || 0) - (a.dhq || a.val || 0));
-            const starterCount = minStarterQuality[pos] || 1;
-            const rank = Math.max(0, Math.min(sorted.length - 1, Math.round(starterCount * leagueSize) - 1));
-            replacementDhq[pos] = sorted[rank] ? (sorted[rank].dhq || sorted[rank].val || 0) : (sorted[sorted.length - 1]?.dhq || 0);
-        });
-
-        const vbdOf = p => Math.max(0, (p.dhq || p.val || 0) - (replacementDhq[p.pos || 'FLEX'] || 0));
-
-        const totalRosterSlots = leagueSize * rounds;
-        const totalEconomyDollars = leagueSize * budget;
-        const reserveDollars = totalRosterSlots * 1;
-        const discretionaryDollars = Math.max(0, totalEconomyDollars - reserveDollars);
-
-        const draftablePool = [...players].sort((a, b) => vbdOf(b) - vbdOf(a)).slice(0, totalRosterSlots);
-        const totalVbd = draftablePool.reduce((sum, p) => sum + vbdOf(p), 0);
-
-        players.forEach(p => { marketValues[p.pid] = 1; });
-        if (totalVbd > 0) {
-            draftablePool.forEach(p => {
-                marketValues[p.pid] = Math.max(1, Math.round(1 + (vbdOf(p) / totalVbd) * discretionaryDollars));
-            });
-        }
-        return marketValues;
-    }
-
     function pickName(pick) {
         const player = pick?.player || {};
         return player.full_name || player.name || pick?.name || pick?.full_name || pick?.pid || '';
@@ -993,18 +931,6 @@
     }
 
     function pickDhq(pick) {
-        // A completed pick's DHQ is frozen at pick time — the MAKE_PICK reducer
-        // stamps resolvePlayerDhq's result onto pick.dhq permanently, as the
-        // historical record of what the pick was worth THEN. This used to
-        // re-resolve live unconditionally, which silently drifted every
-        // recap/grading consumer (League Grades panel, position breakdowns,
-        // best/worst pick) away from the Draft Recap's own hero grade
-        // (gradeDraft reads pick.dhq directly) any time DHQ recalculated after
-        // the draft — two views of the identical draft showing different
-        // totals. Prefer the frozen value when a pick actually has one;
-        // undrafted board/pool entries (no pick.dhq yet) still resolve live.
-        const frozen = Number(pick?.dhq);
-        if (Number.isFinite(frozen) && frozen > 0) return frozen;
         const player = pick?.player || {};
         const pid = pick?.pid || pick?.player_id || player.pid || player.player_id || null;
         return resolvePlayerDhq({ ...player, ...pick, pid, csv: pick?.csv || player.csv }).value;
@@ -1751,34 +1677,21 @@
         return (pool || []).slice(0, maxSize || 600).map(slimPlayer).filter(Boolean);
     }
 
-    function rebuildDraftDerived(picks, opts = {}) {
+    function rebuildDraftDerived(picks) {
         // draftedPids maps pid → COUNT of times drafted (≥1). For single-copy
         // leagues every count is 1, so truthiness checks still read as "drafted".
         // Multi-copy leagues compare the count against state.playerCopies.
         const draftedPids = {};
         const teamRosters = {};
-        // Live-sync auction picks have no meaningful teamIdx (no turn order) —
-        // callers reconciling an auction session pass keyByRosterId so
-        // teamRosters (and, alongside it, a fully re-derived teamBudgets) key
-        // by the real rosterId instead, matching SETTLE_NOMINATION's convention.
-        // Every other caller is unaffected (opts omitted ⇒ identical to before).
-        const teamBudgets = opts.keyByRosterId ? {} : undefined;
         (picks || []).forEach(p => {
             if (p?.pid) draftedPids[p.pid] = (draftedPids[p.pid] || 0) + 1;
-            const key = opts.keyByRosterId ? p?.rosterId : p?.teamIdx;
-            if (key != null) teamRosters[key] = [...(teamRosters[key] || []), p.pos];
-            if (opts.keyByRosterId && p?.rosterId != null && p?.amount != null) {
-                const budget = Number(opts.auctionBudget) > 0 ? Number(opts.auctionBudget) : 200;
-                const entry = teamBudgets[p.rosterId] || { total: budget, spent: 0, remaining: budget };
-                const spent = entry.spent + Number(p.amount);
-                teamBudgets[p.rosterId] = { total: entry.total, spent, remaining: entry.total - spent };
-            }
+            const idx = p?.teamIdx;
+            if (idx != null) teamRosters[idx] = [...(teamRosters[idx] || []), p.pos];
         });
         return {
             draftedPids,
             teamRosters,
             pickedByIdx: buildPickedByIdx(picks),
-            teamBudgets,
         };
     }
 
@@ -1937,139 +1850,6 @@
                     phase: newCurrent >= state.pickOrder.length ? 'complete' : 'drafting',
                     // Auto-clear override mode after any pick is made
                     overrideMode: false,
-                };
-                const nextContext = window.DraftCC?.context?.applyPickToContext
-                    ? window.DraftCC.context.applyPickToContext(state.draftContext, newPick, nextState)
-                    : state.draftContext;
-                return { ...nextState, draftContext: nextContext };
-            }
-
-            // ── Auction mechanic ────────────────────────────────────────
-            case 'NOMINATE_PLAYER': {
-                if (state.nomination) return state; // one live nomination at a time
-                const { pid, player, nominatorRosterId } = action;
-                if (!player || nominatorRosterId == null) return state;
-                // Fallback is Object.keys(state.personas) — NOT slotToRoster,
-                // which only exists on the Setup screen's component-level
-                // draftMeta, never on reducer state. personas is keyed by
-                // rosterId and guaranteed populated for every team at
-                // START_DRAFT (composeAllPersonas), so it's always available
-                // here even when the user never touched Nomination Order.
-                const order = state.customSlotOrder && state.customSlotOrder.length ? state.customSlotOrder : Object.keys(state.personas || {});
-                const currentNominator = order[state.nominatorIdx % Math.max(1, order.length)];
-                if (String(currentNominator) !== String(nominatorRosterId)) return state; // not this team's nomination turn
-                if (!state.pool.some(p => p.pid === pid)) return state;
-                if (openRosterSlotsRemaining(state, nominatorRosterId) <= 0) return state;
-                const openingBid = Math.max(1, Number(action.openingBid) || 1);
-                if (maxSafeBid(state, nominatorRosterId) < openingBid) return state;
-                const windowMs = AUCTION_WINDOW_MS[state.speed] || AUCTION_WINDOW_MS.medium;
-                return {
-                    ...state,
-                    nomination: {
-                        pid, player, name: player.name || player.full_name, pos: player.pos,
-                        nominatorRosterId, seq: (state.picks?.length || 0) + 1, overall: (state.picks?.length || 0) + 1,
-                        highBid: openingBid, highBidderRosterId: nominatorRosterId,
-                        bids: [{ rosterId: nominatorRosterId, amount: openingBid, ts: Date.now() }],
-                        passedRosterIds: [], deadline: Date.now() + windowMs,
-                    },
-                };
-            }
-
-            case 'PLACE_BID': {
-                const nom = state.nomination;
-                if (!nom) return state;
-                const { rosterId, amount } = action;
-                const bid = Number(amount);
-                if (!Number.isFinite(bid) || bid <= nom.highBid) return state;
-                if (String(rosterId) === String(nom.highBidderRosterId)) return state;
-                if (openRosterSlotsRemaining(state, rosterId) <= 0) return state;
-                if (bid > maxSafeBid(state, rosterId)) return state;
-                const windowMs = AUCTION_WINDOW_MS[state.speed] || AUCTION_WINDOW_MS.medium;
-                return {
-                    ...state,
-                    nomination: {
-                        ...nom,
-                        highBid: bid,
-                        highBidderRosterId: rosterId,
-                        bids: [...nom.bids, { rosterId, amount: bid, ts: Date.now() }],
-                        passedRosterIds: nom.passedRosterIds.filter(id => String(id) !== String(rosterId)),
-                        deadline: Date.now() + windowMs, // reset the clock on every new bid
-                    },
-                };
-            }
-
-            case 'PASS_NOMINATION': {
-                const nom = state.nomination;
-                if (!nom) return state;
-                if (nom.passedRosterIds.includes(action.rosterId)) return state;
-                return { ...state, nomination: { ...nom, passedRosterIds: [...nom.passedRosterIds, action.rosterId] } };
-            }
-
-            case 'SETTLE_NOMINATION': {
-                const nom = state.nomination;
-                if (!nom) return state;
-                const winnerRosterId = nom.highBidderRosterId;
-                const amount = nom.highBid;
-                const player = nom.player;
-                const acCopies = Math.max(1, Number(state.playerCopies) || 1);
-                const acNewCount = (state.draftedPids[player.pid] || 0) + 1;
-                const newDrafted = { ...state.draftedPids, [player.pid]: acNewCount };
-                const newPool = acNewCount >= acCopies ? state.pool.filter(p => p.pid !== player.pid) : state.pool;
-                const resolvedDhq = resolvePlayerDhq(player).value;
-                const newPick = {
-                    id: 'auc_' + nom.seq + '_' + Date.now(),
-                    round: null, slot: null, pickInRound: null, teamIdx: null,
-                    overall: nom.overall,
-                    rosterId: winnerRosterId,
-                    isUser: String(winnerRosterId) === String(state.userRosterId),
-                    pid: player.pid, name: player.name || player.full_name, pos: player.pos,
-                    dhq: resolvedDhq,
-                    consensusRank: player.consensusRank || null,
-                    photoUrl: player.photoUrl || '',
-                    college: player.college || '',
-                    tier: player.tier || null,
-                    csv: player.csv || null,
-                    amount, nominatorRosterId: nom.nominatorRosterId, bids: nom.bids,
-                    reasoning: null, confidence: null, alexReaction: null,
-                    source: null, ts: Date.now(),
-                };
-                const teamPositions = state.teamRosters[winnerRosterId] || [];
-                const nextTeamBudgets = {
-                    ...state.teamBudgets,
-                    [winnerRosterId]: {
-                        total: state.teamBudgets[winnerRosterId]?.total ?? state.auctionBudget,
-                        spent: (state.teamBudgets[winnerRosterId]?.spent || 0) + amount,
-                        remaining: (state.teamBudgets[winnerRosterId]?.remaining ?? state.auctionBudget) - amount,
-                    },
-                };
-                // Fallback is Object.keys(state.personas) — NOT slotToRoster,
-                // which only exists on the Setup screen's component-level
-                // draftMeta, never on reducer state. personas is keyed by
-                // rosterId and guaranteed populated for every team at
-                // START_DRAFT (composeAllPersonas), so it's always available
-                // here even when the user never touched Nomination Order.
-                const order = state.customSlotOrder && state.customSlotOrder.length ? state.customSlotOrder : Object.keys(state.personas || {});
-                let nextNominatorIdx = state.nominatorIdx;
-                const nextTeamRosters = { ...state.teamRosters, [winnerRosterId]: [...teamPositions, player.pos] };
-                const allFull = order.length > 0 && order.every(rid => Math.max(0, Number(state.rounds || 0) - (nextTeamRosters[rid] || []).length) <= 0);
-                if (order.length) {
-                    for (let step = 1; step <= order.length; step++) {
-                        const idx = (state.nominatorIdx + step) % order.length;
-                        const rid = order[idx];
-                        if (Math.max(0, Number(state.rounds || 0) - (nextTeamRosters[rid] || []).length) > 0) { nextNominatorIdx = idx; break; }
-                    }
-                }
-                const nextState = {
-                    ...state,
-                    pool: newPool,
-                    picks: [...state.picks, newPick],
-                    pickedByIdx: { ...(state.pickedByIdx || {}), [newPick.overall]: newPick },
-                    draftedPids: newDrafted,
-                    teamRosters: nextTeamRosters,
-                    teamBudgets: nextTeamBudgets,
-                    nominatorIdx: nextNominatorIdx,
-                    nomination: null,
-                    phase: allFull ? 'complete' : 'drafting',
                 };
                 const nextContext = window.DraftCC?.context?.applyPickToContext
                     ? window.DraftCC.context.applyPickToContext(state.draftContext, newPick, nextState)
@@ -2372,12 +2152,6 @@
                 let draftedPids = { ...state.draftedPids };
                 const lsCopies = Math.max(1, Number(state.playerCopies) || 1);
                 let teamRosters = { ...state.teamRosters };
-                let teamBudgets = { ...state.teamBudgets };
-                // Real Sleeper auction draft: no turn order exists to derive
-                // round/slot/teamIdx from, and picks carry a real $ amount —
-                // both branches below key off this instead of the fabricated
-                // linear/snake pickOrder. Non-auction live-sync is untouched.
-                const isAuctionSync = state.draftMechanic === 'auction';
                 let pickOrder = state.pickOrder.slice();
                 let pickedByIdx = { ...(state.pickedByIdx || {}) };
                 let currentIdx = state.currentIdx;
@@ -2460,15 +2234,13 @@
                             sleeperPickedBy: sleeperPick?.picked_by || null,
                             source: 'live-sync',
                             ts: Date.now(),
-                            amount: isAuctionSync ? (Number(sleeperPick?.metadata?.amount) || null) : (occupant.amount ?? null),
                         };
                         const beforePicks = picks;
                         picks = picks.map((p, i) => i === occupantIdx ? liveReplacement : p);
-                        const derived = rebuildDraftDerived(picks, { keyByRosterId: isAuctionSync, auctionBudget: state.auctionBudget });
+                        const derived = rebuildDraftDerived(picks);
                         draftedPids = derived.draftedPids;
                         teamRosters = derived.teamRosters;
                         pickedByIdx = derived.pickedByIdx;
-                        if (isAuctionSync) teamBudgets = derived.teamBudgets;
                         pool = rebuildPoolFromDrafted(state, draftedPids);
                         existingPickNos.add(pickNo);
                         overwriteCount += 1;
@@ -2498,88 +2270,52 @@
                     const slot = pickOrder[currentIdx];
                     if (!slot) return;
                     const rosterId = sleeperPick?.roster_id || slot.rosterId;
-
-                    // Auction has no turn order — round/slot/teamIdx come straight
-                    // off Sleeper's own pick bookkeeping (still real, just not
-                    // draft-order-meaningful) instead of the fabricated linear
-                    // rotation, and teamRosters/teamBudgets key by the real
-                    // rosterId below rather than a fabricated teamIdx.
-                    let adjustedSlot, pickRound, pickSlotNum, pickInRound, pickOverall, pickTeamIdx;
-                    if (isAuctionSync) {
-                        pickRound = Number(sleeperPick?.round) || Math.floor(currentIdx / Math.max(1, state.leagueSize)) + 1;
-                        pickSlotNum = Number(sleeperPick?.draft_slot) || null;
-                        pickInRound = pickSlotNum;
-                        pickOverall = pickNo;
-                        pickTeamIdx = null;
-                        adjustedSlot = { ...slot, rosterId, overall: pickOverall, traded: false };
-                    } else {
-                        adjustedSlot = {
-                            ...slot,
-                            rosterId,
-                            traded: slot.originalRosterId != null && String(rosterId) !== String(slot.originalRosterId),
-                        };
-                        pickRound = adjustedSlot.round;
-                        pickSlotNum = adjustedSlot.slot;
-                        pickInRound = adjustedSlot.pickInRound || adjustedSlot.slot;
-                        pickOverall = adjustedSlot.overall;
-                        pickTeamIdx = adjustedSlot.teamIdx;
-                    }
+                    const adjustedSlot = {
+                        ...slot,
+                        rosterId,
+                        traded: slot.originalRosterId != null && String(rosterId) !== String(slot.originalRosterId),
+                    };
                     pickOrder[currentIdx] = adjustedSlot;
 
                     const lsNewCount = (draftedPids[player.pid] || 0) + 1;
                     draftedPids = { ...draftedPids, [player.pid]: lsNewCount };
                     // Keep the player available until his last copy is taken.
                     if (lsNewCount >= lsCopies) pool = pool.filter(p => String(p.pid) !== String(player.pid));
-                    const resolvedDhq = resolvePlayerDhq(player).value;
-                    const pickAmount = isAuctionSync ? (Number(sleeperPick?.metadata?.amount) || null) : null;
-                    const newPick = {
-                        id: 'pick_' + pickOverall + '_' + Date.now(),
-                        round: pickRound,
-                        slot: pickSlotNum,
-                        pickInRound,
-                        overall: pickOverall,
-                        teamIdx: pickTeamIdx,
+	                    const resolvedDhq = resolvePlayerDhq(player).value;
+	                    const newPick = {
+                        id: 'pick_' + adjustedSlot.overall + '_' + Date.now(),
+                        round: adjustedSlot.round,
+                        slot: adjustedSlot.slot,
+                        pickInRound: adjustedSlot.pickInRound || adjustedSlot.slot,
+                        overall: adjustedSlot.overall,
+                        teamIdx: adjustedSlot.teamIdx,
                         rosterId,
                         isUser: String(rosterId) === String(state.userRosterId),
-                        pid: player.pid,
-                        name: player.name,
-                        pos: player.pos,
-                        dhq: resolvedDhq,
+	                        pid: player.pid,
+	                        name: player.name,
+	                        pos: player.pos,
+	                        dhq: resolvedDhq,
                         consensusRank: player.consensusRank || null,
                         photoUrl: player.photoUrl || '',
                         college: player.college || '',
                         tier: player.tier || null,
                         csv: player.csv || null,
-                        reasoning: item.reasoning || { primary: 'Live Sleeper pick', baseVal: resolvedDhq, nudges: [] },
+	                        reasoning: item.reasoning || { primary: 'Live Sleeper pick', baseVal: resolvedDhq, nudges: [] },
                         confidence: item.confidence || 1.0,
                         alexReaction: null,
                         sleeperPickNo: pickNo,
                         sleeperPickedBy: sleeperPick?.picked_by || null,
                         source: 'live-sync',
                         ts: Date.now(),
-                        amount: pickAmount,
                     };
                     picks = [...picks, newPick];
                     pickedByIdx = { ...pickedByIdx, [newPick.overall]: newPick };
                     existingPickNos.add(pickNo);
-                    if (isAuctionSync) {
-                        const teamPositions = teamRosters[rosterId] || [];
-                        teamRosters = { ...teamRosters, [rosterId]: [...teamPositions, player.pos] };
-                        if (pickAmount != null) {
-                            const budgetEntry = teamBudgets[rosterId] || { total: state.auctionBudget, spent: 0, remaining: state.auctionBudget };
-                            const nextSpent = (budgetEntry.spent || 0) + pickAmount;
-                            teamBudgets = {
-                                ...teamBudgets,
-                                [rosterId]: { total: budgetEntry.total, spent: nextSpent, remaining: budgetEntry.total - nextSpent },
-                            };
-                        }
-                    } else {
-                        const teamPositions = teamRosters[adjustedSlot.teamIdx] || [];
-                        teamRosters = {
-                            ...teamRosters,
-                            [adjustedSlot.teamIdx]: [...teamPositions, player.pos],
-                        };
-                    }
+                    const teamPositions = teamRosters[adjustedSlot.teamIdx] || [];
+                    teamRosters = {
+                        ...teamRosters,
+                        [adjustedSlot.teamIdx]: [...teamPositions, player.pos],
+                    };
                     currentIdx += 1;
                     const nextStateForContext = {
                         ...state,
@@ -2619,10 +2355,10 @@
                     }
                     statusPatch.error = action.status?.error || (
                         statusConflictCount > 0
-                            ? 'Sleeper returned conflicting pick records. War Room paused before applying the wrong player.'
+                            ? 'Sleeper returned conflicting pick records. Dynasty HQ paused before applying the wrong player.'
                             : statusInvalidPickCount > 0
-                                ? 'Sleeper returned invalid pick data. War Room paused so you can reconcile manually.'
-                                : 'Sleeper pick order skipped ahead. War Room paused rather than applying picks to the wrong slots.'
+                                ? 'Sleeper returned invalid pick data. Dynasty HQ paused so you can reconcile manually.'
+                                : 'Sleeper pick order skipped ahead. Dynasty HQ paused rather than applying picks to the wrong slots.'
                     );
                 }
 
@@ -2635,7 +2371,6 @@
                     currentIdx,
                     pickOrder,
                     teamRosters,
-                    teamBudgets,
                     draftContext,
                     phase: currentIdx >= pickOrder.length ? 'complete' : state.phase,
                     liveSync: mergeLiveSync(state.liveSync, statusPatch),
@@ -2821,23 +2556,8 @@
             case 'HYDRATE':
                 return { ...state, ...action.state };
 
-            case 'SET_SPEED': {
-                const nextSpeed = action.speed;
-                // Auction's countdown is wall-clock (nomination.deadline), unlike
-                // snake mode's relative CPU-pick delay — pausing must freeze the
-                // remaining time and resuming must restore it, or the deadline
-                // would already be in the past the instant you un-pause.
-                if (!state.nomination) return { ...state, speed: nextSpeed };
-                if (nextSpeed === 'paused' && state.speed !== 'paused') {
-                    const remainingMs = Math.max(0, state.nomination.deadline - Date.now());
-                    return { ...state, speed: nextSpeed, nomination: { ...state.nomination, pausedRemainingMs: remainingMs } };
-                }
-                if (nextSpeed !== 'paused' && state.speed === 'paused' && state.nomination.pausedRemainingMs != null) {
-                    const { pausedRemainingMs, ...restNom } = state.nomination;
-                    return { ...state, speed: nextSpeed, nomination: { ...restNom, deadline: Date.now() + pausedRemainingMs } };
-                }
-                return { ...state, speed: nextSpeed };
-            }
+            case 'SET_SPEED':
+                return { ...state, speed: action.speed };
 
             case 'SET_MODE':
                 return { ...state, mode: action.mode };
@@ -2896,7 +2616,17 @@
             };
             // Use the tab's mode to pick the right key (live-sync → 'live', else 'mock')
             const keyMode = forcedMode || (state.mode === 'live-sync' ? 'live-sync' : null);
-            localStorage.setItem(LS_KEY(state.leagueId, keyMode), JSON.stringify(toSave));
+            try {
+                localStorage.setItem(LS_KEY(state.leagueId, keyMode), JSON.stringify(toSave));
+            } catch (e) {
+                // This raw setItem bypassed the b38 storage-wrapper janitor, so
+                // a full device silently lost its mid-draft resume snapshot
+                // (owner stats 2026-08-28, midnight live draft). Clean the
+                // rebuildable caches and retry once before giving up.
+                const J = window.DhqStorageJanitor;
+                if (!(J && J.isQuotaError(e) && J.run('quota:draft-save'))) throw e;
+                localStorage.setItem(LS_KEY(state.leagueId, keyMode), JSON.stringify(toSave));
+            }
         } catch (e) {
             if (window.wrLog) window.wrLog('draftState.save', e);
         }
@@ -2953,18 +2683,8 @@
             const enriched = (p.consensusRank || !fallbackRank) ? p : { ...p, consensusRank: fallbackRank };
             total += scorePick(enriched, scoreCtx);
         }
-        // Rounded here (not left as the raw mean) to match buildTeamRecaps'
-        // avgPickScore exactly — that function rounds before this same
-        // aggregateGrade/recapLetter path runs, so leaving this unrounded could
-        // tip a borderline score a fraction of a letter-grade band apart between
-        // the two surfaces even after they're otherwise blending identically.
-        const avgPickScore = Math.round(total / myPicks.length);
-        const score = Math.round(aggregateGrade(avgPickScore, ctx.variant));
-        // avgPickScore exposed (raw, pre-spread mean of scorePick) so callers that
-        // need to re-blend with recapLetter — e.g. folding in league percentile —
-        // pass the right input. recapLetter applies aggregateGrade itself; feeding
-        // it the already-spread `score` instead double-applies the spread curve.
-        return { letter: gradeLetter(score), totalDHQ, pct: score, score, avgPickScore };
+        const score = Math.round(aggregateGrade(total / myPicks.length, ctx.variant));
+        return { letter: gradeLetter(score), totalDHQ, pct: score, score };
     }
 
     function buildDraftRecap(state, opts = {}) {
@@ -3255,15 +2975,7 @@
             localStorage.setItem(draftLearningKey(recap.leagueId), JSON.stringify(next));
             archiveDraftRecap(recap);
             if (window.App?.LI) {
-                // NOTE: this used to also set window.App.LI.draftOutcomes = next, but
-                // `next` is an array of whole recap objects while every reader of
-                // draftOutcomes (analytics.js, trophy-room.js, league-detail.js,
-                // alex-insights.js, trade-calc.js) expects a flat array of per-pick
-                // outcome records (round/roster_id/pos/isHit/pick_no/normValue).
-                // Nothing in the codebase currently produces that shape, so writing
-                // the wrong one here just silently broke every reader's .filter()
-                // after a draft was saved. Leave draftOutcomes alone until a real
-                // per-pick outcome pipeline exists.
+                window.App.LI.draftOutcomes = next;
                 const existingProfiles = window.App.LI.ownerBehaviorProfiles || {};
                 const nextProfiles = { ...existingProfiles };
                 Object.entries(recap.ownerLearning || {}).forEach(([rid, learning]) => {
@@ -3299,9 +3011,10 @@
 
     function saveDraftRecap(state, opts = {}) {
         const recap = buildDraftRecap(state, opts);
-        if (typeof localStorage !== 'undefined') {
-            localStorage.setItem(opts.key || ('wr_draft_recap_' + Date.now()), JSON.stringify(recap));
-        }
+        // The archive below is the ONLY read path (post-draft's RECAP_KEY).
+        // A loose wr_draft_recap_<ts> copy used to be written here too — never
+        // read by anything, one orphan per saved recap, and the bulk filler on
+        // the quota-blown device from the 2026-08-28 stats. Archive only.
         archiveDraftRecap(recap);
         saveDraftLearning(recap);
         return recap;
@@ -3309,7 +3022,7 @@
 
     function formatDraftShareReport(recap) {
         const lines = [
-            '# War Room Draft Recap',
+            '# Dynasty HQ Draft Recap',
             '',
             `Grade: ${recap?.grade?.letter || '?'} | DHQ: ${Number(recap?.totalDHQ || 0).toLocaleString()} | League Rank: ${recap?.rank ? '#' + recap.rank : 'N/A'} | Percentile: ${Number(recap?.percentile || 0)}th`,
             `Format: ${recap?.variant || 'draft'} | Season: ${recap?.season || ''}`,
@@ -3428,11 +3141,6 @@
         selectCurrentDraft,
         buildPool,
         buildPickOrder,
-        applyCustomSlotOrder,
-        openRosterSlotsRemaining,
-        maxSafeBid,
-        buildAuctionMarketValues,
-        AUCTION_WINDOW_MS,
         resolvePlayerDhq,
         resolveDraftPickValue,
         buildFuturePickPool,

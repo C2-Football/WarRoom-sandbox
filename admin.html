@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, viewport-fit=cover">
   <title>Dynasty HQ — Admin</title>
   <link rel="icon" href="icon-192.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -96,6 +96,22 @@
     }
     .btn-gold:hover { filter: brightness(1.15); }
     .btn-gold:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .btn-google {
+      width: 100%; max-width: 360px; padding: 0.8rem;
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+      background: #fff; color: #1f2328; border: 1px solid #dadce0; border-radius: 4px;
+      font-family: 'Inter', sans-serif; font-size: 1rem; font-weight: 500; cursor: pointer;
+    }
+    .btn-google:hover { box-shadow: 0 1px 4px rgba(0,0,0,0.3); }
+    .btn-google:disabled { opacity: 0.5; cursor: not-allowed; }
+    .gate-or {
+      max-width: 360px; width: 100%; text-align: center; color: var(--silver, #98a1ad);
+      font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.1em; margin: 4px 0;
+    }
+    .gate-advanced { max-width: 360px; width: 100%; margin-top: 6px; }
+    .gate-advanced summary { color: var(--silver, #98a1ad); font-size: 0.8rem; cursor: pointer; text-align: center; }
+    .gate-advanced .field { margin-top: 8px; }
 
     .error-msg {
       color: var(--red);
@@ -202,6 +218,11 @@
       transition: background 0.15s;
     }
     tbody tr:hover { background: rgba(212,175,55,0.05); }
+    .row-delete-btn {
+      background: transparent; border: 1px solid rgba(224,82,82,0.5); color: #e05252;
+      border-radius: 6px; padding: 4px 10px; font: inherit; font-size: 0.78rem; cursor: pointer;
+    }
+    .row-delete-btn:hover { background: rgba(224,82,82,0.12); border-color: #e05252; }
 
     tbody td {
       padding: 0.65rem 1rem;
@@ -367,11 +388,30 @@
 <div id="gate">
   <h1>Admin Panel</h1>
   <p>Dynasty HQ — User Management</p>
+
+  <!-- Sign in with the owner account right here — no token juggling. -->
+  <button class="btn-google" id="google-btn">
+    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.7H.96v2.33A9 9 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.97 10.72a5.4 5.4 0 0 1 0-3.44V4.95H.96a9 9 0 0 0 0 8.1l3.01-2.33z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58A9 9 0 0 0 .96 4.95l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58z"/></svg>
+    <span>Continue with Google</span>
+  </button>
+
+  <div class="gate-or">or sign in with email</div>
   <div class="field">
-    <label>Admin Secret</label>
-    <input type="password" id="secret-input" placeholder="Enter admin secret" autocomplete="current-password">
+    <input type="email" id="admin-email" placeholder="Email" autocomplete="username">
   </div>
-  <button class="btn-gold" id="login-btn">Unlock</button>
+  <div class="field">
+    <input type="password" id="admin-password" placeholder="Password" autocomplete="current-password">
+  </div>
+  <button class="btn-gold" id="email-login-btn">Sign in</button>
+
+  <details class="gate-advanced">
+    <summary>Advanced: paste an access token</summary>
+    <div class="field">
+      <input type="password" id="secret-input" placeholder="Access token" autocomplete="off">
+    </div>
+    <button class="btn-sm" id="login-btn">Unlock with token</button>
+  </details>
+
   <div class="error-msg" id="gate-error"></div>
 </div>
 
@@ -458,6 +498,7 @@
           <th>Tier</th>
           <th>Products</th>
           <th>Joined</th>
+          <th></th>
         </tr>
       </thead>
       <tbody id="users-tbody"></tbody>
@@ -475,11 +516,23 @@
   </div>
 </div>
 
+<script src="vendor/supabase.min.js"></script>
+<script>window.supabase||document.write('<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.101.1/dist/umd/supabase.min.js"><\/script>')</script>
 <script>
   // ── Config ──────────────────────────────────────────────────
   const SUPABASE_PROJECT = 'sxshiqyxhhifvtfqawbq';
-  const FN_BASE = `https://${SUPABASE_PROJECT}.supabase.co/functions/v1`;
+  const SUPABASE_URL = `https://${SUPABASE_PROJECT}.supabase.co`;
+  const FN_BASE = `${SUPABASE_URL}/functions/v1`;
+  const FW_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4c2hpcXl4aGhpZnZ0ZnFhd2JxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI3MTExMzAsImV4cCI6MjA4ODI4NzEzMH0.zJi9W986ZLaANiZN6pt6ReFwaQU6yPeidsERIWo2ibI';
+  const FW_SESSION_KEY = 'fw_session_v1';
   const PAGE_SIZE = 50;
+
+  // Supabase client (Google OAuth only — email sign-in uses the fw- functions).
+  let _sb = null;
+  function sbClient() {
+    if (!_sb && window.supabase) _sb = window.supabase.createClient(SUPABASE_URL, FW_ANON_KEY);
+    return _sb;
+  }
 
   // ── State ───────────────────────────────────────────────────
   let adminSecret = sessionStorage.getItem('fw_admin_secret') ?? '';
@@ -489,7 +542,109 @@
   let totalCount = 0;
 
   // ── Gate ────────────────────────────────────────────────────
-  if (adminSecret) showDashboard();
+  // Sign in right here with Google or email; the resulting app session is
+  // stored in localStorage and reused. A pasted token stays as a fallback.
+  function storedToken() {
+    try { return JSON.parse(localStorage.getItem(FW_SESSION_KEY) || 'null')?.token || ''; } catch { return ''; }
+  }
+  function storedEmail() {
+    try { return JSON.parse(localStorage.getItem(FW_SESSION_KEY) || 'null')?.user?.email || ''; } catch { return ''; }
+  }
+
+  // Try the stored session against the admin API; unlock or explain.
+  async function tryUnlockWithStoredSession() {
+    const token = storedToken();
+    if (!token) return false;
+    try {
+      const res = await fetchUsers(token, 0, '');
+      if (res.ok) {
+        adminSecret = token;
+        sessionStorage.setItem('fw_admin_secret', token);
+        showDashboard(res);
+        return true;
+      }
+      if (res.status === 401) {
+        const email = storedEmail();
+        document.getElementById('gate-error').textContent = email
+          ? `Signed in as ${email} — this account isn’t an owner. Sign in with your owner account.`
+          : 'This account isn’t an owner. Sign in with your owner account.';
+      }
+    } catch { /* leave the gate visible */ }
+    return false;
+  }
+
+  // Google OAuth returns to this same page with the session in the URL; the
+  // Supabase client picks it up, then we exchange it for an app session.
+  async function handleOAuthReturn() {
+    const hash = window.location.hash || '';
+    const isReturn = hash.indexOf('access_token=') !== -1 || /[?&]code=/.test(window.location.search || '');
+    if (!isReturn) return false;
+    const db = sbClient();
+    if (!db) return false;
+    try {
+      const { data } = await db.auth.getSession();
+      if (!data?.session) return false;
+      const res = await fetch(`${FN_BASE}/fw-oauth-sync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${data.session.access_token}` },
+        body: JSON.stringify({ productSlug: 'war_room' }),
+      });
+      if (res.ok) {
+        const app = await res.json();
+        if (app?.token && app?.user?.id) {
+          localStorage.setItem(FW_SESSION_KEY, JSON.stringify({ token: app.token, user: app.user }));
+        }
+      }
+      try { history.replaceState(null, '', window.location.pathname); } catch {}
+      return true;
+    } catch { return false; }
+  }
+
+  (async function autoUnlock() {
+    if (adminSecret) { showDashboard(); return; }
+    await handleOAuthReturn();      // consume a Google return, if any
+    await tryUnlockWithStoredSession();
+  })();
+
+  // Google button → OAuth round-trip back to this admin page.
+  document.getElementById('google-btn').addEventListener('click', () => {
+    const db = sbClient();
+    if (!db) { document.getElementById('gate-error').textContent = 'Still loading — try again in a moment.'; return; }
+    db.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin + window.location.pathname } });
+  });
+
+  // Email sign-in → fw-signin → store app session → unlock.
+  async function emailSignIn() {
+    const email = document.getElementById('admin-email').value.trim();
+    const password = document.getElementById('admin-password').value;
+    const btn = document.getElementById('email-login-btn');
+    if (!email || !password) { document.getElementById('gate-error').textContent = 'Email and password required.'; return; }
+    btn.disabled = true; btn.textContent = 'Signing in…';
+    document.getElementById('gate-error').textContent = '';
+    try {
+      const res = await fetch(`${FN_BASE}/fw-signin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': FW_ANON_KEY, 'Authorization': `Bearer ${FW_ANON_KEY}` },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.token || !data.user?.id) {
+        document.getElementById('gate-error').textContent = data.error || 'Invalid email or password.';
+        return;
+      }
+      localStorage.setItem(FW_SESSION_KEY, JSON.stringify({ token: data.token, user: data.user }));
+      const unlocked = await tryUnlockWithStoredSession();
+      if (!unlocked && !document.getElementById('gate-error').textContent) {
+        document.getElementById('gate-error').textContent = 'Signed in, but this account isn’t an owner.';
+      }
+    } catch {
+      document.getElementById('gate-error').textContent = 'Network error — check connection.';
+    } finally {
+      btn.disabled = false; btn.textContent = 'Sign in';
+    }
+  }
+  document.getElementById('email-login-btn').addEventListener('click', emailSignIn);
+  document.getElementById('admin-password').addEventListener('keydown', e => { if (e.key === 'Enter') emailSignIn(); });
 
   document.getElementById('secret-input').addEventListener('keydown', e => {
     if (e.key === 'Enter') document.getElementById('login-btn').click();
@@ -540,12 +695,17 @@
     if ((currentPage + 1) * PAGE_SIZE < totalCount) { currentPage++; loadUsers(); }
   });
 
-  document.getElementById('logout-btn').addEventListener('click', () => {
+  document.getElementById('logout-btn').addEventListener('click', async () => {
     sessionStorage.removeItem('fw_admin_secret');
     adminSecret = '';
+    // Full sign-out so a different account can be used next (clears both the
+    // app session and any lingering Supabase OAuth session on this origin).
+    try { localStorage.removeItem(FW_SESSION_KEY); } catch {}
+    try { const db = sbClient(); if (db) await db.auth.signOut(); } catch {}
     document.getElementById('dashboard').style.display = 'none';
     document.getElementById('gate').style.display = 'flex';
-    document.getElementById('secret-input').value = '';
+    const si = document.getElementById('secret-input'); if (si) si.value = '';
+    document.getElementById('gate-error').textContent = '';
   });
 
   document.getElementById('export-btn').addEventListener('click', exportCSV);
@@ -593,6 +753,52 @@
     }
   }
 
+  // ── Admin delete (support tooling) ────────────────────────────
+  // Typed-email confirmation; a live paying subscription requires a second
+  // explicit confirm (server answers 409 paying_customer until force:true).
+  async function requestDelete(email, force) {
+    return fetch(`${FN_BASE}/admin-delete-user`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${adminSecret}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(force ? { email, force: true } : { email }),
+    });
+  }
+
+  async function deleteUserFlow(email) {
+    // One-tap confirm (typing the email was too fiddly on tablets). The real
+    // guardrails live server-side: can't delete yourself or another admin, and
+    // a paying customer needs the second explicit confirm below.
+    const ok = confirm(
+      `Delete this account?\n\n${email}\n\nThis permanently removes the account and ALL its data, and forgets its Google/Apple sign-ins so the person can start over.`);
+    if (!ok) return;
+    try {
+      let res = await requestDelete(email, false);
+      if (res.status === 409) {
+        const data = await res.json().catch(() => ({}));
+        const go = confirm(
+          `⚠️ ${data.message || 'This account has a LIVE PAID subscription.'}
+
+Deleting will cancel their billing. Delete anyway?`);
+        if (!go) return;
+        res = await requestDelete(email, true);
+      }
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.ok) {
+        alert(`Deleted. (sign-in records removed: ${data.deletedAuthUsers ?? 0})`);
+        loadUsers();
+      } else {
+        alert('Delete failed: ' + (data.error || res.status));
+      }
+    } catch (e) {
+      alert('Delete failed: network error.');
+    }
+  }
+
+  document.getElementById('users-tbody').addEventListener('click', (e) => {
+    const btn = e.target.closest('.row-delete-btn');
+    if (btn && btn.dataset.email) deleteUserFlow(btn.dataset.email);
+  });
+
   async function loadAnalytics() {
     document.getElementById('analytics-loading').style.display = 'block';
     document.getElementById('analytics-loading').textContent = 'Loading analytics…';
@@ -636,6 +842,7 @@
         <td><span class="badge badge-${u.tier}">${u.tier}</span></td>
         <td class="products-cell">${u.products.length ? u.products.map(p => esc(p)).join(', ') : '—'}</td>
         <td>${formatDate(u.createdAt)}</td>
+        <td><button class="row-delete-btn" data-email="${esc(u.email)}" title="Delete this account">Delete</button></td>
       </tr>
     `).join('');
 

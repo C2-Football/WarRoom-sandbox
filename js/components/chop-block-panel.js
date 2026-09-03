@@ -61,7 +61,7 @@ function WrChopBlock({ active, currentLeague, myRoster }) {
     }, [active, st.status, leagueId, currentLeague, myRoster]);
 
     const Section = ({ title, meta, children }) => (
-        <div style={{ background: 'var(--co-surface, #121217)', border: `1px solid ${LINE}`, borderRadius: 'var(--card-radius-sm, 8px)', padding: '14px 16px', marginBottom: '12px' }}>
+        <div style={{ background: 'var(--co-surface, #121217)', border: `1px solid ${LINE}`, borderRadius: '8px', padding: '14px 16px', marginBottom: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', marginBottom: '10px', flexWrap: 'wrap' }}>
                 <span style={{ font: '700 0.82rem ' + MONO, color: TEXT, letterSpacing: '0.06em', textTransform: 'uppercase' }}>{title}</span>
                 {meta ? <span style={{ ...microHdr }}>{meta}</span> : null}
@@ -96,7 +96,7 @@ function WrChopBlock({ active, currentLeague, myRoster }) {
                             { lbl: 'Survive the season', val: me.survivePct + '%', col: me.survivePct >= 20 ? GREEN : TEXT },
                             { lbl: 'Last one standing', val: me.winPct + '%', col: GOLD },
                         ].map(k => (
-                            <div key={k.lbl} style={{ background: WELL, border: `1px solid ${LINE}`, borderRadius: 'var(--card-radius-sm, 8px)', padding: '9px 11px' }}>
+                            <div key={k.lbl} style={{ background: WELL, border: `1px solid ${LINE}`, borderRadius: '6px', padding: '9px 11px' }}>
                                 <div style={{ ...microHdr }}>{k.lbl}</div>
                                 <div style={{ ...mono, fontSize: '1.25rem', fontWeight: 700, color: k.col, marginTop: '2px' }}>{k.val}</div>
                             </div>
@@ -151,7 +151,7 @@ function WrChopBlock({ active, currentLeague, myRoster }) {
                 <Section title="Already Chopped" meta={dead.length + ' gone'}>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                         {dead.slice().sort((a, b) => (a.eliminatedWeek || 0) - (b.eliminatedWeek || 0)).map(r => (
-                            <span key={r.rosterId} style={{ ...microHdr, textTransform: 'none', letterSpacing: 0, background: WELL, border: `1px solid ${LINE}`, borderRadius: 'var(--card-radius-xs, 5px)', padding: '4px 8px', color: SILVER }}>
+                            <span key={r.rosterId} style={{ ...microHdr, textTransform: 'none', letterSpacing: 0, background: WELL, border: `1px solid ${LINE}`, borderRadius: '5px', padding: '4px 8px', color: SILVER }}>
                                 <span style={{ ...mono, color: RED, fontWeight: 700 }}>W{r.eliminatedWeek}</span>{' '}{r.name}
                             </span>
                         ))}

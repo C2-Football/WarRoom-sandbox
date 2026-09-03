@@ -23,7 +23,7 @@
     };
 
     const VIEW_META = {
-        blended: { label: 'Blended', short: 'Blend', help: 'Health score' },
+        blended: { label: 'Power', short: 'Power', help: '60% strength + 40% assets' },
         contender: { label: 'Contender', short: 'Now', help: 'Optimal lineup' },
         dynasty: { label: 'Dynasty', short: 'Future', help: 'Roster DHQ' },
     };
@@ -59,19 +59,11 @@
     }
 
     function PowerRankingsWidget({ size, sleeperUserId, currentLeague, playersData, setActiveTab, navigateWidget }) {
-        // Default view is format-aware (owner ask): Blended (health score) reads
-        // as a dynasty-flavored composite that doesn't map cleanly onto a
-        // single-season league — Contender (this-season optimal-lineup PPG) is
-        // the honest redraft default. Respects an in-session manual toggle
-        // (window._wrPrView) once the user has actually picked a view.
-        const [view, setView] = React.useState(() =>
-            window._wrPrView || (window.App?.LeagueSkin?.getCurrent?.()?.type === 'redraft' ? 'contender' : 'blended')
-        );
-        React.useEffect(() => { window._wrPrView = view; }, [view]);
-
-        // Free/Pro (fail-open): ranks + gap math stay free (owner Q7); the
-        // Roster Identity build read + riser/win-now framing are Pro.
-        const pro = typeof window.wrIsPro !== 'function' || window.wrIsPro();
+        // One team, one rank. The widget ranks by the blended Power Score only —
+        // the same number the command brief, elites badge, and Alex show. The old
+        // Now / Future tabs presented three different ranks for one team, which
+        // reads as a contradiction ("am I #1 or #8?"); removed by owner ruling.
+        const view = 'blended';
 
         const assessments = React.useMemo(() => {
             if (typeof window.assessAllTeamsFromGlobal === 'function') {
@@ -81,47 +73,22 @@
         }, []);
 
         const views = React.useMemo(() => {
-            const rp = currentLeague?.roster_positions || [];
-            const rosters = currentLeague?.rosters || [];
-            const stats = (window.S && window.S.playerStats) || {};
-
-            const blended = [...assessments].sort((a, b) => (b.healthScore || 0) - (a.healthScore || 0));
-
-            const contender = assessments.map(t => {
-                const r = rosters.find(r2 => r2.roster_id === t.rosterId);
-                const ppg = typeof window.App?.calcOptimalPPG === 'function'
-                    ? (window.App.calcOptimalPPG(r?.players || [], playersData, stats, rp) || 0)
-                    : 0;
-                return { ...t, ppg };
-            }).sort((a, b) => b.ppg - a.ppg);
-
-            const dynasty = assessments.map(t => {
-                const r = rosters.find(r2 => r2.roster_id === t.rosterId);
-                const totalDhq = (r?.players || []).reduce((s, pid) => s + (window.App?.PlayerValue?.getValue ? window.App.PlayerValue.getValue(pid) : ((window.App?.LI?.playerScores || {})[pid] || 0)), 0);
-                return { ...t, totalDhq };
-            }).sort((a, b) => b.totalDhq - a.totalDhq);
-
-            // fmtFn formats SCORES ('\u2014' for missing); gapFmt formats GAPS,
-            // where 0 is a legitimate number ('0', not an em dash) and small
-            // dynasty gaps shouldn't collapse to '0.0K'.
+            // "Power" = the single blended Power Score (60% strength + 40%
+            // assets) computed in the assessment engine. Deterministic tiebreak
+            // matches team-assess so this widget agrees with the brief + Alex.
+            const blended = [...assessments].sort((a, b) => {
+                if ((b.powerScore || 0) !== (a.powerScore || 0)) return (b.powerScore || 0) - (a.powerScore || 0);
+                if ((b.totalDHQ || 0) !== (a.totalDHQ || 0)) return (b.totalDHQ || 0) - (a.totalDHQ || 0);
+                return String(a.rosterId).localeCompare(String(b.rosterId));
+            });
             return {
                 blended: {
-                    label: 'Blended', data: blended, valFn: t => t.healthScore || 0,
+                    label: 'Power', data: blended, valFn: t => t.powerScore || 0,
                     fmtFn: v => String(Math.round(v || 0)),
                     gapFmt: v => String(Math.round(v || 0)),
                 },
-                contender: {
-                    label: 'Contender', data: contender, valFn: t => t.ppg || 0,
-                    fmtFn: v => v > 0 ? v.toFixed(1) : '\u2014',
-                    gapFmt: v => (v || 0).toFixed(1),
-                },
-                dynasty: {
-                    label: 'Dynasty', data: dynasty, valFn: t => t.totalDhq || 0,
-                    fmtFn: v => v > 0 ? ((v / 1000).toFixed(1) + 'K') : '\u2014',
-                    gapFmt: v => (v || 0) >= 1000 ? ((v / 1000).toFixed(1) + 'K') : String(Math.round(v || 0)),
-                },
             };
-        }, [assessments, currentLeague, playersData]);
+        }, [assessments]);
 
         const cur = views[view] || views.blended;
         const total = cur.data.length || 0;
@@ -136,15 +103,34 @@
         const spread = Math.max(1, maxVal - minVal);
         const avgVal = average(cur.data.map(t => cur.valFn(t)));
         const gapToAvg = myTeam ? myVal - avgVal : 0;
-        const rankByView = {};
-        Object.keys(views).forEach(k => {
-            rankByView[k] = {};
-            views[k].data.forEach((t, i) => { rankByView[k][t.rosterId] = i + 1; });
-        });
-        const myContenderRank = myTeam ? rankByView.contender[myTeam.rosterId] : null;
-        const myDynastyRank = myTeam ? rankByView.dynasty[myTeam.rosterId] : null;
+        const rankByView = { blended: {} };
+        cur.data.forEach((t, i) => { rankByView.blended[t.rosterId] = i + 1; });
         const aboveMe = myIndex > 0 ? cur.data[myIndex - 1] : null;
         const belowMe = myIndex >= 0 && myIndex < total - 1 ? cur.data[myIndex + 1] : null;
+
+        // ── Rank memory + move arrow (owner ask 2026-09-02) ──────────
+        // Record today's full rank table into WR.RankHistory (feeds the brief's
+        // "COVIDFaceMasks climbed 2 spots" radar) and adopt the cloud copy from
+        // the other surface; a merge bumps the tick so the arrow appears
+        // without a reload. The arrow shows YOUR move vs the previous recorded
+        // day — green up, red down, nothing when flat or history is one day deep.
+        const rhLeagueId = currentLeague?.league_id || currentLeague?.id || null;
+        const [histTick, setHistTick] = React.useState(0);
+        React.useEffect(() => {
+            if (!rhLeagueId || !window.WR?.RankHistory) return;
+            try { window.WR.RankHistory.record(rhLeagueId, assessments); } catch (e) { /* memory is a bonus */ }
+            try { window.WR.RankHistory.sync(rhLeagueId, () => setHistTick(t => t + 1)); } catch (e) { /* offline */ }
+        }, [rhLeagueId, assessments]);
+        const myMove = React.useMemo(() => {
+            if (!rhLeagueId || !myTeam || !window.WR?.RankHistory) return null;
+            try { return window.WR.RankHistory.myDelta(rhLeagueId, myTeam.rosterId); } catch (e) { return null; }
+        }, [rhLeagueId, myTeam && myTeam.rosterId, histTick, myRank]);
+        const rankArrow = (fs) => (myMove && myMove.delta !== 0)
+            ? React.createElement('span', {
+                title: (myMove.delta > 0 ? 'Up from #' : 'Down from #') + myMove.prevRank + ' (previous ranking day)',
+                style: { fontSize: fs || '0.55em', fontWeight: 900, marginLeft: '4px', verticalAlign: 'middle', color: myMove.delta > 0 ? 'var(--good, #2ecc71)' : 'var(--bad, #e74c3c)' },
+            }, myMove.delta > 0 ? '▲' : '▼')
+            : null;
         const tiers = cur.data.reduce((acc, t, i) => {
             const key = i < 3 ? 'front' : i < Math.ceil(total * 0.5) ? 'middle' : 'chase';
             acc[key] += 1;
@@ -178,7 +164,7 @@
                     border: '1px solid var(--acc-fill3, rgba(212,175,55,0.18))',
                     background: 'var(--acc-fill1, rgba(212,175,55,0.06))',
                     color: 'var(--gold)',
-                    borderRadius: 'var(--card-radius-sm, 8px)',
+                    borderRadius: '6px',
                     cursor: 'pointer',
                     fontSize: 'var(--text-micro, 0.6875rem)',
                     fontFamily: 'var(--font-body)',
@@ -193,7 +179,7 @@
             }, label);
         }
 
-        function Header({ compact = false, showTabs = true }) {
+        function Header({ compact = false }) {
             return React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: compact ? '7px' : '9px', minWidth: 0 } },
                 React.createElement('span', { style: { fontSize: compact ? '0.82rem' : '0.95rem', lineHeight: 1 } }, '📈'),
                 React.createElement('div', {
@@ -204,40 +190,14 @@
                         color: 'var(--white)',
                         letterSpacing: '0.04em',
                         whiteSpace: 'nowrap',
+                        minWidth: 0,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
                     }
                 }, 'Power Rankings'),
-                showTabs ? React.createElement('div', {
-                    style: {
-                        marginLeft: 'auto',
-                        display: 'flex',
-                        gap: '4px',
-                        minWidth: 0,
-                    }
-                }, ...['blended', 'contender', 'dynasty'].map(k =>
-                    React.createElement('button', {
-                        key: k,
-                        onClick: e => { e.stopPropagation(); setView(k); },
-                        title: VIEW_META[k].help,
-                        style: {
-                            minHeight: compact ? '30px' : '32px',
-                            padding: compact ? '0 9px' : '0 11px',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: 'var(--text-micro, 0.6875rem)',
-                            fontFamily: 'var(--font-body)',
-                            borderRadius: 'var(--card-radius-xs, 5px)',
-                            cursor: 'pointer',
-                            letterSpacing: '0',
-                            border: '1px solid ' + (view === k ? 'var(--acc-line3, rgba(212,175,55,0.5))' : 'var(--ov-6, rgba(255,255,255,0.1))'),
-                            background: view === k ? 'var(--acc-fill2, rgba(212,175,55,0.13))' : 'var(--ov-1, rgba(255,255,255,0.02))',
-                            color: view === k ? 'var(--gold)' : 'var(--silver)',
-                            whiteSpace: 'nowrap',
-                        }
-                    }, compact ? VIEW_META[k].short : VIEW_META[k].label)
-                )) : React.createElement('div', {
-                    style: { marginLeft: 'auto', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.72 }
-                }, cur.label));
+                // One lens only — a quiet caption instead of the old view tabs.
+                React.createElement('div', {
+                    style: { marginLeft: 'auto', flex: '0 0 auto', fontFamily: 'var(--font-body)', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.66, textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap' } }, 'by Power Score'));
         }
 
         function Bar({ val, rank, totalTeams, width = 70, height = 6 }) {
@@ -257,32 +217,34 @@
             }));
         }
 
-        function StatTile({ label, value, sub, tone = 'var(--white)', compact = false }) {
+        function StatTile({ label, value, sub, tone = 'var(--white)', compact = false, inline = false }) {
+            const labelEl = React.createElement('div', { style: { fontSize: 'var(--text-micro)', color: 'var(--silver)', opacity: 0.66, textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' } }, label);
+            const valueEl = React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: compact ? '0.95rem' : '1.18rem', lineHeight: 1.1, fontWeight: 900, color: tone, marginTop: inline ? 0 : (compact ? '2px' : '4px'), whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, value);
+            // inline: label on the left, number on the right of the same row
+            // (instead of stacked). Keeps the sub-line below both.
+            const head = inline
+                ? React.createElement('div', { style: { display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '8px' } }, labelEl, valueEl)
+                : [labelEl, valueEl];
             return React.createElement('div', {
                 style: {
                     background: TONE.panel,
                     border: '1px solid var(--ov-4, rgba(255,255,255,0.055))',
-                    borderRadius: 'var(--card-radius-sm, 8px)',
+                    borderRadius: '8px',
                     padding: compact ? '5px 9px' : '8px 10px',
                     minWidth: 0,
                 }
             },
-                React.createElement('div', { style: { fontSize: 'var(--text-micro)', color: 'var(--silver)', opacity: 0.66, textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' } }, label),
-                React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: compact ? '0.95rem' : '1.18rem', lineHeight: 1.1, fontWeight: 900, color: tone, marginTop: compact ? '2px' : '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, value),
+                inline ? head : head[0],
+                inline ? null : head[1],
                 sub ? React.createElement('div', { style: { fontSize: 'var(--text-micro)', color: 'var(--silver)', opacity: 0.62, marginTop: compact ? '1px' : '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, sub) : null
             );
         }
 
-        function TeamRow({ t, rank, dense = false, micro = false, showTrend = false, showCrossRanks = false }) {
+        function TeamRow({ t, rank, dense = false, micro = false, showTrend = false }) {
             const isMe = t.ownerId === sleeperUserId;
             const val = cur.valFn(t);
             const color = teamTone(val, rank, total);
             const gapToLead = Math.max(0, leaderVal - val);
-            const contenderRank = rankByView.contender[t.rosterId];
-            const dynastyRank = rankByView.dynasty[t.rosterId];
-            const crossText = showCrossRanks && contenderRank && dynastyRank
-                ? 'Now #' + contenderRank + ' · Future #' + dynastyRank
-                : null;
             return React.createElement('div', {
                 key: t.rosterId || rank,
                 style: {
@@ -291,8 +253,11 @@
                     alignItems: 'center',
                     gap: micro ? '5px' : dense ? '7px' : '10px',
                     minHeight: micro ? '23px' : dense ? '30px' : '36px',
-                    padding: micro ? '1px 6px' : dense ? '3px 7px' : '5px 8px',
-                    borderRadius: 'var(--card-radius-sm, 8px)',
+                    // 9px side padding on micro rows matches the StatTile boxes
+                    // above, so the team list lines up flush under the Your Rank
+                    // / Average boxes on both edges.
+                    padding: micro ? '1px 9px' : dense ? '3px 7px' : '5px 8px',
+                    borderRadius: '6px',
                     background: isMe ? 'var(--acc-fill2, rgba(212,175,55,0.11))' : 'transparent',
                     border: isMe ? '1px solid var(--acc-line1, rgba(212,175,55,0.2))' : '1px solid transparent',
                 }
@@ -303,7 +268,10 @@
                         fontSize: micro ? 'var(--text-micro, 0.6875rem)' : dense ? '0.78rem' : '0.9rem',
                         fontWeight: 800,
                         color: rank <= 3 ? TONE.gold : 'var(--silver)',
-                        textAlign: 'right',
+                        // Left-align the rank on micro rows so the "1" sits
+                        // directly under the Your Rank box's label, not floated
+                        // inward by the right-align used on the wider layouts.
+                        textAlign: micro ? 'left' : 'right',
                     }
                 }, rank),
                 React.createElement('div', { style: { minWidth: 0 } },
@@ -317,7 +285,7 @@
                             textOverflow: 'ellipsis',
                         }
                     }, getTeamName(t) + (isMe ? ' ★' : '')),
-                    (showTrend || crossText) ? React.createElement('div', {
+                    showTrend ? React.createElement('div', {
                         style: {
                             fontSize: 'var(--text-micro)',
                             color: 'var(--silver)',
@@ -327,7 +295,7 @@
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
                         }
-                    }, crossText || (rank === 1 ? 'League leader' : (gapToLead > 0 ? cur.gapFmt(gapToLead) + ' off lead' : metricLabel(view)))) : null
+                    }, rank === 1 ? 'League leader' : (gapToLead > 0 ? cur.gapFmt(gapToLead) + ' off lead' : metricLabel(view))) : null
                 ),
                 React.createElement(Bar, { val, rank, totalTeams: total, width: micro ? 46 : dense ? 58 : 74, height: micro ? 4 : dense ? 5 : 6 }),
                 React.createElement('div', {
@@ -397,11 +365,11 @@
                 React.createElement(Header, { compact: true, showTabs: false }),
                 React.createElement('div', { style: { textAlign: 'center', padding: '2px 0' } },
                     React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.7 } }, cur.label + ' Rank'),
-                    React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '2.15rem', lineHeight: 1, fontWeight: 900, color } }, myRank ? '#' + myRank : '\u2014'),
+                    React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '2.15rem', lineHeight: 1, fontWeight: 900, color } }, myRank ? '#' + myRank : '\u2014', myRank ? rankArrow('0.42em') : null),
                     React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.72, marginTop: '6px' } }, total ? 'of ' + total + ' teams' : 'No teams')
                 ),
-                React.createElement('div', { style: { height: '7px', borderRadius: 'var(--card-radius-sm, 8px)', background: 'var(--ov-4, rgba(255,255,255,0.07))', overflow: 'hidden' } },
-                    React.createElement('div', { style: { width: pct + '%', height: '100%', background: color, borderRadius: 'var(--card-radius-sm, 8px)' } })
+                React.createElement('div', { style: { height: '7px', borderRadius: '7px', background: 'var(--ov-4, rgba(255,255,255,0.07))', overflow: 'hidden' } },
+                    React.createElement('div', { style: { width: pct + '%', height: '100%', background: color, borderRadius: '7px' } })
                 )
             );
         }
@@ -417,27 +385,27 @@
                         style: {
                             border: '1px solid var(--ov-5, rgba(255,255,255,0.08))',
                             background: TONE.panel,
-                            borderRadius: 'var(--card-radius-sm, 8px)',
+                            borderRadius: '8px',
                             padding: '10px 8px',
                             textAlign: 'center',
                         }
                     },
                         React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.72 } }, 'You'),
-                        React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '1.8rem', lineHeight: 1, fontWeight: 900, color, marginTop: '4px' } }, myRank ? '#' + myRank : '\u2014'),
+                        React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '1.8rem', lineHeight: 1, fontWeight: 900, color, marginTop: '4px' } }, myRank ? '#' + myRank : '\u2014', myRank ? rankArrow('0.45em') : null),
                         React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.65, marginTop: '5px' } }, cur.fmtFn(myVal) + ' ' + metricLabel(view).toLowerCase())
                     ),
                     React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '7px', minWidth: 0 } },
                         React.createElement('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' } },
-                            React.createElement('div', { style: { background: TONE.panel, borderRadius: 'var(--card-radius-sm, 8px)', padding: '7px 8px' } },
+                            React.createElement('div', { style: { background: TONE.panel, borderRadius: '7px', padding: '7px 8px' } },
                                 React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.65, textTransform: 'uppercase' } }, 'Ahead'),
                                 React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '1.05rem', fontWeight: 800, color: 'var(--white)' } }, ahead)
                             ),
-                            React.createElement('div', { style: { background: TONE.panel, borderRadius: 'var(--card-radius-sm, 8px)', padding: '7px 8px' } },
+                            React.createElement('div', { style: { background: TONE.panel, borderRadius: '7px', padding: '7px 8px' } },
                                 React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.65, textTransform: 'uppercase' } }, 'Behind'),
                                 React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '1.05rem', fontWeight: 800, color: 'var(--white)' } }, behind)
                             )
                         ),
-                        React.createElement('div', { style: { display: 'flex', height: '12px', borderRadius: 'var(--card-radius-sm, 8px)', overflow: 'hidden', background: 'var(--ov-4, rgba(255,255,255,0.07))' } },
+                        React.createElement('div', { style: { display: 'flex', height: '12px', borderRadius: '7px', overflow: 'hidden', background: 'var(--ov-4, rgba(255,255,255,0.07))' } },
                             ...cur.data.map((t, i) => React.createElement('div', {
                                 key: t.rosterId || i,
                                 title: (i + 1) + '. ' + getTeamName(t) + ' - ' + cur.fmtFn(cur.valFn(t)),
@@ -475,7 +443,7 @@
                                 minWidth: 0,
                                 border: '1px solid ' + (isMe ? 'var(--acc-line3, rgba(212,175,55,0.38))' : 'var(--ov-5, rgba(255,255,255,0.08))'),
                                 background: isMe ? 'var(--acc-fill2, rgba(212,175,55,0.1))' : TONE.panel,
-                                borderRadius: 'var(--card-radius-sm, 8px)',
+                                borderRadius: '8px',
                                 padding: '8px',
                             }
                         },
@@ -515,20 +483,32 @@
             );
         }
 
-        if (size === 'tall') {
+        if (size === 'tall' || size === 'narrow') {
+            // Both the half-width Tall and the single-column Narrow slot render the
+            // full 16-team board in a tall, thin column — Narrow just spans one grid
+            // column so it fits beside a wide command brief.
+            // Terse unit for the narrow Tall card, so the stat sub-line stays one
+            // short phrase instead of the tab's full help text (which used to
+            // truncate to "62 60% strength + 40\u2026").
+            const tallUnit = view === 'contender' ? 'pts' : view === 'dynasty' ? 'DHQ' : 'score';
             return React.createElement('div', { style: { ...base, gap: '8px' } },
                 React.createElement(Header, { compact: true, showTabs: true }),
                 React.createElement('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' } },
                     React.createElement(StatTile, {
+                        compact: true,
+                        inline: true,
                         label: 'Your Rank',
-                        value: myRank ? '#' + myRank : '\u2014',
-                        sub: myTeam ? cur.fmtFn(myVal) + ' ' + metricLabel(view).toLowerCase() : 'not found',
-                        tone: myRank ? rankTone(myRank) : TONE.middle,
+                        value: myRank ? React.createElement('span', null, '#' + myRank, rankArrow('0.6em')) : '\u2014',
+                        sub: myTeam ? cur.fmtFn(myVal) + ' ' + tallUnit : 'not found',
+                        // Owner wants the personal rank called out in red.
+                        tone: TONE.weak,
                     }),
                     React.createElement(StatTile, {
+                        compact: true,
+                        inline: true,
                         label: 'Average',
                         value: cur.fmtFn(avgVal),
-                        sub: myTeam ? (gapToAvg >= 0 ? cur.gapFmt(gapToAvg) + ' above avg' : cur.gapFmt(Math.abs(gapToAvg)) + ' below avg') : 'league mean',
+                        sub: myTeam ? (gapToAvg >= 0 ? '+' + cur.gapFmt(gapToAvg) + ' vs avg' : '\u2212' + cur.gapFmt(Math.abs(gapToAvg)) + ' vs avg') : 'league mean',
                         tone: gapToAvg >= 0 ? TONE.elite : TONE.weak,
                     })
                 ),
@@ -536,7 +516,12 @@
                     style: {
                         display: 'flex',
                         flexDirection: 'column',
-                        gap: '1px',
+                        // Spread the 16 rows to fill the column's full height so
+                        // they line up evenly with the tall brief beside them,
+                        // instead of bunching at the top with dead space below.
+                        // Falls back to top-anchored scrolling if they overflow.
+                        justifyContent: 'space-between',
+                        gap: '2px',
                         minHeight: 0,
                         flex: 1,
                         overflow: 'auto',
@@ -548,7 +533,6 @@
                         rank: i + 1,
                         micro: true,
                         showTrend: false,
-                        showCrossRanks: false,
                     }))
                 ),
                 React.createElement(AnalyticsButton, null)
@@ -557,60 +541,9 @@
 
         if (size === 'xxl') {
             const top3 = cur.data.slice(0, 3);
-            const upside = cur.data
-                .map(t => ({
-                    team: t,
-                    contenderRank: rankByView.contender[t.rosterId] || total,
-                    dynastyRank: rankByView.dynasty[t.rosterId] || total,
-                }))
-                .map(x => ({ ...x, delta: x.contenderRank - x.dynastyRank }))
-                .sort((a, b) => b.delta - a.delta)
-                .slice(0, 4);
-            const winNow = cur.data
-                .map(t => ({
-                    team: t,
-                    contenderRank: rankByView.contender[t.rosterId] || total,
-                    dynastyRank: rankByView.dynasty[t.rosterId] || total,
-                }))
-                .map(x => ({ ...x, delta: x.dynastyRank - x.contenderRank }))
-                .sort((a, b) => b.delta - a.delta)
-                .slice(0, 4);
-
-            function DeltaList({ title, rows, tone }) {
-                return React.createElement('div', {
-                    style: {
-                        background: TONE.panel,
-                        border: '1px solid var(--ov-4, rgba(255,255,255,0.055))',
-                        borderRadius: 'var(--card-radius-sm, 8px)',
-                        padding: '9px 10px',
-                        minHeight: 0,
-                    }
-                },
-                    React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.7, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '6px' } }, title),
-                    ...rows.map((x, idx) => React.createElement('div', {
-                        key: title + (x.team.rosterId || idx),
-                        style: {
-                            display: 'grid',
-                            gridTemplateColumns: 'minmax(0, 1fr) auto',
-                            alignItems: 'center',
-                            gap: '8px',
-                            padding: '3px 0',
-                        }
-                    },
-                        React.createElement('div', { style: { color: x.team.ownerId === sleeperUserId ? TONE.gold : 'var(--white)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 750, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, getTeamName(x.team)),
-                        React.createElement('div', { style: { color: tone, fontFamily: 'Rajdhani, sans-serif', fontSize: '0.78rem', fontWeight: 900 } }, Math.abs(x.delta))
-                    ))
-                );
-            }
 
             function StrategicRail() {
-                const winNowGap = myContenderRank && myDynastyRank ? myDynastyRank - myContenderRank : 0;
-                const identity = winNowGap >= 4
-                    ? 'Win-now roster'
-                    : winNowGap <= -4
-                        ? 'Future-heavy roster'
-                        : 'Balanced profile';
-                const identityTone = winNowGap >= 4 ? TONE.gold : winNowGap <= -4 ? TONE.elite : TONE.middle;
+                const pct = myRank ? Math.round((1 - (myRank - 1) / Math.max(total - 1, 1)) * 100) : 0;
                 const leaderGap = myTeam ? Math.max(0, leaderVal - myVal) : 0;
                 const packGap = aboveMe ? Math.max(0, cur.valFn(aboveMe) - myVal) : 0;
                 const cushion = belowMe ? Math.max(0, myVal - cur.valFn(belowMe)) : 0;
@@ -621,19 +554,12 @@
                         gap: '8px',
                     }
                 },
-                    pro ? React.createElement(StatTile, {
+                    React.createElement(StatTile, {
                         compact: true,
-                        label: 'Roster Identity',
-                        value: identity,
-                        sub: myContenderRank && myDynastyRank ? 'Now #' + myContenderRank + ' · Future #' + myDynastyRank : 'cross-view pending',
-                        tone: identityTone,
-                    }) : React.createElement(StatTile, {
-                        // Free: raw cross-rank fact only — no build classification.
-                        compact: true,
-                        label: 'Cross-View Rank',
-                        value: myContenderRank && myDynastyRank ? 'Now #' + myContenderRank + ' · Future #' + myDynastyRank : '—',
-                        sub: 'contender vs dynasty',
-                        tone: TONE.middle,
+                        label: 'Percentile',
+                        value: myRank ? pct + 'th' : '—',
+                        sub: myRank ? '#' + myRank + ' of ' + total : 'no roster match',
+                        tone: myRank ? rankTone(myRank) : TONE.middle,
                     }),
                     React.createElement(StatTile, {
                         compact: true,
@@ -646,7 +572,7 @@
                         compact: true,
                         label: 'Next Jump',
                         value: aboveMe ? cur.gapFmt(packGap) : 'Hold',
-                        sub: aboveMe ? 'to pass ' + getTeamName(aboveMe) : 'you lead this view',
+                        sub: aboveMe ? 'to pass ' + getTeamName(aboveMe) : 'you lead the league',
                         tone: packGap <= 3 ? TONE.elite : packGap <= 10 ? TONE.gold : TONE.middle,
                     }),
                     React.createElement(StatTile, {
@@ -715,7 +641,7 @@
                                     minWidth: 0,
                                     border: '1px solid ' + (isMe ? 'var(--acc-line3, rgba(212,175,55,0.42))' : 'var(--ov-5, rgba(255,255,255,0.08))'),
                                     background: isMe ? 'var(--acc-fill2, rgba(212,175,55,0.11))' : TONE.panel,
-                                    borderRadius: 'var(--card-radius, 10px)',
+                                    borderRadius: '9px',
                                     padding: '10px',
                                 }
                             },
@@ -724,7 +650,7 @@
                                     React.createElement('div', { style: { color: teamTone(val, rank, total), fontFamily: 'Rajdhani, sans-serif', fontSize: '1rem', fontWeight: 900 } }, cur.fmtFn(val))
                                 ),
                                 React.createElement('div', { style: { marginTop: '9px', color: isMe ? TONE.gold : 'var(--white)', fontSize: '0.84rem', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, getTeamName(t) + (isMe ? ' ★' : '')),
-                                React.createElement('div', { style: { marginTop: '8px', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.62 } }, 'Now #' + rankByView.contender[t.rosterId] + ' · Future #' + rankByView.dynasty[t.rosterId]),
+                                React.createElement('div', { style: { marginTop: '8px', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.62 } }, rank === 1 ? 'League leader' : cur.gapFmt(Math.max(0, leaderVal - val)) + ' off lead'),
                                 React.createElement('div', { style: { marginTop: '8px' } }, React.createElement(Bar, { val, rank, totalTeams: total, width: '100%', height: 7 }))
                             );
                         })),
@@ -744,15 +670,11 @@
                                 t,
                                 rank: i + 4,
                                 micro: true,
-                                showCrossRanks: true,
                             }))
                         )
                     ),
                     React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px', minHeight: 0, overflowY: 'auto' } },
-                        React.createElement(TierStrip, null),
-                        // Free: neutral rank-delta titles — no build-type read on rivals.
-                        React.createElement(DeltaList, { title: pro ? 'Dynasty Risers' : 'Future Rank Lead', rows: upside, tone: TONE.elite }),
-                        React.createElement(DeltaList, { title: pro ? 'Win-Now Profiles' : 'Now Rank Lead', rows: winNow, tone: TONE.gold })
+                        React.createElement(TierStrip, null)
                     )
                 ),
                 React.createElement(StrategicRail, null),
@@ -770,15 +692,15 @@
                     gap: '8px',
                 }
             },
-                React.createElement('div', { style: { background: TONE.panel, borderRadius: 'var(--card-radius-sm, 8px)', padding: '8px 10px' } },
+                React.createElement('div', { style: { background: TONE.panel, borderRadius: '8px', padding: '8px 10px' } },
                     React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.66, textTransform: 'uppercase' } }, 'Your Rank'),
-                    React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '1.25rem', fontWeight: 900, color: myRank ? rankTone(myRank) : TONE.middle } }, myRank ? '#' + myRank : '\u2014')
+                    React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '1.25rem', fontWeight: 900, color: myRank ? rankTone(myRank) : TONE.middle } }, myRank ? '#' + myRank : '\u2014', myRank ? rankArrow('0.55em') : null)
                 ),
-                React.createElement('div', { style: { background: TONE.panel, borderRadius: 'var(--card-radius-sm, 8px)', padding: '8px 10px' } },
+                React.createElement('div', { style: { background: TONE.panel, borderRadius: '8px', padding: '8px 10px' } },
                     React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.66, textTransform: 'uppercase' } }, 'Leader'),
                     React.createElement('div', { style: { fontSize: '0.78rem', fontWeight: 750, color: 'var(--white)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, leader ? getTeamName(leader) : '\u2014')
                 ),
-                React.createElement('div', { style: { background: TONE.panel, borderRadius: 'var(--card-radius-sm, 8px)', padding: '8px 10px' } },
+                React.createElement('div', { style: { background: TONE.panel, borderRadius: '8px', padding: '8px 10px' } },
                     React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.66, textTransform: 'uppercase' } }, metricLabel(view)),
                     React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '1.25rem', fontWeight: 900, color: TONE.gold } }, cur.fmtFn(myVal))
                 )

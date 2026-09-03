@@ -6,13 +6,16 @@
 // scoreboard (schedule + odds + weather in one call), fetched THROUGH a
 // same-origin proxy (the browser is CORS-blocked from ESPN directly):
 //   dev  → /api/nfl-scoreboard  (serve-static.cjs)
-//   prod → a Supabase edge fn mirroring that proxy (DYNASTY_HQ_CONFIG).
+//   prod → the nfl-scoreboard Supabase edge fn (endpoint() below).
 // Degrades to a no-op (neutral projections) if the proxy is unavailable.
 // ══════════════════════════════════════════════════════════════════
 (function (root) {
     'use strict';
     const App = root.App = root.App || {};
     const _done = {}; // `${season}|${week}` already loaded
+    const _fail = {}; // `${season}|${week}` → { count, until } — failure backoff
+    const FAIL_MAX_TRIES = 3;               // attempts per week key per page load
+    const FAIL_COOLDOWN_MS = 5 * 60 * 1000; // wait between failed attempts
 
     // ESPN uses a few abbreviations that differ from Sleeper/MFL — normalize so
     // context keys match each player's team. (LAR/LAC/LV already align.)
@@ -20,14 +23,16 @@
     function normTeam(a) { a = String(a || '').toUpperCase(); return ESPN_TO_SLEEPER[a] || a; }
 
     function endpoint() {
-        // Prefer the RESOLVED config (app-config.js merges defaults into
-        // App.CONFIG/OD.CONFIG — the raw DYNASTY_HQ_CONFIG seed in index.html
-        // doesn't carry defaulted endpoints like nflScoreboard). Dev keeps the
-        // same-origin proxy so local work never burns the shared prod cache.
+        // Explicit config wins; localhost keeps the dev proxy (serve-static.cjs);
+        // every deployed page goes to the Supabase relay — GitHub Pages serves
+        // no /api, which is why this fetch 404-ed in production for months.
         try {
-            if (root.location && /^(localhost|127\.0\.0\.1)$/.test(root.location.hostname)) return '/api/nfl-scoreboard';
-            const cfg = (root.App && root.App.CONFIG) || (root.OD && root.OD.CONFIG) || root.DYNASTY_HQ_CONFIG || {};
-            return (cfg.endpoints && cfg.endpoints.nflScoreboard) || '/api/nfl-scoreboard';
+            var cfg = root.DYNASTY_HQ_CONFIG || (root.App && root.App.CONFIG) || (root.OD && root.OD.CONFIG) || {};
+            if (cfg.endpoints && cfg.endpoints.nflScoreboard) return cfg.endpoints.nflScoreboard;
+            var host = (root.location && root.location.hostname) || '';
+            if (host === 'localhost' || host === '127.0.0.1') return '/api/nfl-scoreboard';
+            var base = cfg.functionsBase || 'https://sxshiqyxhhifvtfqawbq.supabase.co/functions/v1';
+            return String(base).replace(/\/+$/, '') + '/nfl-scoreboard';
         } catch (e) { return '/api/nfl-scoreboard'; }
     }
 
@@ -82,59 +87,10 @@
         return out;
     }
 
-    // seasontype is ESPN's: 1 = preseason, 2 = regular, 3 = postseason. It
-    // defaults to 2 so every existing caller (the projection context path,
-    // Empire's ticker) is byte-identical — only callers that explicitly want
-    // preseason/postseason pass it. Both proxies already accept and forward
-    // the param and validate it 1-4, so nothing server-side needed changing.
-    function fetchWeek(week, season, seasontype) {
-        const st = Number(seasontype) || 2;
-        let u = endpoint() + '?week=' + week + '&seasontype=' + st;
+    function fetchWeek(week, season) {
+        let u = endpoint() + '?week=' + week + '&seasontype=2';
         if (season) u += '&season=' + season;
         return fetch(u).then(r => { if (!r.ok) throw new Error('scoreboard ' + r.status); return r.json(); });
-    }
-
-    // ESPN scoreboard → live/final/scheduled game scores, for anything that
-    // just wants "what's the score" (e.g. Empire's ticker) rather than the
-    // matchup-context shape `parse()` builds for projections.
-    function parseScores(espn) {
-        const events = (espn && espn.events) || [];
-        return events.map(ev => {
-            const comp = ev.competitions && ev.competitions[0];
-            const cs = (comp && comp.competitors) || [];
-            const home = cs.find(c => c.homeAway === 'home');
-            const away = cs.find(c => c.homeAway === 'away');
-            const status = (comp && comp.status) || ev.status || {};
-            const type = status.type || {};
-            return {
-                home: normTeam(home && home.team && home.team.abbreviation),
-                away: normTeam(away && away.team && away.team.abbreviation),
-                homeScore: home && home.score != null ? Number(home.score) : null,
-                awayScore: away && away.score != null ? Number(away.score) : null,
-                state: type.state || 'pre',            // 'pre' | 'in' | 'post'
-                shortDetail: type.shortDetail || '',    // "Q3 4:12", "Final", "1:00 PM"
-                completed: !!type.completed,
-            };
-        }).filter(g => g.home && g.away);
-    }
-
-    function loadScores(week, season, seasontype) {
-        return fetchWeek(week, season, seasontype).then(parseScores).catch(e => { if (root.wrLog) root.wrLog('nflContext.loadScores', e); return []; });
-    }
-
-    // Sleeper's nflState is the authoritative "where are we in the NFL
-    // calendar" source (season_type: 'pre' | 'regular' | 'post' + its own week
-    // counter, which restarts per phase). Mapped to ESPN's seasontype so the
-    // scoreboard is asked for the games that are actually being played right
-    // now — in August that is preseason, not regular-season week 1.
-    function currentPhase() {
-        const st = (root.S && root.S.nflState) || {};
-        const type = String(st.season_type || 'regular').toLowerCase();
-        const stWeek = Number(st.week) || Number(st.display_week) || 1;
-        if (type === 'pre') return { seasontype: 1, week: stWeek, isPre: true, season: st.season };
-        if (type === 'post') return { seasontype: 3, week: stWeek, isPost: true, season: st.season };
-        const regWeek = Number(App.WeeklyProj && App.WeeklyProj.currentWeek && App.WeeklyProj.currentWeek()) || stWeek;
-        return { seasontype: 2, week: regWeek, season: st.season };
     }
 
     // Load one or more weeks and feed App.WeeklyProj.setContext. Caches per
@@ -148,11 +104,22 @@
         for (const wk of list) {
             const key = season + '|' + wk;
             if (_done[key]) continue;
+            const f = _fail[key];
+            if (f && (f.count >= FAIL_MAX_TRIES || Date.now() < f.until)) continue;
             try {
                 const espn = await fetchWeek(wk, season);
                 Object.assign(byTeamWeek, parse(espn, wk));
                 _done[key] = true;
-            } catch (e) { if (root.wrLog) root.wrLog('nflContext.load', e); }
+                delete _fail[key];
+            } catch (e) {
+                // Back off instead of retrying forever: a hot caller (e.g. a
+                // re-rendering scouting tab) must not turn one dead endpoint
+                // into hundreds of fetches — one logged error per week key.
+                const g = _fail[key] = _fail[key] || { count: 0, until: 0 };
+                g.count += 1;
+                g.until = Date.now() + FAIL_COOLDOWN_MS;
+                if (g.count === 1 && root.wrLog) root.wrLog('nflContext.load', e);
+            }
         }
         if (Object.keys(byTeamWeek).length && WP.setContext) WP.setContext({ byTeamWeek });
         return byTeamWeek;
@@ -164,5 +131,5 @@
         return load([wk], season);
     }
 
-    App.NflContext = App.NflContext || { load, loadCurrent, parse, parseScores, loadScores, currentPhase, endpoint, _done };
+    App.NflContext = App.NflContext || { load, loadCurrent, parse, endpoint, _done };
 })(typeof window !== 'undefined' ? window : globalThis);

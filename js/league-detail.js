@@ -28,7 +28,7 @@
                     label + ' module failed to load. ',
                     React.createElement('button', {
                         onClick: () => window.location.reload(),
-                        style: { marginTop: '12px', padding: '8px 16px', background: 'var(--gold)', color: 'var(--black)', border: 'none', borderRadius: 'var(--card-radius-sm, 8px)', cursor: 'pointer', fontWeight: 600 },
+                        style: { marginTop: '12px', padding: '8px 16px', background: 'var(--gold)', color: 'var(--black)', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 },
                     }, 'Reload'));
             }
             const Comp = resolveComponent();
@@ -46,7 +46,6 @@
     const TrophyRoomTabLazy = wrLazyTab('trophies', 'Trophy Room', () => (typeof TrophyRoomTab === 'function' ? TrophyRoomTab : null));
     const AlexInsightsTabLazy = wrLazyTab('alex', "GM's Office", () => (typeof window.AlexInsightsTab === 'function' ? window.AlexInsightsTab : null));
     const CompareTabLazy = wrLazyTab('compare', 'Compare', () => (typeof window.CompareTab === 'function' ? window.CompareTab : null));
-    const LeagueCentralTabLazy = wrLazyTab('central', 'League Central', () => (typeof window.LeagueCentralTab === 'function' ? window.LeagueCentralTab : null));
     // My Team and Calendar are non-default tabs (the default in-league view is the
     // dashboard), so their modules are deferred too — they no longer load at boot
     // and only fetch on first open, like the tabs above. Removes ~68KB of JSX from
@@ -56,6 +55,66 @@
     const CalendarTabLazy = wrLazyTab('calendar', 'Calendar', () => (typeof CalendarTab === 'function' ? CalendarTab : null));
     const LineupTabLazy = wrLazyTab('lineup', 'Lineup', () => (typeof window.LineupTab === 'function' ? window.LineupTab : null));
 
+    function escapeHtml(str) {
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+    function markdownToHtml(str) {
+        // Use the shared AI-text formatter so Alex's chat matches every other
+        // AI surface (bold, paragraph spacing, tidy dividers). Falls back to
+        // the original inline behavior if the shared helper hasn't loaded.
+        if (window.WR && typeof window.WR.formatAI === 'function') return window.WR.formatAI(str);
+        return escapeHtml(str).replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
+    }
+
+    // ── DHQ-ranked startable pool (mirrors trade-calc.calcNflStarterSet) ──
+    // Built once after the DHQ engine loads. For each position, the top
+    // NFL_STARTER_POOL[pos] players by DHQ dynasty value are the legitimate NFL
+    // starters. Used to recompute starter COUNTS below. Works year-round (DHQ
+    // values are always loaded), unlike depth_chart_order which is offseason-null.
+    let _dhqStarterSet = null;
+    function buildDhqStarterSet() {
+        try {
+            const players = window.App?._playersCache;
+            const dhqScores = window.App?.LI?.playerScores || {};
+            const POOL = window.App?.PlayerValue?.NFL_STARTER_POOL;
+            const normPos = window.App?.normPos;
+            if (!POOL || !normPos || !players || !Object.keys(players).length) return null;
+            const byPos = {};
+            for (const [id, p] of Object.entries(players)) {
+                const pos = normPos(p?.position);
+                if (!pos || !(pos in POOL) || !p?.team) continue;
+                const score = dhqScores[id];
+                if (!(score > 0)) continue;
+                (byPos[pos] = byPos[pos] || []).push({ id, score });
+            }
+            const set = {};
+            for (const [pos, arr] of Object.entries(byPos)) {
+                arr.sort((a, b) => b.score - a.score);
+                set[pos] = new Set(arr.slice(0, POOL[pos]).map(x => x.id));
+            }
+            return set;
+        } catch (_) { return null; }
+    }
+
+    // ── Starter-requirement correction — RETIRED (owner deep dive 2026-09-01) ──
+    // This wrapper dated from the ReconAI-CDN assessor era: it overwrote the
+    // engine's per-position bars with the static App.PlayerValue table
+    // (LB:5, WR:3 — one size for every league) and rebuilt status/needs
+    // itself. The shared engine now derives bars from THIS league's actual
+    // starting slots, counts quality through the value pool AND the live
+    // ESPN depth chart, and holds an elite-concentration guard — all of
+    // which this wrapper silently discarded, resurrecting phantom
+    // "positional weakness" flags on elite rooms. Its other job (rescuing
+    // undercounted rookies/breakouts) is covered by the modern engine's
+    // value-ranked pool and ESPN starter door. Kept as a no-op so both
+    // call sites stay valid; no field it added (needs[].gap/.diff) has any
+    // consumer.
+    function installStarterReqCorrection() { /* retired — the shared engine is the authority */ }
 
     function wrCanPageScroll() {
         const doc = document.documentElement;
@@ -110,14 +169,12 @@
     }
 
     function leagueTypeHeaderMeta(profile) {
-        const type = window.App?.LeagueSkin?.normalizeType?.(profile?.type)
-            || String(profile?.type || 'unknown').toLowerCase();
+        const type = String(profile?.type || 'unknown').toLowerCase();
         const defs = {
             redraft: { label: 'Redraft', short: 'RD', color: 'var(--k-2ecc71, #2ecc71)', icon: 'reset' },
             keeper: { label: 'Keeper', short: 'KP', color: 'var(--k-7c6bf8, #7c6bf8)', icon: 'bookmark' },
             dynasty: { label: 'Dynasty', short: 'DY', color: 'var(--k-d4af37, #d4af37)', icon: 'crown' },
             best_ball: { label: 'Best Ball', short: 'BB', color: 'var(--k-3498db, #3498db)', icon: 'spark' },
-            chopped: { label: 'Chopped', short: 'CHOP', color: 'var(--k-e74c3c, #e74c3c)', icon: 'scissors' },
             dfs: { label: 'DFS', short: 'DFS', color: 'var(--k-3498db, #3498db)', icon: 'spark' },
         };
         return defs[type] || { label: type && type !== 'unknown' ? type.replace(/_/g, ' ') : 'League Type Unknown', short: '?', color: 'var(--k-c7cdd7, #c7cdd7)', icon: 'circle' };
@@ -158,15 +215,6 @@
         if (icon === 'spark') {
             return React.createElement('svg', common,
                 React.createElement('path', { d: 'M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z' })
-            );
-        }
-        if (icon === 'scissors') {
-            return React.createElement('svg', common,
-                React.createElement('circle', { cx: 6, cy: 7, r: 3 }),
-                React.createElement('circle', { cx: 6, cy: 17, r: 3 }),
-                React.createElement('path', { d: 'm8.7 8.3 10.8 7.2' }),
-                React.createElement('path', { d: 'm8.7 15.7 3.3-2.2' }),
-                React.createElement('path', { d: 'm14.5 10.5 5-3.3' })
             );
         }
         return React.createElement('svg', common,
@@ -220,25 +268,18 @@
         legend: ['M12 7v14', 'M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z'],
         // refresh-cw
         refresh: ['M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8', 'M21 3v5h-5', 'M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16', 'M8 16H3v5'],
-        // gauge — the league-wide hub/command view
-        central: ['m12 14 4-4', 'M3.34 19a10 10 0 1 1 17.32 0'],
     };
     // showGameDay = the FINAL leagueSkin.features.showGameDay flag
     // (callers apply the same `?? phase === 'in_season'` fallback in one place).
-    // mergedHome (redraft + chopped): Home and League Central are one surface.
-    // The Home tab disappears entirely and League Central becomes the landing
-    // page, renamed Command Center, carrying the intelligence briefing plus a
-    // League/KPIs tab pair. Dynasty and keeper keep the two separate tabs.
-    function buildLeagueNavItems(showGameDay, showTrades, showGmOffice, mergedHome) {
+    function buildLeagueNavItems(showGameDay, showTrades) {
         return [
             { section: 'FRONT OFFICE' },
-            ...(mergedHome ? [] : [{ label: 'Home', tab: 'dashboard', iconKey: 'home' }]),
+            { label: 'Home', tab: 'dashboard', iconKey: 'home' },
             { label: 'My Roster', tab: 'myteam', iconKey: 'roster' },
             // Game Day Central — only surfaced for in-season leagues.
             ...(showGameDay ? [{ label: 'Game Day', tab: 'lineup', iconKey: 'gameday' }] : []),
             { label: 'Compare', tab: 'compare', iconKey: 'compare' },
             { section: 'LEAGUE' },
-            { label: mergedHome ? 'Command Center' : 'League Central', tab: 'central', iconKey: mergedHome ? 'home' : 'central' },
             // Hidden where the format forbids trading (chopped, or trades
             // disabled in settings) — an unusable tab is worse than no tab.
             ...(showTrades === false ? [] : [{ label: 'Trade Center', tab: 'trades', iconKey: 'trade' }]),
@@ -246,7 +287,7 @@
             { label: 'Draft', tab: 'draft', iconKey: 'draft' },
             { label: 'Analytics', tab: 'analytics', iconKey: 'analytics' },
             { section: 'DOSSIER' },
-            ...(showGmOffice === false ? [] : [{ label: 'GM\'s Office', tab: 'alex', iconKey: 'office' }]),
+            { label: 'GM\'s Office', tab: 'alex', iconKey: 'office' },
             { label: 'Trophy Room', tab: 'trophies', iconKey: 'trophy' },
             { section: 'SETTINGS' },
             { label: 'Settings', tab: 'settings', iconKey: 'settings' },
@@ -280,7 +321,7 @@
         if (!vp.isPhone || vp.kbOpen) return null;
         return <PhoneDockInner {...props} />;
     }
-    function PhoneDockInner({ activeTab, navItems, onSelectTab }) {
+    function PhoneDockInner({ activeTab, navItems, onSelectTab, onAskAlex }) {
         const stripRef = useRef(null);
         const chips = navItems.filter(item => item.tab);
 
@@ -331,6 +372,17 @@
                         );
                     })}
                 </div>
+                {/* Ask Alex — pinned marquee peer item (Scout's AI slot
+                    precedent): never scrolls with the strip. Free tier sees
+                    it too — the 1/day quota is enforced in the send path,
+                    not here. */}
+                {window.WR_ALEX_CHAT !== false && <button type="button" className="wr-dock-ask" onClick={onAskAlex}
+                    aria-label="Ask Alex — open chat">
+                    {window.AlexAvatar
+                        ? <span aria-hidden="true" style={{ display: 'inline-flex' }}><window.AlexAvatar size={20} /></span>
+                        : <span className="wr-dock-ask-glyph" aria-hidden="true">{'✦'}</span>}
+                    <span aria-hidden="true">Alex</span>
+                </button>}
             </nav>
         );
     }
@@ -379,6 +431,32 @@
         const [timeRecomputeTs, setTimeRecomputeTs] = useState(Date.now());
         const [basePlayersData, setBasePlayersData] = useState(null);
 
+        // The server tier resolves asynchronously a beat after the tab tree first
+        // renders. Without this bump, a Pro subscriber who opened straight into a
+        // gated tab (Trade Center, Free Agency, Draft) captured the pre-resolution
+        // 'free' snapshot and stayed on the "Unlock with Pro" teasers until a full
+        // reload. Re-render every tab once the real tier lands.
+        const [, setTierEpoch] = useState(0);
+        useEffect(() => {
+            const bump = () => setTierEpoch(n => n + 1);
+            if (window.App && window.App._userTierResolved) bump(); // resolved before mount
+            window.addEventListener('dhq:tier-resolved', bump);
+            return () => window.removeEventListener('dhq:tier-resolved', bump);
+        }, []);
+
+        // The power-pin cloud sync (team-assess) adopts the shared daily
+        // snapshot asynchronously after first paint. Without this listener the
+        // adopted numbers sat in the engine while every widget kept showing the
+        // pre-adoption compute — rank, health score, and tier could disagree
+        // across surfaces (and even across widgets on one page) until a manual
+        // tab switch (owner report 2026-08-14). One tick re-renders them all.
+        useEffect(() => {
+            if (!window.DhqEvents || typeof window.DhqEvents.on !== 'function') return undefined;
+            const onPinAdopted = () => setTimeRecomputeTs(Date.now());
+            const unsub = window.DhqEvents.on('assess:pin-adopted', onPinAdopted);
+            return () => { try { unsub(); } catch (e) { /* bus gone on teardown */ } };
+        }, []);
+
         useEffect(() => {
             const leagueId = currentLeague?.league_id || currentLeague?.id;
             if (!leagueId) return;
@@ -408,6 +486,20 @@
                 .then(rows => {
                     if (cancelled) return;
                     const drafts = Array.isArray(rows) ? rows : [];
+                    // Publish to the shared pocket the calendar engine reads
+                    // (WrCalendar.build: window.S.drafts || currentLeague.drafts)
+                    // and announce — otherwise the calendar falls back to its
+                    // mid-August "date TBD" placeholder while this header
+                    // already knows the real Sleeper draft time (owner report
+                    // 2026-08-27). Empty results never clobber hydrated data.
+                    if (drafts.length) {
+                        window.S = window.S || {};
+                        window.S.drafts = drafts;
+                        // Stamp the owner league so hydration keeps (not wipes)
+                        // this pocket and the calendar can verify provenance.
+                        window.S.draftsLeagueId = String(leagueId);
+                        try { window.dispatchEvent(new CustomEvent('wr:drafts-loaded')); } catch (e) { /* old Safari */ }
+                    }
                     // Draft-of-record rule (draft/state.js selectCurrentDraft):
                     // live > unsuperseded latest complete ('review') > next
                     // pre_draft — so a just-completed draft keeps a header entry
@@ -450,7 +542,10 @@
             const days = Math.floor(diff / 86400000);
             const hours = Math.floor((diff % 86400000) / 3600000);
             const mins = Math.floor((diff % 3600000) / 60000);
-            return { label: 'Draft Upcoming', clock: (days > 0 ? days + 'd ' : '') + hours + 'h ' + mins + 'm' };
+            // Owner ask 2026-08-27: the countdown alone made owners do date
+            // math — show the scheduled date beside the timer.
+            const when = new Date(Number(headerDraftInfo.start_time)).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+            return { label: 'Draft Upcoming', clock: (days > 0 ? days + 'd ' : '') + hours + 'h ' + mins + 'm', when };
         }, [headerDraftInfo, headerClockNow]);
 
         // ── SeasonContext state — reactive data shared with tab components ──
@@ -734,13 +829,13 @@
 	            if (module) {
 	                return React.createElement('div', { style: { padding: '10px 16px 16px', maxWidth: '1280px', margin: '0 auto' } },
 	                    React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px', marginBottom: '14px' } },
-	                        ...quickItems.map(item => React.createElement('div', { key: item.term, style: { padding: '12px 13px', background: 'var(--black)', border: '1px solid var(--acc-fill3, rgba(212,175,55,0.18))', borderRadius: 'var(--card-radius-sm, 8px)' } },
+	                        ...quickItems.map(item => React.createElement('div', { key: item.term, style: { padding: '12px 13px', background: 'var(--black)', border: '1px solid var(--acc-fill3, rgba(212,175,55,0.18))', borderRadius: '8px' } },
 	                            React.createElement('div', { style: { fontSize: 'var(--text-body, 1rem)', fontWeight: 800, color: 'var(--gold)', fontFamily: 'var(--font-body)', marginBottom: '4px' } }, item.term),
 	                            React.createElement('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', lineHeight: 1.45 } }, item.def)
 	                        ))
 	                    ),
 	                    React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '12px' } },
-	                        ...fullItems.map(section => React.createElement('section', { key: section.cat, style: { padding: '13px 14px', background: 'var(--black)', border: '1px solid var(--acc-fill3, rgba(212,175,55,0.18))', borderRadius: 'var(--card-radius-sm, 8px)' } },
+	                        ...fullItems.map(section => React.createElement('section', { key: section.cat, style: { padding: '13px 14px', background: 'var(--black)', border: '1px solid var(--acc-fill3, rgba(212,175,55,0.18))', borderRadius: '8px' } },
 	                            React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: 'var(--text-body, 1rem)', color: 'var(--gold)', letterSpacing: '0.08em', marginBottom: '10px', textTransform: 'uppercase' } }, section.cat),
 	                            ...section.items.map(item => React.createElement('div', { key: item.term, style: { marginBottom: '10px' } },
 	                                React.createElement('div', { style: { fontSize: 'var(--text-body, 1rem)', fontWeight: 800, color: 'var(--white)', marginBottom: '2px' } }, item.term),
@@ -760,7 +855,7 @@
                 open && React.createElement('div', { style: { padding: '8px 12px', maxHeight: '300px', overflowY: 'auto' } },
                     React.createElement('button', {
                         onClick: () => setExpanded(true),
-                        style: { width: '100%', marginBottom: '10px', padding: '6px', fontSize: 'var(--text-label, 0.75rem)', fontFamily: 'var(--font-body)', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: 'var(--card-radius-xs, 5px)', color: 'var(--gold)', cursor: 'pointer' }
+                        style: { width: '100%', marginBottom: '10px', padding: '6px', fontSize: 'var(--text-label, 0.75rem)', fontFamily: 'var(--font-body)', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '4px', color: 'var(--gold)', cursor: 'pointer' }
                     }, 'FULL GUIDE \u2192'),
                     ...quickItems.map(item => React.createElement('div', { key: item.term, style: { marginBottom: '8px' } },
                         React.createElement('div', { style: { fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700, color: 'var(--gold)', fontFamily: 'var(--font-body)' } }, item.term),
@@ -774,7 +869,7 @@
                 },
                     React.createElement('div', {
                         onClick: e => e.stopPropagation(),
-                        style: { background: 'var(--off-black)', border: '2px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: 'var(--card-radius-lg, 14px)', width: '100%', maxWidth: '640px', maxHeight: '80vh', overflowY: 'auto', padding: '24px 28px' }
+                        style: { background: 'var(--off-black)', border: '2px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: '14px', width: '100%', maxWidth: '640px', maxHeight: '80vh', overflowY: 'auto', padding: '24px 28px' }
                     },
                         React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' } },
                             React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '1.4rem', color: 'var(--gold)', letterSpacing: '0.06em' } }, 'DYNASTY HQ GUIDE'),
@@ -890,6 +985,7 @@
                     // Clear assessTeamFromGlobal cache so health scores recompute with fresh data.
                     if (window.assessTeamFromGlobal?._cache) window.assessTeamFromGlobal._cache = {};
                     if (window.assessAllTeamsFromGlobal?._cache) window.assessAllTeamsFromGlobal._cache = {};
+                    _dhqStarterSet = null; // rebuild DHQ starter set with refreshed values
                     if (window.S) {
                         window.S._timeContextTs = Date.now();
                     }
@@ -951,7 +1047,10 @@
         const [showColPicker, setShowColPicker] = useState(false);
         const [colPreset, setColPreset] = useState('default');
         const [expandedPid, setExpandedPid] = useState(null);
+        const [showAvatarPicker, setShowAvatarPicker] = useState(false);
         const [avatarKey, setAvatarKey] = useState(0); // force re-render when avatar changes
+        const [welcomeMode, setWelcomeMode] = useState(false); // centered modal for first-time welcome
+        const [showCornerToast, setShowCornerToast] = useState(false); // "I'll be down here" toast
         const [transactions, setTransactions] = useState([]);
         const [rankedTeams, setRankedTeams] = useState([]);
         const [dhqStatus, setDhqStatus] = useState({ loading: false, step: '', progress: 0 });
@@ -992,44 +1091,28 @@
             'league-standings':   { label: 'League Standings',   icon: '', category: 'League', sizes: ['md', 'lg'], tip: 'Current league standings with W-L records and DHQ totals' },
         };
         // Curiosity-first default dashboard (new leagues only — existing users keep
-        // their saved layout). One large "wow" anchor + two tension numbers + a
-        // visual + a live feed, spanning AI / roster / league / market so the board
-        // telegraphs the system's breadth and invites a click on first load:
-        //   1. Intel Brief (large)   — Alex's narrative + action CTAs
-        //   2. Health Score (small)  — a lone 0–100 that begs "why?"
-        //   3. Power Rankings (small)— "where do I stand?" competitive tension
-        //   4. Elite Players (medium)— your cornerstones (visual)
-        //   5. Market Radar (medium) — a moving feed of trade/waiver opportunities
+        // their saved layout). The owner's own board (Jul 21 2026 screenshots)
+        // is the featured first-load view — command brief + roster vitals down
+        // the main column, live league feeds down the skinny side column:
+        //   1. Intel Brief (tall)        — Alex's living brief + kickoff countdown
+        //   2. Transaction Ticker (slim) — live adds/drops/trades side feed
+        //   3. Power Rankings (narrow)   — full 16-team board, side column
+        //   4. Roster Pulse (tall)       — health, elites, window, action plan
+        //   5. Lineup Check (lg)         — points left on the bench this week
+        //   6. League Calendar (lg)      — waivers → draft → playoffs agenda
+        //   7. League Standings (narrow) — every team's record, side column
+        //   8. Market Radar (sm)         — trade-target count card
+        //   9. Cut Candidates (sm)       — drop-flag count card
         const DEFAULT_WIDGETS = [
             { id: 'dw0', key: 'intel-brief',    size: 'tall' },
-            { id: 'dw1', key: 'roster-pulse',   size: 'sm', primaryMetric: 'health-score' },
-            { id: 'dw2', key: 'power-rankings', size: 'sm' },
-            { id: 'dw3', key: 'roster-pulse',   size: 'md', primaryMetric: 'elite-count' },
-            { id: 'dw4', key: 'market-radar',   size: 'md' },
-        ];
-        // Redraft + Chopped Home (owner ask): a fixed, curated layout — no
-        // drag/resize/remove/Add Widget (dashboard.js gates all of that on
-        // league type). Same 5 as DEFAULT_WIDGETS plus Lineup Check ("points
-        // left on your bench") and FAAB Command (league-aware bid plan for
-        // the top add on the wire) — both existed already but weren't
-        // defaulted anywhere. Power Rankings opens to the Contender view for
-        // redraft via power-rankings.js's own format check. Chopped reuses
-        // this exact same list — no chopped-specific widget — its survival
-        // read already renders separately above the grid (chopBlockEl /
-        // WrChopBlock in dashboard.js, gated on showElimination, independent
-        // of selectedWidgets), so this list doesn't need to duplicate it.
-        const REDRAFT_FIXED_WIDGETS = [
-            { id: 'rfw0', key: 'intel-brief',    size: 'tall' },
-            { id: 'rfw1', key: 'roster-pulse',   size: 'sm', primaryMetric: 'health-score' },
-            { id: 'rfw2', key: 'power-rankings', size: 'sm' },
-            { id: 'rfw3', key: 'roster-pulse',   size: 'md', primaryMetric: 'elite-count' },
-            { id: 'rfw4', key: 'market-radar',   size: 'md' },
-            { id: 'rfw5', key: 'lineup-check',   size: 'md' },
-            { id: 'rfw6', key: 'faab-command',   size: 'md' },
-            // Appended, not swapped in — redraft/chopped just lost their in-draft-room
-            // Analyst Mock card (War Room tab is hidden for these formats now), so this
-            // is their only remaining access point to it.
-            { id: 'rfw7', key: 'analyst-mock',   size: 'sm' },
+            { id: 'dw1', key: 'transaction-ticker', size: 'slim' },
+            { id: 'dw2', key: 'power-rankings', size: 'narrow' },
+            { id: 'dw3', key: 'roster-pulse',   size: 'tall', primaryMetric: 'health-score' },
+            { id: 'dw4', key: 'lineup-check',   size: 'lg' },
+            { id: 'dw5', key: 'league-calendar', size: 'lg' },
+            { id: 'dw6', key: 'league-standings', size: 'narrow' },
+            { id: 'dw7', key: 'market-radar',   size: 'sm' },
+            { id: 'dw8', key: 'cut-candidates', size: 'sm' },
         ];
         // Migrate legacy formats to current widget object format
         function migrateKpisToWidgets(stored) {
@@ -1092,34 +1175,6 @@
         useEffect(() => {
             LeagueStorage.set(LEAGUE_WR_KEYS.KPI_SELECTION(currentLeague?.id || ''), selectedWidgets);
         }, [selectedWidgets]);
-        // Redraft + Chopped Home is fixed (owner ask) — force the curated
-        // layout the moment the league's format resolves to either, overwriting
-        // any saved custom layout (every affected user resets to the same fixed
-        // set; dashboard.js hides the customize UI so it can't drift again).
-        // leagueSkin isn't synchronously known on first mount, so this can't
-        // live in the useState initializer above — it corrects itself once
-        // leagueSkin.type resolves.
-        useEffect(() => {
-            if (leagueSkin?.type !== 'redraft' && leagueSkin?.type !== 'chopped') return;
-            setSelectedWidgets(prev =>
-                (prev.length === REDRAFT_FIXED_WIDGETS.length && prev.every((w, i) => w.key === REDRAFT_FIXED_WIDGETS[i].key))
-                    ? prev
-                    : REDRAFT_FIXED_WIDGETS
-            );
-        }, [leagueSkin?.type]);
-
-        // Home + League Central are ONE surface for these formats (owner ruling
-        // 2026-08-23) — same two types that get the fixed Home layout above, so
-        // the two rules can never disagree about which leagues are "seasonal".
-        const mergedHome = leagueSkin?.type === 'redraft' || leagueSkin?.type === 'chopped';
-        // The Home tab no longer exists for them, so anything still pointing at
-        // it (saved tab, deep link, a setActiveTab('dashboard') elsewhere) has
-        // to land on the merged surface instead of rendering a tab with no way
-        // back. Same late-resolve caveat as the fixed-widgets effect: leagueSkin
-        // is not known on first mount, so this corrects itself once it is.
-        useEffect(() => {
-            if (mergedHome && activeTab === 'dashboard') setActiveTab('central');
-        }, [mergedHome, activeTab]);
 
         useEffect(() => {
             LeagueStorage.set(LEAGUE_WR_KEYS.ROSTER_COLS, visibleCols);
@@ -1127,8 +1182,7 @@
 
         function computeKpiValue(kpiKey) {
             const LI = window.App?.LI || {};
-            // Format-aware: ROS values in redraft, dynasty elsewhere.
-            const scores = (window.App?.PlayerValue?.valueMap ? window.App.PlayerValue.valueMap() : null) || LI.playerScores || {};
+            const scores = LI.playerScores || {};
             const myPlayers = myRoster?.players || [];
             const profile = LI.ownerProfiles?.[myRoster?.roster_id];
             switch(kpiKey) {
@@ -1430,11 +1484,40 @@
                 default: return { value: '\u2014', sub: '', color: 'var(--silver)' };
             }
         }
-        // Phone-tier flag — used app-wide beyond the (now-retired) Alex chat
-        // sheet, e.g. the compact one-row phone header below.
+        // Ask Alex chat retirement (core.js WR_ALEX_CHAT): the derived value
+        // pins closed and the setter no-ops, so every legacy opener — FAB,
+        // dock item, wr:ask-alex seam, Cmd+K, welcome — is inert at once.
+        const [reconPanelOpenRaw, setReconPanelOpenRaw] = useState(false);
+        const alexChatRetired = window.WR_ALEX_CHAT === false;
+        const reconPanelOpen = alexChatRetired ? false : reconPanelOpenRaw;
+        const setReconPanelOpen = alexChatRetired ? (() => {}) : setReconPanelOpenRaw;
+        const [reconExpanded, setReconExpanded] = useState(false);
+        // PhoneDock "Ask Alex" bar: after the sheet opens, best-effort focus
+        // of the chat composer input (ref attached below). iOS may keep the
+        // keyboard down — programmatic focus outside the original tap
+        // gesture doesn't reliably raise it — so opening the sheet alone is
+        // the guaranteed behavior; the focus is a progressive enhancement.
+        const reconComposerRef = useRef(null);
+        const reconComposerFocusPending = useRef(false);
+        useEffect(() => {
+            if (reconPanelOpen && reconComposerFocusPending.current) {
+                reconComposerFocusPending.current = false;
+                try { reconComposerRef.current && reconComposerRef.current.focus(); } catch (_) { /* no-op */ }
+            }
+        }, [reconPanelOpen]);
+        // ── Phone tier (≤767): the Alex chat renders as a full-width bottom
+        // sheet in all three modes (welcome / docked / expanded). Desktop and
+        // tablet keep the exact pre-existing floating-panel styles.
         // WR.useViewport = js/shared/viewport.js (loaded before this file).
         const alexVp = window.WR.useViewport();
         const alexPhone = alexVp.isPhone;
+        // Keyboard lift: px gap reported by visualViewport while the iOS
+        // keyboard is up (0 when closed / off-phone). The sheet's bottom is
+        // offset by this so the composer stays visible above the keyboard.
+        const alexKb = (alexPhone && alexVp.kbOpen) ? alexVp.kbHeight : 0;
+        // Shared height cap for the phone sheet: dynamic viewport minus
+        // keyboard, notch (--sat) and an 8px top gap.
+        const alexSheetCap = 'calc(100dvh - ' + alexKb + 'px - var(--sat, 0px) - 8px)';
         const [showNotifications, setShowNotifications] = useState(false);
         // showAlerts removed — alerts now live on Brief tab
         const [briefDraftInfo, setBriefDraftInfo] = useState(null);
@@ -1560,14 +1643,9 @@
                 });
                 const adds = Object.keys(t.adds || {});
                 adds.forEach(pid => {
-                    // Format-aware value + label: '(4,100 ROS) was picked up'
-                    // in redraft, DHQ elsewhere — same 3000+ notability bar
-                    // (both scales anchor their top asset to the same ceiling).
-                    const pv = window.App?.PlayerValue;
-                    const val = (pv?.isRedraftActive?.() ? pv.getValue(pid) : window.App?.LI?.playerScores?.[pid]) || 0;
-                    const lbl = window.App?.LeagueSkin?.getCurrent?.()?.vocabulary?.valueShortLabel || 'DHQ';
-                    if (val > 3000 && !myPids.has(pid)) {
-                        notes.push({ type: 'info', text: (playersData[pid]?.full_name || pid) + ' (' + val.toLocaleString() + ' ' + lbl + ') was picked up', time: t.created });
+                    const dhq = window.App?.LI?.playerScores?.[pid] || 0;
+                    if (dhq > 3000 && !myPids.has(pid)) {
+                        notes.push({ type: 'info', text: (playersData[pid]?.full_name || pid) + ' (' + dhq.toLocaleString() + ' DHQ) was picked up', time: t.created });
                     }
                 });
             });
@@ -1582,6 +1660,15 @@
 
             return notes.sort((a, b) => (b.time || 0) - (a.time || 0)).slice(0, 10);
         }, [playersData, myRoster]);
+        // GM Onboarding wizard state
+        const gmIsUnconfigured = gmStrategy.mode === 'balanced' && !(gmStrategy.untouchable?.length) && !gmStrategy.notes && !(gmStrategy.targets?.length);
+        const [gmOnboardStep, setGmOnboardStep] = useState(0); // 0=not started, 1-4=steps, 5=done
+        const [reconMessages, setReconMessages] = useState(() => {
+            const saved = LeagueStorage.get(LEAGUE_WR_KEYS.CHAT(currentLeague?.league_id));
+            return (Array.isArray(saved) && saved.length > 1) ? saved
+                : [{ role: 'assistant', content: 'Ask me anything about your league, team, or players.' }];
+        });
+        const [reconInput, setReconInput] = useState('');
 
         useEffect(() => {
             if (activeTab === 'analytics' && !analyticsData && window.App?.LI_LOADED) {
@@ -1590,6 +1677,17 @@
             }
         }, [activeTab, analyticsData, timeRecomputeTs]);
 
+        // Keyboard shortcut: Cmd/Ctrl+K to toggle ReconAI panel
+        useEffect(() => {
+          const handler = e => {
+            if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+              e.preventDefault();
+              setReconPanelOpen(prev => !prev);
+            }
+          };
+          window.addEventListener('keydown', handler);
+          return () => window.removeEventListener('keydown', handler);
+        }, []);
 
         useEffect(() => {
           window.__WR_SCROLL_FALLBACK_ACTIVE = true;
@@ -1597,21 +1695,81 @@
           return () => window.removeEventListener('wheel', rerouteWheelToPage, { capture: true });
         }, []);
 
-        // Provider weekly projections landed (WeeklyProj lazy fetch) → re-tick
-        // so FA proj cells / Game Day / lineup widgets recompute with the
-        // analyst lines instead of the internal fallback.
+        // First-time welcome — auto-open chat with Alex's intro
         useEffect(() => {
-          const h = () => setTimeRecomputeTs(Date.now());
-          window.addEventListener('wr:projections-loaded', h);
-          // FantasyCalc REDRAFT calibration landed → ROS cache was invalidated;
-          // same recompute tick rebuilds every value surface calibrated.
-          window.addEventListener('wr:ros-market-loaded', h);
-          return () => {
-            window.removeEventListener('wr:projections-loaded', h);
-            window.removeEventListener('wr:ros-market-loaded', h);
-          };
-        }, []);
+          if (alexChatRetired) return; // chat retired — no welcome takeover
+          if (!myRoster?.players?.length || !currentLeague?.league_id) return;
+          const welcomeKey = LEAGUE_WR_KEYS.WELCOMED(currentLeague.league_id);
+          if (LeagueStorage.get(welcomeKey)) return;
+          LeagueStorage.set(welcomeKey, '1');
+          // Small delay so the app finishes rendering first
+          const t = setTimeout(async () => {
+            if (window.App?.AssistantTutorial?.isActive?.()) return;
+            if (window.WR_TUTORIAL_CONFIG && window.App?.AssistantTutorial?.shouldShow) {
+              try {
+                if (await window.App.AssistantTutorial.shouldShow(window.WR_TUTORIAL_CONFIG)) return;
+              } catch (e) { window.wrLog?.('welcome.tutorialCheck', e); }
+            }
+            setWelcomeMode(true);
+            setReconPanelOpen(true);
+            setReconMessages([{
+              role: 'assistant',
+              // Phase 10/1: strategy is now driven by GM Mode (header badge + GM's Office),
+              // not a per-chat prompt. Welcome copy references the persistent badge instead.
+              content: 'Hey! I\'m **Alex Ingram** — your AI General Manager. I\'ll be sitting in the war room with you, analyzing your roster, scouting trade targets, and helping you build a dynasty.\n\nA few things to get us started:\n\n' +
+                '\u2022 **Ask me anything** — trades, waivers, draft strategy, player analysis\n' +
+                '\u2022 **Your GM Mode** (top of every page) already tells me whether we\'re rebuilding, competing, or winning now — change it anytime in GM\'s Office\n\n' +
+                'Let\'s get to work. What\'s on your mind? \u2014 Alex',
+              onboardChoices: [
+                { label: 'What should I do?', value: 'advice' },
+                { label: 'Pick Alex\'s look', value: 'avatar' }
+              ]
+            }]);
+            setGmOnboardStep(0); // reset so strategy onboarding can trigger next
+          }, 1500);
+          return () => clearTimeout(t);
+        }, [myRoster?.players?.length, currentLeague?.league_id]);
 
+        // Handle welcome choices — exit welcome mode, show corner toast
+        function handleWelcomeChoice(value) {
+          setWelcomeMode(false);
+          if (value === 'strategy') {
+            setReconMessages(prev => [...prev.map(m => ({ ...m, onboardChoices: undefined })),
+              { role: 'user', content: 'Set my strategy' }
+            ]);
+            startGmOnboarding();
+          } else if (value === 'advice') {
+            setReconMessages(prev => prev.map(m => ({ ...m, onboardChoices: undefined })));
+            sendReconMessage('What are the top 3 moves I should make right now?');
+          } else if (value === 'avatar') {
+            setReconMessages(prev => prev.map(m => ({ ...m, onboardChoices: undefined })));
+            setShowAvatarPicker(true);
+          }
+          // Show "I'll be down here" toast after transition
+          if (value !== 'strategy' && value !== 'advice') {
+            setReconPanelOpen(false);
+            setTimeout(() => {
+              setShowCornerToast(true);
+              setTimeout(() => setShowCornerToast(false), 4000);
+            }, 300);
+          }
+        }
+
+        // Auto-trigger GM onboarding when panel opens with unconfigured strategy
+        // Phase 10/1: auto-triggered in-chat GM strategy onboarding removed.
+        // Strategy is now configured via the persistent GM Mode badge + GM's Office.
+        // Leaving startGmOnboarding() callable via the dead 'strategy' welcome-choice branch
+        // as a safety net in case any legacy link still passes value='strategy'.
+
+        // Persist chat messages to localStorage (cap at 20 messages)
+        useEffect(() => {
+          if (!currentLeague?.league_id || reconMessages.length <= 1) return;
+          // Don't persist if last message is loading indicator
+          const last = reconMessages[reconMessages.length - 1];
+          if (last?.content === '...') return;
+          const toSave = reconMessages.slice(-20).map(m => ({ role: m.role, content: m.content }));
+          LeagueStorage.set(LEAGUE_WR_KEYS.CHAT(currentLeague.league_id), toSave);
+        }, [reconMessages, currentLeague?.league_id]);
 
         // Compute power rankings when DHQ engine finishes or standings change
         useEffect(() => {
@@ -1623,21 +1781,33 @@
                 allAssess.forEach(a => { if (a?.rosterId) assessMap[a.rosterId] = a; });
                 const ranked = standings.map(t => {
                     const r = currentLeague.rosters.find(r => r.owner_id === t.userId);
-                    // Format-aware roster sum: ROS in redraft, dynasty elsewhere.
-                    const vmap = (window.App?.PlayerValue?.valueMap ? window.App.PlayerValue.valueMap() : null) || window.App?.LI?.playerScores || {};
-                    const totalDHQ = r?.players?.reduce((s, pid) => s + (vmap[pid] || 0), 0) || 0;
                     let healthScore = 0;
+                    let powerScore = 0;
                     let tierColor = 'var(--silver)';
                     const assessment = r ? assessMap[r.roster_id] : null;
+                    // Prefer the engine's total DHQ so rank order matches powerRank exactly.
+                    const totalDHQ = (assessment && assessment.totalDHQ != null)
+                        ? assessment.totalDHQ
+                        : (r?.players?.reduce((s, pid) => s + (window.App?.LI?.playerScores?.[pid] || 0), 0) || 0);
+                    let powerRank = 0;
                     if (assessment) {
                         healthScore = assessment.healthScore || 0;
+                        powerScore = assessment.powerScore || 0;
+                        powerRank = assessment.powerRank || 0;
                         const tier = (assessment.tier || '').toUpperCase();
                         tierColor = tier === 'ELITE' ? 'var(--k-d4af37, #d4af37)' : tier === 'CONTENDER' ? 'var(--k-2ecc71, #2ecc71)' : tier === 'CROSSROADS' ? 'var(--k-f0a500, #f0a500)' : tier === 'REBUILDING' ? 'var(--k-e74c3c, #e74c3c)' : 'var(--silver)';
                     }
-                    return { ...t, totalDHQ, healthScore, tierColor };
+                    return { ...t, rosterId: r?.roster_id, totalDHQ, healthScore, powerScore, powerRank, tierColor };
                 }).sort((a,b) => {
-                    if (b.healthScore !== a.healthScore) return b.healthScore - a.healthScore;
-                    return b.totalDHQ - a.totalDHQ;
+                    // Order by the engine's powerRank DIRECTLY (not a re-sort of
+                    // powerScore) so the brief's "you're Nth" is byte-identical to
+                    // the widget, elites badge, and Alex — a private re-sort can
+                    // drift by one when a team's data hasn't landed yet. Teams
+                    // with no rank yet sort last; powerScore/id only break ties.
+                    const ar = a.powerRank || 9999, br = b.powerRank || 9999;
+                    if (ar !== br) return ar - br;
+                    if (b.powerScore !== a.powerScore) return b.powerScore - a.powerScore;
+                    return String(a.rosterId ?? '').localeCompare(String(b.rosterId ?? ''));
                 });
                 setRankedTeams(ranked);
             }
@@ -1763,7 +1933,13 @@
                     fetchAllPlayers().catch(() => ({})),
                     fetchJSON(`${SLEEPER_BASE_URL}/state/nfl`).catch(() => ({})),
                 ]);
-                const currentWeek = nflState?.display_week || nflState?.week || (currentLeague.settings?.leg || 1);
+                // Fantasy week, not the raw NFL clock: preseason state counts
+                // EXHIBITION weeks (season_type 'pre', week 2 in mid-August) and
+                // painted "Week 2" across Game Day while every league was
+                // preparing for Week 1 (owner report 2026-08-16).
+                const currentWeek = window.App?.WeeklyProj?.fantasyWeek
+                    ? window.App.WeeklyProj.fantasyWeek(nflState, currentLeague.settings)
+                    : (nflState?.display_week || nflState?.week || (currentLeague.settings?.leg || 1));
 
                 // Hydrate the league through the provider — single call
                 // that replaces the old per-platform fetch pipelines.
@@ -1794,7 +1970,9 @@
                             fetchJSON(`${SLEEPER_BASE_URL}/state/nfl`).catch(() => ({})),  // always fresh — week-rollover source
                         ]);
                         const bgNfl = (bgStateRaw && Object.keys(bgStateRaw).length) ? bgStateRaw : (window.S?.nflState || nflState);
-                        const bgWeek = bgNfl?.display_week || bgNfl?.week || window.S?.currentWeek || currentWeek;
+                        const bgWeek = (bgNfl && window.App?.WeeklyProj?.fantasyWeek)
+                            ? window.App.WeeklyProj.fantasyWeek(bgNfl, currentLeague.settings)
+                            : (bgNfl?.display_week || bgNfl?.week || window.S?.currentWeek || currentWeek);
                         const bgHydrated = await provider.hydrate(currentLeague, {
                             sleeperPlayers: bgPlayers,
                             currentWeek: bgWeek,
@@ -1835,6 +2013,8 @@
                     try {
                         await window.App.loadLeagueIntel();
                         console.log('[War Room] DHQ engine loaded:', Object.keys(window.App.LI?.playerScores || {}).length, 'players valued');
+                        _dhqStarterSet = null; // rebuild with freshly-loaded DHQ values
+                        installStarterReqCorrection(); // QB:2 requirement + DHQ-based starter counts
                         setDhqStatus({ loading: false, step: 'Complete!', progress: 100 });
                         setStatsData(prev => ({ ...prev })); // force re-render
                         setTimeRecomputeTs(Date.now()); // refresh KPIs and rankings
@@ -1843,6 +2023,11 @@
                         setDhqStatus({ loading: false, step: 'Error: ' + e.message, progress: 0 });
                     }
                 }
+
+                // Ensure the assessor correction is installed even when intel was
+                // already loaded on a prior mount/league switch (block above is
+                // skipped when LI_LOADED is already true). Idempotent.
+                installStarterReqCorrection();
 
                 // Load rookie prospect data from enrichment CSVs (fire-and-forget)
                 if (typeof window.loadRookieProspects === 'function') {
@@ -1860,9 +2045,20 @@
                     }).catch(err => window.wrLog('tags.load', err));
                 }
 
-                // First-time intro is now the Alex chat greeting (seedWelcomeChat /
-                // the wr:replay-welcome path), not the old 7-step click-through modal
-                // — owner ask. startWRTutorial() is intentionally no longer launched.
+                // Show tutorial for first-time users only while they are still on Home.
+                if (typeof window.startWRTutorial === 'function') {
+                    setTimeout(async () => {
+                        const hashTab = new URLSearchParams((window.location.hash || '').replace(/^#/, '')).get('tab') || 'dashboard';
+                        if (hashTab !== 'dashboard') return;
+                        if (window.App?.AssistantTutorial?.isActive?.()) return;
+                        if (window.WR_TUTORIAL_CONFIG && typeof window.shouldShowWRTutorial === 'function') {
+                            try {
+                                if (!await window.shouldShowWRTutorial()) return;
+                            } catch (e) { window.wrLog?.('tutorial.shouldShow', e); }
+                        }
+                        window.startWRTutorial();
+                    }, 1000);
+                }
 
                 // Load league docs context for commissioner mode (fire-and-forget)
                 if (window.OD?.getLeagueDocsContext) {
@@ -1938,13 +2134,6 @@
                 const weekRolled = background && window.S.currentWeek != null && currentWeek !== window.S.currentWeek;
                 window.S.players = players;
                 window.S.playerStats = {};
-                // Hydrated stat/projection maps for surfaces that can't thread
-                // props (draft stack, Trade Center early mount): PlayerValue.
-                // ensureRos falls back to these so a redraft board never
-                // silently reverts to dynasty pricing for want of priorData.
-                window.S.statsData = stats;
-                window.S.priorData = prevStats;
-                window.S.projectionsData = projections;
                 window.S.rosters = rosters;
                 window.S.leagueUsers = leagueUsers;
                 window.S.leagues = [{ league_id: currentLeague.id, name: currentLeague.name, scoring_settings: currentLeague.scoring_settings, roster_positions: currentLeague.roster_positions, settings: currentLeague.settings }];
@@ -1962,7 +2151,20 @@
                     ? window.App.normalizeTradedPicks(rosters, tradedPicks)
                     : tradedPicks;
                 window.S.matchups = matchupsData;
-                window.S.drafts = hydrated.drafts || [];
+                // Drafts: the Sleeper provider's hydrate bundle never carries
+                // drafts, so unconditionally writing `hydrated.drafts || []`
+                // wiped the pocket the header draft fetch fills — for EVERY
+                // league, on open and on each ~5-min background sync — and the
+                // calendar raced back to 'date TBD' (owner report 2026-08-27).
+                // Only overwrite with real data; on a league SWITCH, clear so
+                // one league's dates can never bleed into another's calendar.
+                if (hydrated.drafts && hydrated.drafts.length) {
+                    window.S.drafts = hydrated.drafts;
+                    window.S.draftsLeagueId = String(currentLeague.id);
+                } else if (String(window.S.draftsLeagueId || '') !== String(currentLeague.id)) {
+                    window.S.drafts = [];
+                    window.S.draftsLeagueId = null;
+                }
                 // MFL: complete future-pick ownership (exact years/rounds) so the
                 // Trade Center shows real future picks, not invented N-round sets.
                 window.S._mflFuturePicks = hydrated._extras?.mflFuturePicks || null;
@@ -2042,17 +2244,21 @@
                     const isFAAB = (league?.settings?.waiver_type === 2) || (league?.settings?.waiver_budget > 0);
                     const budget = isFAAB ? (league?.settings?.waiver_budget || 0) : 0;
                     const spent = my?.settings?.waiver_budget_used || 0;
-                    // GM Strategy's minimum-bid override wins over the imported
-                    // platform setting (some leagues/platforms don't expose it
-                    // reliably) — this is what Alex/AI FAAB advice reads.
-                    const gmFaabEff = window.WR?.GmMode?.effects?.(league?.league_id || league?.id) || {};
-                    const minBid = isFAAB ? (gmFaabEff.faabMinBid || (league?.settings?.waiver_budget_min ?? 0)) : 0;
+                    const minBid = isFAAB ? (league?.settings?.waiver_budget_min ?? 0) : 0;
                     return { budget, spent, remaining: Math.max(0, budget - spent), isFAAB, minBid };
                 };
                 window.loadMentality = () => {
-                    const gm = window._wrGmStrategy || {};
-                    const modeMap = { contend: 'winnow', rebuild: 'rebuild', balanced: 'balanced' };
-                    return { mentality: modeMap[gm.mode] || 'balanced', neverDrop: (gm.untouchable || []).map(pid => _p[pid]?.full_name || pid).join(', '), notes: gm.notes || '' };
+                    // Resolve through GmMode when present (store-precedence aware)
+                    // and cover the CANONICAL mode ids — the old map only knew
+                    // 'contend', so win_now/compete fell through to 'balanced'
+                    // and the AI was told the owner is balanced in the same
+                    // prompt whose GM block said WIN NOW (audit 2026-09-02).
+                    const eff = (window.WR?.GmMode?.effects?.(league?.league_id || league?.id)) || null;
+                    const gm = (eff && eff.hasStrategy && eff.strategy) || window._wrGmStrategy || {};
+                    const mode = (eff && eff.mode) || gm.mode;
+                    const modeMap = { contend: 'winnow', compete: 'winnow', win_now: 'winnow', winnow: 'winnow', rebuild: 'rebuild', balanced: 'balanced' };
+                    const untouchableIds = (eff && eff.untouchable) ? [...eff.untouchable] : (gm.untouchable || []);
+                    return { mentality: modeMap[mode] || 'balanced', neverDrop: untouchableIds.map(pid => _p[pid]?.full_name || pid).join(', '), notes: gm.notes || '' };
                 };
                 window.App.myR = window.myR;
                 window.App.pName = window.pName;
@@ -2137,7 +2343,12 @@
             Object.values(hydrated.transactions || {}).forEach(wk => {
                 allTxns = allTxns.concat(wk || []);
             });
-            allTxns.sort((a, b) => (b.created || 0) - (a.created || 0));
+            // Order by EFFECTIVE time (when it took effect), not `created` (when a
+            // waiver claim was first placed). A waiver claimed days ago but
+            // processed last night must surface as last night's news, not sort
+            // back to its claim date and get buried.
+            const txnEffectiveTs = t => (t.status_updated || t.created || 0);
+            allTxns.sort((a, b) => txnEffectiveTs(b) - txnEffectiveTs(a));
 
             // Merge DHQ historical trades (pre-analyzed with value data)
             // Deduplicate by timestamp so the provider's recent txns
@@ -2147,7 +2358,7 @@
                 const histTrades = window.App.LI.tradeHistory
                     .filter(t => !existingTradeTs.has(t.ts || 0))
                     .map(t => ({ ...t, type: 'trade', status: 'complete', created: t.ts || 0, _fromDHQ: true }));
-                allTxns = [...allTxns, ...histTrades].sort((a, b) => (b.created || 0) - (a.created || 0));
+                allTxns = [...allTxns, ...histTrades].sort((a, b) => txnEffectiveTs(b) - txnEffectiveTs(a));
             }
 
             // Populate window.S.transactions keyed by week for
@@ -2355,13 +2566,352 @@
             return user?.display_name || user?.username || 'Unknown';
         }
 
+        // GM Onboarding wizard — conversational strategy setup
+        function startGmOnboarding() {
+          if (gmOnboardStep > 0) return;
+          setGmOnboardStep(1);
+          setReconMessages([{
+            role: 'assistant',
+            content: 'Welcome to Dynasty HQ. I\'m Alex — your AI General Manager. Before we get started, let me learn how you want to run this team.\n\n**First things first — are we competing for a title this year, or building for the future?**',
+            onboardChoices: [
+              { label: 'Win Now', value: 'contend' },
+              { label: 'Balanced', value: 'balanced' },
+              { label: 'Rebuilding', value: 'rebuild' }
+            ]
+          }]);
+        }
+
+        function handleOnboardChoice(value) {
+          const step = gmOnboardStep;
+          if (step === 1) {
+            const modeLabels = { contend: 'Win Now', balanced: 'Balanced', rebuild: 'Rebuilding' };
+            setGmStrategy(prev => ({ ...prev, mode: value }));
+            setReconMessages(prev => [...prev.map(m => ({ ...m, onboardChoices: undefined })),
+              { role: 'user', content: modeLabels[value] },
+              { role: 'assistant', content: value === 'contend'
+                ? 'Aggressive. I like it. We\'re going all-in.\n\n**How do you want to play it — conservative and calculated, or willing to swing big?**'
+                : value === 'rebuild'
+                ? 'Smart. Let\'s stack assets and build a dynasty.\n\n**How aggressive should we be with trades — swing for the fences, or play it safe?**'
+                : 'Flexible. We\'ll compete while keeping an eye on the future.\n\n**How aggressive should we be with trades?**',
+                onboardChoices: [
+                  { label: 'Conservative', value: 'conservative' },
+                  { label: 'Moderate', value: 'moderate' },
+                  { label: 'Aggressive', value: 'aggressive' }
+                ]
+              }
+            ]);
+            setGmOnboardStep(2);
+          } else if (step === 2) {
+            setGmStrategy(prev => ({ ...prev, riskTolerance: value }));
+            const topPlayers = (myRoster?.players || [])
+              .sort((a, b) => (window.App?.LI?.playerScores?.[b] || 0) - (window.App?.LI?.playerScores?.[a] || 0))
+              .slice(0, 6);
+            setReconMessages(prev => [...prev.map(m => ({ ...m, onboardChoices: undefined })),
+              { role: 'user', content: value.charAt(0).toUpperCase() + value.slice(1) },
+              { role: 'assistant', content: 'Got it.\n\n**Anyone on your roster you\'d never trade? Your untouchables.** Tap to select — or skip if everyone has a price.',
+                onboardChoices: topPlayers.map(pid => ({
+                  label: (playersData[pid]?.full_name || pid),
+                  value: pid,
+                  multi: true
+                })),
+                onboardMulti: true,
+                onboardSkip: true
+              }
+            ]);
+            setGmOnboardStep(3);
+          } else if (step === 3) {
+            // value is array of pids or 'skip'
+            if (value !== 'skip' && Array.isArray(value) && value.length) {
+              setGmStrategy(prev => ({ ...prev, untouchable: value }));
+              const names = value.map(pid => playersData[pid]?.full_name || pid).join(', ');
+              setReconMessages(prev => [...prev.map(m => ({ ...m, onboardChoices: undefined, onboardMulti: undefined, onboardSkip: undefined })),
+                { role: 'user', content: 'Untouchable: ' + names }
+              ]);
+            } else {
+              setReconMessages(prev => [...prev.map(m => ({ ...m, onboardChoices: undefined, onboardMulti: undefined, onboardSkip: undefined })),
+                { role: 'user', content: 'Everyone has a price' }
+              ]);
+            }
+            setReconMessages(prev => [...prev,
+              { role: 'assistant', content: '**Last question — any positions you\'re actively targeting in trades?** Tap all that apply, or skip.',
+                onboardChoices: [
+                  ['QB','QB'], ['RB','RB'], ['WR','WR'], ['TE','TE'], ['K','K'],
+                  ['D/ST','DEF'], ['DL','DL'], ['LB','LB'], ['DB','DB'], ['Picks','Picks']
+                ].map(([label, value]) => ({ label, value, multi: true })),
+                onboardMulti: true,
+                onboardSkip: true
+              }
+            ]);
+            setGmOnboardStep(4);
+          } else if (step === 4) {
+            if (value !== 'skip' && Array.isArray(value) && value.length) {
+              setGmStrategy(prev => ({ ...prev, targets: value }));
+              const labelTargets = value.map(v => window.App?.posLabel?.(v) || (v === 'DEF' ? 'D/ST' : v));
+              setReconMessages(prev => [...prev.map(m => ({ ...m, onboardChoices: undefined, onboardMulti: undefined, onboardSkip: undefined })),
+                { role: 'user', content: 'Targeting: ' + labelTargets.join(', ') }
+              ]);
+            } else {
+              setReconMessages(prev => [...prev.map(m => ({ ...m, onboardChoices: undefined, onboardMulti: undefined, onboardSkip: undefined })),
+                { role: 'user', content: 'No specific targets' }
+              ]);
+            }
+            setGmOnboardStep(5);
+            // Free: never auto-fire AI (BYOK routes dhqAI straight to the
+            // provider, bypassing the OD.callAI tripwire) — free gets the
+            // designed canned ack instead of the AI assessment.
+            if (typeof window.wrIsPro === 'function' && !window.wrIsPro()) {
+              setReconMessages(prev => [...prev, { role: 'assistant', content: 'Strategy locked in. Let\'s get to work — ask me anything. — Alex' }]);
+              return;
+            }
+            // Generate strategy assessment
+            setReconMessages(prev => [...prev, { role: 'assistant', content: '...' }]);
+            (async () => {
+              try {
+                // Prefer the structured team_diagnosis route: full league-format
+                // detection, team-mode rules, and quality gates (the generic
+                // strategy-analysis path is blind to all three).
+                const reply = await (async () => {
+                  if (window.OD?.callAI && window.WR?.AIContext) {
+                    try {
+                      const assessment = typeof window.assessTeamFromGlobal === 'function' ? window.assessTeamFromGlobal(myRoster?.roster_id) : null;
+                      const diagRoster = (myRoster?.players || []).map(pid => {
+                        const p = playersData[pid];
+                        if (!p) return null;
+                        return {
+                          name: p.full_name || `${p.first_name || ''} ${p.last_name || ''}`.trim(),
+                          pos: window.App?.normPos?.(p.position) || p.position,
+                          age: p.age || null,
+                          value: window.App?.LI?.playerScores?.[pid] || 0,
+                          isStarter: (myRoster?.starters || []).includes(pid),
+                        };
+                      }).filter(Boolean).sort((a, b) => b.value - a.value);
+                      const context = {
+                        ...window.WR.AIContext.buildStructuredBase(currentLeague, assessment, myRoster),
+                        myOwner: window.S?.user?.display_name || window.S?.user?.username || '',
+                        record: myRoster?.settings ? `${myRoster.settings.wins}-${myRoster.settings.losses}` : '',
+                        needs: (assessment?.needs || []).map(n => n.urgency === 'deficit' ? `${n.pos}*` : n.pos),
+                        strengths: assessment?.strengths || [],
+                        // gmStrategy rides in from buildStructuredBase (the canonical
+                        // WR.GmMode.promptBlock serialization) — no legacy override here.
+                        myRoster: diagRoster,
+                      };
+                      const result = await window.OD.callAI({ type: 'team_diagnosis', context });
+                      if (result?.analysis) return result.analysis;
+                    } catch (err) { window.wrLog?.('teamDiagnosis.structured', err); }
+                  }
+                  // Fallback: legacy generic path, enriched with the format preamble.
+                  if (typeof dhqAI === 'function') {
+                    const preamble = window.WR?.AIContext?.buildFormatPreamble?.(currentLeague) || '';
+                    const ctx = preamble + (typeof dhqContext === 'function' ? dhqContext(false) : '');
+                    return await dhqAI('strategy-analysis', 'Give me a 3-sentence personalized strategic assessment of my team based on my GM strategy settings. Be direct and specific.', ctx);
+                  }
+                  return 'Strategy saved. Ask me anything about your team.';
+                })();
+                setReconMessages(prev => {
+                  const updated = [...prev];
+                  updated[updated.length - 1] = { role: 'assistant', content: reply };
+                  return updated;
+                });
+              } catch (e) {
+                setReconMessages(prev => {
+                  const updated = [...prev];
+                  updated[updated.length - 1] = { role: 'assistant', content: 'Strategy locked in. Let\'s get to work — ask me anything. — Alex' };
+                  return updated;
+                });
+              }
+            })();
+          }
+        }
+
+        // Multi-select state for onboarding
+        const [onboardSelections, setOnboardSelections] = useState([]);
+
+        // ReconAI: send message
+	        async function sendReconMessage(text) {
+	          if (!text?.trim()) return;
+	          window.OD?.track?.('alex_prompt_sent', {
+	            platform: 'warroom',
+	            leagueId: currentLeague?.league_id || currentLeague?.id || null,
+	            module: activeTab,
+	            metadata: { chars: text.trim().length },
+	          });
+	          // Free tier (owner ruling 2026-07-05): ONE Ask Alex send per day on
+          // the existing AI_DAILY counter. canUseAI() can't enforce this — it
+          // trusts the server whenever hasServerAI() and only ever limited the
+          // paid 'scout' tier — and BYOK (S.apiKey) never touches the server,
+          // so the counter is checked here at the send seam.
+          let isFreeCountedSend = false;
+          if (typeof window.wrIsPro === 'function' && !window.wrIsPro()) {
+            const dayKey = window.App.WR_KEYS.AI_DAILY(new Date().toISOString().split('T')[0]);
+            if (parseInt(window.App.WrStorage.get(dayKey, '0')) >= 1) {
+              setReconInput('');
+              setReconMessages(prev => [...prev, { role: 'user', content: text.trim() }, { role: 'assistant', content: 'That\'s my one free scouting call for today — I\'m back tomorrow. Dynasty HQ Pro gets you unlimited Ask Alex, plus verdicts, optimizers and the full intel suite.' }]);
+              return;
+            }
+            isFreeCountedSend = true; // counted after the reply lands — a provider error must not burn the one daily send
+          } else {
+            // Paid/trial: untouched — legacy scout-tier limit + server-side rate limiting.
+            if (!canUseAI()) {
+              setReconMessages(prev => [...prev, { role: 'user', content: text.trim() }, { role: 'assistant', content: 'You\'ve used your free AI query for today. Upgrade to Dynasty HQ Pro ($9.99/mo or $99.99/yr) for 10–15 AI calls a day.' }]);
+              return;
+            }
+            // Only track local daily use if NOT using server AI (server handles its own rate limiting)
+            if (!(typeof hasServerAI === 'function' && hasServerAI())) trackAIUse();
+          }
+          setReconInput('');
+          const userMsg = { role: 'user', content: text.trim() };
+          setReconMessages(prev => [...prev, userMsg, { role: 'assistant', content: '...' }]);
+          try {
+            let context = '';
+            if (typeof dhqContext === 'function') context = dhqContext(true);
+            if (window._leagueDocsContext) {
+                context += '\n\n--- LEAGUE DOCUMENTS ---\n' + window._leagueDocsContext;
+            }
+            // GM Strategy directive — dhqContext() above already serializes the
+            // committed strategy into its canonical [GM_STRATEGY] block (the same
+            // WR.GmMode.promptBlock output), so never prepend a second copy here.
+            // Only when that block is absent (dhq-ai not loaded, or no strategy
+            // saved yet) fall back to the local prepend / mode-only preset.
+            try {
+                if (!context.includes('[GM_STRATEGY]')) {
+                    const gmBlock = window.WR?.GmMode?.promptBlock?.(currentLeague?.league_id || currentLeague?.id);
+                    if (gmBlock) {
+                        context = '--- GM STRATEGY DIRECTIVE ---\n' + gmBlock + '\n\n' + context;
+                    } else {
+                        const gm = window.WR?.GmMode?.describe?.(gmStrategy?.mode);
+                        if (gm && gm.prompt) {
+                            context = '--- GM MODE DIRECTIVE ---\n' + gm.prompt + '\n\n' + context;
+                        }
+                    }
+                }
+            } catch (e) { /* ignore */ }
+            // Format + quality preamble — the generic dhqAI path can't detect
+            // superflex/TEP/IDP or apply quality floors without this.
+            try {
+                const fmtPreamble = window.WR?.AIContext?.buildFormatPreamble?.(currentLeague);
+                if (fmtPreamble) context = fmtPreamble + '\n' + context;
+            } catch (e) { /* ignore */ }
+            const messages = [...reconMessages.slice(-4), userMsg].map((m, i, arr) => {
+              if (m.role === 'user' && i === arr.length - 1) {
+                return { role: 'user', content: context + '\n\n' + m.content };
+              }
+              if (m.role === 'assistant' && m.content.length > 400) {
+                return { role: 'assistant', content: m.content.substring(0, 400) + '...' };
+              }
+              return m;
+            });
+            // Route requests to optimal prompt type
+            const isScoutRequest = /^Scout\s/i.test(text.trim());
+            const isRookieScout = /SEARCH FOR CURRENT INFO.*scouting report|Full dynasty scouting report/i.test(text.trim());
+            const aiType = isRookieScout ? 'rookie-scout' : isScoutRequest ? 'trade-scout' : 'home-chat';
+            const reply = typeof dhqAI === 'function'
+              ? await dhqAI(aiType, null, (typeof dhqContext === 'function' ? dhqContext(true) : null), { messages })
+              : typeof callClaude === 'function'
+                ? await callClaude(messages)
+                : 'AI not available. Add an API key in Settings.';
+            const cleanReply = (typeof reply === 'string' ? reply : String(reply || '')).trim();
+            if (!cleanReply || cleanReply === 'No response.') {
+              // Empty answer: show a recoverable prompt and do NOT burn the
+              // free daily send — the user got nothing back.
+              setReconMessages(prev => {
+                const updated = [...prev];
+                updated[updated.length - 1] = { role: 'assistant', content: "I didn't catch that one — mind rephrasing it, or tap send again?" };
+                return updated;
+              });
+              return;
+            }
+            if (isFreeCountedSend && (typeof dhqAI === 'function' || typeof callClaude === 'function')) trackAIUse();
+            setReconMessages(prev => {
+              const updated = [...prev];
+              updated[updated.length - 1] = { role: 'assistant', content: cleanReply };
+              return updated;
+            });
+          } catch(e) {
+            const raw = String((e && e.message) || '');
+            console.warn('[Alex Ingram] AI error:', raw);
+            // Translate the failure into a plain, recoverable message instead
+            // of a raw "Error: ..." string or a dead spinner. The shared
+            // transport now aborts a stalled request after 45s, so a hang
+            // arrives here as a timeout the user can simply resend.
+            // Two different "no AI right now" cases must read differently:
+            //   • the per-minute burst valve (429 "Rate limit exceeded") clears
+            //     in seconds — tell the user to just try again;
+            //   • a real daily/monthly quota resets tomorrow.
+            // Check the burst valve FIRST (its message also contains "limit").
+            const isRateLimit = /rate limit exceeded|try again in \d+\s*s/i.test(raw);
+            const isDailyQuota = !isRateLimit && /limit reached|daily ai limit|monthly ai limit|budget limit|allowance|resets|upgrade your plan|use your own ai key/i.test(raw);
+            const friendly = /timed out|timeout|abort/i.test(raw)
+              ? "That one took too long to come back — tap send again and I'll pick it right up."
+              : /load failed|failed to fetch|network/i.test(raw)
+                ? "I couldn't reach the server just now — check your connection and try again."
+                : isRateLimit
+                  ? "Alex is catching up — give it a few seconds, then send it again."
+                  : isDailyQuota
+                    ? "You've reached your AI call limit for the day. It resets tomorrow."
+                    : "Something hiccupped on that one — give it another try.";
+            setReconMessages(prev => {
+              const updated = [...prev];
+              updated[updated.length - 1] = { role: 'assistant', content: friendly };
+              return updated;
+            });
+          }
+        }
+
+        // ReconAI: contextual chips
+        function getReconChips() {
+          const base = [
+            { label: 'What should I do?', prompt: 'What are the top 3 moves I should make right now?' },
+          ];
+          // Contextual starter prompt based on current tab
+          const starters = {
+            analytics: { label: 'What are my biggest weaknesses?', prompt: 'Analyze my team and tell me what my biggest weaknesses are — positional gaps, age concerns, and depth issues.' },
+            myteam: { label: 'Who should I trade?', prompt: 'Looking at my roster, which players should I be actively trying to trade and what kind of return should I target?' },
+            trades: { label: 'Best trade partner right now?', prompt: 'Which owner in my league is the best trade partner for me right now? Consider roster needs, tendencies, and mutual fit.' },
+            fa: { label: 'Best waiver pickup this week?', prompt: 'Who is the best waiver wire pickup I should target this week based on my roster needs and available players?' },
+            draft: { label: 'Best pick at my spot?', prompt: 'Given my draft position and roster needs, who is the best player I should target with my next pick?' },
+          };
+          const starter = starters[activeTab];
+          const chips = starter ? [starter, ...base] : [...base];
+
+          if (activeTab === 'dashboard') return [...chips,
+            { label: 'Top 3 moves', prompt: 'What are the top 3 moves I should make right now?' },
+            { label: 'League pulse', prompt: 'Give me a quick pulse check on my league — who is rising, falling, and what moves are being made.' },
+            { label: 'League recap', prompt: 'Summarize the key storylines in my league right now.' },
+            { label: 'Power rankings', prompt: 'Give me your power rankings for this league with one-line analysis per team.' },
+          ];
+          if (activeTab === 'myteam') return [...chips,
+            { label: 'Roster grade', prompt: 'Grade my roster position by position and identify the biggest weakness.' },
+            { label: 'Who to sell?', prompt: 'Which players on my roster should I sell high on right now?' },
+          ];
+          if (activeTab === 'league') return [...chips,
+            { label: 'League overview', prompt: 'Give me a quick overview of every team in the league — strengths, weaknesses, and dynasty outlook.' },
+            { label: 'Trade partners', prompt: 'Which teams in the league are the best trade partners for me right now and why?' },
+          ];
+          if (activeTab === 'analytics') return [...chips,
+            { label: 'Explain my gaps', prompt: 'Based on the winner analysis, what are my biggest gaps and how do I close them?' },
+            { label: 'Draft strategy', prompt: 'Based on historical draft success in this league, what should my draft strategy be?' },
+          ];
+          if (activeTab === 'trades') return [...chips,
+            { label: 'Best trade targets', prompt: 'Who are my best trade targets right now based on roster needs and trade partner compatibility?' },
+            { label: 'Sell high candidates', prompt: 'Which players on my roster should I sell high on in a trade?' },
+          ];
+          if (activeTab === 'fa') return [...chips,
+            { label: 'Best pickup?', prompt: 'Who is the best available free agent I should target right now?' },
+            { label: 'FAAB advice', prompt: 'How should I spend my remaining FAAB budget?' },
+          ];
+          if (activeTab === 'draft') return [...chips,
+            { label: 'Who at my pick?', prompt: 'Who should I target with my draft picks this year?' },
+            { label: 'Draft strategy', prompt: 'What should my draft strategy be based on my roster needs?' },
+          ];
+          return chips;
+        }
 
         if (error) {
             return (
                 <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--white)', padding: '2rem', textAlign: 'center' }}>
                     <div style={{ color: 'var(--k-e74c3c, #e74c3c)', fontSize: '1.5rem', marginBottom: '1rem' }}>Error Loading League</div>
                     <div style={{ color: 'var(--silver)', marginBottom: '2rem' }}>{error}</div>
-                    <button onClick={onBack} style={{ padding: '0.75rem 1.5rem', background: 'var(--gold)', border: 'none', borderRadius: 'var(--card-radius-sm, 8px)', color: 'var(--black)', fontFamily: 'var(--font-body)', fontSize: '1rem', fontWeight: '700', cursor: 'pointer' }}>← Back to Dashboard</button>
+                    <button onClick={onBack} style={{ padding: '0.75rem 1.5rem', background: 'var(--gold)', border: 'none', borderRadius: '8px', color: 'var(--black)', fontFamily: 'var(--font-body)', fontSize: '1rem', fontWeight: '700', cursor: 'pointer' }}>← Back to Dashboard</button>
                 </div>
             );
         }
@@ -2454,7 +3004,7 @@
                     marginBottom: '0.3rem',
                     background: bgColor,
                     borderLeft: borderColor !== 'transparent' ? `3px solid ${borderColor}` : 'none',
-                    borderRadius: 'var(--card-radius-xs, 5px)',
+                    borderRadius: '4px',
                     gap: '0.5rem'
                 }}>
                     {/* Gold position box */}
@@ -2507,10 +3057,9 @@
                             {getPlayerName(playerId)} <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.65 }}>{team}</span>
                         </span>
                     </a>
-                    {/* Format-aware value (ROS in redraft, DHQ dynasty value elsewhere) */}
+                    {/* DHQ dynasty value */}
                     {(() => {
-                      const pv = window.App?.PlayerValue;
-                      const dhq = (pv?.isRedraftActive?.() ? pv.getValue(playerId) : window.App?.LI?.playerScores?.[playerId]) || 0;
+                      const dhq = window.App?.LI?.playerScores?.[playerId] || 0;
                       if (!dhq) return <span style={{ ...statColStyle, color: 'var(--silver)', opacity: 0.6, fontSize: 'var(--text-body, 1rem)' }}>—</span>;
                       const col = dhq >= 7000 ? 'var(--k-2ecc71, #2ecc71)' : dhq >= 4000 ? 'var(--k-d4af37, #d4af37)' : dhq >= 2000 ? 'var(--silver)' : 'var(--ov-8, rgba(255,255,255,0.4))';
                       return <span style={{ ...statColStyle, color: col, fontWeight: '700', fontFamily: 'var(--font-body)', fontSize: 'var(--text-label, 0.75rem)', minWidth: '42px' }}>{dhq.toLocaleString()}</span>;
@@ -2573,8 +3122,13 @@
                 return new Date(raw > 1000000000000 ? raw : raw * 1000);
             };
             const fmtDate = (d) => d && !Number.isNaN(d.getTime())
-                ? d.toLocaleDateString('en-US', {month:'numeric', day:'numeric', year: '2-digit'})
+                ? d.toLocaleDateString('en-US', {month:'short', day:'numeric', year: '2-digit'})
                 : '\u2014';
+            // Check manual override first
+            try {
+                const overrides = JSON.parse(localStorage.getItem('wr_acquired_overrides') || '{}');
+                if (overrides[pid]) return overrides[pid];
+            } catch {}
 
             // Collect ALL transactions from window.S.transactions (all weeks) + recent list
             const allTxns = [];
@@ -2622,7 +3176,7 @@
                     const partnerUser = users.find(u => u.user_id === partnerRoster?.owner_id);
                     const partnerName = partnerUser?.display_name || partnerUser?.metadata?.team_name || (partnerRid != null ? 'T' + partnerRid : '');
                     const date = season + (week ? ' W' + week : '');
-                    return { method: 'Traded', date, cost: partnerName || '', season, week };
+                    return { method: 'Traded', date, cost: partnerName ? 'from ' + partnerName : '', season, week };
                 }
             }
             // Fallback: check raw transaction data for trades
@@ -2669,40 +3223,7 @@
         // this render, so the two surfaces can never drift.
         const navItems = buildLeagueNavItems(
             leagueSkin?.features?.showGameDay ?? (leagueSkin?.phase === 'in_season'),
-            leagueSkin?.features?.showTrades,
-            leagueSkin?.type !== 'chopped',
-            mergedHome
-        );
-
-        // One builder for the widget grid so the standalone Home tab (dynasty /
-        // keeper) and the merged Command Center's KPIs tab (redraft / chopped)
-        // can never drift apart — the only difference is which widget list they
-        // are handed.
-        const dashboardEl = (widgets) => (
-            <DashboardPanel
-                selectedWidgets={widgets}
-                setSelectedWidgets={setSelectedWidgets}
-                editingKpi={editingKpi}
-                setEditingKpi={setEditingKpi}
-                computeKpiValue={computeKpiValue}
-                KPI_OPTIONS={KPI_OPTIONS}
-                rankedTeams={rankedTeams}
-                sleeperUserId={sleeperUserId}
-                setActiveTab={setActiveTab}
-                transactions={transactions}
-                standings={standings}
-                currentLeague={currentLeague}
-                leagueSkin={leagueSkin}
-                playersData={playersData}
-                statsData={statsData}
-                prevStatsData={stats2025Data}
-                myRoster={myRoster}
-                getOwnerName={getOwnerName}
-                getPlayerName={getPlayerName}
-                timeAgo={timeAgo}
-                briefDraftInfo={briefDraftInfo}
-                timeRecomputeTs={timeRecomputeTs}
-            />
+            leagueSkin?.features?.showTrades
         );
 
         const _seasonCtxValue = { ...seasonCtxData, leagueSkin, selectPlayer };
@@ -2733,11 +3254,11 @@
                                 <div style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', marginTop: '2px' }}>{dhqStatus.step}</div>
                             </div>
                         </div>
-                        <div style={{ background: 'var(--ov-4, rgba(255,255,255,0.06))', borderRadius: 'var(--card-radius-xs, 5px)', height: '4px', overflow: 'hidden' }}>
+                        <div style={{ background: 'var(--ov-4, rgba(255,255,255,0.06))', borderRadius: '4px', height: '4px', overflow: 'hidden' }}>
                             <div style={{
                                 width: dhqStatus.progress + '%', height: '100%',
                                 background: 'linear-gradient(90deg, var(--gold), var(--k-f0a500, #f0a500))',
-                                borderRadius: 'var(--card-radius-xs, 5px)', transition: 'width 0.5s ease'
+                                borderRadius: '4px', transition: 'width 0.5s ease'
                             }}></div>
                         </div>
                         <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', marginTop: '6px', opacity: 0.6 }}>
@@ -2754,17 +3275,17 @@
                     entirely \u2014 the dock strip covers every nav item and Refresh
                     moved into the header sheet (owner ruling 2026-07-09). The
                     768-1023 drawer tier keeps it \u2014 no dock there. */}
-                {/* iPad pass: status-bar scrim — the non-phone header is NOT sticky
+                {/* iPad pass: status-bar scrim \u2014 the non-phone header is NOT sticky
                     (desktop-parity ruling), so scrolled content would bleed under
-                    the transparent status bar in installed-PWA. height = --sat →
+                    the transparent status bar in installed-PWA. height = --sat \u2192
                     zero-height (invisible) everywhere else. Phone has the sticky
                     header as its backdrop instead. */}
                 {!phoneHdrKit && <div aria-hidden="true" style={{ position: 'fixed', top: 0, left: 0, right: 0, height: 'var(--sat, 0px)', background: 'var(--black, #0a0a0a)', zIndex: 60 }} />}
-                {!phoneHdrKit && <button onClick={() => setSidebarOpen(!sidebarOpen)} style={{
+                {!phoneHdrKit && !(alexPhone && reconPanelOpen) && <button onClick={() => setSidebarOpen(!sidebarOpen)} style={{
                     // iPad pass (G3): --sat/--sal terms are env()=0 everywhere but
-                    // installed-PWA on device — desktop stays byte-identical.
+                    // installed-PWA on device \u2014 desktop stays byte-identical.
                     display: 'none', position: 'fixed', top: 'calc(10px + var(--sat, 0px) + var(--wr-dev-banner-height, 0px))', left: 'calc(10px + var(--sal, 0px))', zIndex: 201,
-                    background: 'var(--black)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: 'var(--card-radius-sm, 8px)',
+                    background: 'var(--black)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: '6px',
                     padding: '6px 10px', cursor: 'pointer', color: 'var(--gold)', fontSize: '1.2rem', lineHeight: 1
                 }} className="wr-hamburger">{sidebarOpen ? '\u2715' : '\u2630'}</button>}
                 <style>{`@media(max-width:1023px){
@@ -2772,7 +3293,7 @@
                     .wr-hamburger{display:block !important}
                     .wr-sidebar{left:-220px !important;top:var(--wr-dev-banner-height,0px) !important;transform:none !important}
                     .wr-sidebar.open{left:0 !important}
-                    .wr-main-content{margin-left:0 !important;width:100% !important;max-width:100vw !important;overflow-x:clip;overflow-y:visible;box-sizing:border-box;padding-top:var(--wr-dev-banner-height,0px)}
+                    .wr-main-content{margin-left:0 !important;width:100% !important;max-width:100vw;overflow-x:clip;overflow-y:visible;box-sizing:border-box;padding-top:var(--wr-dev-banner-height,0px)}
                 }
                 @media(max-width:767px){
                     /* Phone header: compact two-zone layout — title + SWITCH share the
@@ -2787,7 +3308,8 @@
                     .wr-draft-header-clock{overflow:hidden}
                     .wr-draft-header-clock>span{max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
                     .wr-draft-header-clock>strong{flex-shrink:0}
-                    .wr-time-bar{align-items:flex-start !important;padding:8px 10px !important;gap:6px !important}
+                    ${phoneHdrKit ? '' : '.header{padding-top:calc(0.4rem + var(--sat, 0px)) !important;padding-bottom:0.4rem !important}'}
+                    .wr-time-bar{align-items:center !important;padding:6px 10px !important;gap:6px !important}
                     .wr-time-years{width:auto;max-width:100%;overflow:visible;flex-wrap:wrap !important;padding-bottom:2px}
                     .wr-time-spacer{display:none !important}
                     .wr-time-mode{margin-left:0;flex-shrink:0}
@@ -2826,8 +3348,8 @@
                     padding: '16px 0', zIndex: 100, transition: 'width 0.18s ease, transform 0.2s ease'
                 }}>
                     {/* Logo — click to go home */}
-                    <div className="wr-sidebar-brand" onClick={onBack} style={{ padding: '0 14px', marginBottom: sidebarCollapsed ? '10px' : '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }} title="Back to Dynasty HQ home">
-                      <img src={iconSrc} alt="Dynasty HQ" style={{ width: '28px', height: '28px', borderRadius: 'var(--card-radius-sm, 8px)' }} onError={e => { e.target.style.display = 'none'; }} />
+                    <div className="wr-sidebar-brand" onClick={onBack} style={{ padding: '0 14px', marginBottom: sidebarCollapsed ? '10px' : '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }} title="Back to Dynasty HQ home">
+                      <img src={iconSrc} alt="Dynasty HQ" style={{ width: '28px', height: '28px', borderRadius: '6px' }} onError={e => { e.target.style.display = 'none'; }} />
                       <div className="wr-sidebar-wordmark">
                         <div className="wr-wordmark" style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1rem', color: 'var(--gold)', letterSpacing: '0.06em', lineHeight: 1.1 }}>DYNASTY HQ</div>
                       </div>
@@ -2882,7 +3404,7 @@
                                 ref: inputRef, type: 'text', placeholder: 'Search...', value: q,
                                 onChange: e => setQ(e.target.value),
                                 onKeyDown: e => { if (e.key === 'Escape') { setQ(''); setResults([]); } },
-                                style: { width: '100%', padding: '7px 10px 7px 28px', fontSize: 'var(--text-label, 0.75rem)', background: 'var(--ov-3, rgba(255,255,255,0.04))', border: '1px solid var(--acc-fill3, rgba(212,175,55,0.15))', borderRadius: 'var(--card-radius-sm, 8px)', color: 'var(--silver)', fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box' }
+                                style: { width: '100%', padding: '7px 10px 7px 28px', fontSize: 'var(--text-label, 0.75rem)', background: 'var(--ov-3, rgba(255,255,255,0.04))', border: '1px solid var(--acc-fill3, rgba(212,175,55,0.15))', borderRadius: '6px', color: 'var(--silver)', fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box' }
                             }),
                             React.createElement('svg', { viewBox: '0 0 24 24', width: 12, height: 12, fill: 'none', stroke: 'var(--acc-line3, rgba(212,175,55,0.4))', strokeWidth: 2, style: { position: 'absolute', left: '20px', top: '11px', pointerEvents: 'none' } },
                                 React.createElement('circle', { cx: 11, cy: 11, r: 8 }),
@@ -2989,7 +3511,7 @@
                     {/* Refresh Button */}
                     <button onClick={async () => {
                         try {
-                            Object.keys(localStorage).filter(k => k.startsWith('dhq_leagueintel_') || k.startsWith('dhq_hist_')).forEach(k => localStorage.removeItem(k));
+                            Object.keys(localStorage).filter(k => k.startsWith('dhq_leagueintel_') || k.startsWith('dhq_hist_')).forEach(k => localStorage.removeItem(k)); window.DhqStorage?.idbRemove?.('dhq_leagueintel_v14'); /* the intel build lives in IndexedDB now */
                             // Real cache clears (audit:refresh-stale step 2): the old
                             // `window._wrPlayersCache = null` never touched core.js's
                             // closure-scoped cache, and the sessionStorage key was a
@@ -3062,7 +3584,7 @@
                         const doRefresh = async () => {
                             setPhHdrSheetOpen(false);
                             try {
-                                Object.keys(localStorage).filter(k => k.startsWith('dhq_leagueintel_') || k.startsWith('dhq_hist_')).forEach(k => localStorage.removeItem(k));
+                                Object.keys(localStorage).filter(k => k.startsWith('dhq_leagueintel_') || k.startsWith('dhq_hist_')).forEach(k => localStorage.removeItem(k)); window.DhqStorage?.idbRemove?.('dhq_leagueintel_v14'); /* the intel build lives in IndexedDB now */
                                 window.App?.clearDataCaches?.();
                                 window.Sleeper?.clearSeasonCaches?.();
                                 if (window.App) { window.App.LI = {}; window.App.LI_LOADED = false; window._liLoading = false; }
@@ -3080,7 +3602,7 @@
                                         <span style={{ fontFamily: 'var(--font-title)', fontWeight: 700, fontSize: '1.05rem', letterSpacing: '0.02em', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{currentLeague.name}</span>
                                         <span aria-hidden="true" style={{ color: 'var(--text-muted)', fontSize: '0.65rem', flex: 'none' }}>▾</span>
                                     </div>
-                                    <button className="wr-phone-hdr-refresh" onClick={doRefresh} disabled={!!loadStage} aria-label="Refresh data" title="Reload DHQ values, league history, and AI data" style={{ flex: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: '36px', minHeight: '36px', padding: '6px', background: 'transparent', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: 'var(--card-radius-sm, 8px)', color: 'var(--gold)', cursor: loadStage ? 'default' : 'pointer' }}>
+                                    <button className="wr-phone-hdr-refresh" onClick={doRefresh} disabled={!!loadStage} aria-label="Refresh data" title="Reload DHQ values, league history, and AI data" style={{ flex: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: '36px', minHeight: '36px', padding: '6px', background: 'transparent', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: '6px', color: 'var(--gold)', cursor: loadStage ? 'default' : 'pointer' }}>
                                         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={loadStage ? { animation: 'dhqSpin 0.8s linear infinite' } : undefined}>
                                             {NAV_ICON_PATHS.refresh.map((d, i) => <path key={i} d={d} />)}
                                         </svg>
@@ -3088,15 +3610,15 @@
                                     {/* Feedback (bug report + feature board) — re-homed here from the
                                         floating bottom-right launcher that sat over the dock. */}
                                     {window.WR?.Feedback?.toggleMenu && (
-                                        <button onClick={(e) => { e.stopPropagation(); window.WR.Feedback.toggleMenu(e.currentTarget); }} aria-label="Feedback" title="Report a bug or request a feature" style={{ flex: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: '36px', minHeight: '36px', padding: '6px', background: 'transparent', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: 'var(--card-radius-sm, 8px)', color: 'var(--gold)', cursor: 'pointer' }}>
+                                        <button onClick={(e) => { e.stopPropagation(); window.WR.Feedback.toggleMenu(e.currentTarget); }} aria-label="Feedback" title="Report a bug or request a feature" style={{ flex: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: '36px', minHeight: '36px', padding: '6px', background: 'transparent', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: '6px', color: 'var(--gold)', cursor: 'pointer' }}>
                                             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
                                         </button>
                                     )}
-                                    <button className="wr-league-switch" onClick={onBack} style={{ padding: '7px 12px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-mono)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', background: 'var(--acc-fill2, rgba(212,175,55,0.10))', color: 'var(--gold)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: 'var(--card-radius-sm, 8px)', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, minHeight: '36px' }}>SWITCH</button>
+                                    <button className="wr-league-switch" onClick={onBack} style={{ padding: '7px 12px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-mono)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', background: 'var(--acc-fill2, rgba(212,175,55,0.10))', color: 'var(--gold)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, minHeight: '36px' }}>SWITCH</button>
                                 </div>
                                 {phHdrSheetOpen && <window.WR.Sheet open={true} onClose={() => setPhHdrSheetOpen(false)} title={currentLeague.name}>
                                     <div style={{ padding: '2px 16px 8px' }}>
-                                        {gm && leagueSkin?.type !== 'chopped' && <button style={rowSt} onClick={() => { setPhHdrSheetOpen(false); if (setActiveTab) setActiveTab('strategy'); }}>
+                                        {gm && <button style={rowSt} onClick={() => { setPhHdrSheetOpen(false); if (setActiveTab) setActiveTab('strategy'); }}>
                                             <span style={rowLbl}>GM mode</span>
                                             <span aria-hidden="true" style={{ width: 6, height: 6, borderRadius: '50%', background: gm.badgeColor, flex: 'none' }} />
                                             <span style={{ ...rowVal, color: gm.badgeColor }}>{gm.label}</span>
@@ -3106,7 +3628,7 @@
                                             Native select → the iOS wheel picker; same handleTimeYearChange. */}
                                         <div style={{ ...rowSt, cursor: 'default' }}>
                                             <span style={rowLbl}>Season</span>
-                                            <select value={timeYear} onChange={e => handleTimeYearChange(Number(e.target.value))} aria-label="Season year" style={{ flex: 1, minWidth: 0, background: 'var(--ov-2, rgba(255,255,255,0.04))', color: isCurrentYear ? 'var(--gold)' : 'var(--k-45b7d1, #45b7d1)', border: '1px solid var(--ov-4, rgba(255,255,255,0.08))', borderRadius: 'var(--card-radius-sm, 8px)', padding: '8px 10px', minHeight: '40px', fontFamily: 'var(--font-body)', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer' }}>
+                                            <select value={timeYear} onChange={e => handleTimeYearChange(Number(e.target.value))} aria-label="Season year" style={{ flex: 1, minWidth: 0, background: 'var(--ov-2, rgba(255,255,255,0.04))', color: isCurrentYear ? 'var(--gold)' : 'var(--k-45b7d1, #45b7d1)', border: '1px solid var(--ov-4, rgba(255,255,255,0.08))', borderRadius: '6px', padding: '8px 10px', minHeight: '40px', fontFamily: 'var(--font-body)', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer' }}>
                                                 {(() => {
                                                     const opt = (yr) => <option key={yr} value={yr} style={{ background: 'var(--black)', color: 'var(--white)' }}>{yr}{yr === currentSeason ? ' • current' : ''}</option>;
                                                     const past = timeYears.filter(y => y < currentSeason);
@@ -3130,7 +3652,7 @@
                                         </div>}
                                         {headerDraftClock && <button style={rowSt} onClick={doDraftJump}>
                                             <span style={rowLbl}>Draft</span>
-                                            <span style={{ ...rowVal, color: 'var(--gold)', fontFamily: "'JetBrains Mono', monospace" }}>{[headerDraftClock.label, headerDraftClock.clock].filter(Boolean).join(' · ')}</span>
+                                            <span style={{ ...rowVal, color: 'var(--gold)', fontFamily: "'JetBrains Mono', monospace" }}>{[headerDraftClock.label, headerDraftClock.clock, headerDraftClock.when].filter(Boolean).join(' · ')}</span>
                                             <span style={{ marginLeft: 'auto', color: 'var(--text-muted)', fontSize: '0.8rem' }}>›</span>
                                         </button>}
                                     </div>
@@ -3140,11 +3662,11 @@
                     })() : (
                     <div className="wr-league-header-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '8px 10px', flexWrap: 'wrap', minWidth: 0 }}>
                         <div className="header-title" style={{ fontSize: '1.05rem', minWidth: 0, maxWidth: 'min(460px, 100%)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{currentLeague.name}</div>
-                        <button className="wr-league-switch" onClick={onBack} style={{ padding: '4px 12px', fontSize: 'var(--text-label, 0.75rem)', fontFamily: 'var(--font-body)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', background: 'var(--acc-fill2, rgba(212,175,55,0.10))', color: 'var(--gold)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: 'var(--card-radius-sm, 8px)', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>SWITCH</button>
+                        <button className="wr-league-switch" onClick={onBack} style={{ padding: '4px 12px', fontSize: 'var(--text-label, 0.75rem)', fontFamily: 'var(--font-body)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', background: 'var(--acc-fill2, rgba(212,175,55,0.10))', color: 'var(--gold)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>SWITCH</button>
                         {/* Feedback (bug report + feature board) — re-homed here from the
                             floating bottom-right launcher that covered page content. */}
                         {window.WR?.Feedback?.toggleMenu && (
-                            <button onClick={(e) => { e.stopPropagation(); window.WR.Feedback.toggleMenu(e.currentTarget); }} aria-label="Feedback" title="Report a bug or request a feature" style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: '30px', minHeight: '28px', padding: '4px 8px', background: 'transparent', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: 'var(--card-radius-sm, 8px)', color: 'var(--gold)', cursor: 'pointer' }}>
+                            <button onClick={(e) => { e.stopPropagation(); window.WR.Feedback.toggleMenu(e.currentTarget); }} aria-label="Feedback" title="Report a bug or request a feature" style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: '30px', minHeight: '28px', padding: '4px 8px', background: 'transparent', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: '6px', color: 'var(--gold)', cursor: 'pointer' }}>
                                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
                             </button>
                         )}
@@ -3152,31 +3674,25 @@
                             below the title/SWITCH row. Inert (display:none) on desktop. */}
                         <div className="wr-hdr-break" aria-hidden="true" style={{ display: 'none' }} />
                         {(() => {
-                            // Seasonal survival formats do not surface the dynasty-flavored
-                            // GM badge; Chopped has its own Survival Plan in the briefing.
-                            if (leagueSkin?.type === 'redraft' || leagueSkin?.type === 'chopped') return null;
+                            // Redraft leagues don't surface the GM Mode badge (it's dynasty-flavored).
+                            if (leagueSkin?.type === 'redraft') return null;
                             const gm = window.WR?.GmMode?.describe?.(gmStrategy?.mode || 'compete');
                             if (!gm) return null;
-                            // Calm treatment (owner ask 2026-08-09 — header read as a "confetti
-                            // of badges", each status pill carrying its own saturated bg+border).
-                            // Status indicators now read as dot + plain text, like the phone
-                            // sheet's rows already do — color lives in the dot, not a fill/border,
-                            // so gold (SWITCH, Draft Clock CTA) stays the one loud accent in the row.
                             return React.createElement('button', {
                                 key: 'gm-badge-' + gm.id,
                                 onClick: () => setActiveTab && setActiveTab('strategy'),
                                 title: 'GM Mode — edit in GM\'s Office',
                                 className: 'wr-gm-mode-badge',
                                 style: {
-                                    padding: '4px 6px', display: 'inline-flex', alignItems: 'center', gap: '6px',
-                                    fontSize: 'var(--text-label, 0.75rem)', fontFamily: 'var(--font-body)', fontWeight: 600,
-                                    letterSpacing: '0.02em',
-                                    background: 'transparent', color: 'var(--silver)',
-                                    border: '1px solid transparent',
-                                    borderRadius: 'var(--card-radius-sm, 8px)', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0
+                                    padding: '4px 10px 4px 8px', display: 'inline-flex', alignItems: 'center', gap: '6px',
+                                    fontSize: 'var(--text-label, 0.75rem)', fontFamily: 'var(--font-body)', fontWeight: 700,
+                                    textTransform: 'uppercase', letterSpacing: '0.06em',
+                                    background: wrAlpha(gm.badgeColor, '22'), color: gm.badgeColor,
+                                    border: '1px solid ' + wrAlpha(gm.badgeColor, '66'),
+                                    borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0
                                 }
                             },
-                                React.createElement('span', { style: { width: 6, height: 6, borderRadius: '50%', background: gm.badgeColor, flexShrink: 0 } }),
+                                React.createElement('span', { style: { width: 6, height: 6, borderRadius: '50%', background: gm.badgeColor } }),
                                 'GM · ' + gm.label
                             );
                         })()}
@@ -3187,10 +3703,14 @@
                             style: {
                                 display: 'inline-flex', alignItems: 'center', gap: '5px',
                                 flex: '0 0 auto', minWidth: 'max-content',
-                                padding: '4px 6px',
-                                color: 'var(--silver)',
+                                padding: '4px 8px',
+                                borderRadius: '6px',
+                                border: '1px solid ' + wrAlpha(headerLeagueType.color, '66'),
+                                background: wrAlpha(headerLeagueType.color, '18'),
+                                color: headerLeagueType.color,
                                 fontFamily: 'var(--font-body)', fontSize: 'var(--text-label, 0.75rem)',
-                                fontWeight: 600, letterSpacing: '0.02em', whiteSpace: 'nowrap',
+                                fontWeight: 800, textTransform: 'uppercase',
+                                letterSpacing: '0.06em', whiteSpace: 'nowrap',
                                 cursor: 'help'
                             }
                         },
@@ -3204,14 +3724,17 @@
                             style: {
                                 display: 'inline-flex', alignItems: 'center', gap: '5px',
                                 flex: '0 0 auto', minWidth: 'max-content',
-                                padding: '4px 6px',
-                                color: 'var(--silver)',
+                                padding: '4px 8px',
+                                borderRadius: '6px',
+                                border: '1px solid ' + wrAlpha(leagueSkin.phaseMeta.color, '55'),
+                                background: wrAlpha(leagueSkin.phaseMeta.color, '14'),
+                                color: leagueSkin.phaseMeta.color,
                                 fontFamily: 'var(--font-body)', fontSize: 'var(--text-label, 0.75rem)',
-                                fontWeight: 600, letterSpacing: '0.02em', whiteSpace: 'nowrap',
+                                fontWeight: 800, textTransform: 'uppercase',
+                                letterSpacing: '0.06em', whiteSpace: 'nowrap',
                                 cursor: 'help'
                             }
                         },
-                            React.createElement('span', { style: { width: 6, height: 6, borderRadius: '50%', background: leagueSkin.phaseMeta.color, flexShrink: 0, display: 'inline-block' } }),
                             leagueSkin.phaseMeta.label
                         )}
                         {headerDraftClock && React.createElement('div', {
@@ -3236,7 +3759,7 @@
                             style: {
                                 display: 'inline-flex', alignItems: 'center', gap: '7px',
                                 flex: '0 0 auto',
-                                padding: '4px 10px', borderRadius: 'var(--card-radius-sm, 8px)',
+                                padding: '4px 10px', borderRadius: '6px',
                                 border: '1px solid var(--acc-line3, rgba(212,175,55,0.42))',
                                 background: 'var(--acc-fill2, rgba(212,175,55,0.12))',
                                 color: 'var(--gold)',
@@ -3247,7 +3770,8 @@
                             }
                         },
                             headerDraftClock.label ? React.createElement('span', { style: { color: 'var(--silver)', opacity: 0.78 } }, headerDraftClock.label) : null,
-                            React.createElement('strong', { style: { color: 'var(--white)', fontFamily: "'JetBrains Mono', monospace", fontSize: 'var(--text-label, 0.75rem)' } }, headerDraftClock.clock)
+                            React.createElement('strong', { style: { color: 'var(--white)', fontFamily: "'JetBrains Mono', monospace", fontSize: 'var(--text-label, 0.75rem)' } }, headerDraftClock.clock),
+                            headerDraftClock.when ? React.createElement('span', { style: { color: 'var(--silver)', opacity: 0.85, fontFamily: "'JetBrains Mono', monospace", fontSize: 'var(--text-label, 0.75rem)' } }, '· ' + headerDraftClock.when) : null
                         )}
                     </div>
                     )}
@@ -3294,7 +3818,7 @@
                                                 color: isHistoricalYear ? 'var(--black)' : 'var(--silver)',
                                                 border: '1px solid ' + (isHistoricalYear ? 'var(--gold)' : 'var(--ov-4, rgba(255,255,255,0.06))'),
                                                 opacity: isHistoricalYear ? 1 : 0.8,
-                                                borderRadius: 'var(--card-radius-xs, 5px)', cursor: 'pointer', outline: 'none'
+                                                borderRadius: '4px', cursor: 'pointer', outline: 'none'
                                             }}>
                                                 <option value="" style={{ background: 'var(--black)', color: 'var(--white)' }}>Past seasons</option>
                                                 {pastYears.map(yr => <option key={yr} value={yr} style={{ background: 'var(--black)', color: 'var(--white)' }}>{yr}</option>)}
@@ -3307,13 +3831,10 @@
                                         const prev = currentAndFuture[i - 1];
                                         const prevKind = prev == null ? null : (prev > currentSeason ? 'future' : 'current');
                                         const selected = timeYear === yr;
-                                        // Calm treatment (owner ask 2026-08-09): only the SELECTED year
-                                        // gets a filled pill — every other year sat in its own colored
-                                        // bordered pill even at rest, which is most of this row.
                                         let bg, color, border, weight = selected ? 700 : 400, opacity = 1;
                                         if (selected) { bg = 'var(--gold)'; color = 'var(--black)'; border = '1px solid var(--gold)'; }
-                                        else if (kind === 'future') { bg = 'transparent'; color = 'var(--k-45b7d1, #45b7d1)'; border = '1px solid transparent'; }
-                                        else { bg = 'transparent'; color = 'var(--silver)'; border = '1px solid transparent'; }
+                                        else if (kind === 'future') { bg = 'rgba(69,183,209,0.06)'; color = 'var(--k-45b7d1, #45b7d1)'; border = '1px solid rgba(69,183,209,0.25)'; }
+                                        else { bg = 'var(--acc-fill2, rgba(212,175,55,0.12))'; color = 'var(--gold)'; border = '1px solid var(--acc-line2, rgba(212,175,55,0.4))'; weight = 700; }
                                         return (
                                             <React.Fragment key={yr}>
                                                 {prevKind && prevKind !== kind && (
@@ -3322,7 +3843,7 @@
                                                 <button onClick={() => handleTimeYearChange(yr)} title={kind === 'future' ? yr + ' — projected' : yr + ' — current season'} style={{
                                                     padding: '4px 10px', fontSize: 'var(--text-body, 1rem)', fontFamily: 'var(--font-body)',
                                                     fontWeight: weight, background: bg, color: color, border: border, opacity,
-                                                    borderRadius: 'var(--card-radius-xs, 5px)', cursor: 'pointer', transition: 'all 0.15s'
+                                                    borderRadius: '4px', cursor: 'pointer', transition: 'all 0.15s'
                                                 }}>{yr}</button>
                                             </React.Fragment>
                                         );
@@ -3335,7 +3856,7 @@
                     <select className="wr-time-years-select" value={timeYear} onChange={e => handleTimeYearChange(Number(e.target.value))} aria-label="Season year" style={{
                         display: 'none', padding: '5px 8px', fontSize: 'var(--text-body, 1rem)', fontFamily: 'var(--font-body)',
                         fontWeight: 700, background: 'var(--gold)', color: 'var(--black)', border: '1px solid var(--gold)',
-                        borderRadius: 'var(--card-radius-xs, 5px)', cursor: 'pointer', minHeight: '32px'
+                        borderRadius: '4px', cursor: 'pointer', minHeight: '32px'
                     }}>
                         {(() => {
                             const opt = (yr) => <option key={yr} value={yr} style={{ background: 'var(--black)', color: 'var(--white)' }}>{yr}{yr === currentSeason ? ' • current' : ''}</option>;
@@ -3351,18 +3872,11 @@
                     </select>
                     {/* League name/team-count moved to the main header to avoid duplication. */}
                     <div className="wr-time-spacer" style={{ marginLeft: 'auto' }}></div>
-                    {/* Time mode badge — plain text on the (usual) current-season path;
-                        the wr-time-banner below already carries the loud version of this
-                        signal when viewing a historical/future season, so this pill was
-                        just restating "current season" in a colored chip most of the time. */}
-                    <span className="wr-time-mode" style={isCurrentYear ? {
-                        fontSize: 'var(--text-label, 0.75rem)', fontWeight: 600, color: 'var(--silver)',
-                        padding: '2px 4px',
-                        fontFamily: 'var(--font-body)', textTransform: 'uppercase', letterSpacing: '0.04em'
-                    } : {
+                    {/* Time mode badge */}
+                    <span className="wr-time-mode" style={{
                         fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700, color: timeModeColor,
                         background: wrAlpha(timeModeColor, '15'), border: '1px solid ' + wrAlpha(timeModeColor, '30'),
-                        padding: '2px 10px', borderRadius: 'var(--card-radius-lg, 14px)',
+                        padding: '2px 10px', borderRadius: '12px',
                         fontFamily: 'var(--font-body)', textTransform: 'uppercase', letterSpacing: '0.06em'
                     }}>{timeModeLabel}</span>
                     {/* Loading indicator */}
@@ -3383,7 +3897,7 @@
                     <span style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', opacity: 0.6 }}>
                         {isFutureYear ? 'Player ages projected +' + timeDelta + 'yr. Values and stats are estimates.' : 'Showing ' + timeYear + ' season stats. Roster composition reflects current state.'}
                     </span>
-                    <button onClick={() => handleTimeYearChange(currentSeason)} style={{ marginLeft: 'auto', fontSize: 'var(--text-label, 0.75rem)', padding: '3px 10px', background: 'transparent', border: '1px solid ' + timeModeColor, color: timeModeColor, borderRadius: 'var(--card-radius-xs, 5px)', cursor: 'pointer', fontFamily: 'var(--font-body)' }}>Back to {currentSeason}</button>
+                    <button onClick={() => handleTimeYearChange(currentSeason)} style={{ marginLeft: 'auto', fontSize: 'var(--text-label, 0.75rem)', padding: '3px 10px', background: 'transparent', border: '1px solid ' + timeModeColor, color: timeModeColor, borderRadius: '4px', cursor: 'pointer', fontFamily: 'var(--font-body)' }}>Back to {currentSeason}</button>
                 </div>}
 
                 {/* Debug panel (dev only) */}
@@ -3456,6 +3970,8 @@
                     setAlexAvatar={setAlexAvatar}
                     setAvatarKey={setAvatarKey}
                     setActiveTab={setActiveTab}
+                    setReconPanelOpen={setReconPanelOpen}
+                    sendReconMessage={sendReconMessage}
                     timeRecomputeTs={timeRecomputeTs}
                     setTimeRecomputeTs={setTimeRecomputeTs}
                     getAcquisitionInfo={getAcquisitionInfo}
@@ -3490,6 +4006,7 @@
                     leagueSkin={leagueSkin}
                     playersData={playersData}
                     statsData={statsData}
+                    stats2025Data={stats2025Data}
                     sleeperUserId={sleeperUserId}
                     myRoster={myRoster}
                     activeYear={activeYear}
@@ -3538,6 +4055,8 @@
                     currentLeague={currentLeague}
                     leagueSkin={leagueSkin}
                     sleeperUserId={sleeperUserId}
+                    setReconPanelOpen={setReconPanelOpen}
+                    sendReconMessage={sendReconMessage}
                     timeRecomputeTs={timeRecomputeTs}
                     viewMode={viewMode}
                 /> : (activeTab === 'trophies' || activeTab === 'calendar') ? <TrophyRoomTabLazy
@@ -3563,25 +4082,32 @@
                 }) : activeTab === 'compare' ? React.createElement(CompareTabLazy, {
                     currentLeague, leagueSkin, myRoster, playersData, statsData, stats2025Data,
                     standings, sleeperUserId,
-                }) : activeTab === 'central' ? React.createElement(LeagueCentralTabLazy, {
-                    currentLeague, leagueSkin, myRoster, playersData, standings, transactions,
-                    sleeperUserId, getOwnerName, getPlayerName, timeAgo, setActiveTab,
-                    homeMerged: mergedHome,
-                    // Merged formats hoist the briefing ABOVE the tab strip
-                    // (always visible, collapsible) and drop it from the widget
-                    // grid below, so it renders once, not twice. The grid is
-                    // fixed for these formats — dashboard.js hides the
-                    // customize UI — so filtering here cannot corrupt a saved
-                    // layout.
-                    briefSlot: mergedHome && typeof window.IntelligenceBriefWidget === 'function'
-                        ? React.createElement(window.IntelligenceBriefWidget, {
-                            size: 'xl', myRoster, rankedTeams, sleeperUserId, currentLeague,
-                            briefDraftInfo, playersData, statsData, prevStatsData: stats2025Data,
-                            timeRecomputeTs, setActiveTab,
-                        })
-                        : null,
-                    kpiSlot: mergedHome ? dashboardEl(selectedWidgets.filter(w => w.key !== 'intel-brief')) : null,
-                }) : dashboardEl(selectedWidgets)}
+                }) : (
+                <DashboardPanel
+                    selectedWidgets={selectedWidgets}
+                    setSelectedWidgets={setSelectedWidgets}
+                    editingKpi={editingKpi}
+                    setEditingKpi={setEditingKpi}
+                    computeKpiValue={computeKpiValue}
+                    KPI_OPTIONS={KPI_OPTIONS}
+                    rankedTeams={rankedTeams}
+                    sleeperUserId={sleeperUserId}
+                    setActiveTab={setActiveTab}
+                    transactions={transactions}
+                    standings={standings}
+                    currentLeague={currentLeague}
+                    leagueSkin={leagueSkin}
+                    playersData={playersData}
+                    statsData={statsData}
+                    prevStatsData={stats2025Data}
+                    myRoster={myRoster}
+                    getOwnerName={getOwnerName}
+                    getPlayerName={getPlayerName}
+                    timeAgo={timeAgo}
+                    briefDraftInfo={briefDraftInfo}
+                    timeRecomputeTs={timeRecomputeTs}
+                />
+                )}
                 </div>
                 </div>{/* end marginLeft wrapper */}
 
@@ -3602,30 +4128,382 @@
                 }}
             />}
 
-            {/* League Wire — the always-on ticker, pinned bottom across EVERY
-                league tab (not just Command Center): NFL scores and leaders,
-                this league's scores and records, FAAB, risers/fallers.
-                Desktop + tablet only — it returns null on phones, where the
-                bottom edge belongs to PhoneDock below. */}
-            {typeof window.WrLeagueWire === 'function' && (
-                <window.WrLeagueWire
-                    currentLeague={currentLeague}
-                    standings={standings}
-                    transactions={transactions}
-                    playersData={playersData}
-                    getOwnerName={getOwnerName}
-                    getPlayerName={getPlayerName}
+            {/* Alex Ingram Chat — centered welcome or bottom-right.
+                Phone (≤767): all three modes collapse into ONE full-width
+                bottom sheet (top-rounded, gold hairline top, keyboard-aware
+                via the alexKb bottom offset). Tablet/desktop: untouched. */}
+            {reconPanelOpen && <div style={alexPhone ? {
+              // Sit ABOVE the phone dock when the keyboard is closed (owner ask:
+              // the chat was covering the nav bar). Keyboard-open keeps bottom at
+              // the keyboard top (the dock hides with the keyboard anyway).
+              position: 'fixed', left: 0, right: 0, bottom: alexKb ? (alexKb + 'px') : 'var(--wr-bottom-inset, 0px)',
+              width: '100%',
+              height: (!welcomeMode && reconExpanded) ? alexSheetCap : 'auto',
+              maxHeight: welcomeMode ? 'min(600px, ' + alexSheetCap + ')'
+                : reconExpanded ? alexSheetCap
+                : 'min(70dvh, ' + alexSheetCap + ')',
+              background: 'var(--k-0a0b0d, #0a0b0d)',
+              border: 'none',
+              borderTop: '2px solid ' + (welcomeMode ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--acc-line2, rgba(212,175,55,0.3))'),
+              borderRadius: '16px 16px 0 0',
+              zIndex: welcomeMode ? 300 : 'var(--wr-z-sheet, 200)',
+              display: 'flex', flexDirection: 'column',
+              boxShadow: '0 -12px 48px rgba(0,0,0,0.6), 0 0 0 1px var(--acc-fill2, rgba(212,175,55,0.1))',
+              animation: 'wrFadeIn 0.2s ease',
+              transition: 'bottom 0.2s ease'
+            } : welcomeMode ? {
+              position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+              width: '480px', maxHeight: '600px',
+              background: 'var(--k-0a0b0d, #0a0b0d)', border: '2px solid var(--acc-line3, rgba(212,175,55,0.4))',
+              borderRadius: '20px', zIndex: 300,
+              display: 'flex', flexDirection: 'column',
+              boxShadow: '0 24px 80px rgba(0,0,0,0.8), 0 0 0 1px var(--acc-fill3, rgba(212,175,55,0.15)), 0 0 120px var(--acc-fill1, rgba(212,175,55,0.06))',
+              animation: 'wrFadeIn 0.3s ease'
+            } : reconExpanded ? {
+              position: 'fixed', bottom: '80px', right: '24px',
+              width: 'min(760px, calc(100vw - 48px))', height: 'calc(100vh - 120px)', maxHeight: 'calc(100vh - 120px)',
+              background: 'var(--k-0a0b0d, #0a0b0d)', border: '2px solid var(--acc-line2, rgba(212,175,55,0.3))',
+              borderRadius: '16px', zIndex: 200,
+              display: 'flex', flexDirection: 'column',
+              boxShadow: '0 24px 80px rgba(0,0,0,0.75), 0 0 0 1px var(--acc-fill2, rgba(212,175,55,0.1))',
+              animation: 'wrFadeIn 0.2s ease'
+            } : {
+              position: 'fixed', bottom: '80px', right: '24px',
+              width: '380px', maxHeight: '520px',
+              background: 'var(--k-0a0b0d, #0a0b0d)', border: '2px solid var(--acc-line2, rgba(212,175,55,0.3))',
+              borderRadius: '16px', zIndex: 200,
+              display: 'flex', flexDirection: 'column',
+              boxShadow: '0 12px 48px rgba(0,0,0,0.6), 0 0 0 1px var(--acc-fill2, rgba(212,175,55,0.1))',
+              animation: 'wrFadeIn 0.2s ease'
+            }}>
+            {/* Welcome backdrop */}
+            {welcomeMode && <div onClick={() => { setWelcomeMode(false); setReconPanelOpen(false); setTimeout(() => { setShowCornerToast(true); setTimeout(() => setShowCornerToast(false), 4000); }, 300); }} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', zIndex: -1 }} />}
+              {/* Header */}
+              <div style={{
+                padding: '12px 16px', borderBottom: '1px solid var(--acc-line1, rgba(212,175,55,0.2))',
+                display: 'flex', alignItems: 'center', gap: '8px',
+                background: 'var(--acc-fill1, rgba(212,175,55,0.06))', borderRadius: '14px 14px 0 0'
+              }}>
+                <div key={avatarKey} onClick={e => { e.stopPropagation(); setShowAvatarPicker(p => !p); }} style={{ cursor: 'pointer' }} title="Change Alex's avatar">
+                  <AlexAvatar size={30} />
+                </div>
+                <div>
+                  <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: 'var(--text-title, 1.125rem)', color: 'var(--gold)', letterSpacing: '0.04em', lineHeight: 1, display: 'flex', alignItems: 'center', gap: '4px' }}>Alex Ingram</div>
+                  <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.5 }}>AI General Manager</div>
+                </div>
+                {!alexPhone && <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--text-muted)' }}>Cmd+K</span>}
+                <span style={{ flex: 1 }}></span>
+                {reconMessages.length > 1 && (
+                  <button onClick={() => {
+                    setReconMessages([{ role: 'assistant', content: 'Fresh start. What\'s on your mind? — Alex' }]);
+                    setGmOnboardStep(5);
+                    LeagueStorage.remove(LEAGUE_WR_KEYS.CHAT(currentLeague?.league_id));
+                  }} title="Clear chat history" style={{
+                    background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer',
+                    fontSize: 'var(--text-label, 0.75rem)', padding: '2px 4px', fontFamily: 'var(--font-body)', letterSpacing: '0.04em'
+                  }}>CLEAR</button>
+                )}
+                <button onClick={() => setReconExpanded(v => !v)} title={reconExpanded ? 'Collapse' : 'Expand'} aria-label={reconExpanded ? 'Collapse panel' : 'Expand panel'} style={{
+                  background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer',
+                  fontSize: '1rem', padding: alexPhone ? '10px' : '2px', lineHeight: 1
+                }}>{reconExpanded ? '−' : '⛶'}</button>
+                <button onClick={() => { setReconPanelOpen(false); setReconExpanded(false); }} aria-label="Close chat" style={{
+                  background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer',
+                  fontSize: '1rem', padding: alexPhone ? '10px' : '2px'
+                }}>&#10005;</button>
+              </div>
+
+              {/* Avatar picker (toggled) */}
+              {showAvatarPicker && (
+                <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))', background: 'var(--acc-fill1, rgba(212,175,55,0.04))' }}>
+                  <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.6, marginBottom: '6px', fontFamily: 'var(--font-body)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Choose Alex's look</div>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    {ALEX_AVATARS.map(av => (
+                      <button key={av.id} onClick={() => { setAlexAvatar(av.id); setShowAvatarPicker(false); setAvatarKey(k => k+1); }} style={{
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px',
+                        padding: '6px', background: getAlexAvatar() === av.id ? 'var(--acc-fill3, rgba(212,175,55,0.15))' : 'var(--ov-2, rgba(255,255,255,0.03))',
+                        border: '1px solid ' + (getAlexAvatar() === av.id ? 'var(--gold)' : 'var(--ov-5, rgba(255,255,255,0.08))'),
+                        borderRadius: '8px', cursor: 'pointer', minWidth: '56px'
+                      }}>
+                        {av.src ? (
+                          <img src={av.src} alt={av.label} style={{ width: '36px', height: '36px', borderRadius: '6px', objectFit: 'cover' }} />
+                        ) : (
+                          <div style={{ width: '36px', height: '36px', borderRadius: '6px', background: 'linear-gradient(135deg, var(--k-d4af37, #d4af37), var(--k-b8941e, #b8941e))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'var(--text-label, 0.75rem)', fontWeight: 800, color: 'var(--k-0a0a0a, #0a0a0a)', fontFamily: 'Rajdhani, sans-serif' }}>AI</div>
+                        )}
+                        <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', textAlign: 'center' }}>{av.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Context chips */}
+              <div style={{ padding: '6px 12px', display: 'flex', gap: '4px', flexWrap: 'wrap', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))' }}>
+                {getReconChips().map((chip, i) => (
+                  <button key={i} onClick={() => sendReconMessage(chip.prompt)}
+                    style={{
+                      padding: '3px 8px', fontSize: 'var(--text-label, 0.75rem)', borderRadius: '14px',
+                      border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', background: 'var(--acc-fill1, rgba(212,175,55,0.06))',
+                      color: 'var(--gold)', cursor: 'pointer', fontFamily: 'inherit'
+                    }}>
+                    {chip.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Messages — phone: no fixed cap (the sheet's maxHeight governs);
+                  scrolls independently with iOS momentum + contained overscroll. */}
+              <div style={{
+                flex: 1, overflow: 'auto', padding: '10px 12px',
+                display: 'flex', flexDirection: 'column', gap: '6px',
+                maxHeight: (reconExpanded || alexPhone) ? 'none' : '320px',
+                ...(alexPhone ? { WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' } : {})
+              }}>
+                {reconMessages.map((msg, i) => (
+                  msg.role === 'user' ? (
+                    <div key={i} style={{
+                      alignSelf: 'flex-end', maxWidth: '85%', padding: '8px 12px', borderRadius: '12px',
+                      fontSize: 'var(--text-body, 1rem)', lineHeight: 1.5,
+                      background: 'rgba(124,107,248,0.12)', border: '1px solid rgba(124,107,248,0.18)',
+                      color: 'var(--text-primary)'
+                    }} dangerouslySetInnerHTML={{ __html: markdownToHtml(msg.content) }} />
+                  ) : (
+                    <div key={i} style={{
+                      alignSelf: 'flex-start', maxWidth: '90%', padding: '8px 10px',
+                      background: 'var(--acc-fill1, rgba(212,175,55,0.04))', borderLeft: '3px solid var(--acc-line3, rgba(212,175,55,0.4))',
+                      borderRadius: '0 10px 10px 0'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                        <AlexAvatar size={20} />
+                        <span style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: 'var(--text-label, 0.75rem)', color: 'var(--gold)', letterSpacing: '0.03em' }}>Alex Ingram</span>
+                      </div>
+                      {(() => {
+                        const tradeMatch = msg.content.match(/<!--\s*TRADE_CARD:([\s\S]*?)-->/);
+                        const textContent = msg.content.replace(/<!--\s*TRADE_CARD:[\s\S]*?-->/, '').trim();
+                        let tradeCard = null;
+                        if (tradeMatch) {
+                          try { tradeCard = JSON.parse(tradeMatch[1].trim()); } catch {}
+                        }
+                        return (
+                          <React.Fragment>
+                            <div style={{ fontSize: 'var(--text-body, 1rem)', lineHeight: 1.5, color: 'var(--text-primary)' }}
+                              dangerouslySetInnerHTML={{ __html: markdownToHtml(textContent) }} />
+                            {tradeCard && (
+                              <div style={{ marginTop: '10px', background: 'var(--acc-fill1, rgba(212,175,55,0.06))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '10px', padding: '10px', fontSize: 'var(--text-body, 1rem)' }}>
+                                <div style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-label, 0.75rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>
+                                  Proposed Trade{tradeCard.target ? ' → ' + tradeCard.target : ''}
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: '8px', alignItems: 'start' }}>
+                                  <div>
+                                    <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.6, marginBottom: '4px', fontFamily: 'var(--font-body)', textTransform: 'uppercase' }}>You Give</div>
+                                    {(tradeCard.yourSide || []).map((a, j) => (
+                                      <div key={j} style={{ padding: '3px 0', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.04))' }}>
+                                        <span style={{ color: 'var(--text-primary)' }}>{a.name}</span>
+                                        <span style={{ color: 'var(--silver)', fontSize: 'var(--text-label, 0.75rem)', marginLeft: '4px' }}>{a.dhq?.toLocaleString()} DHQ</span>
+                                      </div>
+                                    ))}
+                                    <div style={{ marginTop: '4px', fontWeight: 700, color: 'var(--gold)', fontSize: 'var(--text-label, 0.75rem)' }}>
+                                      Total: {(tradeCard.yourSide || []).reduce((s, a) => s + (a.dhq || 0), 0).toLocaleString()}
+                                    </div>
+                                  </div>
+                                  <div style={{ display: 'flex', alignItems: 'center', fontSize: '1.2rem', color: 'var(--gold)', paddingTop: '16px' }}>{'\u21C4'}</div>
+                                  <div>
+                                    <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.6, marginBottom: '4px', fontFamily: 'var(--font-body)', textTransform: 'uppercase' }}>You Get</div>
+                                    {(tradeCard.theirSide || []).map((a, j) => (
+                                      <div key={j} style={{ padding: '3px 0', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.04))' }}>
+                                        <span style={{ color: 'var(--text-primary)' }}>{a.name}</span>
+                                        <span style={{ color: 'var(--silver)', fontSize: 'var(--text-label, 0.75rem)', marginLeft: '4px' }}>{a.dhq?.toLocaleString()} DHQ</span>
+                                      </div>
+                                    ))}
+                                    <div style={{ marginTop: '4px', fontWeight: 700, color: 'var(--gold)', fontSize: 'var(--text-label, 0.75rem)' }}>
+                                      Total: {(tradeCard.theirSide || []).reduce((s, a) => s + (a.dhq || 0), 0).toLocaleString()}
+                                    </div>
+                                  </div>
+                                </div>
+                                {/* Fairness bar */}
+                                {(() => {
+                                  const yours = (tradeCard.yourSide || []).reduce((s, a) => s + (a.dhq || 0), 0);
+                                  const theirs = (tradeCard.theirSide || []).reduce((s, a) => s + (a.dhq || 0), 0);
+                                  const diff = theirs - yours;
+                                  const pct = yours > 0 ? Math.round((diff / yours) * 100) : 0;
+                                  const color = pct >= 5 ? 'var(--k-2ecc71, #2ecc71)' : pct >= -5 ? 'var(--gold)' : 'var(--k-e74c3c, #e74c3c)';
+                                  const label = pct >= 5 ? 'You win by ' + pct + '%' : pct >= -5 ? 'Fair trade' : 'You lose by ' + Math.abs(pct) + '%';
+                                  return (
+                                    <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                      <div style={{ flex: 1, height: '4px', borderRadius: '2px', background: 'var(--ov-5, rgba(255,255,255,0.08))', overflow: 'hidden' }}>
+                                        <div style={{ width: Math.min(100, 50 + pct) + '%', height: '100%', background: color, borderRadius: '2px' }} />
+                                      </div>
+                                      <span style={{ fontSize: 'var(--text-label, 0.75rem)', color, fontFamily: 'var(--font-body)' }}>{label}</span>
+                                    </div>
+                                  );
+                                })()}
+                                {/* Action buttons */}
+                                <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
+                                  {tradeCard.sleeperDM && (
+                                    <button onClick={() => { navigator.clipboard.writeText(tradeCard.sleeperDM); }} style={{
+                                      padding: '5px 12px', fontSize: 'var(--text-label, 0.75rem)', fontFamily: 'var(--font-body)',
+                                      background: 'linear-gradient(135deg, var(--k-7c6bf8, #7c6bf8), var(--k-9b8afb, #9b8afb))', color: 'var(--k-ffffff, #ffffff)',
+                                      border: 'none', borderRadius: '14px', cursor: 'pointer'
+                                    }}>Copy DM</button>
+                                  )}
+                                  <button onClick={() => {
+                                    // Save into the Trade Log pipeline (WrTradePipeline schema, cap 60 —
+                                    // canonical helpers live in trade-calc.js). trade-calc.js is a DEFERRED
+                                    // script (data-wr-defer="trade"), so if it hasn't loaded yet, write the
+                                    // legacy card shape — WrTradePipeline.normalizeAll migrates it to the
+                                    // schema on the next Trade Log read. Fallback cap mirrors WrTradePipeline.CAP.
+                                    const lid = currentLeague?.league_id;
+                                    if (!lid) return;
+                                    const P = window.WrTradePipeline;
+                                    if (P) { P.append(lid, P.fromAlexCard(tradeCard)); return; }
+                                    const saved = LeagueStorage.get(LEAGUE_WR_KEYS.SAVED_TRADES(lid)) || [];
+                                    saved.unshift({ ...tradeCard, savedAt: Date.now() });
+                                    LeagueStorage.set(LEAGUE_WR_KEYS.SAVED_TRADES(lid), saved.slice(0, 60));
+                                  }} style={{
+                                    padding: '5px 12px', fontSize: 'var(--text-label, 0.75rem)', fontFamily: 'var(--font-body)',
+                                    background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)',
+                                    border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '14px', cursor: 'pointer'
+                                  }}>Save</button>
+                                </div>
+                              </div>
+                            )}
+                          </React.Fragment>
+                        );
+                      })()}
+                      {/* Onboarding choice buttons */}
+                      {msg.onboardChoices && (
+                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '8px' }}>
+                          {msg.onboardChoices.map(c => {
+                            const isSelected = msg.onboardMulti && onboardSelections.includes(c.value);
+                            return (
+                              <button key={c.value} onClick={() => {
+                                if (msg.onboardMulti) {
+                                  setOnboardSelections(prev => prev.includes(c.value) ? prev.filter(v => v !== c.value) : [...prev, c.value]);
+                                } else if (gmOnboardStep === 0 && ['strategy','advice','avatar'].includes(c.value)) {
+                                  handleWelcomeChoice(c.value);
+                                } else {
+                                  handleOnboardChoice(c.value);
+                                }
+                              }} style={{
+                                padding: '6px 14px', fontSize: 'var(--text-body, 1rem)', fontFamily: 'var(--font-body)',
+                                background: isSelected ? 'var(--gold)' : 'var(--acc-fill2, rgba(212,175,55,0.08))',
+                                color: isSelected ? 'var(--black)' : 'var(--gold)',
+                                border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))',
+                                borderRadius: '16px', cursor: 'pointer', transition: 'all 0.15s'
+                              }}>{c.label}{isSelected ? ' \u2713' : ''}</button>
+                            );
+                          })}
+                          {msg.onboardMulti && (
+                            <React.Fragment>
+                              {onboardSelections.length > 0 && (
+                                <button onClick={() => { handleOnboardChoice(onboardSelections); setOnboardSelections([]); }} style={{
+                                  padding: '6px 14px', fontSize: 'var(--text-body, 1rem)', fontFamily: 'var(--font-body)',
+                                  background: 'linear-gradient(135deg, var(--k-2ecc71, #2ecc71), var(--k-27ae60, #27ae60))', color: 'var(--k-ffffff, #ffffff)',
+                                  border: 'none', borderRadius: '16px', cursor: 'pointer'
+                                }}>Confirm ({onboardSelections.length})</button>
+                              )}
+                              {msg.onboardSkip && (
+                                <button onClick={() => { handleOnboardChoice('skip'); setOnboardSelections([]); }} style={{
+                                  padding: '6px 14px', fontSize: 'var(--text-body, 1rem)', fontFamily: 'var(--font-body)',
+                                  background: 'var(--ov-3, rgba(255,255,255,0.04))', color: 'var(--silver)',
+                                  border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', borderRadius: '16px', cursor: 'pointer'
+                                }}>Skip</button>
+                              )}
+                            </React.Fragment>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                ))}
+              </div>
+
+              {/* Input — phone: --sab clearance while the keyboard is closed
+                  (the sheet is keyboard-lifted when open, so plain 10px then),
+                  16px input font (no iOS zoom-on-focus), 44px send target. */}
+              <div style={{
+                // Flat 10px on every tier: the phone sheet already sits above the
+                // dock, which absorbs --sab — adding it again double-padded the
+                // composer (~34px of dead space under the send row).
+                padding: '10px 12px',
+                borderTop: '1px solid var(--ov-4, rgba(255,255,255,0.07))',
+                display: 'flex', gap: '8px', background: 'var(--k-111318, #111318)',
+                borderRadius: alexPhone ? '0' : '0 0 14px 14px'
+              }}>
+                <input
+                  ref={reconComposerRef}
+                  value={reconInput}
+                  onChange={e => setReconInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') sendReconMessage(reconInput); }}
+                  placeholder="Ask anything..."
+                  style={{
+                    flex: 1, background: 'transparent', border: 'none', outline: 'none',
+                    color: 'var(--text-primary)', fontSize: alexPhone ? '16px' : 'var(--text-body, 1rem)', fontFamily: 'inherit'
+                  }}
                 />
+                <button onClick={() => sendReconMessage(reconInput)} style={{
+                  background: 'linear-gradient(135deg, var(--k-7c6bf8, #7c6bf8), var(--k-9b8afb, #9b8afb))',
+                  border: 'none', borderRadius: '8px',
+                  width: alexPhone ? '44px' : '32px', height: alexPhone ? '44px' : '32px',
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  ...(alexPhone ? { flexShrink: 0 } : {})
+                }}>
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="white" strokeWidth="2.5">
+                    <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                  </svg>
+                </button>
+              </div>
+            </div>}
+
+            {/* "I'll be down here" toast — .wr-corner-toast: phone tier lifts
+                it above the bottom dock via --wr-bottom-inset (points at the
+                dock's pinned Ask Alex item there; at the FAB on
+                tablet/desktop). */}
+            {showCornerToast && (
+              <div className="wr-corner-toast" style={{
+                position: 'fixed', bottom: '82px', right: '24px',
+                background: 'var(--k-0a0b0d, #0a0b0d)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))',
+                borderRadius: '12px', padding: '10px 16px', zIndex: 202,
+                boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+                animation: 'wrFadeIn 0.3s ease', maxWidth: '220px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <AlexAvatar size={22} />
+                  <span style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', lineHeight: 1.4 }}>I'll be down here if you need me {'\uD83D\uDC47'}</span>
+                </div>
+              </div>
             )}
+
+            {/* Alex Ingram Bubble Button — bottom right corner. Tablet +
+                desktop ONLY: on phone the PhoneDock's pinned Ask Alex item
+                is the entry point (same open path), so the FAB never
+                renders there. */}
+            {!alexPhone && !alexChatRetired && <button className="wr-alex-fab" onClick={() => { setReconPanelOpen(!reconPanelOpen); setWelcomeMode(false); }} style={{
+              position: 'fixed', bottom: '24px', right: '24px',
+              width: '52px', height: '52px', borderRadius: '14px',
+              background: reconPanelOpen ? 'var(--acc-fill3, rgba(212,175,55,0.15))' : 'transparent',
+              border: '2px solid var(--acc-line3, rgba(212,175,55,0.4))',
+              cursor: 'pointer', zIndex: 201,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: '0 4px 20px var(--acc-line2, rgba(212,175,55,0.3))',
+              transition: 'all 0.2s', overflow: 'hidden', padding: 0
+            }}>
+              {reconPanelOpen
+                ? <span style={{ color: 'var(--gold)', fontSize: '1.2rem' }}>&#10005;</span>
+                : <AlexAvatar size={48} />
+              }
+            </button>}
 
             {/* Phone bottom dock (≤767 only) — null on tablet/desktop and
                 while the iOS keyboard is open. ONE row: sliding strip of
                 EVERY sidebar nav item (same navItems array — single source
-                of truth). */}
+                of truth) + the pinned Ask Alex item at the right end
+                (replaces the FAB on phone; same open path as the FAB). */}
             <PhoneDock
                 activeTab={activeTab}
                 navItems={navItems}
                 onSelectTab={(tab) => { setSidebarOpen(false); setActiveTab(tab); }}
+                onAskAlex={() => { reconComposerFocusPending.current = true; setReconPanelOpen(true); setWelcomeMode(false); }}
             />
 
             </div>

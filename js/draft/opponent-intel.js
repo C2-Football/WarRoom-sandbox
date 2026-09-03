@@ -203,7 +203,7 @@
                                                 fontSize: 'var(--text-label, 0.75rem)',
                                                 fontWeight: 700,
                                                 padding: '2px 6px',
-                                                borderRadius: 'var(--card-radius, 10px)',
+                                                borderRadius: '10px',
                                                 background: wrAlpha(col, '18'),
                                                 border: '1px solid ' + wrAlpha(col, '44'),
                                                 color: col,
@@ -273,7 +273,7 @@
                                 padding: '6px 8px',
                                 background: grudgeScore > 0 ? 'rgba(46,204,113,0.08)' : 'rgba(231,76,60,0.08)',
                                 border: '1px solid ' + (grudgeScore > 0 ? 'rgba(46,204,113,0.25)' : 'rgba(231,76,60,0.25)'),
-                                borderRadius: 'var(--card-radius-xs, 5px)',
+                                borderRadius: '4px',
                                 fontSize: 'var(--text-label, 0.75rem)',
                                 color: grudgeScore > 0 ? 'var(--k-2ecc71, #2ecc71)' : 'var(--k-e74c3c, #e74c3c)',
                                 fontFamily: FONT_UI,
@@ -288,7 +288,7 @@
 
                         {/* Draft DNA details */}
                         {persona.draftDna?.picksAnalyzed > 0 && (
-                            <div style={{ marginTop: '8px', padding: '6px 8px', background: 'var(--ov-1, rgba(255,255,255,0.02))', borderRadius: 'var(--card-radius-xs, 5px)', border: '1px solid var(--ov-3, rgba(255,255,255,0.04))' }}>
+                            <div style={{ marginTop: '8px', padding: '6px 8px', background: 'var(--ov-1, rgba(255,255,255,0.02))', borderRadius: '4px', border: '1px solid var(--ov-3, rgba(255,255,255,0.04))' }}>
                                 <SectionLabel>Draft History</SectionLabel>
                                 <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', lineHeight: 1.5, fontFamily: FONT_UI }}>
                                     {persona.draftDna.tendency || persona.draftDna.roundProfile || ''}
@@ -306,7 +306,7 @@
                                 padding: '5px 7px',
                                 background: 'rgba(240,165,0,0.08)',
                                 border: '1px solid rgba(240,165,0,0.25)',
-                                borderRadius: 'var(--card-radius-xs, 5px)',
+                                borderRadius: '4px',
                                 fontSize: 'var(--text-label, 0.75rem)',
                                 color: 'var(--k-f0a500, #f0a500)',
                                 fontFamily: FONT_UI,
@@ -329,7 +329,7 @@
                                     background: 'rgba(52,152,219,0.12)',
                                     color: 'var(--k-3498db, #3498db)',
                                     border: '1px solid rgba(52,152,219,0.3)',
-                                    borderRadius: 'var(--card-radius-xs, 5px)',
+                                    borderRadius: '4px',
                                     cursor: 'pointer',
                                 }}>SCOUT ROSTER</button>
                                 <button
@@ -345,7 +345,7 @@
                                         background: 'var(--acc-fill2, rgba(212,175,55,0.12))',
                                         color: 'var(--gold)',
                                         border: '1px solid var(--acc-line2, rgba(212,175,55,0.35))',
-                                        borderRadius: 'var(--card-radius-xs, 5px)',
+                                        borderRadius: '4px',
                                         cursor: onPropose ? 'pointer' : 'not-allowed',
                                     }}>PROPOSE TRADE</button>
                             </div>
@@ -431,7 +431,7 @@
                 padding: '0',
                 background: 'var(--acc-fill1, rgba(212,175,55,0.06))',
                 border: '1px solid var(--acc-line1, rgba(212,175,55,0.28))',
-                borderRadius: 'var(--card-radius-sm, 8px)',
+                borderRadius: '6px',
                 overflow: 'hidden',
             }}>
                 {/* Gold-accented header bar */}
@@ -521,8 +521,8 @@
                                         fontFamily: FONT_UI,
                                         minWidth: '64px',
                                     }}>Confidence</span>
-                                    <div style={{ flex: 1, height: '7px', borderRadius: 'var(--card-radius-xs, 5px)', background: 'var(--ov-3, rgba(255,255,255,0.05))', overflow: 'hidden' }}>
-                                        <div style={{ width: conf + '%', height: '100%', background: band.color, borderRadius: 'var(--card-radius-xs, 5px)', transition: 'width 0.2s ease' }} />
+                                    <div style={{ flex: 1, height: '7px', borderRadius: '4px', background: 'var(--ov-3, rgba(255,255,255,0.05))', overflow: 'hidden' }}>
+                                        <div style={{ width: conf + '%', height: '100%', background: band.color, borderRadius: '4px', transition: 'width 0.2s ease' }} />
                                     </div>
                                     <span style={{
                                         fontSize: 'var(--text-label, 0.75rem)',
@@ -636,7 +636,7 @@
                 padding: '7px 8px',
                 background: 'var(--ov-2, rgba(255,255,255,0.025))',
                 border: '1px solid var(--acc-fill3, rgba(212,175,55,0.14))',
-                borderRadius: 'var(--card-radius-xs, 5px)',
+                borderRadius: '5px',
             }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: reasons.length ? '5px' : 0 }}>
                     <SectionLabel>Historical Intel</SectionLabel>

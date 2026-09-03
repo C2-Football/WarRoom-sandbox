@@ -48,44 +48,12 @@
     }
 
     async function fetchSeasonData(leagueId) {
-        const [rosters, users, bracket, drafts] = await Promise.all([
+        const [rosters, users, bracket] = await Promise.all([
             fetchJson(SLEEPER + '/league/' + leagueId + '/rosters'),
             fetchJson(SLEEPER + '/league/' + leagueId + '/users'),
             fetchJson(SLEEPER + '/league/' + leagueId + '/winners_bracket'),
-            fetchJson(SLEEPER + '/league/' + leagueId + '/drafts'),
         ]);
-        return { rosters, users, bracket, drafts };
-    }
-
-    // roster_id (string) → draft slot (1-based) for a season, from that
-    // season's own draft — never the current league's. Prefers
-    // slot_to_roster_id (direct, roster-space); falls back to draft_order
-    // (user_id → slot) mapped through that season's owner_id. Picks the
-    // draft with the most-populated slot map when a season carries more
-    // than one (e.g. a supplemental draft).
-    function draftSlotsFromSeason(s) {
-        const out = {};
-        const candidates = Array.isArray(s.drafts) ? s.drafts : [];
-        if (!candidates.length) return out;
-        const rosterByOwner = {};
-        (s.rosters || []).forEach(r => { if (r.owner_id) rosterByOwner[r.owner_id] = r.roster_id; });
-        let best = out;
-        candidates.forEach(draft => {
-            if (!draft) return;
-            const map = {};
-            if (draft.slot_to_roster_id && Object.keys(draft.slot_to_roster_id).length) {
-                Object.entries(draft.slot_to_roster_id).forEach(([slot, rid]) => {
-                    if (rid != null) map[String(rid)] = Number(slot);
-                });
-            } else if (draft.draft_order && Object.keys(draft.draft_order).length) {
-                Object.entries(draft.draft_order).forEach(([userId, slot]) => {
-                    const rid = rosterByOwner[userId];
-                    if (rid != null) map[String(rid)] = Number(slot);
-                });
-            }
-            if (Object.keys(map).length > Object.keys(best).length) best = map;
-        });
-        return best;
+        return { rosters, users, bracket };
     }
 
     // Fetch championship-week matchups so we can capture the title-winning
@@ -267,7 +235,6 @@
             (s.rosters || []).forEach(r => { rosterByRid[r.roster_id] = r; });
 
             const placements = placementsFromBracket(s.bracket);
-            const draftSlots = draftSlotsFromSeason(s);
             // Every team that appears in the winners (championship) bracket made the playoffs —
             // including first-round losers who never reach a placement game.
             const bracketTeams = new Set();
@@ -362,8 +329,7 @@
                 if (bracketTeams.has(r.roster_id)) oh.playoffAppearances++;
 
                 const finish = rosterFinish(place, w, l, t);
-                const draftSlot = draftSlots[String(r.roster_id)] || null;
-                oh.seasonHistory.push({ season: String(season), wins: w, losses: l, ties: t, fpts, fptsAg, place, finish, rosterId: r.roster_id, draftSlot });
+                oh.seasonHistory.push({ season: String(season), wins: w, losses: l, ties: t, fpts, fptsAg, place, finish, rosterId: r.roster_id });
 
                 // flat history for achievements.js (keyed by current rosterId)
                 const curRid = currentRosterByOwner[userId];
@@ -518,40 +484,6 @@
         return readCache(leagueId);
     }
 
-    // "The Winner's Perch" — for redraft-style leagues that re-draft every
-    // season, correlates draft slot with how that season actually ended:
-    // for each slot 1..N, how many times has the team drafting there
-    // finished top-3, and how many of those finishes were the title (in
-    // parens on the UI side). Derived from seasonHistory.draftSlot, so it
-    // reflects the draft this app actually saw — never the current season's
-    // order applied retroactively. Returns [] when history/draft data is
-    // missing (old seasons a platform never exposed a draft for, etc.).
-    function getDraftSlotPerch(leagueId) {
-        const cache = readCache(leagueId);
-        if (!cache) return [];
-        const bySlot = {};
-        let maxSlot = 0;
-        let seasonsWithSlot = 0;
-        Object.values(cache.ownerHistory || {}).forEach(oh => {
-            (oh.seasonHistory || []).forEach(sh => {
-                if (!sh.draftSlot) return;
-                seasonsWithSlot++;
-                const slot = sh.draftSlot;
-                maxSlot = Math.max(maxSlot, slot);
-                if (!bySlot[slot]) bySlot[slot] = { slot, top3: 0, titles: 0, seasons: 0 };
-                bySlot[slot].seasons++;
-                if (sh.place && sh.place <= 3) {
-                    bySlot[slot].top3++;
-                    if (sh.place === 1) bySlot[slot].titles++;
-                }
-            });
-        });
-        if (!maxSlot || seasonsWithSlot < 2) return [];
-        const out = [];
-        for (let i = 1; i <= maxSlot; i++) out.push(bySlot[i] || { slot: i, top3: 0, titles: 0, seasons: 0 });
-        return out;
-    }
-
     window.WrHistory = {
         load: build,
         loadIfMissing,
@@ -573,7 +505,6 @@
             const c = getCached(leagueId);
             return c?.hallOfFame || [];
         },
-        getDraftSlotPerch,
         clear: function (leagueId) {
             try {
                 localStorage.removeItem(CACHE_KEY(leagueId));

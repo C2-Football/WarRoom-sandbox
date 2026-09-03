@@ -90,7 +90,7 @@
                 <div style={{
                     background: 'var(--black)',
                     border: '2px solid var(--gold)',
-                    borderRadius: 'var(--card-radius, 10px)',
+                    borderRadius: '10px',
                     padding: '14px 16px',
                     boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
                     maxHeight: 'calc(100vh - 100px)',
@@ -108,7 +108,7 @@
                         <span style={{
                             fontSize: 'var(--text-micro)',
                             padding: '1px 6px',
-                            borderRadius: 'var(--card-radius, 10px)',
+                            borderRadius: '10px',
                             background: 'var(--ov-3, rgba(255,255,255,0.04))',
                             color: 'var(--silver)',
                         }}>{offer.dnaLabel}</span>
@@ -145,7 +145,7 @@
 	                            marginBottom: '9px',
 	                            padding: '7px 9px',
 	                            border: '1px solid rgba(240,165,0,0.24)',
-	                            borderRadius: 'var(--card-radius-sm, 8px)',
+	                            borderRadius: '6px',
 	                            background: 'rgba(240,165,0,0.06)',
 	                            lineHeight: 1.35,
 	                        }}>
@@ -171,7 +171,7 @@
                         <div style={{
                             background: 'rgba(231,76,60,0.08)',
                             border: '1px solid rgba(231,76,60,0.25)',
-                            borderRadius: 'var(--card-radius-sm, 8px)',
+                            borderRadius: '6px',
                             padding: '10px',
                             textAlign: 'center',
                         }}>
@@ -185,7 +185,7 @@
                         <div style={{
                             background: 'rgba(46,204,113,0.08)',
                             border: '1px solid rgba(46,204,113,0.25)',
-                            borderRadius: 'var(--card-radius-sm, 8px)',
+                            borderRadius: '6px',
                             padding: '10px',
                             textAlign: 'center',
                         }}>
@@ -212,7 +212,7 @@
                                     <span key={i} title={t.desc || ''} style={{
                                         fontSize: 'var(--text-label, 0.75rem)',
                                         padding: '4px 8px',
-                                        borderRadius: 'var(--card-radius, 10px)',
+                                        borderRadius: '10px',
                                         background: wrAlpha(col, '15'),
                                         border: '1px solid ' + wrAlpha(col, '40'),
                                         color: col,
@@ -232,7 +232,7 @@
 	                            background: 'var(--good)',
                             color: 'var(--white)',
                             border: 'none',
-                            borderRadius: 'var(--card-radius-sm, 8px)',
+                            borderRadius: '6px',
                             fontSize: 'var(--text-body, 1rem)',
                             fontWeight: 700,
                             cursor: 'pointer',
@@ -243,7 +243,7 @@
 	                            background: counterClosed ? 'var(--ov-3, rgba(255,255,255,0.04))' : 'var(--acc-fill2, rgba(212,175,55,0.12))',
 	                            color: counterClosed ? 'var(--ov-8, rgba(255,255,255,0.35))' : 'var(--gold)',
 	                            border: '1px solid ' + (counterClosed ? 'var(--ov-5, rgba(255,255,255,0.08))' : 'var(--acc-line2, rgba(212,175,55,0.34))'),
-	                            borderRadius: 'var(--card-radius-sm, 8px)',
+	                            borderRadius: '6px',
 	                            fontSize: 'var(--text-body, 1rem)',
 	                            fontWeight: 700,
 	                            cursor: counterClosed ? 'not-allowed' : 'pointer',
@@ -254,7 +254,7 @@
 	                            background: 'transparent',
                             color: 'var(--silver)',
                             border: '1px solid var(--ov-6, rgba(255,255,255,0.15))',
-                            borderRadius: 'var(--card-radius-sm, 8px)',
+                            borderRadius: '6px',
                             fontSize: 'var(--text-body, 1rem)',
                             fontWeight: 700,
                             cursor: 'pointer',

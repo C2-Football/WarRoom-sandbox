@@ -61,7 +61,17 @@ const BRIEF_VOICE = {
     waiver: (name, pos, dhq) => "I've been watching the wire — " + name + " is sitting out there unclaimed.",
     trade: (count) => "I've mapped out the owners in your league. A few look ripe for a deal.",
     draft: (days, date) => "Draft is " + days + " day" + (days !== 1 ? 's' : '') + " out. Time to sharpen your board.",
-    rank: (rank, tier) => "You're #" + rank + " in the league pecking order right now.",
+    rank: (rank, tier) => {
+        // "as of <time>" — the rank is a daily-pinned snapshot shared across
+        // surfaces (team-assess powerpin); an aged number should say so
+        // instead of arguing with a fresher screen (owner report 2026-08-13).
+        let asOf = '';
+        try {
+            const ts = window.App?.powerPinTs?.();
+            if (ts) asOf = ' (as of ' + new Date(ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) + ')';
+        } catch (e) { /* stamp is decoration only */ }
+        return "You're #" + rank + " in the league pecking order right now" + asOf + ".";
+    },
 };
 
 // ══════════════════════════════════════════════════════════════════
@@ -88,14 +98,6 @@ function IntelligenceBriefWidget({
     // Its legacy alexPersonality field no longer selects a voice — one
     // canonical Alex (owner ruling 2026-07-08).
     const gm = window.WR.GmMode.useGmEffects(currentLeague);
-    const leagueSkin = window.App?.LeagueSkin?.build?.({ league: currentLeague, rosters: currentLeague?.rosters || [] });
-    const isChopped = window.App?.Chopped?.isChopped?.(currentLeague) || leagueSkin?.type === 'chopped';
-    // GM Strategy's Rebuild/Compete/Win-Now modes are a multi-YEAR roster-
-    // building framing (timeline, "stockpile picks", sell-high posture) —
-    // it doesn't mean anything in a league that resets every season. Same
-    // "seasonal" definition league-skin.js already uses elsewhere (redraft/
-    // best_ball/dfs, chopped handled separately above via its own framing).
-    const isSeasonal = !isChopped && (leagueSkin?.type === 'redraft' || leagueSkin?.type === 'best_ball' || leagueSkin?.type === 'dfs');
 
     const rosterState = window.App?.getRosterDataState?.({ roster: myRoster, currentLeague, rosters: currentLeague?.rosters }) || { isUsable: true };
     const myAssess = typeof window.assessTeamFromGlobal === 'function' ? window.assessTeamFromGlobal(myRoster?.roster_id) : null;
@@ -103,7 +105,15 @@ function IntelligenceBriefWidget({
     const hs = myAssess?.healthScore || 0;
     const needs = rosterState.isUsable ? (myAssess?.needs || []) : [];
     const elites = rosterState.isUsable && typeof window.App?.countElitePlayers === 'function' ? window.App.countElitePlayers(myRoster?.players || []) : 0;
-    const myRank = rosterState.isUsable ? ((rankedTeams || []).findIndex(t => t.userId === sleeperUserId) + 1) : 0;
+    // Read powerRank DIRECTLY from the one engine — the same value the elites
+    // badge shows — so the pecking-order line can't drift from it. A team's
+    // position in rankedTeams can differ by one from its true powerRank on a
+    // tie or a mid-load recompute; that drift produced "#8 pecking order" next
+    // to "#7 elites badge". Fall back to the list position only if the engine
+    // hasn't produced a rank yet.
+    const myRank = rosterState.isUsable
+        ? ((myAssess && myAssess.powerRank) || ((rankedTeams || []).findIndex(t => t.userId === sleeperUserId) + 1))
+        : 0;
     const scores = window.App?.LI?.playerScores || {};
     const ownerProfiles = window.App?.LI?.ownerProfiles || {};
 
@@ -185,51 +195,6 @@ function IntelligenceBriefWidget({
         return candidates[0] || null;
 	    }, [rosterState.isUsable, needs, playersData, statsData, prevStatsData, myRoster, currentLeague, briefDraftInfo, scores, timeRecomputeTs, faModuleTick, gm.faFilters]);
 
-    // Lineup gap — the weekly start/sit read, promoted INTO the brief (owner
-    // ask 2026-07-12): the dashboard's standalone phone "lineup alert" hero is
-    // retired; bench points are now something Alex offers up here, competing
-    // with waivers and sell rules in the action queue. Same engine call + MFL
-    // empty-starters guard the old hero used (WeeklyProj.optimalForRoster is
-    // itself GM-mode aware — rebuild lineups optimize a different objective).
-    const lineupAlert = useMemo(() => {
-        if (!rosterState.isUsable) return null;
-        const WP = window.App?.WeeklyProj;
-        if (!WP || typeof WP.optimalForRoster !== 'function' || !myRoster || !currentLeague) return null;
-        const platformStarters = (myRoster.starters || []).filter(pid => pid && String(pid) !== '0');
-        if (!platformStarters.length) return null;
-        let res = null;
-        try { res = WP.optimalForRoster(myRoster, currentLeague, { playersData, statsData, priorData: prevStatsData }); } catch (e) { return null; }
-        const ld = res && res.delta;
-        if (!ld || ld.isOptimal || !(ld.delta > 0)) return null;
-        const s = (ld.startInstead || [])[0] || null;
-        return {
-            week: res.week,
-            delta: ld.delta,
-            swap: s ? { pid: s.pid, name: playersData?.[s.pid]?.full_name || '', pos: s.pos || '', slot: String(s.slot || '').replace('_', ' ') } : null,
-        };
-    }, [rosterState.isUsable, myRoster, currentLeague, playersData, statsData, prevStatsData, timeRecomputeTs]);
-
-    // Publish the lineup read onto the shared intelligence bus (scope
-    // 'lineup') — the first lineup-type publisher app-wide. The store's one
-    // reader is Alex's AI digest ([TOP_RECOMMENDATIONS]), so the same gap the
-    // brief shows gets offered up in Alex chat with zero reader changes.
-    useEffect(() => {
-        if (!lineupAlert) return;
-        if (typeof window.wrIsPro === 'function' && !window.wrIsPro()) return; // free publishes nothing app-wide
-        const I = window.App?.Intelligence;
-        if (!I || typeof I.buildLineupRecommendation !== 'function' || typeof I.publishRecommendations !== 'function') return;
-        try {
-            const rec = I.buildLineupRecommendation({
-                week: lineupAlert.week,
-                delta: lineupAlert.delta,
-                rosterId: myRoster?.roster_id,
-                swaps: lineupAlert.swap ? [lineupAlert.swap] : [],
-                gmPlanNote: gm.hasStrategy && !isSeasonal && gm.mode === 'win_now' ? 'Win-now plan — weekly points are the priority.' : null,
-            });
-            if (rec) I.publishRecommendations('lineup', [rec], { surface: 'intel-brief' });
-        } catch (e) { /* the brief renders fine without the bus */ }
-    }, [lineupAlert, gm.hasStrategy, gm.mode, myRoster?.roster_id]);
-
     // Sell-rule trips — rostered players whose position/age trips a GM sell
     // rule or sell-position (untouchables excluded). Feeds the 'GM plan says
     // move them' action below; same parse the My Roster nudge uses.
@@ -253,78 +218,6 @@ function IntelligenceBriefWidget({
             return { pid, name: p.full_name || pid, pos, dhq: scores[pid] || 0 };
         }).filter(Boolean).sort((a, b) => b.dhq - a.dhq).slice(0, 3);
     }, [gm.hasStrategy, gm.sellRules, gm.sellPositions, gm.untouchable, myRoster, playersData, scores, rosterState.isUsable]);
-
-    // Trade-scope warm (owner ask 2026-07-12) — the brief eagerly seeds the
-    // shared intelligence bus's 'trade' scope the way it already warms
-    // 'waiver'. The real deal engine is desk-bound (component state inside
-    // trade-calc), so the warm publishes PARTNER-FIT intel — their needs ×
-    // your surplus, GM-plan target overlap, owner liquidity — not fabricated
-    // deals. A Deal HQ visit overwrites the scope with real deals; the warm
-    // never clobbers those (meta.surface guard in the publish effect below).
-    const tradeWarm = useMemo(() => {
-        if (!rosterState.isUsable || !myAssess) return [];
-        if (typeof window.wrIsPro === 'function' && !window.wrIsPro()) return [];
-        if (typeof window.assessTeamFromGlobal !== 'function') return [];
-        const myNeeds = new Set((myAssess.needs || []).map(n => String(typeof n === 'string' ? n : n?.pos || '').toUpperCase()).filter(Boolean));
-        const myStrengths = new Set((myAssess.strengths || []).map(s => String(typeof s === 'string' ? s : s?.pos || '').toUpperCase()).filter(Boolean));
-        const gmTargets = gm.hasStrategy && gm.targetPositions instanceof Set ? gm.targetPositions : new Set();
-        const fits = [];
-        (currentLeague?.rosters || []).forEach(r => {
-            if (!r || String(r.roster_id) === String(myRoster?.roster_id)) return;
-            let a = null;
-            try { a = window.assessTeamFromGlobal(r.roster_id); } catch (e) { a = null; }
-            if (!a) return;
-            const theirNeeds = (a.needs || []).map(n => String(typeof n === 'string' ? n : n?.pos || '').toUpperCase()).filter(Boolean);
-            const theirStrengths = (a.strengths || []).map(s => String(typeof s === 'string' ? s : s?.pos || '').toUpperCase()).filter(Boolean);
-            const iCanSell = theirNeeds.filter(pos => myStrengths.has(pos));
-            const iCanGet = theirStrengths.filter(pos => myNeeds.has(pos));
-            const planHits = theirStrengths.filter(pos => gmTargets.has(pos));
-            if (!iCanSell.length && !iCanGet.length && !planHits.length) return;
-            const prof = ownerProfiles[r.owner_id] || {};
-            const liquidity = Math.min(15, (Number(prof.trades) || Number(prof.tradeCount) || 0) * 3);
-            fits.push({
-                rosterId: r.roster_id,
-                ownerId: r.owner_id,
-                name: a.ownerName || a.teamName || prof.name || ('Roster ' + r.roster_id),
-                iCanSell, iCanGet, planHits,
-                liquidity,
-                score: Math.min(96, 40 + iCanSell.length * 12 + iCanGet.length * 12 + planHits.length * 8 + liquidity),
-            });
-        });
-        return fits.sort((a, b) => b.score - a.score).slice(0, 3);
-    }, [rosterState.isUsable, myAssess, currentLeague, myRoster, ownerProfiles, gm.hasStrategy, gm.targetPositions, timeRecomputeTs]);
-
-    useEffect(() => {
-        if (!tradeWarm.length) return;
-        const I = window.App?.Intelligence;
-        if (!I || typeof I.buildTradeRecommendation !== 'function' || typeof I.publishRecommendations !== 'function') return;
-        // Never overwrite REAL desk deals with warm partner fits — the desk's
-        // publish (meta.surface 'trade-desk') is strictly richer intel.
-        const cur = I.recommendationStore?.trade;
-        if (cur?.meta?.surface === 'trade-desk') return;
-        try {
-            const recs = tradeWarm.map(f => I.buildTradeRecommendation({
-                id: 'trade_warm_' + f.rosterId,
-                partnerName: f.name,
-                partnerRosterId: f.rosterId,
-                partnerOwnerId: f.ownerId,
-                score: f.score,
-                reasons: [
-                    f.iCanSell.length ? { code: 'roster_need', detail: 'They need ' + f.iCanSell.join('/') + ' — you have the surplus.' } : null,
-                    f.iCanGet.length ? { code: 'roster_surplus', detail: 'They are deep at ' + f.iCanGet.join('/') + ' — your gap.' } : null,
-                    f.planHits.length ? { code: 'gm_plan', detail: 'They hold ' + f.planHits.join('/') + ' — positions your GM plan targets.' } : null,
-                    f.liquidity > 0 ? { code: 'partner_liquidity', detail: 'Active trader — deals get answered.' } : null,
-                ].filter(Boolean),
-                headline: f.name + ' — complementary roster',
-                detail: [
-                    f.iCanSell.length ? 'needs ' + f.iCanSell.join('/') : null,
-                    f.iCanGet.length ? 'deep at ' + f.iCanGet.join('/') : null,
-                ].filter(Boolean).join(' · ') || 'Roster shapes line up.',
-                badge: 'Partner fit',
-            }));
-            if (recs.length) I.publishRecommendations('trade', recs, { surface: 'intel-brief-warm' });
-        } catch (e) { /* warm is best-effort */ }
-    }, [tradeWarm]);
 
     // Key drops (high-value players dropped in last 3 weeks)
     const keyDrops = useMemo(() => {
@@ -372,6 +265,9 @@ function IntelligenceBriefWidget({
     const userName = window.S?.user?.display_name || window.S?.user?.username || 'Commander';
     const p = BRIEF_VOICE;
     const greetingText = p.greeting(hour, userName);
+    // Date stamp for the brief header (owner's living-brief template).
+    let briefDate = '';
+    try { briefDate = new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase(); } catch (e) { briefDate = ''; }
 
     // Build Alex's conversational briefing
     const needPos = needs.length ? (typeof needs[0] === 'string' ? needs[0] : needs[0]?.pos) : '';
@@ -386,10 +282,7 @@ function IntelligenceBriefWidget({
     // UNKNOWN tier = assessment hasn't loaded — never let it fall through to
     // the rebuilding copy ('ranked 0th, health score 0' as fact). Same for a
     // known tier with no rank yet: don't interpolate ordinal(0).
-    const tierMsg = !rosterState.isUsable ? (rosterState.brief || (isChopped
-        ? 'Roster sync incomplete. I paused survival and waiver recommendations until player IDs finish loading.'
-        : 'Roster sync incomplete. I paused roster, trade, waiver, and league-rank recommendations until player IDs finish loading.'))
-        : isChopped ? 'Survival mode is active. Protect your weekly scoring floor, then keep enough FAAB ready for the next chopped roster.'
+    const tierMsg = !rosterState.isUsable ? (rosterState.brief || 'Roster sync incomplete. I paused roster, trade, waiver, and league-rank recommendations until player IDs finish loading.')
         : (!myAssess || tier === 'UNKNOWN') ? 'Still syncing your league read — I’ll have your tier, rank, and health score once the data lands.'
         : tier === 'ELITE' ? pickTier(p.elite)
         : myRank <= 0 ? ('Your roster reads ' + tier + ' with a health score of ' + hs + ' — league rank is still syncing.')
@@ -405,17 +298,9 @@ function IntelligenceBriefWidget({
     // ONE strategy-frame lead sentence (owner rule: frame only — never restate
     // adjacent KPIs). Built from the committed GM plan, not the roster grade.
     const TIMELINE_FRAME = { '1_year': 'all-in on this season', '2_3_years': 'building for a 2-3 year window', 'dynasty_long': 'playing the long game' };
-    const strategyFrame = isChopped
-        ? 'Your survival plan: protect the weekly floor, preserve FAAB flexibility, and attack the player pool after every chop.'
-        : (gm.hasStrategy && !isSeasonal)
+    const strategyFrame = gm.hasStrategy
         ? 'Your plan: ' + (gm.modeLabel || gm.mode) + ', ' + (TIMELINE_FRAME[gm.timeline] || 'on your timeline') + ' — everything below is read against that.'
         : '';
-
-    // Brief prose at tall/xl/default: strategy frame (lead) + tier read, and
-    // nothing else. Elites, gaps, trades, and FAAB all render as KPIs or
-    // action rows on this same widget — never narrated twice (de-busying
-    // rule: prose is a lead, not a summary).
-    const briefText = strategyFrame ? strategyFrame + ' ' + tierMsg : tierMsg;
 
     // Three-sentence summary — fits a 160px-tall md row, no scroll
     const threeSentence = (() => {
@@ -423,8 +308,7 @@ function IntelligenceBriefWidget({
         const parts = [];
         if (strategyFrame) parts.push(strategyFrame);
         parts.push(tierMsg);
-        if (lineupAlert && alexFocus.startSit !== false) parts.push(`${lineupAlert.delta.toFixed(1)} pts on your bench this week.`);
-        else if (needPos && alexFocus.gmStyle !== false) parts.push(`Biggest gap: ${needPos}.`);
+        if (needPos && alexFocus.gmStyle !== false) parts.push(`Biggest gap: ${needPos}.`);
         else if (elites > 0) parts.push(`${elites} elite anchor${elites > 1 ? 's' : ''}.`);
         if (waiverTarget && alexFocus.waivers !== false) parts.push(`${waiverTarget.name} (${waiverTarget.pos}) sitting on the wire.`);
         else if (draftCountdown) parts.push(draftCountdown.days === 0 ? 'Draft is today.' : `Draft in ${draftCountdown.days} day${draftCountdown.days !== 1 ? 's' : ''}.`);
@@ -447,6 +331,35 @@ function IntelligenceBriefWidget({
         if (navigateWidget) navigateWidget(target);
         else if (setActiveTab) setActiveTab(target);
     };
+    // Power Rankings is a widget on this same dashboard (not a tab), so a click
+    // scrolls to it. Falls back to the analytics tab if it isn't on the board.
+    const scrollToPowerRankings = () => {
+        try {
+            const heading = Array.from(document.querySelectorAll('*'))
+                .find(e => e.childElementCount === 0 && /^power rankings$/i.test(String(e.textContent || '').trim()));
+            if (heading) {
+                let card = heading;
+                for (let i = 0; i < 8 && card.parentElement; i++) { card = card.parentElement; if (card.offsetHeight > 200) break; }
+                if (card && typeof card.scrollIntoView === 'function') { card.scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
+            }
+        } catch (e) { /* fall through */ }
+        goTo('analytics');
+    };
+    // Trade news links to the Transaction Ticker widget on this same dashboard
+    // (heading renders as "📰 TRANSACTION TICKER"). Falls back to Power Rankings.
+    const scrollToTransactions = () => {
+        try {
+            // The ticker card carries a stable anchor (dashboard.js).
+            let card = document.querySelector('[data-wr-widget="transaction-ticker"]');
+            if (!card) {
+                const heading = Array.from(document.querySelectorAll('*'))
+                    .find(e => /transaction ticker/i.test(String(e.textContent || '').trim()) && e.querySelectorAll('*').length < 4);
+                if (heading) { card = heading; for (let i = 0; i < 8 && card.parentElement; i++) { card = card.parentElement; if (card.offsetHeight > 200) break; } }
+            }
+            if (card && typeof card.scrollIntoView === 'function') { card.scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
+        } catch (e) { /* fall through */ }
+        scrollToPowerRankings();
+    };
 
     // ── Action list (priority-ordered, focus-gated) ─────────────────
     let actions = [];
@@ -460,20 +373,6 @@ function IntelligenceBriefWidget({
             detail: rosterState.message + ' ' + rosterState.detail,
         });
     } else {
-    // Lineup gap leads the queue — it's the one item with a weekly deadline.
-    // One exception below: rebuild / sell-high plans still unshift the
-    // sell-rule action to the very front (asset moves outrank weekly points
-    // when the plan says so) — strategy-aware ordering, not a fixed ladder.
-    if (alexFocus.startSit !== false && lineupAlert) {
-        actions.push({
-            icon: '⚡', tab: 'lineup',
-            title: lineupAlert.delta.toFixed(1) + ' projected pts sitting on your bench.',
-            detail: (lineupAlert.swap && lineupAlert.swap.name
-                ? 'Start ' + lineupAlert.swap.name + (lineupAlert.swap.pos ? ' · ' + lineupAlert.swap.pos + (lineupAlert.swap.slot ? ' → ' + lineupAlert.swap.slot : '') : '') + ' · Wk ' + lineupAlert.week + '. '
-                : 'Optimal swap ready for Wk ' + lineupAlert.week + '. ')
-                + (gm.hasStrategy && gm.mode === 'win_now' ? 'Your plan is win-now — every weekly point counts.' : 'Set it before kickoff.'),
-        });
-    }
     // GM Strategy annotation: flag the waiver target when it fills a position
     // the plan says to acquire (same tag FA's priority adds compute).
     const waiverIsGmTarget = !!(waiverTarget && gm.hasStrategy && gm.targetPositions instanceof Set && gm.targetPositions.has(String(waiverTarget.pos)));
@@ -513,19 +412,10 @@ function IntelligenceBriefWidget({
         else actions.push(sellAction);
     }
     if (alexFocus.trades !== false) {
-        // Warm partner-fit intel upgrades the generic CTA into a named call:
-        // best complementary roster + why, straight from the tradeWarm scan.
-        const topFit = tradeWarm[0] || null;
         actions.push({
             icon: '🔄', tab: 'trades',
-            title: topFit ? (topFit.name + ' looks like your best call.') : p.trade(Object.keys(ownerProfiles).length),
-            detail: topFit
-                ? [
-                    topFit.iCanSell.length ? 'They need ' + topFit.iCanSell.join('/') + ' — you’re deep.' : null,
-                    topFit.iCanGet.length ? 'They’re stacked at ' + topFit.iCanGet.join('/') + ' — your gap.' : null,
-                    topFit.planHits.length ? 'GM plan: they hold ' + topFit.planHits.join('/') + '.' : null,
-                  ].filter(Boolean).join(' ') + ' Open Deal HQ and I’ll build it.'
-                : 'Let me show you who needs what — and what you could get in return.',
+            title: p.trade(Object.keys(ownerProfiles).length),
+            detail: 'Let me show you who needs what — and what you could get in return.',
         });
     }
     if (alexFocus.draft !== false && draftCountdown) {
@@ -545,7 +435,7 @@ function IntelligenceBriefWidget({
     }
 
     // ── Reusable action button ───────────────────────────────────────
-    const baseBtn = { background: 'var(--acc-fill1, rgba(212,175,55,0.05))', border: '1px solid var(--acc-fill3, rgba(212,175,55,0.15))', borderRadius: 'var(--card-radius, 10px)', color: 'var(--gold)', cursor: 'pointer', fontFamily: 'var(--font-body)', fontWeight: 500, textAlign: 'left', display: 'flex', alignItems: 'flex-start', gap: '10px', transition: 'all 0.15s', lineHeight: 1.4 };
+    const baseBtn = { background: 'var(--acc-fill1, rgba(212,175,55,0.05))', border: '1px solid var(--acc-fill3, rgba(212,175,55,0.15))', borderRadius: '10px', color: 'var(--gold)', cursor: 'pointer', fontFamily: 'var(--font-body)', fontWeight: 500, textAlign: 'left', display: 'flex', alignItems: 'flex-start', gap: '10px', transition: 'all 0.15s', lineHeight: 1.4 };
     function renderActionBtn(a, key, opts = {}) {
         const compact = !!opts.compact;
         const btnStyle = {
@@ -571,70 +461,161 @@ function IntelligenceBriefWidget({
         );
     }
 
-    // ── GM Plan strip — the brief's strategy spine made visible ─────
-    // Renders at tall/xl, with numeric guardrails added at xxl (deep) —
-    // the bigger the widget, the deeper the plan readout. This is the first
-    // deterministic consumer of the effects() depth fields (aggressionKey,
-    // acceptanceFloor, horizonYears) outside trade tooling. Tap → strategy
-    // editor. No plan set → a single "Set your strategy" chip.
-    const POSTURE_CHIP = { buy_low: 'Buying low', sell_high: 'Selling high', hold: 'Holding assets', exploit: 'Exploiting edges' };
-    const DRAFT_CHIP = { accumulate: 'Stockpiling picks', consolidate: 'Consolidating up', positional_need: 'Drafting for need', bpa: 'Best available' };
-    const AGGR_CHIP = { conservative: 'Conservative', medium: 'Balanced', aggressive: 'Aggressive' };
-    const TIMELINE_CHIP = { '1_year': 'This year', '2_3_years': '2-3 yr window', 'dynasty_long': 'Long game' };
-    function planChips(opts = {}) {
-        // GM Strategy mode itself (Rebuild/Compete/Win-Now — every preset's own
-        // copy talks about picks and multi-year builds) is a dynasty concept;
-        // a seasonal league has nothing to show here, not even a "set your
-        // strategy" prompt (there's no strategy TO set).
-        if (isSeasonal) return null;
-        const deep = !!opts.deep;
-        const chips = isChopped ? [
-            'Survive',
-            'Weekly floor',
-            'FAAB discipline',
-            'Waiver-first',
-        ] : gm.hasStrategy ? [
-            gm.modeLabel || gm.mode,
-            TIMELINE_CHIP[gm.timeline],
-            POSTURE_CHIP[gm.marketPosture],
-            DRAFT_CHIP[gm.draftStyle],
-            AGGR_CHIP[gm.aggressionKey],
-            ...(deep ? [
-                gm.acceptanceFloor ? 'Deal floor ' + gm.acceptanceFloor + '%' : null,
-                gm.horizonYears ? 'Horizon ~' + gm.horizonYears + 'y' : null,
-            ] : []),
-        ].filter(Boolean) : null;
-        const chipStyle = { fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: "'JetBrains Mono', monospace", color: 'var(--silver)', border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', background: 'var(--ov-1, rgba(255,255,255,0.02))', borderRadius: 'var(--card-radius-xs, 5px)', padding: '2px 7px', whiteSpace: 'nowrap' };
-        return React.createElement('div', {
-            onClick: (e) => { e.stopPropagation(); goTo(isChopped ? 'fa' : 'strategy'); },
-            title: isChopped ? 'Your survival plan — open Free Agency' : (gm.hasStrategy ? 'Your GM plan — tap to adjust' : 'No GM plan set — tap to set one'),
-            style: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '5px', cursor: 'pointer', flexShrink: 0 },
-        },
-            React.createElement('span', { style: { fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.08em', fontFamily: "'JetBrains Mono', monospace" } }, isChopped ? 'SURVIVAL PLAN' : 'GM PLAN'),
-            ...(chips
-                ? chips.map((c, i) => React.createElement('span', { key: i, style: chipStyle }, c))
-                : [React.createElement('span', { key: 'none', style: { ...chipStyle, color: 'var(--gold)', border: '1px dashed var(--acc-line2, rgba(212,175,55,0.35))' } }, 'Set your strategy →')]),
-        );
-    }
-
     // ── Reusable header ─────────────────────────────────────────────
     function header(opts = {}) {
         const tight = !!opts.tight;
         return React.createElement('div', { style: { padding: tight ? '8px 14px 6px' : '20px 20px 0', borderBottom: '1px solid var(--acc-fill2, rgba(212,175,55,0.1))', paddingBottom: tight ? '6px' : '12px', flexShrink: 0 } },
-            React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: tight ? '0.62rem' : '0.72rem', color: 'var(--gold)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: tight ? '2px' : '4px', display: 'flex', alignItems: 'center', gap: '6px' } },
-                window.AlexAvatar ? React.createElement(window.AlexAvatar, { size: tight ? 14 : 16 }) : null,
-                'INTELLIGENCE BRIEFING',
+            React.createElement('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: tight ? '2px' : '4px' } },
+                React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: tight ? '0.62rem' : '0.72rem', color: 'var(--gold)', letterSpacing: '0.12em', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '6px' } },
+                    window.AlexAvatar ? React.createElement(window.AlexAvatar, { size: tight ? 14 : 16 }) : null,
+                    'INTELLIGENCE BRIEFING',
+                ),
+                // Living-brief date stamp (owner's template) — right-aligned.
+                React.createElement('div', { style: { fontFamily: 'JetBrains Mono, monospace', fontSize: tight ? '0.6rem' : '0.68rem', color: 'var(--silver)', opacity: 0.7, letterSpacing: '0.04em', whiteSpace: 'nowrap' } }, briefDate),
             ),
             React.createElement('div', { style: { fontSize: tight ? '0.92rem' : '1.2rem', fontWeight: 700, color: 'var(--white)' } }, greetingText),
+            // AI Conductor — Situation Room "what changed" line. Renders only
+            // when the flag is on AND something material changed since last
+            // visit; otherwise returns null. Suppressed (noPulse) on the sizes
+            // whose body carries the structured brief, which leads with its own
+            // quiet 24-hour line.
+            (!opts.noPulse && window.WR && window.WR.BriefPulse && window.WR.BriefPulse.Line)
+                ? React.createElement(window.WR.BriefPulse.Line, { league: currentLeague, roster: myRoster, playersData: playersData, tight: tight })
+                : null,
         );
     }
 
-    // ── FREE TEASER (all sizes) — Scout Today-brief precedent ────────
-    // Free sees the greeting + section titles with counts only: the tier
-    // read (tierMsg/briefText) and the action recs (waiver target, trade
-    // steers, CTAs) never reach the DOM. Defense-in-depth behind the
-    // dashboard registry gate (WIDGET_MODULES['intel-brief'].pro).
-    const briefPro = typeof window.wrIsPro !== 'function' || window.wrIsPro();
+    // ── 24-hour lead read (owner's line 1) ──────────────────────────
+    // Compute the "what changed since last visit" read once, read-only, then
+    // acknowledge it via an effect (save the snapshot) so a real change shows
+    // once and then settles back to the steady line. Mirrors BriefPulse.Line's
+    // internals, but lets us render line 1 as a full bullet like the others.
+    let leadChangeText = 'No change in League rankings or posture over the past 24 hours.';
+    let _leadCurr = null, _leadLeagueId = null, _leadMaterial = false, _leadEyes = false, _leadHot = false, _leadLine = '';
+    try {
+        if (window.WR && window.WR.SituationRoom && typeof window.WR.SituationRoom.enabled === 'function' && window.WR.SituationRoom.enabled() && window.WR.BriefPulse && window.WR.BriefPulse.readNow && rosterState.isUsable && currentLeague && myRoster) {
+            // readNow attaches the league-trade radar (a rival blockbuster the
+            // roster-only diff can't see) before diffing against last visit.
+            const rd = window.WR.BriefPulse.readNow(currentLeague, myRoster, playersData);
+            _leadCurr = rd.curr; _leadLeagueId = rd.leagueId;
+            if (rd.material && rd.line) { leadChangeText = rd.line; _leadLine = rd.line; _leadMaterial = true; _leadEyes = !!rd.eyes; _leadHot = true; }
+            // Held: an already-acknowledged change under 24h old keeps
+            // headlining (the old behavior forgot it on the next render, so
+            // the lead never left "No change" — owner report 2026-09-02).
+            else if (rd.held && rd.line) { leadChangeText = rd.line; _leadEyes = !!rd.eyes; _leadHot = true; }
+        }
+    } catch (e) { /* keep the steady no-change line */ }
+    useEffect(() => {
+        if (!_leadMaterial || !_leadCurr || !(window.WR && window.WR.BriefPulse && window.WR.BriefPulse.acknowledge)) return;
+        // Acknowledge with the line included so it holds for 24h on both surfaces.
+        try { window.WR.BriefPulse.acknowledge(_leadLeagueId, _leadCurr, { line: _leadLine, eyes: _leadEyes }); } catch (e) {}
+    }, [_leadMaterial, _leadCurr && _leadCurr.fingerprint]);
+
+    // ── Structured "living brief" body (owner's template) ───────────
+    // Each line fills from live data and is OMITTED entirely when its data
+    // isn't available (never a blank / "___"). Every data line carries a
+    // tappable source that jumps to the tab it's pulled from. The cutdown-date
+    // line is intentionally left out — Sleeper doesn't expose it (owner call).
+    function renderIntelBody(opts = {}) {
+        const compact = !!opts.compact;
+        const bodyFs = compact ? '0.82rem' : 'var(--text-body, 1rem)';
+
+        const val = (t, col) => React.createElement('span', { style: { fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: col } }, t);
+        const chip = (t) => React.createElement('span', { key: t, style: { display: 'inline-block', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.82em', fontWeight: 700, padding: '0 6px', borderRadius: '4px', margin: '0 3px 0 0', background: 'rgba(232,106,90,0.13)', color: 'var(--bad, #e86a5a)', border: '1px solid rgba(232,106,90,0.28)' } }, t);
+
+        // Roster capacity — read live from the league + your roster.
+        const rosterPositions = currentLeague?.roster_positions || [];
+        const activeCap = rosterPositions.length;
+        const taxiCap = currentLeague?.settings?.taxi_slots || 0;
+        const irCap = currentLeague?.settings?.reserve_slots || 0;
+        const totalCap = activeCap + taxiCap + irCap;
+        const taxiCount = (myRoster?.taxi || []).length;
+        const irCount = (myRoster?.reserve || []).length;
+        const totalPlayers = (myRoster?.players || []).length;
+        const activeCount = Math.max(0, totalPlayers - taxiCount - irCount);
+
+        const weakPos = needs.map(n => (typeof n === 'string' ? n : n?.pos)).filter(Boolean).slice(0, 4);
+        const hasWaiverNames = !!(waiverTarget || (keyDrops && keyDrops.length));
+
+        // Each line leads with its own emoji instead of a shared ◆ bullet
+        // (owner's brief spec 2026-07-21). The lead read is 📰 on a quiet day
+        // and flips to 👀 whenever ANY material change or trade surfaces.
+        const lines = [];
+        // Line 1 — 24-hour lead read. A fresh league trade links to the
+        // Transaction Ticker; otherwise it scrolls to Power Rankings.
+        lines.push({ key: 'lead', icon: _leadHot ? '👀' : '📰', pr: !_leadEyes, txn: _leadEyes, src: _leadEyes ? 'Transaction Ticker' : 'Power Rankings', body: [leadChangeText] });
+        // Line 2 — rank + health → Analytics tab.
+        if (myRank > 0 && tier !== 'UNKNOWN') {
+            lines.push({ key: 'rank', icon: '🎯', target: 'analytics', src: 'Analytics',
+                body: ["You're ranked ", val(ordinal(myRank), 'var(--bad, #e86a5a)'), ' with an overall Health score of ', val(String(hs), 'var(--white)'), ' — ', React.createElement('strong', { key: 't', style: { color: 'var(--white)' } }, tier), ' tier.'] });
+        }
+        // Line 3 — roster count → My Roster.
+        if (activeCap > 0) {
+            const detail = taxiCap > 0
+                ? [' — ', val(activeCount + '/' + activeCap, 'var(--silver)'), ' active · ', val(taxiCount + '/' + taxiCap, 'var(--silver)'), ' taxi']
+                : [];
+            lines.push({ key: 'roster', icon: '💪', target: 'myteam', src: 'My Roster',
+                body: ['Roster: ', val(String(totalPlayers), 'var(--white)'), ' of ', val(String(totalCap), 'var(--white)'), ...detail] });
+        }
+        // Line 4 — positional weaknesses → My Roster.
+        if (weakPos.length) {
+            lines.push({ key: 'weak', icon: '🤔', target: 'myteam', src: 'My Roster',
+                body: ['Key positional weaknesses: ', ...weakPos.map(chip)] });
+        }
+        // Line 5 — FAAB → Free Agency.
+        if (budget > 0) {
+            lines.push({ key: 'faab', icon: '💵', target: 'fa', src: 'Free Agency',
+                body: ["You've got ", val('$' + faabRemaining.toLocaleString(), 'var(--k-7c6bf8, #7c6bf8)'), ' FAAB left' + (hasWaiverNames ? ', with names available on waivers.' : '.')] });
+        }
+
+        // Each line is a full, tappable bullet — click anywhere on it to jump
+        // to the tab it's pulled from. The "↳ source →" hint shows the target.
+        const kids = lines.map((ln, i) => React.createElement('div', {
+            key: ln.key,
+            onClick: () => (ln.txn ? scrollToTransactions() : ln.pr ? scrollToPowerRankings() : goTo(ln.target)),
+            onMouseEnter: (e) => { e.currentTarget.style.background = 'var(--acc-fill1, rgba(212,175,55,0.05))'; },
+            onMouseLeave: (e) => { e.currentTarget.style.background = 'transparent'; },
+            style: { display: 'grid', gridTemplateColumns: '20px 1fr', gap: '10px', padding: compact ? '8px' : '11px 8px', borderTop: i === 0 ? 'none' : '1px solid var(--ov-4, rgba(255,255,255,0.06))', borderRadius: '6px', alignItems: 'start', cursor: 'pointer', transition: 'background 0.12s' },
+        },
+            React.createElement('div', { 'aria-hidden': 'true', style: { marginTop: '2px', fontSize: '14px', lineHeight: 1 } }, ln.icon || '◆'),
+            React.createElement('div', { style: { minWidth: 0 } },
+                React.createElement('div', { style: { fontSize: bodyFs, color: '#cdd3de', lineHeight: 1.5 } }, ...ln.body),
+                React.createElement('div', { style: { marginTop: '3px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.68rem', letterSpacing: '0.03em', color: 'var(--gold-dim, #b8912f)' } }, '↳ ' + ln.src + ' →'),
+            ),
+        ));
+
+        // Natural height (no flex-grow) so the action CTAs sit directly beneath
+        // the last line instead of being pushed to the card's bottom edge.
+        return React.createElement('div', { style: { display: 'flex', flexDirection: 'column', minHeight: 0, flexShrink: 0 } }, ...kids);
+    }
+
+    // ── Countdown to NFL Opening Day / fantasy kickoff (owner's Sep 9) ──
+    // Pinned to the very bottom of the brief (marginTop: auto in the flex
+    // column). Recomputes every render, rolls to next year once Sep 9 passes.
+    function renderCountdown() {
+        let days = null;
+        try {
+            const now = new Date();
+            let t = new Date(now.getFullYear(), 8, 9);
+            if (t.getTime() - now.getTime() < 0) t = new Date(now.getFullYear() + 1, 8, 9);
+            days = Math.max(0, Math.ceil((t.getTime() - now.getTime()) / 86400000));
+        } catch (e) { return null; }
+        if (days == null) return null;
+        return React.createElement('div', {
+            style: { display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '9px', flexShrink: 0, marginTop: 'auto', padding: '11px 4px', borderTop: '1px solid var(--acc-fill2, rgba(212,175,55,0.12))', background: 'linear-gradient(180deg, transparent, rgba(212,175,55,0.05))' },
+        },
+            React.createElement('span', { style: { fontSize: '1.15rem' } }, '🏈'),
+            React.createElement('span', { style: { fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, fontSize: '1.1rem', color: 'var(--gold)' } }, days === 0 ? 'KICKOFF' : String(days)),
+            React.createElement('span', { style: { fontSize: '0.8rem', color: 'var(--silver)' } }, days === 0 ? 'NFL Opening Day is here!' : ((days === 1 ? 'day' : 'days') + ' to NFL Opening Day & fantasy kickoff')),
+            React.createElement('span', { style: { fontFamily: 'JetBrains Mono, monospace', fontSize: '0.68rem', color: 'var(--gold-dim, #b8912f)', letterSpacing: '0.04em', whiteSpace: 'nowrap' } }, '· SEP 9'),
+        );
+    }
+
+    // ── Intel Brief is FREE for every tier (owner call 2026-07-11) ───
+    // The full brief — tier read, action recs, CTAs — renders for free
+    // users as the showcase that pulls them toward Pro. The teaser branch
+    // below is kept for a future re-gate but never taken.
+    const briefPro = true;
     if (!briefPro) {
         const tight = size === 'md' || size === 'lg' || size === 'xl';
         const teaserRows = [
@@ -683,33 +664,26 @@ function IntelligenceBriefWidget({
         );
     }
 
-    // ── tall (2×4, 640px tall) — full vertical layout ────────────────
+    // ── tall — living brief; fills its (3-row) slot, countdown pinned bottom
     if (size === 'tall') {
         return React.createElement('div', { style: cardStyle },
-            header(),
-            React.createElement('div', { style: { padding: '16px 20px', flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' } },
-                React.createElement('div', { style: { fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', lineHeight: 1.75, marginBottom: '12px', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 6, WebkitBoxOrient: 'vertical', flexShrink: 0 } }, briefText),
-                !isSeasonal && React.createElement('div', { style: { marginBottom: '14px' } }, planChips()),
-                React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px' } },
-                    ...actions.slice(0, 5).map((a, i) => renderActionBtn(a, 'tall-' + i)),
-                ),
+            header({ noPulse: true }),
+            React.createElement('div', { style: { padding: '12px 18px 14px', flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '10px' } },
+                renderIntelBody(),
+                // Action cards moved off the board for now (owner call) — the
+                // brief is the intel lines + kickoff countdown.
+                renderCountdown(),
             ),
         );
     }
 
-    // ── xl (4×2, 320×640) — split columns, no scroll ─────────────────
+    // ── xl — living brief, single column (fills its slot) ──
     if (size === 'xl') {
-        const top4 = actions.slice(0, 4);
         return React.createElement('div', { style: cardStyle },
-            header({ tight: true }),
-            React.createElement('div', { className: 'wr-ib-xl-body', style: { padding: '10px 14px', flex: 1, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '14px', overflow: 'hidden' } },
-                React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px', minHeight: 0, overflow: 'hidden' } },
-                    React.createElement('div', { style: { fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', lineHeight: 1.65, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 7, WebkitBoxOrient: 'vertical' } }, briefText),
-                    planChips(),
-                ),
-                React.createElement('div', { className: 'wr-ib-xl-actions', style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', minHeight: 0 } },
-                    ...top4.map((a, i) => renderActionBtn(a, 'xl-' + i, { compact: true, titleClamp: 2 })),
-                ),
+            header({ tight: true, noPulse: true }),
+            React.createElement('div', { style: { padding: '10px 16px 14px', flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '10px' } },
+                renderIntelBody(),
+                renderCountdown(),
             ),
         );
     }
@@ -734,7 +708,7 @@ function IntelligenceBriefWidget({
                 React.createElement('div', { className: 'wr-ib-kpi-strip', style: { display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '6px', flexShrink: 0 } },
                     ...kpis.map((k, i) => React.createElement('div', {
                         key: i,
-                        style: { background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.06))', borderRadius: 'var(--card-radius-sm, 8px)', padding: '8px 6px', textAlign: 'center' },
+                        style: { background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.06))', borderRadius: '6px', padding: '8px 6px', textAlign: 'center' },
                     },
                         React.createElement('div', { style: { fontFamily: 'JetBrains Mono, monospace', fontSize: '1.1rem', fontWeight: 700, color: k.col, lineHeight: 1.1 } }, String(k.value)),
                         React.createElement('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: '3px' } }, k.label),
@@ -753,10 +727,6 @@ function IntelligenceBriefWidget({
                         )),
                     ),
                 ),
-                // Deep plan readout — xxl is the flagship size, so it carries
-                // the numeric guardrails (deal floor, horizon) no other
-                // surface renders deterministically.
-                planChips({ deep: true }),
                 // "Alex's Read" column dropped (de-busying Q2): its prose only
                 // restated the KPI row above. Actions stand alone, full width,
                 // non-compact so the detail lines carry the specifics.
@@ -768,14 +738,13 @@ function IntelligenceBriefWidget({
         );
     }
 
-    // Default: tall layout
+    // Default: living-brief layout (same as tall)
     return React.createElement('div', { style: cardStyle },
-        header(),
-        React.createElement('div', { style: { padding: '16px 20px', flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' } },
-            React.createElement('div', { style: { fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', lineHeight: 1.75, marginBottom: '20px', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 6, WebkitBoxOrient: 'vertical', flexShrink: 0 } }, briefText),
-            React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px' } },
-                ...actions.slice(0, 5).map((a, i) => renderActionBtn(a, 'def-' + i)),
-            ),
+        header({ noPulse: true }),
+        React.createElement('div', { style: { padding: '12px 18px 14px', flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '10px' } },
+            renderIntelBody(),
+            // Action cards moved off the board for now (owner call).
+            renderCountdown(),
         ),
     );
 }
@@ -815,7 +784,7 @@ function FieldNotesWidget({ size = 'lg', navigateWidget }) {
         research:  { label: 'Research',       color: 'var(--gold)' },
         league:    { label: 'League intel',   color: 'var(--info)' },
         scout:     { label: 'Scout sessions', color: 'var(--k-00c8b4, #00c8b4)' },
-        warroom:   { label: 'War Room',       color: 'var(--gold)' },
+        warroom:   { label: 'Dynasty HQ',     color: 'var(--gold)' },
     };
     const classify = (e) => {
         const cat = (e.category || '').toLowerCase();
@@ -867,7 +836,7 @@ function FieldNotesWidget({ size = 'lg', navigateWidget }) {
 	            !tight && React.createElement('button', {
 	                type: 'button',
 	                onClick: e => { e.stopPropagation(); openNotes(); },
-	                style: { marginTop: '4px', border: '1px solid var(--acc-line2, rgba(212,175,55,0.35))', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)', borderRadius: 'var(--card-radius-sm, 8px)', padding: '7px 10px', minHeight: '44px', fontSize: 'var(--text-label, 0.75rem)', fontFamily: monoFont, fontWeight: 800, letterSpacing: '0.04em', cursor: navigateWidget ? 'pointer' : 'default' },
+	                style: { marginTop: '4px', border: '1px solid var(--acc-line2, rgba(212,175,55,0.35))', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)', borderRadius: '6px', padding: '7px 10px', minHeight: '44px', fontSize: 'var(--text-label, 0.75rem)', fontFamily: monoFont, fontWeight: 800, letterSpacing: '0.04em', cursor: navigateWidget ? 'pointer' : 'default' },
 	            }, 'OPEN GM OFFICE'),
 	        );
 	    }

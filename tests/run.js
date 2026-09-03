@@ -137,10 +137,6 @@ process.stdout.write('  Loading player-value.js … ');
 loadScript(ctx, 'js/utils/player-value.js');
 process.stdout.write('OK\n');
 
-process.stdout.write('  Loading chopped.js … ');
-loadScript(ctx, 'js/shared/chopped.js');
-process.stdout.write('OK\n');
-
 // trade-calc.js uses JSX throughout; extract only the pure function
 process.stdout.write('  Extracting computeWeightedDNA … ');
 const tradeCalcSrc = fs.readFileSync(path.join(ROOT, 'js/trade-calc.js'), 'utf8');
@@ -365,7 +361,20 @@ test('server paid with unknown product tier → scout minimum',
 test('malformed JSON profile → free',
   () => { resetTierState(); ls.setItem('od_profile_v1', '{bad json{{'); eq(getUserTier(), 'free'); resetTierState(); });
 
-group('canAccess');
+// BILLING LIVE (2026-07-10): core.js turns tier gating ON by default; an
+// explicit opt-out (__WR_ENFORCE_TIERS = false) restores unlocked tester mode.
+group('canAccess (billing live: gating on by default)');
+test('default: trade-finder gated for free',
+  () => { resetTierState(); ok(!canAccess('trade-finder')); });
+test('default: owner-dna gated for free',
+  () => { resetTierState(); ok(!canAccess('owner-dna')); });
+test('opt-out flag restores unlocked tester mode',
+  () => { resetTierState(); ctx.window.__WR_ENFORCE_TIERS = false; ok(canAccess('ai-unlimited')); ctx.window.__WR_ENFORCE_TIERS = true; });
+
+// With enforcement ON, the original billing matrix applies (kept tested for
+// when subscriptions are re-enabled).
+ctx.window.__WR_ENFORCE_TIERS = true;
+group('canAccess (tier enforcement on)');
 test('free: my-roster-basic accessible',
   () => { resetTierState(); ok(canAccess('my-roster-basic')); });
 test('free: draft-rankings accessible',
@@ -394,6 +403,7 @@ test('warroom: analytics-full accessible',
   () => { resetTierState(); setServerProductTier('warroom'); ok(canAccess('analytics-full')); resetTierState(); });
 test('warroom: intelligence-full accessible',
   () => { resetTierState(); setServerProductTier('warroom'); ok(canAccess('intelligence-full')); resetTierState(); });
+delete ctx.window.__WR_ENFORCE_TIERS; // restore test-flight default for remaining tests
 
 // ══════════════════════════════════════════════════════════════════
 // 5. getPickValue
@@ -808,101 +818,503 @@ test('marks DHQ as degraded when LI loaded but owned assets are unvalued',
     eq(m.totals.useValueShare, false);
   });
 
-// ── CHOPPED-league awareness: a third province, format type 3. Its
-// roster carries DELIBERATELY NONZERO wins/losses (impossible on real
-// Sleeper data) specifically so the aggregate-exclusion assertions below
-// are falsifiable — if totalRecord ever stopped filtering chopped
-// provinces, these numbers would leak in and the test would catch it.
-function empireFixtureWithChopped(rosterOverrides) {
-  const base = empireFixture();
-  base.allLeagues = base.allLeagues.concat([{
-    id: 'l3',
-    name: 'Gamma Chopped',
-    season: '2026',
-    settings: { type: 3, last_chopped_leg: 17 },
-    rosters: [
-      Object.assign({
-        roster_id: 5, owner_id: 'u1', players: ['p1'],
-        settings: { wins: 99, losses: 99 },   // impossible on Sleeper; proves the filter is real
-      }, rosterOverrides || {}),
-      { roster_id: 6, owner_id: 'u4', players: [], settings: { eliminated: 2, locked: 1 } },
-    ],
-    tradedPicks: [],
-  }]);
-  // Preserve the base fixture's per-roster assessTeam (roster 1 → 82,
-  // everything else → 34) for rosters 1-4 so l1/l2 stay directly comparable
-  // to the no-chopped baseline; roster 5 gets its OWN real health score (55)
-  // — the point of the next test is proving the ENGINE nulls it once
-  // eliminated, not that the assessment pipeline already knows to skip it.
-  const baseAssessTeam = base.assessTeam;
-  base.assessTeam = rid => (rid === 5 ? { healthScore: 55, tier: 'CONTENDER', needs: [], strengths: [] } : baseAssessTeam(rid));
-  return base;
+// ══════════════════════════════════════════════════════════════════
+// Sign-in session contract (source pins — full suite in billing-schema.js)
+// ══════════════════════════════════════════════════════════════════
+console.log('\n\nSign-in session contract');
+
+test('google oauth callback stores the full user record (id included)',
+  () => {
+    const landing = fs.readFileSync(path.join(ROOT, 'landing.html'), 'utf8');
+    // getAppSession() refuses sessions without user.id — rebuilding the user
+    // object as {email, displayName} silently locks Google accounts to free.
+    ok(landing.includes('FRESH_OAUTH_RETURN'), 'oauth callback must re-sync on fresh returns');
+    ok(landing.includes('Object.assign({}, appSession.user || {}'), 'oauth callback must keep the whole user record');
+  });
+
+// (The 'session issuers share one entitlements helper' test lives in the dev
+// repo alongside supabase/functions/ — this web-only repo has no backend
+// sources to pin, so that check is intentionally absent here.)
+
+test('guest lane: the whole loop survives (button, gates, connect page)',
+  () => {
+    // The Guest Sign In lane (Apple 5.1.1(v), owner ruling 2026-08-21: shown
+    // on the website too) vanished once already — the 2026-08-17 marketing
+    // swap replaced landing.html and nothing pinned the button. Pin every
+    // link in the chain so no future page swap can silently drop it.
+    const landing = fs.readFileSync(path.join(ROOT, 'landing.html'), 'utf8');
+    const index = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+    const connect = fs.readFileSync(path.join(ROOT, 'connect-sleeper.html'), 'utf8');
+    ok(landing.includes('id="btnGuest"'), 'landing must carry the Guest Sign In button');
+    ok(landing.includes("localStorage.setItem('wr_guest_v1','1')"), 'guest button must set the guest flag');
+    ok(landing.includes("window.location.href='connect-sleeper.html'"), 'guest button must lead to the connect page');
+    ok((landing.match(/wr_guest_v1/g) || []).length >= 2, 'landing head gate must fast-path returning guests');
+    ok(index.includes('wr_guest_v1'), 'index auth gate must accept a connected guest');
+    ok(connect.includes('guestMode'), 'connect page must not bounce guests to landing');
+    ok(connect.includes("localStorage.getItem('wr_guest_v1') !== '1'"), 'connect page must not patch an account profile for guests');
+  });
+
+test('nfl scoreboard: production endpoint + failure backoff (contract)',
+  () => {
+    // The matchup/weather feed 404-ed in production for months: nothing ever
+    // pointed the client at the deployed nfl-scoreboard relay, and one user's
+    // scouting tab retried the dead /api path 495 times in a day (2026-08-22
+    // Mission Control). Pin both halves of the fix.
+    const ctx = fs.readFileSync(path.join(ROOT, 'js/shared/nfl-context.js'), 'utf8');
+    const card = fs.readFileSync(path.join(ROOT, 'js/components/player-card.js'), 'utf8');
+    ok(ctx.includes("'/nfl-scoreboard'"), 'deployed pages must derive the Supabase relay endpoint');
+    ok(ctx.includes('functionsBase'), 'endpoint must honor the shared config functionsBase');
+    ok(ctx.includes("host === 'localhost'"), 'localhost must keep the dev proxy');
+    ok(ctx.includes('FAIL_MAX_TRIES'), 'failed weeks must stop retrying after a few attempts');
+    ok(ctx.includes('FAIL_COOLDOWN_MS'), 'failed weeks must cool down between attempts');
+    ok(ctx.includes('g.count === 1 && root.wrLog'), 'only the first failure per week may log');
+    ok(card.includes('Object.keys(map).length) setScoutTick'), 'scouting tab must not re-tick (and re-fetch) on empty loads');
+  });
+
+test('update sentinel: quiet self-update with all owner guard rails (2026-08-27)',
+  () => {
+    // Users must receive shipped builds without force-quitting the app shell,
+    // and a reload must never interrupt live work. Pin every guard the owner
+    // approved: real absence, no draft, no typing, no recent touch, no loops.
+    const s = fs.readFileSync(path.join(ROOT, 'js/shared/update-sentinel.js'), 'utf8');
+    ok(s.includes('15 * 60 * 1000'), 'wake check requires a 15-minute absence');
+    ok(s.includes("doc.querySelector('[data-draft-pid]')"), 'a mounted draft board must block the reload');
+    ok(s.includes('typingNow'), 'a focused input must block the reload');
+    ok(s.includes('minTouchGapMs'), 'a recent touch must block the reload');
+    ok(s.includes('DONE_FOR_KEY'), 'a target tag may only be attempted once per session (no reload loops)');
+    ok(s.includes("cache: 'no-store'"), 'the version probe must bypass every HTTP cache');
+    ok(/dhq-build-tag[^']*'/.test(s) || s.includes('dhq-build-tag'), 'the probe reads the build tag the deploy pipeline stamps');
+    ok(s.includes('onLine === false'), 'offline wakes must skip silently');
+    ok(s.includes('location.replace'), 'the reload must navigate with a cache-busting query, not location.reload');
+    const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+    ok(html.includes('js/shared/update-sentinel.js?v='), 'index.html must load the sentinel with a cache-buster');
+  });
+
+test('draft storage: no orphan recaps, quota-safe mid-draft saves (2026-08-28)',
+  () => {
+    // The midnight live-draft quota failure: the resume-snapshot save bypassed
+    // the storage wrappers (janitor never ran), and every saved recap also
+    // wrote a never-read wr_draft_recap_<ts> orphan. Pin all three fixes.
+    const st = fs.readFileSync(path.join(ROOT, 'js/draft/state.js'), 'utf8');
+    ok(!st.includes("opts.key || ('wr_draft_recap_'"), 'saveDraftRecap must not write the orphan timestamp copy');
+    ok(st.includes('archiveDraftRecap(recap)'), 'the capped per-league archive stays the recap record');
+    ok(st.includes("J.run('quota:draft-save')"), 'a quota-failed resume-snapshot save must run the janitor and retry');
+    // reconai-shared/ is gitignored — vendored locally by sync:shared and
+    // regenerated by the deploy build, but ABSENT in the CI checkout. Enforce
+    // the janitor pins wherever the vendored copy exists; CI still pins the
+    // V6-owned halves above.
+    const sharedPath = path.join(ROOT, 'reconai-shared/storage.js');
+    if (fs.existsSync(sharedPath)) {
+        const sh = fs.readFileSync(sharedPath, 'utf8');
+        ok(sh.includes('wr_draft_recap_\\d+$'), 'janitor must reclaim orphan recaps by digit-only suffix');
+        ok(!/PURGEABLE[^]*archive/.test(sh.match(/PURGEABLE_KEY_PATTERNS = \[[^\]]*\]/)[0]), 'archive keys must stay untouchable');
+    }
+  });
+
+test('all players default view matches the owner ruling (2026-08-24)',
+  () => {
+    // Pos · Team · Years · Points · GP · PPG · Weekly Proj · DHQ · ADP.
+    // Pins the registry entries, the default-visible set, the old-default
+    // migration (nearly every visitor has the old default persisted — the
+    // effect writes it on first visit), and the render/sort seams for the
+    // four new columns.
+    const src = fs.readFileSync(path.join(ROOT, 'js/tabs/league-map.js'), 'utf8');
+    const def = src.match(/ALL_PLAYERS_DEFAULT_VISIBLE = \[([^\]]+)\]/);
+    ok(def, 'default-visible list must exist');
+    const keys = def[1].match(/'[^']+'/g).map(s => s.slice(1, -1));
+    // Pos + NFL Team live inside the pinned player cell (owner ruling
+    // 2026-08-24), not as standalone columns. The default is the owner's
+    // own board set from his live Customize panel (2026-08-24 3:09 PM):
+    // the full scouting ledger minus Dur / SOS / Lg # / NFL # / Starts.
+    const want = ['name', 'yoe', 'age', 'points', 'gp', 'ppg', 'proj', 'hi', 'lo', 'prev', 'dhq', 'adp', 'trend', 'peakPhase', 'peak', 'peakYrs', 'height', 'weight', 'college', 'depthChart', 'rkSlot', 'rkTeam', 'tier', 'owner', 'acq'];
+    ok(JSON.stringify(keys) === JSON.stringify(want), 'default view must be the owner-ruled set, got: ' + keys.join(','));
+    const registryBlock = src.match(/ALL_PLAYERS_COLUMNS = \[[\s\S]*?\n\];/)[0];
+    ok(!registryBlock.includes("key: 'pos'") && !registryBlock.includes("key: 'nflTeam'"), 'pos/team must be folded into the player cell, not standalone columns');
+    ok(src.includes('leagueMapPosLabel(x.pos)') && src.includes("x.p.team || 'FA'"), 'the pinned player cell must carry position and NFL team');
+    ok(src.includes('ALL_PLAYERS_PREV_DEFAULT'), 'untouched old-default prefs must migrate to the new default');
+    for (const c of ["case 'points'", "case 'gp'", "case 'proj'", "case 'adp'"]) {
+        ok(src.includes(c), 'renderCell must handle ' + c);
+    }
+    for (const s of ["key === 'points'", "key === 'gp'", "key === 'proj'", "key === 'adp'"]) {
+        ok(src.includes(s), 'sort comparator must handle ' + s);
+    }
+    ok(src.includes('_allPlayersProjMemo'), 'weekly projections must be memoized — the ledger renders 1,000+ rows');
+    ok(src.includes("addEventListener('wr:adp-loaded'"), 'ADP column must re-render when the market map lands');
+    // Roster-tab customize model (owner ruling 2026-08-24): the stored array
+    // is the display order, with move/hide/add helpers and the grouped panel.
+    ok(src.includes('Customize Columns'), 'All Players must carry the roster-style customize panel');
+    ok(src.includes('apMoveColumn'), 'columns must be reorderable');
+    ok(src.includes('apRemoveColumn') && src.includes('apAddColumn'), 'columns must be hideable and addable');
+    ok(src.includes("filter(k => k !== 'name' && ALL_PLAYERS_COL_BY_KEY[k]"), 'display order must follow the stored array');
+    ok(src.includes('PLAYER_COL_W'), 'the player cell must be a single structural pinned column');
+    ok(src.includes('ALL_PLAYERS_GROUP_LABELS'), 'picker fields must be grouped');
+    // Full roster-tab mirror (owner ruling 2026-08-24): every roster data
+    // column exists here too, reading the SAME engines/sources my-team.js
+    // reads, plus roster-style presets and the frozen player column.
+    for (const k of ["'hi'", "'lo'", "'prev'", "'trend'", "'durability'", "'sos'", "'peakPhase'", "'posRankLg'", "'posRankNfl'", "'starterSzn'", "'college'", "'height'", "'weight'", "'depthChart'", "'rkSlot'", "'rkTeam'"]) {
+        ok(src.includes('key: ' + k), 'mirrored roster column ' + k + ' must be in the registry');
+    }
+    ok(src.includes('WeeklyProj.formStats'), 'Hi/Lo must read the same formStats engine as the roster tab');
+    ok(src.includes('stats2025Data'), 'Last/Trend must read the prior-season stats the roster tab reads');
+    ok(src.includes('ALL_PLAYERS_PRESETS'), 'roster-style presets must exist');
+    ok(src.includes("'Deep Data'"), 'the Deep Data preset must expose every field');
+    ok(src.includes('.lm-ap-row > :nth-child(1)'), 'the single player cell must pin at every width (roster-style scroll)');
+    const analytics = fs.readFileSync(path.join(ROOT, 'js/tabs/analytics.js'), 'utf8');
+    ok(analytics.includes('stats2025Data'), 'the Analytics embed must thread prior-season stats through');
+    const myTeam = fs.readFileSync(path.join(ROOT, 'js/tabs/my-team.js'), 'utf8');
+    ok(myTeam.includes("pts:        { label: 'Total Points"), 'the roster tab must carry the Total Points column (mirror completeness)');
+  });
+
+test('league hub brand icon returns to the app front page, which stays put',
+  () => {
+    const app = fs.readFileSync(path.join(ROOT, 'js/app.js'), 'utf8');
+    const landing = fs.readFileSync(path.join(ROOT, 'landing.html'), 'utf8');
+    // Owner ruling 2026-07-12: marketing site sidelined — hub icon → the
+    // app's own front page (landing.html), the single face for everything.
+    ok(app.includes("DHQ_HOME_URL = 'landing.html?home'"), 'hub icon must point at the app front page');
+    ok(landing.includes('STAY_HOME'), 'landing.html must honor ?home');
+    // The HEAD boot-check redirects signed-in visitors into the app before
+    // the body handlers run — it must honor ?home too, or the hub logo
+    // bounces straight back and appears dead.
+    ok(landing.includes("q.has('signout') || q.has('home')"), 'landing.html head boot-check must honor ?home');
+    // A brand-new account walks the FULL funnel even on a device where a
+    // previous account finished onboarding — that memory is per device, and
+    // inheriting it skips plan selection + Sleeper connect entirely.
+    ok(landing.includes('resetDeviceOnboardingForNewAccount'), 'new accounts must reset device onboarding memory');
+    ok(landing.includes('if (signup) resetDeviceOnboardingForNewAccount()'), 'email signup must reset onboarding memory');
+    // A fresh OAuth return must never be hijacked by the existing-session
+    // redirect before the sync/repair completes.
+    ok(landing.includes('if (FRESH_OAUTH_RETURN) return;'), 'checkSession must yield to the OAuth callback');
+  });
+
+test('deploy build stamps the shared-loader cache version',
+  () => {
+    const buildScript = fs.readFileSync(path.join(ROOT, 'scripts/build-deploy.cjs'), 'utf8');
+    const loader = fs.readFileSync(path.join(ROOT, 'js/shared/shared-loader.js'), 'utf8');
+    // The shared modules load at runtime via the loader's DEFAULT_VERSION —
+    // <script>-tag ?v= hashing never covers them. A hardcoded stamp pinned
+    // week-old tier code in returning browsers for a full week of deploys.
+    ok(buildScript.includes('stampSharedLoaderVersion'), 'build-deploy must stamp the shared-loader version');
+    ok(/const DEFAULT_VERSION = '[^']+'/.test(loader), 'shared-loader must keep a regex-stampable DEFAULT_VERSION line');
+  });
+
+test('no one-free-league gating remains in the league picker',
+  () => {
+    const app = fs.readFileSync(path.join(ROOT, 'js/app.js'), 'utf8');
+    // Owner ruling 2026-07-13: free (Scout) can enter ALL leagues. The
+    // one-free-league claim/lock machinery is gone; Dynasty HQ is
+    // feature-gated, not league-gated.
+    ok(!app.includes('wr_free_league_id_v1'), 'free-league claim key must be gone');
+    ok(!app.includes('isLeagueLockedForTier'), 'per-league lock check must be gone');
+    ok(!app.includes('freeLeagueIdFor'), 'free-league resolver must be gone');
+    ok(!app.includes('Scout includes'), 'the one-league advisory banner must be gone');
+    ok(!/🔒 PRO/.test(app), 'locked-league PRO badge must be gone');
+  });
+
+test('landing copy advertises free on all leagues, not one',
+  () => {
+    // Owner ruling 2026-08-17: the marketing page dropped "free on Sleeper"
+    // claims entirely. The all-platforms line is now the kicker's
+    // "All your Sleeper and MFL teams in one place"; nothing may tie free
+    // to a single league or platform.
+    const landing = fs.readFileSync(path.join(ROOT, 'landing.html'), 'utf8');
+    ok(!/one Sleeper league/i.test(landing), 'landing must not say "one Sleeper league"');
+    ok(!/Free — one league/i.test(landing), 'pricing note must not say "one league"');
+    ok(!/free on Sleeper/i.test(landing), 'landing must not say "free on Sleeper"');
+    ok(/All your Sleeper and MFL teams in one place/i.test(landing), 'landing must carry the all-platforms kicker');
+  });
+
+test('landing-pages.json copy advertises free on all leagues, not one',
+  () => {
+    // js/landing-content.js overwrites the static pricing card at runtime from
+    // this JSON, so stale copy here shows on the live page even when landing.html
+    // is correct. Keep it in lockstep with the static copy above.
+    const json = fs.readFileSync(path.join(ROOT, 'content/landing-pages.json'), 'utf8');
+    ok(!/one Sleeper league/i.test(json), 'landing-pages.json must not say "one Sleeper league"');
+    ok(!/Free — one league/i.test(json), 'landing-pages.json pricing note must not say "one league"');
+    ok(!/free forever for one/i.test(json), 'landing-pages.json hero line must not say "one league"');
+    // The swapped landing page does not load js/landing-content.js, so this
+    // JSON no longer paints the live page; the negative pins above still
+    // guard against the stale claim resurfacing through the editor pipeline.
+    ok(json.length > 0, 'landing-pages.json must exist for the editor pipeline');
+  });
+
+// ══════════════════════════════════════════════════════════════════
+// Weekly projection — Sleeper's published line is the source of truth
+// ══════════════════════════════════════════════════════════════════
+console.log('\nWeekly projection — Sleeper source of truth');
+loadScript(ctx, 'js/shared/startsit-engine.js');
+loadScript(ctx, 'js/shared/weekly-proj.js');
+// The engine scores stat lines through calcFantasyPts; alias the app's
+// calcRawPts if the sandbox didn't already expose a global one.
+if (typeof ctx.calcFantasyPts !== 'function') ctx.calcFantasyPts = ctx.window.App.calcRawPts;
+
+test('Proj reflects Sleeper\'s published weekly line, scored to the league',
+  () => {
+    const WP = ctx.window.App.WeeklyProj;
+    ok(WP && typeof WP.setProjections === 'function', 'WeeklyProj.setProjections is exposed');
+    const scoring = { pass_yd: 0.04, pass_td: 4, pass_int: -1, rush_yd: 0.1, rush_td: 6 };
+    const line = { pass_yd: 280, pass_td: 2, pass_int: 0.5, rush_yd: 12, rush_td: 0.1, pts_ppr: 21.3 };
+    const expected = ctx.window.App.calcRawPts(line, scoring); // league-scored, not pts_ppr
+    const players = { '3294': { player_id: '3294', position: 'QB', team: 'DAL' } };
+    const opts = { playersData: players, statsData: {}, priorData: {}, scoring, week: 1 };
+
+    // With no Sleeper feed and no season stats, the home-grown engine has
+    // nothing to stand on — this is exactly the offseason blank the owner hit.
+    const before = WP.projectPlayer('3294', opts);
+    ok(!before || before.available === false || (before.points && before.points.median === 0),
+      'no Sleeper feed → engine produces no usable number');
+
+    // Feed Sleeper's line: the Proj becomes that line scored to the league.
+    WP.setProjections(1, { '3294': line });
+    const after = WP.projectPlayer('3294', opts);
+    eq(after.projSource, 'sleeper', 'projection is sourced from Sleeper');
+    near(after.points.median, expected, 0.01, 'median equals league-scored Sleeper line');
+    ok(after.available === true, 'a published projection marks the player available');
+    ok(after.points.floor < after.points.median && after.points.ceiling > after.points.median,
+      'floor/ceiling band brackets the Sleeper median');
+  });
+
+test('a different league scoring yields a different Proj from the same Sleeper line',
+  () => {
+    const WP = ctx.window.App.WeeklyProj;
+    const line = { pass_yd: 280, pass_td: 2, pass_int: 0.5, rush_yd: 12, rush_td: 0.1 };
+    WP.setProjections(1, { '9001': line });
+    const players = { '9001': { player_id: '9001', position: 'QB', team: 'DAL' } };
+    const base = { playersData: players, statsData: {}, priorData: {}, week: 1 };
+    const std = WP.projectPlayer('9001', { ...base, scoring: { pass_yd: 0.04, pass_td: 4, pass_int: -1, rush_yd: 0.1, rush_td: 6 } });
+    const sixPt = WP.projectPlayer('9001', { ...base, scoring: { pass_yd: 0.04, pass_td: 6, pass_int: -1, rush_yd: 0.1, rush_td: 6 } });
+    ok(sixPt.points.median > std.points.median, '6-pt passing TD league scores the QB higher — league rules honored');
+  });
+
+// ══════════════════════════════════════════════════════════════════
+// Account surface — the settings account panel must keep: a real
+// subscription-management path (Stripe Billing Portal on the web), Terms/
+// Privacy links, and account deletion. These went missing once; never again.
+// (The dev repo's variant also pins the Apple ID settings link and the edge
+// function sources — those live with the iOS app + supabase/ tree, not here.)
+// ══════════════════════════════════════════════════════════════════
+group('account surface (billing + legal requirements)');
+
+{
+  const settingsSrc = fs.readFileSync(path.join(__dirname, '..', 'js', 'settings.js'), 'utf8');
+
+  test('subscription management reaches a real cancel path', () => {
+    ok(settingsSrc.includes("fw-billing-portal"), 'settings must call the Stripe billing portal function');
+  });
+
+  test('terms and privacy are linked from settings and the files exist', () => {
+    ok(settingsSrc.includes('legal/terms-of-service.html'), 'settings must link the Terms of Service');
+    ok(settingsSrc.includes('legal/privacy-policy.html'), 'settings must link the Privacy Policy');
+    ok(fs.existsSync(path.join(__dirname, '..', 'legal', 'terms-of-service.html')), 'terms page must exist');
+    ok(fs.existsSync(path.join(__dirname, '..', 'legal', 'privacy-policy.html')), 'privacy page must exist');
+  });
+
+  test('account deletion is surfaced in settings (App Store 5.1.1(v))', () => {
+    ok(settingsSrc.includes('handleDeleteAccount'), 'settings must offer account deletion');
+    ok(settingsSrc.includes('deleteAccount()'), 'deletion must call the backend delete');
+  });
+
+  test('new account features are present: avatar, notifications, invite', () => {
+    ok(settingsSrc.includes('od_avatar_emoji'), 'avatar picker must persist a choice');
+    ok(settingsSrc.includes('dhq_notify_prefs_v1'), 'notification preferences must persist');
+    ok(settingsSrc.includes('navigator.share'), 'invite friends must use the native share sheet when available');
+  });
 }
 
-test('chopped province: tagged isChopped, alive roster gets an "N of M alive" record label',
-  () => {
-    const m = buildEmpirePortfolioModel(empireFixtureWithChopped());
-    const gamma = m.provinces.find(p => p.id === 'l3');
-    ok(gamma, 'expected the chopped province');
-    eq(gamma.isChopped, true);
-    eq(gamma.isEliminated, false);
-    eq(gamma.recordLabel, '1 of 2 alive');
+// ══════════════════════════════════════════════════════════════════
+// QB trade composition rules (owner ruling 2026-09-02) — functional
+// ══════════════════════════════════════════════════════════════════
+{
+  const g = {};
+  new Function('window', fs.readFileSync('js/shared/qb-trade-rules.js', 'utf8'))(g);
+  const scores = { qb1: 5000, qb2: 3300, te1: 2600, bqb: 1400, wr1: 4300, dl1: 3500, rb1: 2400 };
+  for (let i = 0; i < 28; i++) scores['fq' + i] = 5200 - i * 110;
+  const P = (pos) => ({ position: pos });
+  const playersData = { qb1: P('QB'), qb2: P('QB'), bqb: P('QB'), te1: P('TE'), wr1: P('WR'), dl1: P('DE'), rb1: P('RB') };
+  for (let i = 0; i < 28; i++) playersData['fq' + i] = P('QB');
+  const rules = g.WrQbTradeRules.build({
+    scores, playersData, rosterPositions: ['QB', 'SUPER_FLEX', 'RB', 'WR', 'TE'], teams: 16,
+    isElite: (pid) => pid === 'wr1' || pid === 'dl1' || pid === 'fq0', starterRole: () => null,
+    normPos: (x) => ({ DE: 'DL' }[String(x || '').toUpperCase()] || String(x || '').toUpperCase()),
   });
+  const A = (pid) => ({ pid, pos: ({ QB: 'QB', TE: 'TE', WR: 'WR', DE: 'DL', RB: 'RB' })[playersData[pid].position], value: scores[pid] });
+  const D = (o) => ({ receivePlayers: [], givePlayers: [], givePicks: [], receivePicks: [], ...o });
+  test('QB trade rules: elite/mid QB package requirements', () => {
+    ok(rules.violates(D({ givePlayers: [A('qb1')], receivePlayers: [A('te1'), A('bqb')] })), 'a mid QB for a TE + backup QB must be rejected');
+    ok(!rules.violates(D({ givePlayers: [A('qb1')], receivePicks: [{ round: 1 }] })), 'a 1st pays for an elite/mid QB');
+    ok(!rules.violates(D({ givePlayers: [A('qb1')], receivePlayers: [A('wr1')] })), 'an elite offensive player pays');
+    ok(rules.violates(D({ givePlayers: [A('qb1')], receivePlayers: [A('dl1')] })), 'an elite IDP alone does NOT pay');
+    ok(!rules.violates(D({ givePlayers: [A('qb1')], receivePlayers: [A('dl1')], receivePicks: [{ round: 3 }] })), 'elite IDP + a pick pays');
+    ok(!rules.violates(D({ givePlayers: [A('qb1')], receivePlayers: [A('te1'), A('rb1')] })), 'two starter-quality players pay');
+    ok(rules.violates(D({ receivePlayers: [A('qb1')] })), 'FAAB-only never pays for a startable QB');
+  });
+  test('QB trade rules: swaps, low tier, and exemptions', () => {
+    ok(rules.violates(D({ receivePlayers: [A('qb2')], givePlayers: [A('qb1')] })), 'a bare unequal QB swap violates — the better QB side got no extras');
+    ok(!rules.violates(D({ receivePlayers: [A('qb2')], givePlayers: [A('qb1')], receivePicks: [{ round: 4 }] })), 'lesser QB + a pick balances the swap');
+    ok(!rules.violates(D({ receivePlayers: [A('qb1')], givePlayers: [A('qb2'), A('te1')] })), 'lesser QB + a starter-quality player pays');
+    ok(!rules.violates(D({ receivePlayers: [A('fq26')], givePicks: [{ round: 2 }] })), 'a 2nd pays for a low-tier QB');
+    ok(rules.violates(D({ receivePlayers: [A('fq26')], givePicks: [{ round: 3 }] })), 'a 3rd alone does not pay for a low-tier QB');
+    ok(!rules.violates(D({ receivePlayers: [A('fq26')], givePlayers: [A('rb1')] })), 'a starter-quality skill player pays for a low-tier QB');
+    ok(!rules.violates(D({ receivePlayers: [A('bqb')], givePlayers: [] })), 'true backups are exempt from all rules');
+  });
+  test('QB trade rules: elite-badge QBs never move for a single bare 1st', () => {
+    ok(rules.violates(D({ givePlayers: [A('fq0')], receivePicks: [{ round: 1 }] })), 'a single bare 1st for an elite-badge QB is always rejected');
+    ok(!rules.violates(D({ givePlayers: [A('fq0')], receivePicks: [{ round: 1 }, { round: 1 }] })), 'two 1sts pay for an elite-badge QB');
+    ok(!rules.violates(D({ givePlayers: [A('fq0')], receivePicks: [{ round: 1 }], receivePlayers: [A('te1')] })), 'a 1st + a starter-quality player pays for an elite-badge QB');
+    ok(!rules.violates(D({ givePlayers: [A('qb1')], receivePicks: [{ round: 1 }] })), 'a mid (non-badge) QB still moves for a single 1st');
+  });
+}
 
-test('chopped province: an eliminated roster is labelled by its elimination week, not 0-0',
-  () => {
-    const m = buildEmpirePortfolioModel(empireFixtureWithChopped({ settings: { eliminated: 4, locked: 1 } }));
-    const gamma = m.provinces.find(p => p.id === 'l3');
-    eq(gamma.isEliminated, true);
-    eq(gamma.eliminatedWeek, 4);
-    eq(gamma.recordLabel, 'Chopped wk 4');
+// ══════════════════════════════════════════════════════════════════
+// Elite RB/WR/TE package rules (owner ruling 2026-09-02) — functional
+// ══════════════════════════════════════════════════════════════════
+{
+  const g = {};
+  new Function('window', fs.readFileSync('js/shared/elite-skill-trade-rules.js', 'utf8'))(g);
+  const scores = { jt: 8200, wr9: 7500, db20: 2100, dl5: 4000, wrsq: 3100, rbsq: 2500, rbmid: 4500, telow: 900 };
+  const P = (pos) => ({ position: pos });
+  const playersData = { jt: P('RB'), wr9: P('WR'), db20: P('DB'), dl5: P('DE'), wrsq: P('WR'), rbsq: P('RB'), rbmid: P('RB'), telow: P('TE') };
+  const rules = g.WrEliteSkillRules.build({
+    scores, playersData,
+    isElite: (pid) => pid === 'jt' || pid === 'wr9' || pid === 'dl5',
+    starterRole: () => null,
   });
+  const A = (pid) => ({ pid, pos: ({ RB: 'RB', WR: 'WR', DB: 'DB', DE: 'DL', TE: 'TE' })[playersData[pid].position], value: scores[pid] });
+  const D = (o) => ({ receivePlayers: [], givePlayers: [], givePicks: [], receivePicks: [], ...o });
+  test('elite skill rules: top dollar or no deal', () => {
+    ok(rules.violates(D({ givePlayers: [A('jt')], receivePicks: [{ round: 1 }] })), 'a single bare 1st for an elite RB is always rejected');
+    ok(rules.violates(D({ givePlayers: [A('jt')], receivePicks: [{ round: 1 }], receivePlayers: [A('db20')] })), 'a 1st + a non-elite DB is rejected — junk IDP is decoration, not payment');
+    ok(!rules.violates(D({ givePlayers: [A('jt')], receivePicks: [{ round: 1 }, { round: 1 }] })), 'two 1sts pay for an elite RB');
+    ok(!rules.violates(D({ givePlayers: [A('jt')], receivePicks: [{ round: 1 }], receivePlayers: [A('wrsq')] })), 'a 1st + a starter-quality offensive player pays');
+    ok(!rules.violates(D({ givePlayers: [A('jt')], receivePicks: [{ round: 1 }], receivePlayers: [A('dl5')] })), 'a 1st + an elite IDP pays');
+    ok(!rules.violates(D({ givePlayers: [A('jt')], receivePlayers: [A('wr9')] })), 'an elite offensive player pays outright — star-for-star');
+    ok(!rules.violates(D({ givePlayers: [A('jt')], receivePlayers: [A('wrsq'), A('rbsq')], receivePicks: [{ round: 3 }] })), 'two starter-quality offensive players + a pick pay');
+    ok(rules.violates(D({ givePlayers: [A('jt')], receivePlayers: [A('wrsq'), A('rbsq')] })), 'two starter-quality players WITHOUT a pick do not pay');
+    ok(rules.violates(D({ givePlayers: [A('jt')] })), 'an empty/FAAB-only return never pays for an elite player');
+  });
+  test('elite skill rules: scope and directions', () => {
+    ok(!rules.violates(D({ givePlayers: [A('rbmid')], receivePicks: [{ round: 2 }] })), 'non-elite players are not gated — plain value trading stands');
+    ok(rules.violates(D({ receivePlayers: [A('jt')], givePicks: [{ round: 1 }], givePlayers: [A('db20')] })), 'acquiring an elite RB is gated the same as selling one');
+    ok(!rules.violates(D({ receivePlayers: [A('jt')], givePicks: [{ round: 1 }], givePlayers: [A('rbsq')] })), 'acquiring with a 1st + starter-quality RB passes');
+    ok(!rules.violates(null), 'rules fail open on missing input');
+  });
+}
 
-test('chopped province: an eliminated roster\'s health score is nulled at the source',
-  () => {
-    const m = buildEmpirePortfolioModel(empireFixtureWithChopped({ settings: { eliminated: 4, locked: 1 } }));
-    const gamma = m.provinces.find(p => p.id === 'l3');
-    eq(gamma.healthScore, null, 'an empty, waivers-released roster has no health signal');
+// ══════════════════════════════════════════════════════════════════
+// Six-tier QB rules v2 (owner rulings 2026-09-02/03) — functional
+// ══════════════════════════════════════════════════════════════════
+{
+  const g = {};
+  new Function('window', fs.readFileSync('js/shared/qb-trade-rules-v2.js', 'utf8'))(g);
+  const scores = {}, pd = {};
+  for (let i = 0; i < 33; i++) { scores['q' + i] = 8000 - i * 190; pd['q' + i] = { position: 'QB', age: 26 }; }
+  pd.q1.age = 41;                       // rank 2 but 41 — the age rule
+  scores.q32 = 1900;                    // rank 33 — outside the 32 pool
+  const roleFlags = { q32: true };      // ...but holds a live NFL starting job
+  scores.wr1 = 7500; pd.wr1 = { position: 'WR', age: 25 };   // elite off (via isElite)
+  scores.wr2 = 2600; pd.wr2 = { position: 'WR', age: 25 };   // starter-quality off
+  scores.dl1 = 4200; pd.dl1 = { position: 'DL', age: 25 };   // elite IDP
+  const R = g.WrQbTradeRulesV2.build({
+    scores, playersData: pd, rosterPositions: ['QB', 'SUPER_FLEX', 'RB', 'WR'], teams: 16,
+    isElite: pid => pid === 'wr1' || pid === 'dl1',
+    starterRole: p => (p && roleFlags[Object.keys(pd).find(k => pd[k] === p)]) ? 'S1' : null,
+    normPos: x => String(x || '').toUpperCase(),
+    ageOf: pid => pd[pid] ? pd[pid].age : null,
   });
+  const A = pid => ({ pid, pos: pd[pid].position, value: scores[pid] });
+  const D = o => ({ receivePlayers: [], givePlayers: [], givePicks: [], receivePicks: [], ...o });
+  const P1 = { round: 1 }, P2 = { round: 2 }, P3 = { round: 3 };
+  test('QB v2: tier ladder boundaries', () => {
+    eq(R.tierOf('q0'), 'elite+', 'rank 1 is Elite+');
+    eq(R.tierOf('q5'), 'elite', 'rank 6 is Elite');
+    eq(R.tierOf('q10'), 'mid+', 'rank 11 is Mid+');
+    eq(R.tierOf('q15'), 'mid', 'rank 16 is Mid');
+    eq(R.tierOf('q25'), 'low', 'rank 26 is Low');
+    eq(R.tierOf('q30'), 'bottom', 'rank 31 is Bottom');
+    eq(R.tierOf('q1'), 'mid', 'a 41-year-old ranked #2 prices at Mid (age rule)');
+    eq(R.tierOf('q32'), 'bottom', 'a live NFL starter outside the pool enters at Bottom (Rodgers rule)');
+  });
+  test('QB v2: graduated price floors', () => {
+    ok(R.violates(D({ givePlayers: [A('q0')], receivePicks: [P1] })), 'Elite+ for a single 1st is rejected');
+    ok(R.violates(D({ givePlayers: [A('q0')], receivePicks: [P1, P1] })), 'Elite+ for two bare 1sts is rejected — needs a player too');
+    ok(!R.violates(D({ givePlayers: [A('q0')], receivePicks: [P1, P1], receivePlayers: [A('wr2')] })), 'Elite+ for two 1sts + a starter pays');
+    ok(!R.violates(D({ givePlayers: [A('q5')], receivePicks: [P1, P1] })), 'Elite for two 1sts pays');
+    ok(R.violates(D({ givePlayers: [A('q5')], receivePicks: [P1], receivePlayers: [A('dl1')] })), 'Elite for 1st + elite IDP needs an ADDITIONAL pick');
+    ok(!R.violates(D({ givePlayers: [A('q5')], receivePicks: [P1, P3], receivePlayers: [A('dl1')] })), 'Elite for 1st + elite IDP + extra pick pays');
+    ok(R.violates(D({ givePlayers: [A('q10')], receivePicks: [P1] })), 'Mid+ for a single 1st is rejected');
+    ok(!R.violates(D({ givePlayers: [A('q10')], receivePicks: [P1, P2] })), 'Mid+ for 1st + 2nd pays');
+    ok(!R.violates(D({ givePlayers: [A('q15')], receivePicks: [P1] })), 'Mid for a single 1st pays');
+    ok(R.violates(D({ givePlayers: [A('q25')], receivePicks: [P2] })), 'Low for a bare 2nd is rejected');
+    ok(!R.violates(D({ givePlayers: [A('q25')], receivePicks: [P2], receivePlayers: [A('dl1')] })), 'Low for 2nd + a starter (defense counts) pays');
+    ok(!R.violates(D({ givePlayers: [A('q30')], receivePicks: [P2], receivePlayers: [A('wr2')] })), 'Bottom for 2nd + starter pays');
+    ok(R.violates(D({ givePlayers: [A('q32')], receivePicks: [P3] })), 'the Rodgers-rule QB never moves for a bare 3rd');
+  });
+  test('QB v2: scarcity bump — an irreplaceable QB prices one tier up', () => {
+    const R2 = g.WrQbTradeRulesV2.build({
+      scores, playersData: pd, rosterPositions: ['QB', 'SUPER_FLEX', 'RB', 'WR'], teams: 16,
+      isElite: pid => pid === 'wr1' || pid === 'dl1',
+      starterRole: p => (p && roleFlags[Object.keys(pd).find(k => pd[k] === p)]) ? 'S1' : null,
+      normPos: x => String(x || '').toUpperCase(),
+      ageOf: pid => pd[pid] ? pd[pid].age : null,
+      isScarce: pid => pid === 'q15',
+    });
+    eq(R2.tierOf('q15'), 'mid+', 'a protected Mid QB prices at Mid+');
+    ok(R2.violates(D({ givePlayers: [A('q15')], receivePicks: [P1] })), 'a bare 1st no longer buys an irreplaceable QB');
+    ok(!R2.violates(D({ givePlayers: [A('q15')], receivePicks: [P1, P2] })), '1st + 2nd pays the bumped price');
+  });
+  test('QB v2: swap bridges by tier distance', () => {
+    ok(!R.violates(D({ givePlayers: [A('q5')], receivePlayers: [A('q6')] })), 'same-tier swap passes even');
+    ok(R.violates(D({ givePlayers: [A('q5')], receivePlayers: [A('q10')] })), 'one tier down bare is rejected');
+    ok(!R.violates(D({ givePlayers: [A('q5')], receivePlayers: [A('q10')], receivePicks: [P1] })), 'one tier down + a 1st bridges');
+    ok(R.violates(D({ givePlayers: [A('q5')], receivePlayers: [A('q15')], receivePicks: [P1] })), 'two tiers down + a 1st is NOT enough');
+  });
+}
 
-test('chopped province: totalRecord EXCLUDES it from the aggregate regardless of alive/eliminated',
-  () => {
-    const withChopped = buildEmpirePortfolioModel(empireFixtureWithChopped());
-    const withoutChopped = buildEmpirePortfolioModel(empireFixture());
-    // The chopped roster's wins:99/losses:99 would blow these numbers up if
-    // the aggregate ever stopped filtering it out. Record is excluded for a
-    // chopped province EVEN WHILE ALIVE — chopped leagues never have a real
-    // W-L, alive or not.
-    eq(withChopped.totals.totalRecord.wins, withoutChopped.totals.totalRecord.wins,
-      'a chopped province never contributes to the record aggregate');
-    eq(withChopped.totals.totalRecord.losses, withoutChopped.totals.totalRecord.losses);
+// ══════════════════════════════════════════════════════════════════
+// GM trade engine (owner surgery 2026-09-03) — functional
+// ══════════════════════════════════════════════════════════════════
+{
+  const g = {};
+  new Function('window', fs.readFileSync('js/shared/gm-trade-engine.js', 'utf8'))(g);
+  const P = (pid, pos, value) => ({ type: 'player', pid, name: pid, pos, value });
+  const teams = [
+    { rosterId: 1, ownerId: 'u1', teamName: 'Me', assessment: {
+        needs: [{ pos: 'RB', urgency: 'thin' }],
+        posAssessment: { QB: { status: 'ok' }, RB: { status: 'deficit', minQuality: 1 }, WR: { status: 'surplus', minQuality: 1, nflStarters: 3 } },
+        window: 'CONTENDING' },
+      players: [P('myqb', 'QB', 5000), P('mywr1', 'WR', 4000), P('mywr2', 'WR', 2500), P('myrb', 'RB', 900)],
+      picks: [{ type: 'pick', id: 'pk1', year: 2027, round: 1, label: '2027 R1', value: 5000 }] },
+    { rosterId: 2, ownerId: 'u2', teamName: 'Them', assessment: {
+        needs: [{ pos: 'WR', urgency: 'thin' }],
+        posAssessment: { RB: { status: 'surplus', minQuality: 1, nflStarters: 3 }, WR: { status: 'deficit' } },
+        window: 'CONTENDING' },
+      players: [P('theirrb1', 'RB', 3200), P('theirrb2', 'RB', 2800), P('theirwr', 'WR', 800), P('theirdb', 'DB', 2100)],
+      picks: [] },
+  ];
+  const eng = g.WrGmTradeEngine.build({
+    myRosterId: 1, rosterPositions: ['QB', 'RB', 'WR', 'FLEX', 'BN'],
+    teams, liquidity: a => (a.pos === 'DB' ? 0.6 : 1), isElite: () => false,
   });
-
-test('chopped province: avgHealth excludes it ONLY once eliminated (alive roster health still counts)',
-  () => {
-    const withoutChopped = buildEmpirePortfolioModel(empireFixture());
-    const aliveChopped = buildEmpirePortfolioModel(empireFixtureWithChopped());
-    const eliminatedChopped = buildEmpirePortfolioModel(empireFixtureWithChopped({ settings: { eliminated: 4, locked: 1 } }));
-    // Alive: roster 5's health score (55) is real signal and SHOULD count —
-    // being in a chopped league does not itself invalidate a live roster's
-    // health read, only an eliminated (empty, released) one does.
-    ok(aliveChopped.totals.avgHealth !== withoutChopped.totals.avgHealth,
-      'an alive chopped roster\'s health score is real and moves the average');
-    // Eliminated: nulled at the source, so the average reverts to exactly
-    // what it would be without the chopped league at all.
-    eq(eliminatedChopped.totals.avgHealth, withoutChopped.totals.avgHealth,
-      'once eliminated, the empty roster contributes nothing to avgHealth');
+  const led = eng.ledger(1);
+  test('GM engine: the ledger protects and frees the right players', () => {
+    ok(led.protectedPids.myqb, 'the only QB is protected');
+    ok(led.protectedPids.mywr1, 'the top WR (weekly requirement) is protected');
+    ok(led.excess.some(p => p.pid === 'mywr2'), 'the spare WR above the bar is tradeable excess');
+    ok(!led.excess.some(p => p.pid === 'myrb'), 'a sub-$1500 bench piece is not a market chip');
   });
-
-test('non-chopped provinces are completely unaffected by chopped-awareness',
-  () => {
-    const m = buildEmpirePortfolioModel(empireFixtureWithChopped());
-    const alpha = m.provinces.find(p => p.id === 'l1');
-    eq(alpha.isChopped, false);
-    eq(alpha.isEliminated, false);
-    eq(alpha.recordLabel, '8-3', 'ordinary leagues still get a plain W-L label');
-    eq(alpha.healthScore, 82, 'ordinary leagues keep their real health score, untouched by chopped-awareness');
+  test('GM engine: recommendations are purposeful and protected men never pay', () => {
+    const recs = eng.recommend();
+    ok(recs.length >= 1, 'the needs-mirror produces at least one deal');
+    ok(recs.every(d => !d.givePlayers.some(p => led.protectedPids[p.pid])), 'no protected player appears as payment');
+    ok(recs.some(d => d.receivePlayers.some(p => p.pos === 'RB')), 'the deal addresses the flagged RB need');
+    ok(recs.every(d => d.lineupDelta >= 150 || d.capitalDelta > 0), 'every deal clears the benefit gate');
+    const led2 = eng.ledger(2);
+    ok(recs.every(d => d.receivePlayers.every(p => !led2.protectedPids[p.pid])), 'seller-side scarcity: the partner\'s protected players are never proposed as acquisitions');
+    const eng2 = g.WrGmTradeEngine.build({ myRosterId: 2, rosterPositions: ['QB', 'RB', 'WR', 'FLEX', 'BN'], teams, liquidity: () => 1, isElite: () => false });
+    ok(Array.isArray(eng2.recommend()), 'the partner board runs clean too');
   });
+}
 
 // ══════════════════════════════════════════════════════════════════
 // Summary

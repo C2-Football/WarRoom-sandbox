@@ -5,7 +5,7 @@
 // Keeps the DraftCC.cpuEngine namespace for backward compat.
 //
 // Depends on: reconai/shared/mock-engine.js (loaded via CDN)
-// Exposes:    window.DraftCC.cpuEngine.{ personaPick, personaBid, nominateChoice, computePredictions }
+// Exposes:    window.DraftCC.cpuEngine.{ personaPick, computePredictions }
 // ══════════════════════════════════════════════════════════════════
 
 (function() {
@@ -27,27 +27,6 @@
         return { player: best, confidence: 0.5, reasoning: { primary: 'BPA fallback', baseVal: best.dhq || best.val || 0, nudges: [], bpaFloorTriggered: true } };
     }
 
-    function nominateChoice(persona, available, round, pickNumber, ctx) {
-        // Free-tier auction nomination has no persona flavor to fall back to
-        // (there's no separate BPA-nominate concept) — reuse personaPick's
-        // own fallback since "what I'd draft now" is exactly "what I'd
-        // nominate now" either way.
-        return personaPick(persona, available, round, pickNumber, ctx)?.player || null;
-    }
-
-    function personaBid(persona, nomination, ctx) {
-        if (_cpuIsPro() && window.App?.MockEngine?.personaBid) {
-            return window.App.MockEngine.personaBid(persona, nomination, ctx);
-        }
-        // Emergency fallback: bid a flat minimal increment up to the caller's
-        // budget-safety ceiling, no persona flavor — mirrors personaPick's
-        // BPA fallback (free tier gets a functional but personality-free bot).
-        const ceiling = Math.max(0, Number(ctx?.budgetCeiling) || 0);
-        const currentHigh = Math.max(0, Number(ctx?.currentHighBid) || 0);
-        if (ceiling <= currentHigh) return { rosterId: ctx?.rosterId, amount: 0, ceiling, willingToBid: false };
-        return { rosterId: ctx?.rosterId, amount: Math.min(ceiling, currentHigh + 1), ceiling, willingToBid: true };
-    }
-
     function computePredictions(persona, pool, round, pickNumber, ctx) {
         if (_cpuIsPro() && window.App?.MockEngine?.computePredictions) {
             return window.App.MockEngine.computePredictions(persona, pool, round, pickNumber, ctx);
@@ -58,8 +37,6 @@
     window.DraftCC = window.DraftCC || {};
     window.DraftCC.cpuEngine = {
         personaPick,
-        personaBid,
-        nominateChoice,
         computePredictions,
     };
 })();

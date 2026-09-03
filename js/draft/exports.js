@@ -108,7 +108,7 @@
             row.innerHTML = `
                 <span style="width:90px;color:var(--k-d4af37, #d4af37);font-weight:700">R${p.round}.${String(p.slot || 0).padStart(2, '0')}</span>
                 <span style="flex:1;color:var(--k-ffffff, #ffffff);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(p.name || '')}</span>
-                <span style="padding:6px 14px;border-radius:var(--card-radius, 10px);font-size:22px;font-weight:700;background:${col}22;color:${col};margin:0 18px">${p.pos || ''}</span>
+                <span style="padding:6px 14px;border-radius:10px;font-size:22px;font-weight:700;background:${col}22;color:${col};margin:0 18px">${p.pos || ''}</span>
                 <span style="min-width:120px;text-align:right;color:${dhqCol(p.dhq)};font-weight:700;font-family:'JetBrains Mono',monospace">${(p.dhq || 0).toLocaleString()}</span>
             `;
             picksBox.appendChild(row);

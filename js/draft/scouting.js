@@ -13,7 +13,6 @@
     let _prospects = [];
     let _nameIndex = {};
     let _dynastyRefreshedFor = null;
-    let _rosRefreshedFor = null;   // redraft: last ROS build the overlay used
 
     function normName(name) {
         return String(name || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -81,7 +80,10 @@
             });
             _nameIndex = indexProspects(_prospects);
             window.DraftCC.scouting.isLoaded = true;
-            if (window.wrLog) window.wrLog('scouting.loaded', { count: _prospects.length, source: 'rookie-data' });
+            // Success breadcrumb — console only. This used to go through wrLog,
+            // which files into the Mission Control error table: every draft-
+            // surface open logged a fake error (17 rows / 4 users, 2026-08-27).
+            if (typeof console !== 'undefined') console.info('[WarRoom] scouting.loaded', { count: _prospects.length, source: 'rookie-data' });
             return _prospects;
         })();
         return _ready;
@@ -94,37 +96,16 @@
     // overlaying onto the shared snapshot objects so every later read is current.
     function refreshDynastyValues() {
         const scores = window.App?.LI?.playerScores;
-        const PV = window.App?.PlayerValue;
-        const ros = PV?.isRedraftActive?.() ? PV.rosState() : null;
-        if ((!scores && !ros) || (_dynastyRefreshedFor === scores && _rosRefreshedFor === ros) || typeof sharedGet !== 'function') return;
+        if (!scores || _dynastyRefreshedFor === scores || typeof sharedGet !== 'function') return;
         const live = sharedGet();
         if (!live || !live.length) return;
         const byKey = {};
         live.forEach(lp => { byKey[normName(lp.name)] = lp.dynastyValue; });
-        // Redraft league: overlay ROS values instead — prospect cards must
-        // speak the board's currency, not the dynasty rookie ladder. Match
-        // CSV prospects to Sleeper pids by normalized name (rookies only).
-        let rosByName = null;
-        if (ros) {
-            rosByName = {};
-            const players = window.S?.players || {};
-            for (const pid in ros.values) {
-                if (!(ros.values[pid] > 0)) continue;
-                const pl = players[pid];
-                if (pl && pl.full_name && (pl.years_exp === 0 || pl.years_exp === 1)) rosByName[normName(pl.full_name)] = ros.values[pid];
-            }
-        }
         _prospects.forEach(p => {
-            const key = normName(p.name);
-            if (rosByName) {
-                p.dynastyValue = Number.isFinite(rosByName[key]) ? rosByName[key] : 0;
-                return;
-            }
-            const v = byKey[key];
+            const v = byKey[normName(p.name)];
             if (Number.isFinite(v)) p.dynastyValue = v;
         });
         _dynastyRefreshedFor = scores;
-        _rosRefreshedFor = ros;
     }
 
     function getProspects(pos) {

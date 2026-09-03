@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://c2-football.github.io https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://sxshiqyxhhifvtfqawbq.supabase.co https://api.sleeper.app https://api.myfantasyleague.com https://*.myfantasyleague.com https://lm-api-reads.fantasy.espn.com https://fantasysports.yahooapis.com https://*.sentry.io; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; object-src 'none';">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, viewport-fit=cover">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://skjjcruz.github.io https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://sxshiqyxhhifvtfqawbq.supabase.co https://api.sleeper.app https://api.myfantasyleague.com https://*.myfantasyleague.com https://lm-api-reads.fantasy.espn.com https://fantasysports.yahooapis.com https://*.sentry.io; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; object-src 'none';">
 
     <title>Draft Command Center - Dynasty HQ</title>
     <link rel="preconnect" href="https://cdn.jsdelivr.net">
@@ -171,10 +171,14 @@
 <body>
     <div id="root"></div>
 
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+    <script src="vendor/supabase.min.js"></script>
+<script>window.supabase||document.write('<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.101.1/dist/umd/supabase.min.js"><\/script>')</script>
     <script src="js/shared/shared-loader.js?v=20260705fdn1"></script>
     <script>
-    if (['localhost', '127.0.0.1'].includes(window.location.hostname || '')) {
+    // The /api/dev-ai-analyze proxy only exists in the local static dev server
+    // (scripts/serve-static.cjs).
+    const WR_IS_NATIVE_APP = false; // web-only build — never a native app shell
+    if (!WR_IS_NATIVE_APP && ['localhost', '127.0.0.1'].includes(window.location.hostname || '')) {
       const existingConfig = window.DYNASTY_HQ_CONFIG || {};
       window.DYNASTY_HQ_CONFIG = {
         ...existingConfig,
@@ -208,17 +212,19 @@
     </script>
     <!-- Scout-free vs Pro gate: wrIsPro() + chrome + lock card; boots loadUserTier(). -->
     <script src="js/shared/pro-gate.js?v=20260705gate1"></script>
-    <script src="js/shared/wr-ai-context.js?v=20260610a"></script>
-    <script src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.29.2/babel.min.js"></script>
+    <script src="vendor/react.production.min.js"></script>
+    <script src="vendor/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="js/mock-draft.js" type="text/babel"></script>
 
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
         // ===== DEV MODE =====
-        const DEV_MODE = new URLSearchParams(window.location.search).has('dev') || window.location.hostname.includes('sandbox');
+        // Auth bypass is allowed only on a local dev machine — never via ?dev or a
+        // "sandbox" hostname, which anyone could reach.
+        const IS_LOCAL = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+        const DEV_MODE = IS_LOCAL;
         if (DEV_MODE) {
             console.log('%c[DEV MODE] All features unlocked, auth bypassed','color:#D4AF37;font-weight:bold;font-size:14px');
             const b = document.createElement('div');
@@ -228,10 +234,24 @@
         }
 
         // ===== AUTH =====
+        // Require a valid, unexpired session token (Supabase JWT). Presence of
+        // od_auth_v1 is only a Sleeper-username link and is NOT proof of identity.
         const AUTH_KEY = 'od_auth_v1';
+        const SESSION_KEY = 'fw_session_v1';
         const authRaw = localStorage.getItem(AUTH_KEY);
-        const isAuthed = !!authRaw;
-        if (!isAuthed && !DEV_MODE) window.location.href = 'login.html';
+        function jwtUnexpired(t) {
+            try {
+                const p = String(t || '').split('.')[1];
+                if (!p) return false;
+                const b = p.replace(/-/g, '+').replace(/_/g, '/');
+                const pad = b.length % 4 ? b + '='.repeat(4 - (b.length % 4)) : b;
+                const o = JSON.parse(decodeURIComponent(window.atob(pad).split('').map(c => '%' + c.charCodeAt(0).toString(16).padStart(2, '0')).join('')));
+                return !o.exp || Number(o.exp) * 1000 > Date.now();
+            } catch (e) { return false; }
+        }
+        const sessionToken = (() => { try { return (JSON.parse(localStorage.getItem(SESSION_KEY) || 'null') || {}).token || ''; } catch (e) { return ''; } })();
+        const isAuthed = !!sessionToken && jwtUnexpired(sessionToken);
+        if (!isAuthed && !DEV_MODE) { try { localStorage.removeItem(AUTH_KEY); } catch (e) {} window.location.href = 'login.html'; }
         let sleeperUsername = '';
         if (DEV_MODE) {
             sleeperUsername = new URLSearchParams(window.location.search).get('user') || 'jcc100218';
@@ -641,10 +661,7 @@
                 setAiLoading(true); setAiError(null); setAiAnalysis(null);
                 try {
                     const ctx = buildContext();
-                    // dhqContext() (the old full-context builder) was retired with
-                    // Ask Alex chat — buildFormatPreamble is its still-live
-                    // successor for the superflex/TEP/IDP + quality-floor rules.
-                    const dhqEnrichment = window.WR?.AIContext?.buildFormatPreamble?.(leagueInfo) || null;
+                    const dhqEnrichment = (typeof dhqContext === 'function') ? dhqContext(false) : null;
                     const enrichedCtx = dhqEnrichment ? { ...ctx, _dhqContext: dhqEnrichment } : ctx;
                     const result = await window.OD.callAI({ type: aiMode, context: enrichedCtx });
                     setAiAnalysis(result.analysis);
@@ -1111,6 +1128,6 @@
 
         ReactDOM.createRoot(document.getElementById('root')).render(<DraftWarRoom />);
     </script>
-<footer style="text-align:center;padding:16px;font-size:12px;color:#666;border-top:1px solid #1a1a1a;margin-top:32px;">&copy; 2026 C2Football. All rights reserved.</footer>
+<footer style="text-align:center;padding:16px;font-size:12px;color:#666;border-top:1px solid #1a1a1a;margin-top:32px;">&copy; 2026 C2 Football LLC. All rights reserved.</footer>
 </body>
 </html>

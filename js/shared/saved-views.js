@@ -189,7 +189,7 @@
                 style: {
                     position: 'absolute', top: '28px', left: 0, zIndex: 50,
                     background: 'var(--k-0a0a0a, #0a0a0a)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))',
-                    borderRadius: 'var(--card-radius-sm, 8px)', padding: '4px', minWidth: '240px',
+                    borderRadius: '6px', padding: '4px', minWidth: '240px',
                     boxShadow: '0 8px 24px rgba(0,0,0,0.6)'
                 },
                 onClick: (e) => e.stopPropagation()
@@ -225,7 +225,7 @@
                 style: {
                     position: 'absolute', top: '28px', left: 0, zIndex: 60,
                     background: 'var(--k-0a0a0a, #0a0a0a)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))',
-                    borderRadius: 'var(--card-radius-sm, 8px)', padding: '10px', minWidth: '260px',
+                    borderRadius: '6px', padding: '10px', minWidth: '260px',
                     boxShadow: '0 8px 24px rgba(0,0,0,0.6)'
                 },
                 onClick: (e) => e.stopPropagation()

@@ -74,6 +74,7 @@ module.exports = [
         window: "readonly",
         document: "readonly",
         console: "readonly",
+        AbortController: "readonly",
         setTimeout: "readonly",
         clearTimeout: "readonly",
         setInterval: "readonly",
@@ -124,7 +125,6 @@ module.exports = [
         Babel: "readonly",
         htmx: "readonly",
         supabase: "readonly",
-        Capacitor: "readonly",
         // ── React hooks (destructured from React in core.js; global in script scope) ─
         useState: "readonly",
         useEffect: "readonly",

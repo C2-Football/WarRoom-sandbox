@@ -166,12 +166,7 @@
         // Convert Sleeper pick format to our state.pick format
         const replayPicks = sleeperPicks.map(sp => {
             const p = playersData[sp.player_id] || {};
-            // Redraft-first via resolvePlayerDhq (ros-zero honored) so replay
-            // grades price in the board's own currency.
-            const resolved = window.DraftCC?.state?.resolvePlayerDhq?.({ pid: sp.player_id });
-            const dhq = (resolved && (resolved.value > 0 || resolved.source === 'ros-zero'))
-                ? resolved.value
-                : (window.App?.LI?.playerScores?.[sp.player_id] || 0);
+            const dhq = window.App?.LI?.playerScores?.[sp.player_id] || 0;
             return {
                 round: sp.round,
                 slot: sp.draft_slot,

@@ -42,28 +42,6 @@
         dfs: { label: 'DFS', short: 'DFS', color: 'var(--k-3498db, #3498db)', family: 'daily' },
         unknown: { label: 'League Type Unknown', short: '?', color: 'var(--k-c7cdd7, #c7cdd7)', family: 'unknown' },
     };
-    // Product support is a deliberate contract, separate from format detection.
-    // It prevents a technically recognized format from being presented as a
-    // finished experience before its navigation, language and strategy tools
-    // have cleared the same acceptance bar.
-    const PRODUCT_SUPPORT = Object.freeze({
-        leagueTypes: Object.freeze({
-            dynasty: 'first_class',
-            chopped: 'first_class',
-            redraft: 'next',
-            keeper: 'next',
-            best_ball: 'beta',
-            dfs: 'unsupported',
-            unknown: 'unsupported',
-        }),
-        modes: Object.freeze({
-            empire: 'first_class',
-            commissioner: 'first_class',
-        }),
-        draftModes: Object.freeze({
-            auction: 'beta',
-        }),
-    });
     const TYPE_THEMES = {
         redraft: {
             id: 'war-room-default',
@@ -121,11 +99,6 @@
         if (value == null || value === '') return '';
         const raw = lower(value);
         return TYPE_ALIASES[raw] || raw;
-    }
-
-    function supportLevel(value) {
-        const type = normalizeType(value) || 'unknown';
-        return PRODUCT_SUPPORT.leagueTypes[type] || 'unsupported';
     }
 
     function firstNonEmpty(values) {
@@ -303,11 +276,6 @@
         // 2026-07-05, fail-open: keeper/unknown keep everything). Game Day
         // Central + lineup-check + bye planner are exempt per ruling E1.
         const allowRedraft = type !== 'dynasty';
-        // A startup draft (any league type, empty rosters, about to draft) gets
-        // the full-team-from-scratch gameplan same as redraft — only an
-        // ESTABLISHED dynasty doing a small rookie-only draft (rosters already
-        // populated) stays excluded, matching showDraftGameplan's own intent below.
-        const isStartupDraft = preDraft && rosterPlayerCount(rosters) === 0;
         return {
             showTaxi: hasTaxi,
             showIDP: hasIDP,
@@ -334,23 +302,7 @@
             // My Roster Wk START/SIT badge + redraft preset (E2).
             showWeeklyVerdict: allowRedraft,
             // Draft Gameplan blueprint (E5) — dynasty startups included.
-            showDraftGameplan: allowRedraft || isStartupDraft,
-            // Draft Capital + Roster Targeting and Alex's Recommended Draft
-            // (War Room tab) are multi-year rookie-capital planning tools —
-            // future pick rows, need-ranked targets against an existing
-            // roster, a slot-by-slot AI pick plan. None of that maps onto a
-            // seasonal draft where the whole roster is built fresh each
-            // cycle. Dynasty/keeper/unknown keep it (fail-open); redraft,
-            // chopped, best_ball, dfs don't.
-            showDraftCapitalPlanning: !seasonal,
-            // Draft Plan card (AI scouting report + class read + apply-to-
-            // board) and the Class Depth read further down the pool panel —
-            // owner call: valuable for weighing a rookie class against a
-            // long-term dynasty roster, not for a redraft/keeper/best_ball
-            // draft where the whole roster is filled fresh every cycle.
-            // Strictly dynasty-only (no fail-open to keeper/unknown, unlike
-            // the flags above) — narrower on purpose.
-            showDraftClassTools: type === 'dynasty',
+            showDraftGameplan: allowRedraft,
             showWaiverPlanner: seasonal || type === 'keeper',
             showRestOfSeasonValue: seasonal || type === 'keeper',
             hasRosteredPlayers: rosterPlayerCount(rosters) > 0,
@@ -460,7 +412,6 @@
             family: typeMeta.family,
             phase,
             typeMeta,
-            supportLevel: supportLevel(type),
             phaseMeta,
             profile,
             features,
@@ -518,7 +469,6 @@
     const api = {
         VERSION,
         TYPE_META,
-        PRODUCT_SUPPORT,
         PHASE_LABELS,
         STRATEGY_MODES,
         TYPE_THEMES,
@@ -527,7 +477,6 @@
         detectPhase,
         resolveDraftRounds,
         normalizeType,
-        supportLevel,
         setCurrent,
         getCurrent,
         resolve,

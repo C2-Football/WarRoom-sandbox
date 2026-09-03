@@ -185,7 +185,7 @@
                         padding: '8px 12px',
                         background: 'linear-gradient(90deg, var(--acc-line1, rgba(212,175,55,0.22)), var(--acc-fill1, rgba(212,175,55,0.05)))',
                         border: '1px solid var(--acc-line3, rgba(212,175,55,0.5))',
-                        borderRadius: 'var(--card-radius-sm, 8px)',
+                        borderRadius: '6px',
                         zIndex: 5,
                         fontSize: '0.72rem',
                         color: 'var(--gold)',
@@ -262,7 +262,7 @@
                 justifyContent: 'center',
                 background: 'var(--ov-1, rgba(255,255,255,0.02))',
                 border: '1px solid var(--ov-3, rgba(255,255,255,0.05))',
-                borderRadius: 'var(--card-radius-xs, 5px)',
+                borderRadius: '5px',
                 padding: '4px',
                 position: 'relative',
             }}>
@@ -342,7 +342,7 @@
             <div style={{
                 background: 'var(--ov-1, rgba(255,255,255,0.02))',
                 border: '1px solid var(--ov-3, rgba(255,255,255,0.05))',
-                borderRadius: 'var(--card-radius-xs, 5px)',
+                borderRadius: '5px',
                 padding: '4px 6px',
                 display: 'flex',
                 flexDirection: 'column',
@@ -417,7 +417,7 @@
             <div style={{
                 background: 'var(--ov-1, rgba(255,255,255,0.02))',
                 border: '1px solid var(--ov-3, rgba(255,255,255,0.05))',
-                borderRadius: 'var(--card-radius-xs, 5px)',
+                borderRadius: '5px',
                 padding: '6px 4px',
                 display: 'flex',
                 flexDirection: 'column',
@@ -460,7 +460,7 @@
             <div style={{
                 background: 'var(--ov-1, rgba(255,255,255,0.02))',
                 border: '1px solid var(--ov-3, rgba(255,255,255,0.05))',
-                borderRadius: 'var(--card-radius-xs, 5px)',
+                borderRadius: '5px',
                 padding: '5px 7px',
             }}>
                 <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: FONT_UI, marginBottom: '3px' }}>
@@ -521,7 +521,7 @@
             <div style={{
                 background: 'var(--ov-1, rgba(255,255,255,0.02))',
                 border: '1px solid ' + (hasRun ? 'rgba(231,76,60,0.35)' : 'var(--ov-3, rgba(255,255,255,0.05))'),
-                borderRadius: 'var(--card-radius-xs, 5px)',
+                borderRadius: '5px',
                 padding: '5px 7px',
             }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '3px' }}>
@@ -571,7 +571,7 @@
             <div style={{
                 background: 'var(--ov-1, rgba(255,255,255,0.02))',
                 border: '1px solid var(--ov-3, rgba(255,255,255,0.05))',
-                borderRadius: 'var(--card-radius-xs, 5px)',
+                borderRadius: '5px',
                 padding: '5px 7px',
                 overflow: 'hidden',
             }}>
@@ -619,7 +619,7 @@
             <div style={{
                 background: 'var(--ov-1, rgba(255,255,255,0.02))',
                 border: '1px solid var(--ov-3, rgba(255,255,255,0.05))',
-                borderRadius: 'var(--card-radius-xs, 5px)',
+                borderRadius: '5px',
                 padding: '6px',
                 display: 'flex',
                 flexDirection: 'column',

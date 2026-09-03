@@ -108,33 +108,15 @@
         return LEGACY_MAP[mode] || 'compete';
     }
 
-    // window.GMStrategy (dhq-shared/strategy.js) has always stored ONE
-    // strategy under a single global localStorage key — getStrategy() takes a
-    // leagueId param but silently ignores it. That means the instant ANY
-    // league saves a strategy, every OTHER league's read here would return
-    // that same object, even though a leagueId is stamped on save (applyPreset
-    // below) precisely so callers COULD tell them apart. This only trusts the
-    // global store when its stamped leagueId actually matches what's being
-    // asked for; an unset leagueId (pre-migration saves, or no league context)
-    // is trusted as legacy/single-league data. A mismatch falls through to the
-    // genuinely per-league WrStorage branch below instead.
-    function _trustedGlobalStrategy(leagueId) {
-        try {
-            if (!sharedStrategyStoreExists() || !window.GMStrategy || typeof window.GMStrategy.getStrategy !== 'function') return null;
-            const s = window.GMStrategy.getStrategy(leagueId);
-            if (!s || typeof s !== 'object') return null;
-            if (leagueId != null && s.leagueId != null && String(s.leagueId) !== String(leagueId)) return null;
-            return s;
-        } catch (e) { return null; }
-    }
-
     function getMode(leagueId) {
-        // Priority: shared global store (ONLY if it actually exists AND is
-        // for this league — see _trustedGlobalStrategy) → per-league
-        // WrStorage → default.
+        // Priority: shared global store (ONLY if it actually exists — see
+        // sharedStrategyStoreExists; getStrategy() otherwise returns a default
+        // that shadows the per-league value) → per-league WrStorage → default.
         try {
-            const s = _trustedGlobalStrategy(leagueId);
-            if (s && s.mode) return normalize(s.mode);
+            if (sharedStrategyStoreExists() && window.GMStrategy && typeof window.GMStrategy.getStrategy === 'function') {
+                const s = window.GMStrategy.getStrategy(leagueId);
+                if (s && s.mode) return normalize(s.mode);
+            }
         } catch (e) { /* ignore */ }
         try {
             const keys = (window.App && window.App.WR_KEYS) || WR_KEYS;
@@ -170,11 +152,12 @@
         const preset = getPreset(mode);
         // Merge preset.config into the existing strategy so user's custom fields
         // (untouchable, sellRules, targetPositions/sellPositions if set) survive.
-        // Seeded via resolveStrategy (below) rather than a raw GMStrategy read —
-        // that read was leagueId-blind, so applying a preset in league B could
-        // seed "existing" off whatever league A last saved, and then WRITE that
-        // cross-contaminated object into league B's own per-league store too.
-        let existing = resolveStrategy(leagueId) || {};
+        let existing = {};
+        try {
+            if (window.GMStrategy && typeof window.GMStrategy.getStrategy === 'function') {
+                existing = window.GMStrategy.getStrategy(leagueId) || {};
+            }
+        } catch (e) { /* ignore */ }
         const merged = {
             ...existing,
             ...(preset.config || {}),
@@ -196,29 +179,6 @@
         } catch (e) { /* ignore */ }
         window._wrGmStrategy = merged;
         window.dispatchEvent(new CustomEvent('wr:gm-mode-changed', { detail: { mode: preset.id, strategy: merged } }));
-        return merged;
-    }
-
-    // Patch individual fields onto a league's strategy WITHOUT forcing a full
-    // preset (mode/config) change — e.g. Draft Gameplan's archetype card. Same
-    // leagueId-aware read (resolveStrategy) and dual-store persist as
-    // applyPreset; exists so callers never need to touch window.GMStrategy
-    // directly (that bypasses the leagueId guard entirely — see
-    // _trustedGlobalStrategy above).
-    function patchStrategy(leagueId, patch) {
-        const merged = { ...(resolveStrategy(leagueId) || {}), ...(patch || {}), lastSyncedFrom: 'warroom', leagueId };
-        try {
-            if (window.GMStrategy && typeof window.GMStrategy.saveStrategy === 'function') {
-                window.GMStrategy.saveStrategy(merged);
-            }
-        } catch (e) { /* ignore */ }
-        try {
-            if (WrStorage && WR_KEYS && typeof WR_KEYS.GM_STRATEGY === 'function') {
-                WrStorage.set(WR_KEYS.GM_STRATEGY(leagueId), merged);
-            }
-        } catch (e) { /* ignore */ }
-        window._wrGmStrategy = merged;
-        window.dispatchEvent(new CustomEvent('wr:gm-mode-changed', { detail: { mode: merged.mode, strategy: merged } }));
         return merged;
     }
 
@@ -279,15 +239,14 @@
     }
 
     // Resolve the persisted strategy with the SAME precedence league-detail uses
-    // for the header/badge: shared global store (only if it exists and matches
-    // this league — see _trustedGlobalStrategy) → per-league WrStorage →
-    // last-active strategy (also leagueId-checked below — window._wrGmStrategy
-    // is a bare "whichever league touched it last" cache, the same leak shape
-    // as the global store, just in memory instead of localStorage).
+    // for the header/badge: shared global store (only if it exists) → per-league
+    // WrStorage → last-active strategy. Reads App fresh (load-order safe).
     function resolveStrategy(leagueId) {
         try {
-            const s = _trustedGlobalStrategy(leagueId);
-            if (s && typeof s === 'object') return s;
+            if (sharedStrategyStoreExists() && window.GMStrategy && window.GMStrategy.getStrategy) {
+                const s = window.GMStrategy.getStrategy(leagueId);
+                if (s && typeof s === 'object') return s;
+            }
         } catch (e) { /* ignore */ }
         try {
             const keys = (window.App && window.App.WR_KEYS) || WR_KEYS;
@@ -296,9 +255,7 @@
             const s = key && storage && storage.get && storage.get(key);
             if (s && typeof s === 'object') return s;
         } catch (e) { /* ignore */ }
-        const last = window._wrGmStrategy;
-        if (last && (leagueId == null || last.leagueId == null || String(last.leagueId) === String(leagueId))) return last;
-        return {};
+        return window._wrGmStrategy || {};
     }
 
     function effects(leagueId) {
@@ -335,18 +292,11 @@
             tradeWeights: desc.tradeWeights,
             draftWeights: desc.draftWeights,
             draftStyle: strategy.draftStyle || cfg.draftStyle || 'bpa',
-            // Which positions to lean toward when ordering a board — distinct
-            // from draftStyle (pick-capital philosophy). Keys match
-            // draft-gameplan.js's archetype list.
-            draftArchetype: strategy.draftArchetype || 'balanced',
             targetPositions: toSet(strategy.targetPositions),
             sellPositions: toSet(strategy.sellPositions),
             untouchable: toSet(strategy.untouchable || strategy.untouchables),
             sellRules: strategy.sellRules || [],
             faFilters: strategy.faFilters || null,
-            // User-set league FAAB minimum-bid override (0 = unset — callers
-            // fall back to league.settings.waiver_budget_min).
-            faabMinBid: Math.max(0, Number(strategy.faabMinBid) || 0),
             marketPosture,
             timeline,
             // Legacy tolerance (2026-07-08 single-voice ruling): alexPersonality
@@ -463,21 +413,6 @@
         return R.useMemo(() => effects(leagueId), [leagueId, tick]);
     }
 
-    // recommendMode — the on-paper-right preset for a roster, derived from its
-    // team assessment (tier + health score). Advisory only, never auto-applies.
-    // SINGLE implementation: the Strategy Editor's "★ Recommended for your
-    // roster" chip and Analytics' "Suggested Mode" (when no strategy is saved)
-    // both call this, so the two surfaces can never suggest different modes
-    // for the same roster (they used to run independent inferences and drift).
-    function recommendMode(assessment) {
-        if (!assessment) return null;
-        const tier = String(assessment.tier || '').toLowerCase();
-        const health = Number(assessment.healthScore) || 0;
-        if (tier.includes('rebuild') || (health && health < 70)) return 'rebuild';
-        if (tier.includes('elite') || tier.includes('contend') || health >= 82) return 'win_now';
-        return 'compete';
-    }
-
     window.WR = window.WR || {};
     window.WR.GmMode = {
         PRESETS,
@@ -487,14 +422,13 @@
         getPreset,
         describe,
         applyPreset,
-        patchStrategy,
         onChange,
         acceptanceFloorFor,
         effects,
+        resolveStrategy,
         useGmEffects,
         promptData,
         promptBlock,
-        recommendMode,
         // List of mode ids excluding custom — for the preset picker
         list: () => ['rebuild', 'compete', 'win_now'],
     };

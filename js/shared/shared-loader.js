@@ -5,13 +5,16 @@
     const REMOTE_BASE = (function () {
         try {
             const h = window.location.hostname || '';
-            // Scout is deployed at <origin>/ReconAI/ on each GitHub Pages host, so load
-            // shared scripts same-origin (covered by CSP 'self') instead of a fixed domain.
-            if (h.endsWith('.github.io')) return `${window.location.origin}/ReconAI/shared/`;
+            // ReconAI shared scripts are deployed at <origin>/ReconAI-sandbox-dev/ on the
+            // skjjcruz Pages host. When War Room is served from skjjcruz.github.io the
+            // ReconAI-sandbox-dev project site is same-origin, so load it relative to the
+            // origin (covered by CSP 'self'). Any other host loads it cross-origin from
+            // skjjcruz.github.io explicitly.
+            if (h === 'skjjcruz.github.io') return `${window.location.origin}/ReconAI-sandbox-dev/shared/`;
         } catch (e) {}
-        return 'https://c2-football.github.io/ReconAI/shared/';
+        return 'https://skjjcruz.github.io/ReconAI-sandbox-dev/shared/';
     })();
-    const DEFAULT_VERSION = '20260903assessfix2'; // bumped: team-assess.js assessTeamFromGlobal string/number rosterId cache fix; tier.js free tier retired (getTier() always 'paid')
+    const DEFAULT_VERSION = '20260902qbval1'; // fallback only — the deploy build stamps a content hash over this (scripts/build-deploy.cjs)
     const config = {
         localBase: null,
         remoteBase: REMOTE_BASE,

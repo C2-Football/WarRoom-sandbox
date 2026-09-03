@@ -14,12 +14,24 @@
     'use strict';
 
     function LeagueCalendarWidget({ size, currentLeague, leagueSkin, setActiveTab, navigateWidget }) {
-        // Re-render when league data / drafts settle in.
+        // Re-render when league data / drafts settle in — the league-detail
+        // header's draft fetch announces wr:drafts-loaded after publishing
+        // window.S.drafts, which the calendar engine prefers for draft dates.
         const leagueKey = currentLeague?.id || currentLeague?.league_id || '';
+        const [draftsTick, setDraftsTick] = React.useState(0);
+        React.useEffect(() => {
+            const h = () => setDraftsTick(n => n + 1);
+            window.addEventListener('wr:drafts-loaded', h);
+            window.addEventListener('wr:kickoff-loaded', h);
+            return () => {
+                window.removeEventListener('wr:drafts-loaded', h);
+                window.removeEventListener('wr:kickoff-loaded', h);
+            };
+        }, []);
         const events = React.useMemo(() => {
             try { return (window.WrCalendar?.getUpcoming(currentLeague, leagueSkin)) || []; }
             catch (e) { return []; }
-        }, [leagueKey, leagueSkin, currentLeague]);
+        }, [leagueKey, leagueSkin, currentLeague, draftsTick]);
 
         // Open the Calendar inside the Trophy Room (its new home).
         const jump = () => {
@@ -48,11 +60,11 @@
             const wk = Math.round(d / 7);
             return wk + ' wks';
         }
-        function dateLabel(date) {
+        function dateLabel(date, hasTime) {
             return date.toLocaleDateString('en-US', {
                 month: 'short', day: 'numeric',
                 year: date.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined,
-            });
+            }) + (hasTime ? ', ' + date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '');
         }
         // Urgency color: imminent = gold, this month = white, further = silver.
         function urgencyColor(date) {
@@ -79,7 +91,7 @@
                 ),
                 React.createElement('div', { style: { fontFamily: 'Rajdhani, sans-serif', fontSize: '1.05rem', fontWeight: 700, color: 'var(--white)', lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, next.title),
                 React.createElement('div', { style: { fontFamily: 'JetBrains Mono, monospace', fontSize: '1.25rem', fontWeight: 700, color: urgencyColor(next.date), lineHeight: 1 } }, countdownText(next.date)),
-                React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.6 } }, dateLabel(next.date)),
+                React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.6 } }, dateLabel(next.date, next.hasTime)),
             );
         }
 
@@ -89,7 +101,7 @@
                 key: event.id,
                 style: {
                     display: 'flex', alignItems: 'center', gap: '8px',
-                    padding: '6px 8px', borderRadius: 'var(--card-radius-sm, 8px)',
+                    padding: '6px 8px', borderRadius: '6px',
                     background: highlight ? 'var(--acc-fill1, rgba(212,175,55,0.06))' : 'var(--ov-1, rgba(255,255,255,0.02))',
                     border: '1px solid ' + (highlight ? 'var(--acc-line1, rgba(212,175,55,0.25))' : 'var(--ov-3, rgba(255,255,255,0.05))'),
                 },
@@ -98,9 +110,9 @@
                 React.createElement('div', { style: { flex: 1, minWidth: 0 } },
                     React.createElement('div', { style: { fontSize: 'var(--text-label, 0.75rem)', fontWeight: 600, color: highlight ? 'var(--gold)' : 'var(--white)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } },
                         event.title,
-                        highlight && React.createElement('span', { style: { fontSize: '0.55rem', fontWeight: 700, padding: '1px 5px', borderRadius: 'var(--card-radius-xs, 5px)', background: 'var(--gold)', color: 'var(--black)', marginLeft: '6px', verticalAlign: 'middle', letterSpacing: '0.04em' } }, 'NEXT'),
+                        highlight && React.createElement('span', { style: { fontSize: '0.55rem', fontWeight: 700, padding: '1px 5px', borderRadius: '4px', background: 'var(--gold)', color: 'var(--black)', marginLeft: '6px', verticalAlign: 'middle', letterSpacing: '0.04em' } }, 'NEXT'),
                     ),
-                    React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.7, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, dateLabel(event.date) + (event.detail ? ' · ' + event.detail : '')),
+                    React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.7, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, dateLabel(event.date, event.hasTime) + (event.detail ? ' · ' + event.detail : '')),
                 ),
                 React.createElement('span', { style: { fontFamily: 'JetBrains Mono, monospace', fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700, color: urgencyColor(event.date), flexShrink: 0 } }, countdownText(event.date)),
             );
@@ -114,7 +126,7 @@
         );
 
         // How many agenda rows fit each size.
-        const rowBudget = { md: 2, lg: 4, tall: 7, xl: 4, xxl: 9 };
+        const rowBudget = { md: 2, narrow: 8, lg: 4, tall: 7, xl: 4, xxl: 9 };
         const limit = rowBudget[size] || 4;
         const shown = events.slice(0, limit);
         const hidden = events.length - shown.length;

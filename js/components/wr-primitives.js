@@ -66,7 +66,7 @@
         const css = {
             background: 'var(--off-black, var(--k-1a1a1a, #1a1a1a))',
             border: accent ? ('1px solid ' + accent + '33') : '1px solid var(--ov-5, rgba(255,255,255,0.08))',
-            borderRadius: 'var(--card-radius, 10px)',
+            borderRadius: '10px',
             padding: padding || '14px 16px',
             transition: 'background 0.15s',
             cursor: onClick ? 'pointer' : 'default',
@@ -105,7 +105,7 @@
             style: {
                 display: 'inline-flex', alignItems: 'center',
                 fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700,
-                padding: '1px 7px', borderRadius: 'var(--card-radius, 10px)',
+                padding: '1px 7px', borderRadius: '10px',
                 background: wrAlpha(t.c, '22'), color: t.c,
                 border: '1px solid ' + wrAlpha(t.c, '4d'),
                 letterSpacing: '0.08em',
@@ -130,7 +130,7 @@
             style: {
                 fontFamily: 'JetBrains Mono, monospace',
                 fontSize: 'var(--text-label, 0.75rem)', letterSpacing: '0.08em',
-                padding: '1px 7px', borderRadius: 'var(--card-radius, 10px)',
+                padding: '1px 7px', borderRadius: '10px',
                 background: wrAlpha(t.c, '26'), color: t.c,
                 border: '1px solid ' + wrAlpha(t.c, '4d'),
                 fontWeight: 600,
@@ -201,7 +201,8 @@
     // Alex Insights tab, drawer) can render one identically.
     // Optional `feedback` prop wires the AI learning loop:
     //   { onUp, onDown, given } — given ('up'|'down') collapses the buttons.
-    function InsightCard({ severity, confidence, title, body, ctaLabel, ctaOnClick, icon, compact, feedback }) {
+    // Optional `onDismiss` renders a small × in the top-right corner.
+    function InsightCard({ severity, confidence, title, body, ctaLabel, ctaOnClick, icon, compact, feedback, onDismiss }) {
         const s = SEVERITY[(severity || 'pattern').toLowerCase()] || SEVERITY.pattern;
         const color = s.color;
         const bg = wrAlpha(color, '1a');
@@ -216,13 +217,25 @@
                 display: 'grid', gridTemplateColumns: iconSize + 'px 1fr',
                 gap: compact ? '12px' : '14px', alignItems: 'flex-start',
                 background: 'var(--off-black, var(--k-1a1a1a, #1a1a1a))', border: '1px solid var(--ov-4, rgba(255,255,255,0.06))',
-                borderRadius: 'var(--card-radius-lg, 14px)', padding: pad,
+                borderRadius: '12px', padding: pad,
             }
         },
-            h('div', { style: { position: 'absolute', inset: 0, pointerEvents: 'none', background: 'linear-gradient(135deg, ' + bg + ' 0%, transparent 55%)', opacity: 0.5, borderRadius: 'var(--card-radius-lg, 14px)' } }),
+            h('div', { style: { position: 'absolute', inset: 0, pointerEvents: 'none', background: 'linear-gradient(135deg, ' + bg + ' 0%, transparent 55%)', opacity: 0.5, borderRadius: '12px' } }),
+            onDismiss && h('button', {
+                onClick: onDismiss,
+                title: 'Dismiss',
+                'aria-label': 'Dismiss insight',
+                style: {
+                    position: 'absolute', top: '4px', right: '4px', zIndex: 2,
+                    width: '30px', height: '30px',
+                    background: 'none', border: 'none', borderRadius: '8px',
+                    color: 'var(--silver)', opacity: 0.45, cursor: 'pointer',
+                    fontSize: '1.05rem', lineHeight: 1, padding: 0,
+                },
+            }, '×'),
             h('div', {
                 style: {
-                    width: iconSize + 'px', height: iconSize + 'px', borderRadius: 'var(--card-radius, 10px)', flexShrink: 0,
+                    width: iconSize + 'px', height: iconSize + 'px', borderRadius: '10px', flexShrink: 0,
                     background: bg, border: '1px solid ' + border,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontSize: compact ? '1rem' : '1.25rem', color: color,
@@ -243,7 +256,7 @@
                     onClick: ctaOnClick,
                     style: {
                         display: 'inline-flex', alignItems: 'center', gap: '6px',
-                        padding: '6px 12px', borderRadius: 'var(--card-radius-xs, 5px)', minHeight: '44px',
+                        padding: '6px 12px', borderRadius: '5px', minHeight: '44px',
                         background: bg, border: '1px solid ' + border, color: color,
                         fontSize: 'var(--text-label, 0.75rem)', fontWeight: 600, cursor: 'pointer',
                         fontFamily: 'DM Sans, sans-serif',
@@ -262,68 +275,6 @@
         );
     }
 
-    // ── TradeIdeaCard ─────────────────────────────────────────────
-    // Renders a TRADE_CARD block (yourSide/theirSide/target/sleeperDM) —
-    // the structured trade proposal 'trade-chat' emits. Extracted from the
-    // Ask-Alex chat renderer (league-detail.js) so a one-shot trigger
-    // (player card, My Roster) gets the same fairness-bar/Copy-DM/Save
-    // treatment without needing the chat panel it used to live inside.
-    function TradeIdeaCard({ tradeCard, leagueId }) {
-        if (!tradeCard) return null;
-        const yours = (tradeCard.yourSide || []).reduce((s, a) => s + (a.dhq || 0), 0);
-        const theirs = (tradeCard.theirSide || []).reduce((s, a) => s + (a.dhq || 0), 0);
-        const diff = theirs - yours;
-        const pct = yours > 0 ? Math.round((diff / yours) * 100) : 0;
-        const color = pct >= 5 ? 'var(--k-2ecc71, #2ecc71)' : pct >= -5 ? 'var(--gold)' : 'var(--k-e74c3c, #e74c3c)';
-        const label = pct >= 5 ? 'You win by ' + pct + '%' : pct >= -5 ? 'Fair trade' : 'You lose by ' + Math.abs(pct) + '%';
-        const side = (assets, headLabel) => h('div', null,
-            h('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.6, marginBottom: '4px', fontFamily: 'var(--font-body)', textTransform: 'uppercase' } }, headLabel),
-            (assets || []).map((a, j) => h('div', { key: j, style: { padding: '3px 0', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.04))' } },
-                h('span', { style: { color: 'var(--text-primary)' } }, a.name),
-                h('span', { style: { color: 'var(--silver)', fontSize: 'var(--text-label, 0.75rem)', marginLeft: '4px' } }, (a.dhq || 0).toLocaleString() + ' DHQ')
-            )),
-            h('div', { style: { marginTop: '4px', fontWeight: 700, color: 'var(--gold)', fontSize: 'var(--text-label, 0.75rem)' } },
-                'Total: ' + (assets || []).reduce((s, a) => s + (a.dhq || 0), 0).toLocaleString())
-        );
-        return h('div', { style: { marginTop: '10px', background: 'var(--acc-fill1, rgba(212,175,55,0.06))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: 'var(--card-radius, 10px)', padding: '10px', fontSize: 'var(--text-body, 1rem)' } },
-            h('div', { style: { fontFamily: 'var(--font-body)', fontSize: 'var(--text-label, 0.75rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' } },
-                'Proposed Trade' + (tradeCard.target ? ' → ' + tradeCard.target : '')),
-            h('div', { style: { display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: '8px', alignItems: 'start' } },
-                side(tradeCard.yourSide, 'You Give'),
-                h('div', { style: { display: 'flex', alignItems: 'center', fontSize: '1.2rem', color: 'var(--gold)', paddingTop: '16px' } }, '⇄'),
-                side(tradeCard.theirSide, 'You Get')
-            ),
-            h('div', { style: { marginTop: '8px', display: 'flex', alignItems: 'center', gap: '8px' } },
-                h('div', { style: { flex: 1, height: '4px', borderRadius: '2px', background: 'var(--ov-5, rgba(255,255,255,0.08))', overflow: 'hidden' } },
-                    h('div', { style: { width: Math.min(100, 50 + pct) + '%', height: '100%', background: color, borderRadius: '2px' } })),
-                h('span', { style: { fontSize: 'var(--text-label, 0.75rem)', color, fontFamily: 'var(--font-body)' } }, label)
-            ),
-            h('div', { style: { display: 'flex', gap: '6px', marginTop: '8px' } },
-                tradeCard.sleeperDM && h('button', {
-                    onClick: () => { try { navigator.clipboard.writeText(tradeCard.sleeperDM); } catch (_) {} },
-                    style: { padding: '5px 12px', fontSize: 'var(--text-label, 0.75rem)', fontFamily: 'var(--font-body)', background: 'linear-gradient(135deg, var(--k-7c6bf8, #7c6bf8), var(--k-9b8afb, #9b8afb))', color: 'var(--k-ffffff, #ffffff)', border: 'none', borderRadius: 'var(--card-radius-lg, 14px)', cursor: 'pointer', minHeight: '32px' },
-                }, 'Copy DM'),
-                h('button', {
-                    onClick: () => {
-                        if (!leagueId) return;
-                        const P = window.WrTradePipeline;
-                        if (P) { P.append(leagueId, P.fromAlexCard(tradeCard)); return; }
-                        // trade-calc.js (WrTradePipeline's home) is deferred — if it
-                        // hasn't loaded yet, write the legacy shape; normalizeAll()
-                        // migrates it on the next Trade Log read.
-                        const keys = window.App?.WR_KEYS || window.WR_KEYS;
-                        const storage = window.App?.WrStorage || window.WrStorage;
-                        if (!keys?.SAVED_TRADES || !storage) return;
-                        const saved = storage.get(keys.SAVED_TRADES(leagueId)) || [];
-                        saved.unshift({ ...tradeCard, savedAt: Date.now() });
-                        storage.set(keys.SAVED_TRADES(leagueId), saved.slice(0, 60));
-                    },
-                    style: { padding: '5px 12px', fontSize: 'var(--text-label, 0.75rem)', fontFamily: 'var(--font-body)', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: 'var(--card-radius-lg, 14px)', cursor: 'pointer', minHeight: '32px' },
-                }, 'Save')
-            )
-        );
-    }
-
     // ── ClampedRead ───────────────────────────────────────────────
     // Long-read disclosure, extracted from the My Roster Dynasty Read
     // pattern (js/tabs/my-team.js): clamps content to `maxHeight` px with
@@ -335,7 +286,7 @@
     //   style     — style object for the content div (both modes).
     //   fadeColor — color the fade dissolves into (match the surface bg).
     // Consume guarded: window.WR?.ClampedRead (script-order safety).
-    function ClampedRead({ text, children, maxHeight, style, fadeColor }) {
+    function ClampedRead({ text, html, children, maxHeight, style, fadeColor }) {
         const limit = maxHeight || 104;
         const [open, setOpen] = React.useState(false);
         const [overflow, setOverflow] = React.useState(false);
@@ -353,12 +304,14 @@
             const ro = new ResizeObserver(measure);
             ro.observe(el);
             return () => ro.disconnect();
-        }, [text, limit]);
+        }, [text, html, limit]);
         const clamped = overflow && !open;
         const fade = fadeColor || 'var(--surf-solid, rgba(12,12,18,0.99))';
         return h('div', null,
             h('div', { style: { position: 'relative', maxHeight: clamped ? limit + 'px' : 'none', overflow: clamped ? 'hidden' : 'visible' } },
-                h('div', { ref: ref, style: style }, text != null ? text : children),
+                html != null
+                    ? h('div', { ref: ref, style: style, dangerouslySetInnerHTML: { __html: html } })
+                    : h('div', { ref: ref, style: style }, text != null ? text : children),
                 clamped ? h('div', { style: { position: 'absolute', left: 0, right: 0, bottom: 0, height: '38px', background: 'linear-gradient(180deg, transparent, ' + fade + ')', pointerEvents: 'none' } }) : null
             ),
             overflow ? h('button', {
@@ -521,7 +474,7 @@
                     showClose !== false ? h('button', {
                         onClick: onClose,
                         'aria-label': 'Close',
-                        style: { background: 'none', border: '1px solid var(--ov-6, rgba(255,255,255,0.12))', borderRadius: 'var(--card-radius-sm, 8px)', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 'var(--text-body, 1rem)', minWidth: '44px', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }
+                        style: { background: 'none', border: '1px solid var(--ov-6, rgba(255,255,255,0.12))', borderRadius: '6px', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 'var(--text-body, 1rem)', minWidth: '44px', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }
                     }, '✕') : null
                 ),
                 h('div', {
@@ -575,7 +528,7 @@
         const ctaBase = {
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
             marginTop: '9px', minHeight: '44px', padding: '8px 14px',
-            borderRadius: 'var(--card-radius-sm, 8px)', cursor: 'pointer',
+            borderRadius: '6px', cursor: 'pointer',
             fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)',
             fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700,
             letterSpacing: '0.06em', textTransform: 'uppercase',
@@ -612,21 +565,17 @@
     }
 
     // ── AssetRow (P1 stat-card row) ───────────────────────────────
-    // 56–64px two-line row: pos badge (or player photo, see `pid`) · name+tag
-    // · up to 3 mono stat slots [{label, value, tone}] · `verdict` node · chevron.
+    // 56–64px two-line row: pos badge · name+tag · up to 3 mono stat
+    // slots [{label, value, tone}] · `verdict` node · chevron.
     //   accent   — 'gold' | 'risk' border tint.
-    //   pid      — optional Sleeper player id. When present the leading
-    //              30×30 badge shows the real sleepercdn headshot (falling
-    //              back to the same pos-tinted initials square on image
-    //              error/missing photo) instead of the plain position
-    //              letters. Same pattern as free-agency.js's PlayerAvatar —
-    //              omit `pid` for non-player rows and the letter square is
-    //              unchanged.
     //   expanded — renders `children` full-width below the row inside
     //              the same card (row tap is the only toggle; children
     //              clicks don't re-toggle).
     //   ...rest  — forwarded to the card root (data-* hooks etc.).
-    function AssetRow({ pos, pid, name, tag, slots, verdict, onClick, expanded, children, accent, ...rest }) {
+    // `struck` lines through the name — the phone-card analog of the desktop
+    // tables' drafted strikethrough, so a picked player reads as gone on
+    // every tier (owner ask 2026-08-15).
+    function AssetRow({ pos, name, tag, slots, verdict, onClick, expanded, children, accent, struck, ...rest }) {
         const tint = POS_TINTS[String(pos || '').toUpperCase()] || { bg: 'var(--ov-4, rgba(255,255,255,0.06))', fg: 'var(--silver, #BDB8AD)' };
         const borderColor = accent === 'gold' ? 'rgba(212,175,55,0.4)'
             : accent === 'risk' ? 'rgba(240,165,0,0.4)'
@@ -636,7 +585,7 @@
             style: {
                 background: 'var(--black, #121217)',
                 border: '1px solid ' + borderColor,
-                borderRadius: 'var(--card-radius, 10px)',
+                borderRadius: '9px',
                 overflow: 'hidden',
             },
             ...rest,
@@ -652,47 +601,24 @@
                     cursor: onClick ? 'pointer' : 'default',
                 },
             },
-                pid ? h('span', {
+                h('span', {
                     style: {
-                        width: '30px', height: '30px', borderRadius: 'var(--card-radius-sm, 8px)', flexShrink: 0,
-                        position: 'relative', display: 'inline-flex', overflow: 'hidden',
-                        background: tint.bg, border: '1px solid rgba(255,255,255,0.14)',
-                    }
-                },
-                    h('img', {
-                        src: 'https://sleepercdn.com/content/nfl/players/' + pid + '.jpg',
-                        alt: '',
-                        onError: (e) => { e.target.style.display = 'none'; if (e.target.nextSibling) e.target.nextSibling.style.display = 'flex'; },
-                        style: { width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top', display: 'block' },
-                    }),
-                    // Initials fallback — same pos-tinted look as the plain
-                    // letter badge below, shown only if the photo 404s.
-                    h('span', {
-                        style: {
-                            display: 'none', position: 'absolute', inset: 0,
-                            alignItems: 'center', justifyContent: 'center',
-                            color: tint.fg, fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)',
-                            fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700,
-                        }
-                    }, String(name || pos || '?').trim().split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase())
-                ) : h('span', {
-                    style: {
-                        width: '30px', height: '30px', borderRadius: 'var(--card-radius-sm, 8px)', flexShrink: 0,
+                        width: '30px', height: '30px', borderRadius: '7px', flexShrink: 0,
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         background: tint.bg, color: tint.fg,
                         fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)',
                         fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700,
                     }
                 }, pos),
-                h('div', { style: { flex: '1 1 76px', minWidth: 0 } },
-                    // flex-basis 76px (not the bare 0% that `flex: 1` implies) gives the
-                    // name a real starting share before the fixed-width slots/verdict/
-                    // chevron eat the row — without it, names were squeezed to ~2-3
-                    // visible characters ("Danie…") on 375px phones. Two-line clamp
-                    // (vs. single-line ellipsis) so a still-tight name reads in full
-                    // ("Aaron / Rodgers") instead of truncating mid-word.
-                    h('div', { style: { fontFamily: 'var(--font-body, "DM Sans", sans-serif)', fontSize: '0.85rem', fontWeight: 600, color: 'var(--white)', lineHeight: 1.25, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', wordBreak: 'break-word' } }, name),
-                    tag != null && h('div', { style: { fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 500, color: 'var(--text-muted, #8B8B96)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: '1px' } }, tag)
+                h('div', { style: { flex: 1, minWidth: 0 } },
+                    h('div', { style: { fontFamily: 'var(--font-body, "DM Sans", sans-serif)', fontSize: '0.85rem', fontWeight: 600, color: 'var(--white)', lineHeight: 1.25, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textDecoration: struck ? 'line-through' : 'none' } }, name),
+                    // Verdict rides the TAG line, not the stat cluster (owner
+                    // call 2026-08-24: chips on the top row squeezed names to
+                    // "Mat…" — the name now owns its full line).
+                    (tag != null || verdict) && h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', marginTop: '1px', minWidth: 0 } },
+                        tag != null ? h('div', { style: { fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 500, color: 'var(--text-muted, #8B8B96)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0, flex: '0 1 auto' } }, tag) : null,
+                        verdict ? h('div', { style: { flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '130px' } }, verdict) : null
+                    )
                 ),
                 h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 } },
                     ...(slots || []).slice(0, 3).map((s, i) => h('div', { key: 'slot-' + i, style: { textAlign: 'right', minWidth: '32px' } },
@@ -701,13 +627,6 @@
                         h('div', { style: { fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: s.strong ? 700 : 500, color: s.strong ? 'var(--gold)' : 'var(--text-muted, #55555f)', textTransform: 'uppercase', letterSpacing: '0.02em' } }, s.label),
                         h('div', { style: { fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', fontSize: s.strong ? '0.98rem' : '0.8rem', fontWeight: s.strong ? 700 : 600, color: s.strong ? 'var(--gold)' : toneColor(s.tone) } }, s.value != null && s.value !== '' ? s.value : '—')
                     )),
-                    // Verdict clamp (owner iPhone pass 2026-07-12, widened 2026-08-09):
-                    // an unclamped chip here squeezed the name column to ~2 chars on
-                    // 375px rows with three slots — cap and ellipsize. 92px cut off
-                    // two-word verdicts mid-word ("Build Around" → "BUILD AROUN…");
-                    // 108px is still well short of the original bug's threshold but
-                    // fits the longest current verdict label in full.
-                    verdict ? h('div', { style: { maxWidth: '108px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 } }, verdict) : null,
                     h('span', { 'aria-hidden': 'true', style: { color: 'var(--text-muted, #55555f)', fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', fontSize: '0.9rem', fontWeight: 600, transform: expanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' } }, '›')
                 )
             ),
@@ -854,7 +773,14 @@
         if (row && row !== s.row) {
             targetKey = row.getAttribute('data-reorder-key');
             const r = row.getBoundingClientRect();
-            after = s.lastY > r.top + r.height / 2;
+            // Drops TAKE the target's spot — the occupant shifts DOWN (owner
+            // call 2026-08-18). The old midpoint rule made downward drags land
+            // below the hovered row, reading as the occupant jumping up. The
+            // below-target insert survives only on the list's LAST row, so a
+            // player can still be sent to the very bottom.
+            const rows = (row.parentElement || document).querySelectorAll('[data-reorder-key]');
+            const isLastRow = rows.length > 0 && row === rows[rows.length - 1];
+            after = isLastRow && s.lastY > r.top + r.height / 2;
             targetEl = row;
         }
         if (s.marked && (s.marked !== targetEl || s.after !== after)) {
@@ -888,7 +814,11 @@
                     scroller = scroller.parentElement;
                 }
                 const ghost = row.cloneNode(true);
-                ghost.style.cssText += ';position:fixed;left:' + rect.left + 'px;top:' + rect.top + 'px;width:' + rect.width + 'px;height:' + rect.height + 'px;margin:0;z-index:9999;pointer-events:none;opacity:0.97;background:var(--black, #121217);border:1px solid var(--acc-line4, rgba(212,175,55,0.55));border-radius:var(--card-radius-sm, 8px);box-shadow:0 12px 30px rgba(0,0,0,0.55);transition:none;';
+                // The clone must NOT count as a list row: it would otherwise
+                // read as the document's last [data-reorder-key] and break the
+                // last-row bottom-drop rule in _dragRetarget.
+                ghost.removeAttribute('data-reorder-key');
+                ghost.style.cssText += ';position:fixed;left:' + rect.left + 'px;top:' + rect.top + 'px;width:' + rect.width + 'px;height:' + rect.height + 'px;margin:0;z-index:9999;pointer-events:none;opacity:0.97;background:var(--black, #121217);border:1px solid var(--acc-line4, rgba(212,175,55,0.55));border-radius:8px;box-shadow:0 12px 30px rgba(0,0,0,0.55);transition:none;';
                 document.body.appendChild(ghost);
                 _dragSes = {
                     key, grip, row, ghost,
@@ -937,13 +867,128 @@
         };
     }
 
+    // ── listDrag: transform-based reorder for HTML5 row-body drags ─────────
+    // (owner call 2026-08-19, after the fold/slot experiments broke on iPad.)
+    // The list's LAYOUT is never touched while a drag is in flight — WebKit
+    // ends a native drag whose source folds, hides, or reflows. Instead the
+    // rows SLIDE via transform: geometry is captured once at dragstart in
+    // container-content coordinates (scroll-proof), the open slot is derived
+    // from the pointer against the captured midpoints of the OTHER rows, and
+    // only the elements between the source and the slot translate by one row
+    // height. The drop lands the dragged row exactly in the visible open
+    // slot, so pressing a player and nudging one row down works: the
+    // neighbor slides up past its midpoint and the slot opens under the
+    // finger. Consumers: start(row) on dragstart, over(clientY) on the
+    // CONTAINER's dragover, target() then end() on drop, end() on dragend.
+    let _listDrag = null;
+    function listDragStart(srcRow) {
+        if (!srcRow || _listDrag) return false;
+        const container = srcRow.parentElement;
+        if (!container) return false;
+        const cRect = container.getBoundingClientRect();
+        const base = cRect.top - container.scrollTop;
+        const kids = [];
+        const nonSource = [];
+        for (let el = container.firstElementChild; el; el = el.nextElementSibling) {
+            // Sticky headers pin to the viewport — translating one tears the
+            // table header off; leave them (and their geometry) out entirely.
+            try { if (getComputedStyle(el).position === 'sticky') continue; } catch (err) { continue; }
+            const r = el.getBoundingClientRect();
+            const top = r.top - base;
+            const entry = {
+                el, top, h: r.height, mid: top + r.height / 2,
+                prevTransform: el.style.transform || '', prevTransition: el.style.transition || '',
+            };
+            kids.push(entry);
+            if (el !== srcRow && el.hasAttribute && el.hasAttribute('data-reorder-key')) nonSource.push(entry);
+        }
+        const src = kids.find(e => e.el === srcRow);
+        if (!src || !nonSource.length) return false;
+        // The slot index the source already occupies — dropping there is a
+        // no-op, so nothing may slide when the pointer resolves to it.
+        let srcIdx = 0;
+        for (const e of nonSource) { if (e.top < src.top) srcIdx++; }
+        _listDrag = {
+            container, srcRow, src, kids, nonSource, srcIdx,
+            srcOpacity: srcRow.style.opacity || '',
+            k: -1, hideTimer: 0,
+        };
+        // The source row keeps its layout box (display/visibility changes end
+        // WebKit's drag) and only fades AFTER the browser snapshots the drag
+        // image; the sliding neighbors cover its spot.
+        _listDrag.hideTimer = setTimeout(() => {
+            const s = _listDrag;
+            if (s && s.srcRow === srcRow) srcRow.style.opacity = '0';
+        }, 0);
+        for (const e of kids) { if (e.el !== srcRow) e.el.style.transition = 'transform 0.16s ease'; }
+        // Backstop: the row's own dragend can go missing — React can replace
+        // the element mid-drag, and WebKit skips events other engines fire.
+        // Without this the source row stays at opacity 0 and the player looks
+        // deleted. Window-level, so it survives the row being re-rendered.
+        _listDrag.bail = () => listDragEnd();
+        try {
+            window.addEventListener('dragend', _listDrag.bail);
+            window.addEventListener('drop', _listDrag.bail);
+        } catch (e) { /* listeners unsupported — drop/dragend paths still clean up */ }
+        return true;
+    }
+    function listDragOver(clientY) {
+        const s = _listDrag;
+        if (!s) return;
+        const cRect = s.container.getBoundingClientRect();
+        const y = clientY - cRect.top + s.container.scrollTop;
+        let k = 0;
+        for (const r of s.nonSource) { if (y > r.mid) k++; }
+        if (k === s.k) return;
+        s.k = k;
+        const srcTop = s.src.top, srcH = s.src.h;
+        const last = s.nonSource[s.nonSource.length - 1];
+        const slotTop = k < s.nonSource.length ? s.nonSource[k].top : last.top + last.h;
+        for (const e of s.kids) {
+            if (e.el === s.srcRow) continue;
+            // Everything AT and BELOW the landing spot steps DOWN one row to
+            // make room — never up (owner call 2026-08-19). The dragged
+            // player's own spot stays open behind him, so the motion always
+            // reads the way the result reads: he takes the spot, the man
+            // there and everyone under him move down. Dragging up already
+            // worked this way; this makes downward drags match. k === srcIdx
+            // is the player's own spot: a no-op, so nothing moves.
+            let ty = 0;
+            if (k > s.srcIdx) { if (e.top >= slotTop) ty = srcH; }
+            else if (k < s.srcIdx) { if (e.top >= slotTop && e.top < srcTop) ty = srcH; }
+            e.el.style.transform = ty ? 'translateY(' + ty + 'px)' : e.prevTransform;
+        }
+    }
+    function listDragTarget() {
+        const s = _listDrag;
+        if (!s || s.k < 0) return null;
+        return { k: s.k, appended: s.k >= s.nonSource.length };
+    }
+    function listDragEnd() {
+        const s = _listDrag;
+        if (!s) return;
+        _listDrag = null;
+        if (s.hideTimer) clearTimeout(s.hideTimer);
+        if (s.bail) {
+            try {
+                window.removeEventListener('dragend', s.bail);
+                window.removeEventListener('drop', s.bail);
+            } catch (e) { /* nothing to detach */ }
+        }
+        try { s.srcRow.style.opacity = s.srcOpacity; } catch (e) { /* row unmounted */ }
+        for (const e of s.kids) {
+            if (e.el === s.srcRow) continue;
+            try { e.el.style.transition = e.prevTransition; e.el.style.transform = e.prevTransform; } catch (err) { /* row unmounted */ }
+        }
+    }
+
     window.WR = window.WR || {};
+    window.WR.listDrag = { start: listDragStart, over: listDragOver, target: listDragTarget, end: listDragEnd };
     window.WR.Card = Card;
     window.WR.Badge = Badge;
     window.WR.Chip = Chip;
     window.WR.ConfChip = ConfChip;
     window.WR.DeltaLine = DeltaLine;
-    window.WR.TradeIdeaCard = TradeIdeaCard;
     window.WR.Kpi = Kpi;
     window.WR.InsightCard = InsightCard;
     window.WR.ClampedRead = ClampedRead;

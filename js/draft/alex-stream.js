@@ -25,6 +25,8 @@
     ];
 
     function AlexStreamPanel({ state, dispatch }) {
+        const [inputValue, setInputValue] = React.useState('');
+        const [pendingAsk, setPendingAsk] = React.useState(false);
         const [expandedIds, setExpandedIds] = React.useState(() => new Set());
         const streamEndRef = React.useRef(null);
 
@@ -54,10 +56,102 @@
         const alexSpend = state.alex?.alexSpend || {};
         const budget = alexSpend.budget || 12;
         const sonnetUsed = alexSpend.sonnet || 0;
+        const flashUsed = alexSpend.flash || 0;
         const budgetPct = (sonnetUsed / budget) * 100;
         const budgetCol =
             sonnetUsed >= budget ? 'var(--k-e74c3c, #e74c3c)' :
             sonnetUsed >= budget * 0.7 ? 'var(--k-f0a500, #f0a500)' : 'var(--k-2ecc71, #2ecc71)';
+
+        // Send an "Ask Alex" request via Gemini Flash (draft-chat route)
+        const sendAsk = async (text) => {
+            if (!text || pendingAsk) return;
+            if (typeof window.dhqAI !== 'function') {
+                dispatch({
+                    type: 'ALEX_EVENT_ADD',
+                    event: {
+                        type: 'user',
+                        badge: '?',
+                        color: 'var(--k-e74c3c, #e74c3c)',
+                        title: 'AI unavailable',
+                        text: 'dhqAI is not loaded. Try reloading the page.',
+                    },
+                });
+                return;
+            }
+
+            // Add the user's question to the stream immediately
+            dispatch({
+                type: 'ALEX_EVENT_ADD',
+                event: {
+                    type: 'user',
+                    badge: '?',
+                    color: 'var(--k-9b8afb, #9b8afb)',
+                    title: 'You asked',
+                    text,
+                },
+            });
+
+            setInputValue('');
+            setPendingAsk(true);
+            dispatch({ type: 'ALEX_SET_THINKING', thinking: true });
+
+            try {
+                // Rich, board-aware context (shared with the Ask windows),
+                // plus the format/quality preamble the generic AI path lacks.
+                const contextLines = (window.WR?.AIContext?.buildFormatPreamble?.(window.S?.currentLeague) || '')
+                    + (window.DraftCC.buildAskContext
+                        ? window.DraftCC.buildAskContext(state)
+                        : '');
+
+                // Pass the bare question as the message; dhqAI injects the
+                // context itself, so don't duplicate it into the message.
+                const messages = [{ role: 'user', content: text }];
+                const response = await window.dhqAI('draft-chat', text, contextLines, { messages });
+                dispatch({ type: 'ALEX_SPEND_FLASH' });
+                window.OD?.track?.('alex_response_actioned', {
+                    platform: 'warroom',
+                    module: 'draft',
+                    leagueId: window.S?.currentLeagueId || null,
+                    entityType: 'ai_call',
+                    entityId: 'draft-chat',
+                    metadata: { action: 'draft_alex_asked', quickPrompt: CHIP_PROMPTS.some(p => p.text === text) },
+                });
+
+                const replyText = typeof response === 'string' ? response : (response?.content || response?.text || JSON.stringify(response));
+                dispatch({
+                    type: 'ALEX_EVENT_ADD',
+                    event: {
+                        type: 'ai',
+                        badge: '✦',
+                        color: 'var(--gold)',
+                        title: 'Alex',
+                        text: replyText,
+                        fullText: replyText,
+                        expandable: replyText.length > 160,
+                    },
+                });
+            } catch (e) {
+                dispatch({
+                    type: 'ALEX_EVENT_ADD',
+                    event: {
+                        type: 'user',
+                        badge: '!',
+                        color: 'var(--k-e74c3c, #e74c3c)',
+                        title: 'Alex error',
+                        text: String(e?.message || e).slice(0, 200),
+                    },
+                });
+                if (window.wrLog) window.wrLog('alex.ask', e);
+            } finally {
+                setPendingAsk(false);
+                dispatch({ type: 'ALEX_SET_THINKING', thinking: false });
+            }
+        };
+
+        const onSubmitAsk = (e) => {
+            e.preventDefault();
+            if (inputValue.trim()) sendAsk(inputValue.trim());
+        };
 
         const containerCss = panelCard({
             height: '100%',
@@ -95,7 +189,7 @@
                         </div>
                     </div>
                     {GatedRow
-                        ? <GatedRow title="Alex calls your draft live" sub="Live commentary, room reads, and Ask Alex pick advice are Scout Pro." feature="draft_alex_stream" />
+                        ? <GatedRow title="Alex calls your draft live" sub="Live commentary, room reads, and Ask Alex draft chat are Scout Pro." feature="draft_alex_stream" />
                         : <div dangerouslySetInnerHTML={{ __html: window.wrLockCard ? window.wrLockCard('Alex Stream', 'draft_alex_stream', 'Live draft commentary is Scout Pro.') : '' }} />}
                 </div>
             );
@@ -108,7 +202,7 @@
                     <div style={{ fontFamily: FONT_DISPL, fontSize: '0.86rem', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.08em', textTransform: 'uppercase', flex: 1 }}>
                         Alex Stream
                     </div>
-                    <span title={`Auto Alex notes: ${sonnetUsed}/${budget} per draft`} style={{
+                    <span title={`Auto Alex notes: ${sonnetUsed}/${budget} per draft${sonnetUsed >= budget ? ' — used up; Ask Alex still works' : ''} · Quick replies: ${flashUsed}`} style={{
                         fontSize: 'var(--text-label, 0.75rem)',
                         padding: '1px 6px',
                         background: 'rgba(0,0,0,0.3)',
@@ -170,6 +264,9 @@
                                 return next;
                             });
                         };
+                        // Shared AI-text formatter (bold + spacing + dividers),
+                        // so draft commentary reads like every other AI surface.
+                        const fmtAI = (window.WR && window.WR.formatAI) ? window.WR.formatAI : (x => String(x == null ? '' : x));
                         const textClamp = isExpandable && !isExpanded ? {
                             display: '-webkit-box',
                             WebkitLineClamp: 2,
@@ -227,11 +324,10 @@
                                             color: 'var(--silver)',
                                             opacity: 0.8,
                                             marginTop: '1px',
-                                            lineHeight: 1.4,
+                                            lineHeight: 1.5,
                                             wordBreak: 'break-word',
-                                            whiteSpace: 'pre-wrap',
                                             ...textClamp,
-                                        }}>{item.text}</div>
+                                        }} dangerouslySetInnerHTML={{ __html: fmtAI(item.text) }} />
                                     )}
                                     {isExpanded && item.fullText && item.fullText !== item.text && (
                                         <div style={{
@@ -244,14 +340,14 @@
                                                     fontSize: 'var(--text-label, 0.75rem)',
                                                     color: 'var(--silver)',
                                                     opacity: 0.85,
-                                                    lineHeight: 1.45,
+                                                    lineHeight: 1.5,
                                                     wordBreak: 'break-word',
                                                     whiteSpace: 'normal',
                                                     border: '1px solid var(--ov-4, rgba(255,255,255,0.055))',
                                                     borderRadius: 'var(--card-radius-sm)',
                                                     padding: '5px 6px',
                                                     background: 'var(--ov-1, rgba(255,255,255,0.018))',
-                                                }}>{block}</div>
+                                                }} dangerouslySetInnerHTML={{ __html: fmtAI(block) }} />
                                             ))}
                                         </div>
                                     )}
@@ -278,7 +374,7 @@
                                 background: 'rgba(124,107,248,0.08)',
                                 border: '1px solid rgba(124,107,248,0.2)',
                                 color: 'rgba(155,138,251,0.9)',
-                                borderRadius: 'var(--card-radius, 10px)',
+                                borderRadius: '10px',
                                 cursor: 'pointer',
                                 fontFamily: FONT_UI,
                             }}
@@ -286,6 +382,45 @@
                     ))}
                 </div>
 
+                {/* Ask Alex input */}
+                <form onSubmit={onSubmitAsk} style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+                    <input
+                        type="text"
+                        placeholder="Ask Alex…"
+                        value={inputValue}
+                        onChange={e => setInputValue(e.target.value)}
+                        disabled={pendingAsk}
+                        style={{
+                            flex: 1,
+                            padding: '5px 8px',
+                            minHeight: '44px',
+                            background: 'var(--ov-2, rgba(255,255,255,0.03))',
+                            border: '1px solid var(--ov-5, rgba(255,255,255,0.08))',
+                            borderRadius: '4px',
+                            color: 'var(--white)',
+                            fontSize: 'var(--text-label)',
+                            fontFamily: FONT_UI,
+                            outline: 'none',
+                            minWidth: 0,
+                        }}
+                    />
+                    <button
+                        type="submit"
+                        disabled={pendingAsk || !inputValue.trim()}
+                        style={{
+                            padding: '5px 10px',
+                            minHeight: '44px',
+                            background: (pendingAsk || !inputValue.trim()) ? 'var(--acc-line2, rgba(212,175,55,0.3))' : 'var(--gold)',
+                            color: 'var(--black)',
+                            border: 'none',
+                            borderRadius: '4px',
+                            fontSize: 'var(--text-label)',
+                            fontWeight: 700,
+                            cursor: (pendingAsk || !inputValue.trim()) ? 'not-allowed' : 'pointer',
+                            fontFamily: FONT_UI,
+                        }}
+                    >{pendingAsk ? '…' : 'ASK'}</button>
+                </form>
             </div>
         );
     }

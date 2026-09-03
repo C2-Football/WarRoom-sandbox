@@ -85,7 +85,7 @@
     const THEMES = {
         default: {
             id: 'default',
-            name: 'War Room',
+            name: 'Dynasty HQ',
             preview: '🏴',
             fonts: {
                 display: 'Rajdhani, sans-serif',

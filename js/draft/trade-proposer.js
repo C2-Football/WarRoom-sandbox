@@ -61,7 +61,7 @@
                     fontSize: '0.72rem',
                     textTransform: 'uppercase',
                     letterSpacing: '0.06em',
-                    borderRadius: 'var(--card-radius-xs, 5px)',
+                    borderRadius: '5px',
                     cursor: disabled ? 'default' : 'pointer',
                     opacity: disabled ? 0.6 : 1,
                 }}
@@ -145,7 +145,7 @@
                 background: mode === key ? 'var(--acc-fill3, rgba(212,175,55,0.16))' : 'var(--ov-3, rgba(255,255,255,0.04))',
                 border: '1px solid ' + (mode === key ? 'var(--acc-line2, rgba(212,175,55,0.4))' : 'var(--ov-6, rgba(255,255,255,0.12))'),
                 color: mode === key ? 'var(--gold)' : 'var(--silver)', fontFamily: FONT_DISPL, fontWeight: 700,
-                fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderRadius: 'var(--card-radius-xs, 5px)', cursor: 'pointer',
+                fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderRadius: '5px', cursor: 'pointer',
             }}>{label}</button>
         );
         const metric = (label, value, valCol) => (
@@ -166,7 +166,7 @@
                         {mode === 'acquire' ? ('Acquire from ' + (targetPersona.teamName || 'them')) : 'Trade away (your asset)'}
                     </div>
                     <select value={targetKey} onChange={(e) => setTargetKey(e.target.value)}
-                        style={{ width: '100%', minHeight: '38px', padding: '6px 8px', marginBottom: 12, background: 'var(--ov-3, rgba(255,255,255,0.04))', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: 'var(--card-radius-xs, 5px)', color: 'var(--white)', fontFamily: FONT_UI, fontSize: '0.74rem', cursor: 'pointer' }}>
+                        style={{ width: '100%', minHeight: '38px', padding: '6px 8px', marginBottom: 12, background: 'var(--ov-3, rgba(255,255,255,0.04))', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: '5px', color: 'var(--white)', fontFamily: FONT_UI, fontSize: '0.74rem', cursor: 'pointer' }}>
                         <option value="">{mode === 'acquire' ? '+ pick an asset to acquire…' : '+ pick an asset to shop…'}</option>
                         {groups.map((g, gi) => (
                             <optgroup key={gi} label={g.label}>
@@ -190,7 +190,7 @@
                                 <button key={ci} onClick={() => loadProposal(c.proposal)} style={{
                                     textAlign: 'left', padding: '8px', background: 'var(--ov-2, rgba(255,255,255,0.03))',
                                     border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', borderLeft: '3px solid ' + accCol,
-                                    borderRadius: 'var(--card-radius-xs, 5px)', color: 'var(--silver)', cursor: 'pointer', fontFamily: FONT_UI,
+                                    borderRadius: '5px', color: 'var(--silver)', cursor: 'pointer', fontFamily: FONT_UI,
                                 }}>
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: 'var(--text-label, 0.75rem)', lineHeight: 1.35, marginBottom: 6 }}>
                                         <span style={{ color: 'var(--silver)' }}><strong style={{ color: 'var(--bad)' }}>Give:</strong> {proposalAssets(c.proposal, 'my', state.leagueSize)}</span>
@@ -579,7 +579,7 @@
                                 padding: '5px 7px',
                                 background: 'var(--ov-3, rgba(255,255,255,0.04))',
                                 border: '1px solid var(--acc-line1, rgba(212,175,55,0.24))',
-                                borderRadius: 'var(--card-radius-xs, 5px)',
+                                borderRadius: '5px',
                                 color: 'var(--white)',
                                 fontSize: '0.78rem',
                                 fontFamily: FONT_DISPL,
@@ -609,7 +609,7 @@
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        borderRadius: 'var(--card-radius-xs, 5px)',
+                        borderRadius: '4px',
                         cursor: 'pointer',
                     }}>×</button>
                 </div>
@@ -622,14 +622,14 @@
                             padding: '9px 10px',
                             background: 'rgba(124,107,248,0.08)',
                             border: '1px solid rgba(155,138,251,0.28)',
-                            borderRadius: 'var(--card-radius-xs, 5px)',
+                            borderRadius: '5px',
                             fontSize: 'var(--text-micro, 0.6875rem)',
                             color: 'rgba(214,208,255,0.94)',
                             marginBottom: '12px',
                             lineHeight: 1.35,
                         }}>
                             <strong style={{ color: 'rgba(155,138,251,1)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Live Draft Mode</strong>
-                            {' '}Stages a package only. War Room does not write trades to Sleeper.
+                            {' '}Stages a package only. Dynasty HQ does not write trades to Sleeper.
                         </div>
                     )}
                     {isSending && (
@@ -637,7 +637,7 @@
                             padding: '10px',
                             background: 'var(--acc-fill2, rgba(212,175,55,0.08))',
                             border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))',
-                            borderRadius: 'var(--card-radius-xs, 5px)',
+                            borderRadius: '5px',
                             fontSize: '0.72rem',
                             color: 'var(--gold)',
                             textAlign: 'center',
@@ -651,7 +651,7 @@
                             padding: '10px',
                             background: 'rgba(46,204,113,0.08)',
                             border: '1px solid rgba(46,204,113,0.3)',
-                            borderRadius: 'var(--card-radius-xs, 5px)',
+                            borderRadius: '5px',
                             fontSize: '0.72rem',
                             color: 'var(--good)',
                             textAlign: 'center',
@@ -666,7 +666,7 @@
                             padding: '10px',
                             background: 'rgba(240,165,0,0.08)',
                             border: '1px solid rgba(240,165,0,0.32)',
-                            borderRadius: 'var(--card-radius-xs, 5px)',
+                            borderRadius: '5px',
                             fontSize: '0.72rem',
                             color: 'var(--warn)',
                             marginBottom: '12px',
@@ -680,7 +680,7 @@
                             padding: '10px',
                             background: 'rgba(231,76,60,0.08)',
                             border: '1px solid rgba(231,76,60,0.3)',
-                            borderRadius: 'var(--card-radius-xs, 5px)',
+                            borderRadius: '5px',
                             fontSize: '0.72rem',
                             color: 'var(--bad)',
                             textAlign: 'center',
@@ -697,7 +697,7 @@
                             padding: '10px',
                             background: 'rgba(124,107,248,0.08)',
                             border: '1px solid rgba(155,138,251,0.34)',
-                            borderRadius: 'var(--card-radius-xs, 5px)',
+                            borderRadius: '5px',
                             fontSize: '0.72rem',
                             color: 'rgba(214,208,255,0.96)',
                             marginBottom: '12px',
@@ -747,7 +747,7 @@
                             padding: '8px',
                             background: 'var(--acc-fill2, rgba(212,175,55,0.1))',
                             border: '1px solid var(--ov-6, rgba(255,255,255,0.14))',
-                            borderRadius: 'var(--card-radius-xs, 5px)',
+                            borderRadius: '5px',
                             textAlign: 'center',
                         }}>
                             <div style={{ fontSize: '1.2rem', fontWeight: 700, color: gradeCol, fontFamily: FONT_DISPL }}>
@@ -761,7 +761,7 @@
                             padding: '8px',
                             background: 'var(--acc-fill2, rgba(212,175,55,0.1))',
                             border: '1px solid var(--ov-6, rgba(255,255,255,0.14))',
-                            borderRadius: 'var(--card-radius-xs, 5px)',
+                            borderRadius: '5px',
                             textAlign: 'center',
                         }}>
                             <div style={{ fontSize: '1.2rem', fontWeight: 700, color: likelihoodCol, fontFamily: FONT_DISPL }}>
@@ -775,7 +775,7 @@
                             padding: '8px',
                             background: 'var(--acc-fill2, rgba(212,175,55,0.1))',
                             border: '1px solid var(--ov-6, rgba(255,255,255,0.14))',
-                            borderRadius: 'var(--card-radius-xs, 5px)',
+                            borderRadius: '5px',
                             textAlign: 'center',
                         }}>
                             <div style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--gold)', fontFamily: FONT_DISPL }}>
@@ -968,7 +968,7 @@
                             padding: '8px 10px',
                             borderTop: '1px solid var(--ov-6, rgba(255,255,255,0.14))',
                             background: 'var(--acc-fill2, rgba(212,175,55,0.1))',
-                            borderRadius: 'var(--card-radius-xs, 5px)',
+                            borderRadius: '5px',
                         }}>
                             <span style={{
                                 fontSize: 'var(--text-label, 0.75rem)',
@@ -1070,7 +1070,7 @@
             'Live draft trade offer to ' + partnerName,
             'I give: ' + giveText,
             'I get: ' + getText,
-            'War Room read: ' + likelihood + '% acceptance vs ' + line + '% Buyer Line, grade ' + grade + '.',
+            'Dynasty HQ read: ' + likelihood + '% acceptance vs ' + line + '% Buyer Line, grade ' + grade + '.',
             reason,
         ].join('\n');
         return {
@@ -1116,7 +1116,7 @@
             justifyContent: 'center',
             background: 'var(--ov-3, rgba(255,255,255,0.04))',
             border: '1px solid ' + color,
-            borderRadius: 'var(--card-radius-xs, 5px)',
+            borderRadius: '4px',
             color,
             cursor: 'pointer',
             fontFamily: FONT_UI,
@@ -1143,7 +1143,7 @@
                 padding: '10px',
                 border: '1px solid var(--acc-fill3, rgba(212,175,55,0.16))',
                 background: 'var(--ov-2, rgba(255,255,255,0.025))',
-                borderRadius: 'var(--card-radius-sm, 8px)',
+                borderRadius: '6px',
             }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 7 }}>
                     <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--gold)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
@@ -1157,7 +1157,7 @@
                     {chips.map(chip => (
                         <span key={chip} style={{
                             padding: '2px 6px',
-                            borderRadius: 'var(--card-radius-xs, 5px)',
+                            borderRadius: '4px',
                             background: 'var(--acc-fill2, rgba(212,175,55,0.08))',
                             border: '1px solid var(--acc-fill3, rgba(212,175,55,0.18))',
                             color: 'var(--silver)',
@@ -1218,7 +1218,7 @@
                                     background: isMoonshot ? 'var(--acc-fill2, rgba(240,165,0,0.1))' : 'var(--ov-2, rgba(255,255,255,0.03))',
                                     border: isMoonshot ? '1px solid ' + wrAlpha('var(--warn)', '55') : '1px solid var(--ov-5, rgba(255,255,255,0.08))',
                                     borderLeft: '3px solid ' + color,
-                                    borderRadius: 'var(--card-radius-xs, 5px)',
+                                    borderRadius: '5px',
                                     color: 'var(--silver)',
                                     cursor: disabled ? 'not-allowed' : 'pointer',
                                     fontFamily: FONT_UI,
@@ -1299,7 +1299,7 @@
                 background: wrAlpha(color, '08'),
                 border: '1px solid ' + wrAlpha(color, '25'),
                 borderLeft: '3px solid ' + color,
-                borderRadius: 'var(--card-radius-sm, 8px)',
+                borderRadius: '6px',
                 minHeight: 66,
             }}>
                 <div style={{ fontSize: 'var(--text-label, 0.75rem)', color, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '5px' }}>{dirLabel}</div>
@@ -1379,7 +1379,7 @@
                         padding: '6px 8px',
                         background: 'var(--ov-3, rgba(255,255,255,0.04))',
                         border: '1px solid var(--ov-6, rgba(255,255,255,0.1))',
-                        borderRadius: 'var(--card-radius-xs, 5px)',
+                        borderRadius: '5px',
                         color: 'var(--white)',
                         fontFamily: FONT_UI,
                         fontSize: '0.74rem',
@@ -1414,7 +1414,7 @@
                                     fontWeight: 700,
                                     background: 'var(--acc-line1, rgba(212,175,55,0.2))',
                                     border: '1px solid var(--acc-line3, rgba(212,175,55,0.5))',
-                                    borderRadius: 'var(--card-radius-xs, 5px)',
+                                    borderRadius: '4px',
                                     color: 'var(--gold)',
                                     cursor: disabled ? 'not-allowed' : 'pointer',
                                     fontFamily: FONT_UI,
@@ -1435,7 +1435,7 @@
             padding: '4px 6px',
             background: 'var(--ov-3, rgba(255,255,255,0.04))',
             border: '1px solid var(--ov-6, rgba(255,255,255,0.1))',
-            borderRadius: 'var(--card-radius-xs, 5px)',
+            borderRadius: '4px',
             color: 'var(--white)',
             fontFamily: FONT_MONO,
             fontSize: '0.72rem',
@@ -1463,7 +1463,7 @@
         background: 'var(--gold)',
         color: 'var(--black)',
         border: 'none',
-        borderRadius: 'var(--card-radius-xs, 5px)',
+        borderRadius: '5px',
         fontSize: '0.78rem',
         fontWeight: 700,
         cursor: 'pointer',
@@ -1476,7 +1476,7 @@
         background: 'transparent',
         color: 'var(--silver)',
         border: '1px solid var(--ov-6, rgba(255,255,255,0.1))',
-        borderRadius: 'var(--card-radius-xs, 5px)',
+        borderRadius: '5px',
         fontSize: '0.78rem',
         fontWeight: 700,
         cursor: 'pointer',
@@ -1504,7 +1504,7 @@
             }}>
                 <div style={{ padding: '14px 16px', borderBottom: 'var(--card-border)', display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
                     <div style={{ flex: 1, fontSize: 'var(--text-label, 0.75rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700 }}>Propose Trade</div>
-                    <button onClick={() => dispatch({ type: 'CLOSE_PROPOSER' })} style={{ background: 'none', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', color: 'var(--silver)', fontSize: '0.9rem', width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'var(--card-radius-sm, 8px)', cursor: 'pointer' }}>✕</button>
+                    <button onClick={() => dispatch({ type: 'CLOSE_PROPOSER' })} style={{ background: 'none', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', color: 'var(--silver)', fontSize: '0.9rem', width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px', cursor: 'pointer' }}>✕</button>
                 </div>
                 <div style={{ padding: '14px 16px' }}>
                     {GatedRow

@@ -10,6 +10,42 @@
 // ─── Shared calendar engine — window.WrCalendar ──────────────────────
 const WrCalendar = (function () {
     function eventsKey(leagueId) { return 'wr_calendar_' + leagueId; }
+
+    // ── Real NFL kickoff (owner report 2026-08-27: 'Sep 5' was a hardcoded
+    // guess). The first Week-1 game's actual datetime comes from our own
+    // nfl-scoreboard relay (3h-cached server-side); while it loads — or if it
+    // fails — fall back to the Thursday after Labor Day, the modern opener
+    // slot. Sleeper's state.season_start_date is the PRESEASON start during
+    // August, so it is deliberately not used here.
+    const _kickoff = {}; // season → { ts } | { pending } | { failed }
+    function kickoffGuess(season) {
+        const first = new Date(Number(season), 8, 1);
+        const firstMonday = new Date(Number(season), 8, 1 + ((8 - first.getDay()) % 7));
+        return new Date(firstMonday.getTime() + 3 * 86400000);
+    }
+    function kickoffFor(season) {
+        const key = String(season);
+        const k = _kickoff[key];
+        if (k && k.ts) return new Date(k.ts);
+        if (!k) {
+            _kickoff[key] = { pending: true };
+            try {
+                const ep = window.App?.NflContext?.endpoint ? window.App.NflContext.endpoint() : null;
+                if (!ep) { _kickoff[key] = { failed: true }; return null; }
+                fetch(ep + '?week=1&seasontype=2&season=' + key)
+                    .then(r => (r.ok ? r.json() : null))
+                    .then(espn => {
+                        const times = ((espn && espn.events) || []).map(e => Date.parse(e.date)).filter(t => t > 0);
+                        if (times.length) {
+                            _kickoff[key] = { ts: Math.min.apply(null, times) };
+                            try { window.dispatchEvent(new CustomEvent('wr:kickoff-loaded')); } catch (e) { /* old Safari */ }
+                        } else { _kickoff[key] = { failed: true }; }
+                    })
+                    .catch(() => { _kickoff[key] = { failed: true }; });
+            } catch (e) { _kickoff[key] = { failed: true }; }
+        }
+        return null;
+    }
     function readCustomEvents(leagueId) {
         try { return JSON.parse(localStorage.getItem(eventsKey(leagueId)) || '[]'); } catch { return []; }
     }
@@ -48,7 +84,12 @@ const WrCalendar = (function () {
             let draftType = currentLeague?.metadata?.draft_type;
             let draftRounds = Number(settings.draft_rounds || 0);
             let latestDraft = null;
-            const drafts = (window.S && window.S.drafts) || currentLeague?.drafts || [];
+            // Trust the shared pocket only when its league stamp matches THIS
+            // league (or predates stamping) — cross-league bleed guard.
+            const thisLid = String(currentLeague?.league_id || currentLeague?.id || '');
+            const pocketLid = window.S && window.S.draftsLeagueId;
+            const pocketOk = !pocketLid || String(pocketLid) === thisLid;
+            const drafts = (pocketOk && window.S && window.S.drafts && window.S.drafts.length ? window.S.drafts : null) || currentLeague?.drafts || [];
             if (!draftTs) {
                 const sameSeason = drafts.find(d => String(d.season) === String(season));
                 latestDraft = sameSeason || drafts[0] || null;
@@ -72,6 +113,9 @@ const WrCalendar = (function () {
                     date: new Date(Number(draftTs)),
                     icon: '🏈',
                     type: 'league',
+                    // Sleeper schedules drafts to the minute — carry the
+                    // time-of-day so renderers can show the real clock time.
+                    hasTime: true,
                     detail: (draftRounds ? draftRounds + ' rounds' : 'Draft') + ', ' + (draftType || 'snake'),
                 });
             } else {
@@ -88,12 +132,15 @@ const WrCalendar = (function () {
             }
         }
 
+        // Real kickoff (or the Labor-Day-Thursday guess while it loads) anchors
+        // every week-derived date below.
+        const realKickoff = kickoffFor(season);
+        const seasonStart = realKickoff || kickoffGuess(season);
+
         // Trade deadline
         const tradeDeadline = settings.trade_deadline;
         if (tradeDeadline && tradeDeadline > 0) {
             // Sleeper uses week number for trade deadline
-            // Approximate: season start (Sept 5) + (week * 7 days)
-            const seasonStart = new Date(season, 8, 5); // Sept 5
             const deadlineDate = new Date(seasonStart.getTime() + tradeDeadline * 7 * 86400000);
             items.push({
                 id: 'trade-deadline',
@@ -108,7 +155,6 @@ const WrCalendar = (function () {
         // Playoff start
         const playoffStart = settings.playoff_week_start;
         if (playoffStart && playoffStart > 0) {
-            const seasonStart = new Date(season, 8, 5);
             const playoffDate = new Date(seasonStart.getTime() + playoffStart * 7 * 86400000);
             items.push({
                 id: 'playoffs',
@@ -131,15 +177,15 @@ const WrCalendar = (function () {
             });
         }
 
-        // Season start (Week 1)
-        const seasonStartDate = new Date(season, 8, 5);
-        if (seasonStartDate.getTime() > now - 30 * 86400000) {
+        // Season start (Week 1) — the real first-game datetime when loaded.
+        if (seasonStart.getTime() > now - 30 * 86400000) {
             items.push({
                 id: 'season-start',
                 title: 'Season Kickoff',
-                date: seasonStartDate,
+                date: seasonStart,
                 icon: '🚀',
                 type: 'league',
+                hasTime: !!realKickoff,
                 detail: season + ' NFL Season',
             });
         }
@@ -159,21 +205,6 @@ const WrCalendar = (function () {
                 icon: '💰',
                 type: 'recurring',
                 detail: 'Every ' + dayNames[waiverDay] + (settings.waiver_budget ? ' · $' + settings.waiver_budget + ' FAAB' : ''),
-            });
-        }
-
-        // Roster Cutdown Day — set from GM's Office (window.App.RosterCutdown),
-        // e.g. an NFL-style cutdown to a smaller active roster + taxi squad.
-        const cutdownLeagueId = currentLeague?.id || currentLeague?.league_id || '';
-        const cutdownRule = cutdownLeagueId ? window.App?.RosterCutdown?.getRule?.(cutdownLeagueId) : null;
-        if (cutdownRule) {
-            items.push({
-                id: 'cutdown-day',
-                title: 'Roster Cutdown Day',
-                date: new Date(cutdownRule.effectiveDate + 'T00:00:00'),
-                icon: '✂️',
-                type: 'roster',
-                detail: cutdownRule.activeSlots + ' active / ' + cutdownRule.taxiSlots + ' taxi (' + (cutdownRule.activeSlots + cutdownRule.taxiSlots) + ' total) — cut down to fit',
             });
         }
 
@@ -225,9 +256,21 @@ function CalendarTab({ currentLeague, myRoster, leagueSkin }) {
     // ── Build calendar events from league settings + custom ──
     // Delegates to the shared engine (window.WrCalendar, defined above)
     // so the Home dashboard "League Calendar" widget shows the same dates.
+    // Re-render when the league-detail header's draft fetch lands — that fetch
+    // publishes window.S.drafts, which build() prefers for the draft date.
+    const [draftsTick, setDraftsTick] = useState(0);
+    React.useEffect(() => {
+        const h = () => setDraftsTick(n => n + 1);
+        window.addEventListener('wr:drafts-loaded', h);
+        window.addEventListener('wr:kickoff-loaded', h);
+        return () => {
+            window.removeEventListener('wr:drafts-loaded', h);
+            window.removeEventListener('wr:kickoff-loaded', h);
+        };
+    }, []);
     const events = useMemo(
         () => WrCalendar.build(currentLeague, leagueSkin, customEvents),
-        [currentLeague, customEvents, leagueSkin]
+        [currentLeague, customEvents, leagueSkin, draftsTick]
     );
 
     // ── Add custom event ──
@@ -277,7 +320,8 @@ function CalendarTab({ currentLeague, myRoster, leagueSkin }) {
                         const isPast = event.date.getTime() < now;
                         const isNext = !isPast && (i === 0 || events[i - 1].date.getTime() < now);
                         const daysAway = Math.ceil((event.date.getTime() - now) / 86400000);
-                        const dateStr = event.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: event.date.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined });
+                        const dateStr = event.date.toLocaleDateString('en-US', { weekday: event.hasTime ? 'short' : undefined, month: 'short', day: 'numeric', year: event.date.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined })
+                            + (event.hasTime ? ', ' + event.date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '');
                         const countdown = !isPast && daysAway <= 30 ? (daysAway === 0 ? 'Today' : daysAway === 1 ? 'Tomorrow' : daysAway + ' days') : null;
 
                         return React.createElement('div', { key: event.id, style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 14px', borderBottom: i < events.length - 1 ? '1px solid var(--ov-3, rgba(255,255,255,0.04))' : 'none', opacity: isPast ? 0.4 : 1, background: isNext ? 'var(--acc-fill1, rgba(212,175,55,0.06))' : 'transparent' } },
@@ -287,7 +331,7 @@ function CalendarTab({ currentLeague, myRoster, leagueSkin }) {
                             ),
                             // Content
                             React.createElement('div', { style: { flex: 1 } },
-                                React.createElement('div', { style: { fontSize: 'var(--text-body)', fontWeight: 600, color: isNext ? 'var(--gold)' : 'var(--white)' } }, event.title, isNext && React.createElement('span', { style: { fontSize: 'var(--text-micro)', fontWeight: 700, padding: '1px 6px', borderRadius: 'var(--card-radius-xs, 5px)', background: 'var(--gold)', color: 'var(--black)', marginLeft: '6px' } }, 'NEXT')),
+                                React.createElement('div', { style: { fontSize: 'var(--text-body)', fontWeight: 600, color: isNext ? 'var(--gold)' : 'var(--white)' } }, event.title, isNext && React.createElement('span', { style: { fontSize: 'var(--text-micro)', fontWeight: 700, padding: '1px 6px', borderRadius: '4px', background: 'var(--gold)', color: 'var(--black)', marginLeft: '6px' } }, 'NEXT')),
                                 React.createElement('div', { style: { fontSize: 'var(--text-label)', color: 'var(--silver)', marginTop: '2px' } }, dateStr, event.detail ? ' \u00B7 ' + event.detail : ''),
                             ),
                             // Countdown or delete

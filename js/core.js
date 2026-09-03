@@ -2,6 +2,12 @@
 // core.js — Tier system, access control, fetch helpers
 // Must load FIRST — all other modules depend on these.
 // ══════════════════════════════════════════════════════════════════
+
+// Owner ruling 2026-07-26: the conversational "Ask Alex" chat is retired on
+// the web app. One-shot AI surfaces (insight cards, draft ask-window, trade
+// second opinion, briefings) stay. Every chat entry point gates on this —
+// flip to true to bring the chat back everywhere at once.
+window.WR_ALEX_CHAT = false;
 //
 // ── WINDOW GLOBAL CONTRACT ────────────────────────────────────────
 // Cross-module communication goes through window.*. All contracts
@@ -95,9 +101,18 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
     // Replace the body here to route to an error reporting service in the future.
     function wrLog(context, err) {
         if (typeof console !== 'undefined') console.warn('[WarRoom]', context, err);
+        // Non-string labels/payloads must not collapse to "[object Object]"
+        // in the admin error table — JSON beats Object#toString here.
+        var safeStr = function (v) {
+            if (v == null) return '';
+            if (typeof v === 'string') return v;
+            if (v instanceof Error) return v.message || v.name || 'Error';
+            try { return JSON.stringify(v).slice(0, 140); } catch (jsonErr) { return Object.prototype.toString.call(v); }
+        };
+        var label = safeStr(context) || 'unknown';
         window.DHQBugCapture?.captureError?.(
-            err instanceof Error ? err : new Error(String(err || context || 'War Room log')),
-            { source: 'wrLog', context: String(context || 'unknown') }
+            err instanceof Error ? err : new Error(safeStr(err) || label),
+            { source: 'wrLog', context: label }
         );
     }
     window.wrLog = wrLog; // expose for cross-module access
@@ -138,7 +153,7 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
     // ──────────────────────────────────────────────────────────────────────────
 
     // ===== PRODUCT TIER SYSTEM =====
-    // Tiers: free → scout → warroom ($9.99) → pro ($14.95) → commissioner ($14.99)
+    // Tiers: free → scout → warroom → pro → commissioner
     //
     // Delegates to shared/tier.js (window.getTier) for canonical paid/free detection,
     // then resolves War Room's granular level from the profile tier field.
@@ -164,6 +179,10 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
         if (sharedTier === 'paid') {
             const productTier = window.App?._productTier;
             if (['commissioner', 'pro', 'warroom', 'scout'].includes(productTier)) return productTier;
+            // FREE FOR THE 2026 SEASON (owner ruling 2026-08-17): the season-wide
+            // unlock must land at FULL Pro — the generic minimum-paid fallback
+            // below would hand out Scout and leave the front office locked.
+            if (window.DHQ_FREE_SEASON?.active?.()) return 'pro';
             // Dev mode returns 'paid' from shared — give full local access
             if (new URLSearchParams(window.location.search).has('dev') || ['localhost', '127.0.0.1'].includes(window.location.hostname)) return 'pro';
             return 'scout'; // paid but unrecognized profile tier → minimum paid level
@@ -211,7 +230,17 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
     // tier.js and core.js (inline <script>), which runs before Babel compiles core.js.
     const _sharedCanAccess = window._sharedCanAccess || null;
 
+    // Billing went live 2026-07-10 (Stripe on web; App Store handles iOS separately;
+    // onboarding): tier gating is ON by default. Owner accounts
+    // (FULL_ACCESS_USERNAMES) and admin/commissioner keep full access. Set
+    // window.__WR_ENFORCE_TIERS = false before core.js loads to restore the
+    // unlocked tester mode.
+    if (typeof window !== 'undefined' && window.__WR_ENFORCE_TIERS === undefined) {
+        window.__WR_ENFORCE_TIERS = true;
+    }
+
     function canAccess(feature) {
+        if (!(typeof window !== 'undefined' && window.__WR_ENFORCE_TIERS === true)) return true;
         // War Room's granular feature matrix is the primary gate
         const tier = getUserTier();
         if (TIER_FEATURES[tier]?.has(feature)) return true;
@@ -270,10 +299,27 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
     // ─────────────────────────────────────────────────────────────────────────
     const SLEEPER_BASE_URL = 'https://api.sleeper.app/v1';
 
+    // Resilient fetch: a hung Sleeper request must never freeze a surface on
+    // "Loading…" forever (2026-08-06 season-rollover incident). Each attempt is
+    // aborted after 25s, and network-level failures (timeout, dropped socket)
+    // get ONE retry after a 2s pause. HTTP error statuses (4xx/5xx) still throw
+    // immediately — those are real answers, not a stalled pipe.
     async function fetchJSON(url) {
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.json();
+        for (let attempt = 0; ; attempt++) {
+            const ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+            const timer = ctl ? setTimeout(() => ctl.abort(), 25000) : null;
+            try {
+                const response = await fetch(url, ctl ? { signal: ctl.signal } : undefined);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                return await response.json();
+            } catch (err) {
+                const httpError = err && /^HTTP \d+$/.test(err.message || '');
+                if (httpError || attempt >= 1) throw err;
+                await new Promise(r => setTimeout(r, 2000));
+            } finally {
+                if (timer) clearTimeout(timer);
+            }
+        }
     }
 
     async function fetchSleeperUser(username) {
@@ -592,28 +638,25 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
         return pos;
     };
 
-    // posLabel — display formatter for position/slot codes. Referenced across the
-    // app (`window.App?.posLabel?.(pos) || ...` in ~30 files) but was never actually
-    // defined, so every call silently fell through to its per-site fallback — which
-    // only special-cases DEF, so underscored slot codes (SUPER_FLEX, IDP_FLEX,
-    // REC_FLEX, QB_FLEX...) rendered raw in the UI instead of a clean label.
-    window.App.posLabel = window.App.posLabel || function posLabel(pos) {
-        if (!pos) return pos;
-        const p = String(pos).toUpperCase();
-        if (p === 'DEF') return 'D/ST';
-        return p.replace(/_/g, ' ');
-    };
-
-    // calcPosGrades — league-relative position group grades
-    // Sums DHQ per position for every team, ranks, and assigns A-F.
+    // calcPosGrades — position group grades, ONE grading system (2026-09-02).
+    // The LETTER comes from the shared engine's posAssessment (quality
+    // starters vs this league's weekly requirement — the same read that
+    // drives weakness chips and strengths), so a grade can never contradict
+    // them again: the old pure DHQ-sum quintile graded a surplus superflex
+    // QB room 'D' next to 'QB trade leverage', force-failed 20% of teams at
+    // every position, and graded IDP slots leagues don't even roster. The
+    // league RANK (#N/16, by positional DHQ sum) stays as context.
     // Returns [{ pos, rank, totalTeams, mySum, grade, col, pct }]
     window.App.calcPosGrades = window.App.calcPosGrades || function calcPosGrades(myRosterId, rosters, playersData) {
-        // Format-aware: valueMap proxies to ROS values in redraft leagues and
-        // to the same dynasty playerScores everywhere else.
-        const scores = (window.App?.PlayerValue?.valueMap ? window.App.PlayerValue.valueMap() : null) || window.App?.LI?.playerScores || {};
+        const scores = window.App?.LI?.playerScores || {};
         const normPos = window.App.normPos || (p => p);
-        const posOrder = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'DL', 'LB', 'DB'];
         const totalTeams = (rosters || []).length || 1;
+        let assess = null;
+        try { assess = window.assessTeamFromGlobal ? window.assessTeamFromGlobal(myRosterId) : null; } catch (e) { assess = null; }
+        const pa = assess?.posAssessment || null;
+        const posOrder = pa ? ['QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'DL', 'LB', 'DB'].filter(p => pa[p])
+            : ['QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'DL', 'LB', 'DB'];
+        const COLS = { A: 'var(--k-2ecc71, #2ecc71)', B: 'var(--k-d4af37, #d4af37)', C: 'var(--k-f0a500, #f0a500)', D: 'var(--k-f0a500, #f0a500)', F: 'var(--k-e74c3c, #e74c3c)' };
         return posOrder.map(pos => {
             const byTeam = (rosters || []).map(r => {
                 const sum = (r.players || []).reduce((s, pid) => {
@@ -625,14 +668,24 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
             }).sort((a, b) => b.sum - a.sum);
             const mySum = byTeam.find(t => t.rosterId === myRosterId)?.sum || 0;
             const rank = byTeam.findIndex(t => t.rosterId === myRosterId) + 1;
-            let grade, col;
             const pct = totalTeams > 1 ? Math.round((1 - (rank - 1) / totalTeams) * 100) : 50;
-            if (rank <= Math.ceil(totalTeams * 0.2)) { grade = 'A'; col = 'var(--k-2ecc71, #2ecc71)'; }
-            else if (rank <= Math.ceil(totalTeams * 0.4)) { grade = 'B'; col = 'var(--k-d4af37, #d4af37)'; }
-            else if (rank <= Math.ceil(totalTeams * 0.6)) { grade = 'C'; col = 'var(--k-f0a500, #f0a500)'; }
-            else if (rank <= Math.ceil(totalTeams * 0.8)) { grade = 'D'; col = 'var(--k-f0a500, #f0a500)'; }
-            else { grade = 'F'; col = 'var(--k-e74c3c, #e74c3c)'; }
-            return { pos, rank, totalTeams, mySum, grade, col, pct };
+            let grade;
+            const d = pa && pa[pos];
+            if (d) {
+                const bar = d.minQuality || d.startingReq || 1;
+                const q = d.nflStarters || 0;
+                if (d.status === 'deficit') grade = 'F';
+                else if (d.status === 'thin') grade = q >= bar - 1 ? 'C' : 'D';
+                else if (d.status === 'surplus') grade = (q - bar) >= 2 ? 'A' : 'B';
+                else grade = 'B';
+            } else {
+                // Engine unavailable — fall back to the league quintile.
+                grade = rank <= Math.ceil(totalTeams * 0.2) ? 'A'
+                    : rank <= Math.ceil(totalTeams * 0.4) ? 'B'
+                    : rank <= Math.ceil(totalTeams * 0.6) ? 'C'
+                    : rank <= Math.ceil(totalTeams * 0.8) ? 'D' : 'F';
+            }
+            return { pos, rank, totalTeams, mySum, grade, col: COLS[grade], pct };
         });
     };
 
@@ -677,7 +730,6 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
         ROSTER_COLS:      'wr_roster_cols',
         KPI_SELECTION:    (leagueId) => `wr_kpi_selection_${leagueId}`,
         GM_STRATEGY:      (leagueId) => `wr_gm_strategy_${leagueId}`,
-        COMMISH_SCHEDULE: (leagueId) => `wr_commish_schedule_${leagueId}`,
         CHAT:             (leagueId) => `wr_chat_${leagueId}`,
         SAVED_TRADES:     (leagueId) => `wr_saved_trades_${leagueId}`,
         WELCOMED:         (leagueId) => `wr_welcomed_v2_${leagueId}`,
@@ -705,7 +757,28 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
         set(key, value) {
             try {
                 localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
-            } catch(e) { wrLog('storage.set:' + key, e); }
+                // Broadcast Big Board writes so every mounted board view (the Draft
+                // tab's Big Board and the live draft room) can re-hydrate from this
+                // one shared store instead of drifting out of sync. Listeners filter
+                // by key; the content-signature guards on each side stop echo loops.
+                if (key.indexOf('wr_bigboard_') === 0 && typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+                    try {
+                        const parsed = typeof value === 'string' ? WrStorage.get(key) : value;
+                        window.dispatchEvent(new CustomEvent('wr:bigboard-write', { detail: { key, value: parsed } }));
+                    } catch (e2) { /* CustomEvent unsupported — non-fatal, persistence already succeeded */ }
+                }
+            } catch(e) {
+                // Storage full: run the shared janitor (evicts rebuildable
+                // caches only) and retry once before logging the failure.
+                const J = window.DhqStorageJanitor;
+                if (J && J.isQuotaError(e) && J.run('quota:wr-set')) {
+                    try {
+                        localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
+                        return;
+                    } catch (e2) { wrLog('storage.set:' + key, e2); return; }
+                }
+                wrLog('storage.set:' + key, e);
+            }
         },
         remove(key) {
             try { localStorage.removeItem(key); } catch(e) { wrLog('storage.remove:' + key, e); }
@@ -736,6 +809,9 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
     window.App.WrStorage = WrStorage;
     window.App.WrIDB = WrIDB;
     window.App.fetchAllPlayers = fetchAllPlayers;
+    // Explicit export — plain (non-babel) scripts like dashboard-digest.js
+    // can't rely on this file's top-level declarations reaching window.
+    window.App.fetchSeasonStats = fetchSeasonStats;
 
     // Clears core.js's in-memory data caches + the players IDB entry so the
     // next fetch hits the network. MUST live in this file: _wrPlayersCache is a
@@ -775,13 +851,12 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
             : null);
         const skinRosterCopy = leagueSkin?.copy?.rosterData || {};
         const isPreDraftRosterEmpty = !!(leagueSkin?.state?.isPreDraftRosterEmpty && leaguePlayerCount === 0);
-        let reason = '';
-
         // CHOPPED: an eliminated roster is empty because the format released
         // it to waivers — correct data, not a sync failure. Telling the owner
         // to "re-sync the platform" the week they get chopped is the app
         // misreading its own league.
         const choppedOut = !!(window.App?.Chopped?.isChopped?.(league) && window.App.Chopped.isEliminated(roster));
+        let reason = '';
 
         if (!roster) reason = 'missing-roster';
         else if (!Array.isArray(rosters) || !rosters.length) reason = 'missing-league-rosters';
@@ -796,8 +871,8 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
             'pre-draft-rosters-empty': skinRosterCopy.emptyRosterMessage || 'This league has not drafted rosters yet.',
             'league-rosters-empty': 'League rosters loaded with zero player IDs.',
             'my-roster-empty': 'Your roster loaded with zero player IDs.',
-            'chopped-out': 'You were chopped — your roster went back to the waiver pool.',
             'my-roster-partial': 'Your roster looks partially loaded.',
+            'chopped-out': 'You were chopped — your roster went back to the waiver pool.',
         };
         const defaultDetail = 'Refresh league data or re-sync the platform before acting on roster, trade, waiver, draft, or analytics recommendations.';
         const details = {
@@ -865,7 +940,7 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
                     border: '1px solid rgba(240,165,0,0.45)',
                     background: 'rgba(240,165,0,0.12)',
                     color: 'var(--k-f0a500, #f0a500)',
-                    borderRadius: 'var(--card-radius-xs, 5px)',
+                    borderRadius: '5px',
                     fontFamily: 'var(--font-body)',
                     fontSize: compact ? '0.62rem' : '0.72rem',
                     fontWeight: 800,
@@ -929,3 +1004,28 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
     // Provides: season, playerStats, tradedPicks, rosters, myRosterId, lastUpdated, selectPlayer
     // write-through: window.S remains intact for ReconAI CDN bridge compatibility.
     window.App.SeasonContext = React.createContext(null);
+
+    // ── Phone layout diagnostic overlay (?phonedebug=1) ──────────────────────
+    // Live readout of viewport + container widths so phone layout bugs can be
+    // diagnosed from a single screenshot instead of pixel archaeology. Gated
+    // behind an explicit query param; harmless to leave in production.
+    if (/[?&]phonedebug=1/.test(window.location.search)) {
+        try {
+            const dbg = document.createElement('div');
+            dbg.style.cssText = 'position:fixed;top:54px;left:4px;z-index:99999;background:rgba(0,0,0,0.92);color:#D4AF37;font:11px/1.5 monospace;padding:6px 8px;border:1px solid #D4AF37;border-radius:6px;pointer-events:none;max-width:96vw;white-space:pre;';
+            const attach = () => { if (document.body) document.body.appendChild(dbg); };
+            if (document.body) attach(); else window.addEventListener('DOMContentLoaded', attach);
+            const elW = sel => { const n = document.querySelector(sel); return n ? Math.round(n.getBoundingClientRect().width) : '—'; };
+            const update = () => {
+                const vv = window.visualViewport;
+                dbg.textContent = [
+                    'innerW ' + window.innerWidth + '  screenW ' + (window.screen ? window.screen.width : '—'),
+                    'docW ' + document.documentElement.clientWidth + '  bodyScrollW ' + (document.body ? document.body.scrollWidth : '—'),
+                    'vvW ' + (vv ? Math.round(vv.width) + ' @' + vv.scale.toFixed(2) : 'n/a') + '  dpr ' + window.devicePixelRatio,
+                    'main ' + elW('.wr-main-content') + '  frame ' + elW('.wr-content-frame'),
+                ].join('\n');
+            };
+            update();
+            setInterval(update, 1500);
+        } catch (_) { /* diagnostic only — never break the app */ }
+    }

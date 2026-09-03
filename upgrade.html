@@ -1,438 +1,243 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#08090c">
-  <meta name="description" content="Dynasty HQ creates rankings unique to your league, then uses Behavioral AI to reveal how every rival thinks and trades.">
-  <meta property="og:title" content="Dynasty HQ — Your rankings. Their tells. Your edge.">
-  <meta property="og:description" content="Rankings built for your league. Behavioral AI built to read your rivals.">
-  <meta property="og:type" content="website">
-  <meta property="og:image" content="img/landing-og.png">
-  <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Dynasty HQ — Your rankings. Their tells. Your edge.">
-  <meta name="twitter:description" content="Rankings built for your league. Behavioral AI built to read your rivals.">
-  <meta name="twitter:image" content="img/landing-og.png">
-  <title>Dynasty HQ — Unique rankings + Behavioral AI</title>
-  <link rel="icon" type="image/png" href="img/logo.png">
-  <link rel="apple-touch-icon" href="img/logo.png">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://skjjcruz.github.io https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://sxshiqyxhhifvtfqawbq.supabase.co https://*.sentry.io; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; object-src 'none';">
+  <title>Dynasty HQ — Go Pro</title>
+  <style id="preboot-hide">html{visibility:hidden!important}</style>
+  <noscript><style>html{visibility:visible!important}</style></noscript>
+  <script>
+    // Pre-paint gate: checkout needs a signed-in account to attach the
+    // subscription to. No session -> landing page.
+    (function () {
+      function reveal(){ var s=document.getElementById('preboot-hide'); if(s&&s.parentNode){ s.parentNode.removeChild(s); } }
+      try {
+        var sess = JSON.parse(localStorage.getItem('fw_session_v1') || 'null');
+        if (!sess || !sess.token) { window.location.replace('landing.html'); return; }
+        reveal();
+      } catch (e) { reveal(); }
+    })();
+  </script>
+  <link rel="icon" href="icon-192.png">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
-    :root {
-      color-scheme: dark;
-      --bg: #08090c;
-      --panel: rgba(18, 21, 27, .82);
-      --panel-solid: #12151b;
-      --line: #2b313b;
-      --line-soft: rgba(255, 255, 255, .08);
-      --text: #f1f3f5;
-      --muted: #9aa3ae;
-      --quiet: #68717d;
-      --gold: #e8b23a;
-      --gold-hot: #f6cf5a;
-      --blue: #6fb4e8;
-      --green: #38c794;
-      --sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
-      --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
-    }
-
-    * { box-sizing: border-box; }
-    html { scroll-behavior: smooth; }
-    body {
-      margin: 0;
-      min-width: 320px;
-      min-height: 100vh;
-      color: var(--text);
-      background:
-        radial-gradient(circle at 73% 22%, rgba(76, 113, 180, .17), transparent 29rem),
-        radial-gradient(circle at 25% 92%, rgba(232, 178, 58, .10), transparent 34rem),
-        var(--bg);
-      font-family: var(--sans);
-      -webkit-font-smoothing: antialiased;
-      overflow-x: hidden;
-    }
-
-    body::before {
-      content: "";
-      position: fixed;
-      inset: 0;
-      z-index: -2;
-      pointer-events: none;
-      opacity: .25;
-      background-image:
-        linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px);
-      background-size: 72px 72px;
-      mask-image: linear-gradient(to bottom, #000, transparent 92%);
-    }
-
-    a { color: inherit; }
-    button, a { -webkit-tap-highlight-color: transparent; }
-    :focus-visible { outline: 2px solid var(--gold-hot); outline-offset: 4px; }
-
-    .shell { width: min(1180px, calc(100% - 48px)); margin: 0 auto; }
-
-    .nav {
-      min-height: 76px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 24px;
-    }
-
-    .brand {
-      display: inline-flex;
-      align-items: center;
-      gap: 12px;
-      text-decoration: none;
-      font: 600 14px/1 var(--mono);
-      letter-spacing: .12em;
-      text-transform: uppercase;
-    }
-
-    .brand img {
-      width: 36px;
-      height: 36px;
-      border: 1px solid rgba(232, 178, 58, .35);
-      border-radius: 9px;
-      object-fit: cover;
-      box-shadow: 0 0 28px rgba(232, 178, 58, .12);
-    }
-
-    .beta {
-      padding: 4px 7px;
-      border: 1px solid rgba(232, 178, 58, .5);
-      border-radius: 4px;
-      color: var(--gold);
-      font: 600 9px/1 var(--mono);
-      letter-spacing: .12em;
-    }
-
-    .nav-link {
-      color: var(--muted);
-      font: 500 12px/1 var(--mono);
-      letter-spacing: .04em;
-      text-decoration: none;
-      transition: color 180ms ease;
-    }
-
-    .nav-link:hover { color: var(--gold-hot); }
-
-    main { padding: 74px 0 96px; }
-
-    .hero {
-      display: grid;
-      grid-template-columns: minmax(0, 1.08fr) minmax(390px, .92fr);
-      gap: clamp(48px, 7vw, 96px);
-      align-items: center;
-    }
-
-    .eyebrow {
-      display: flex;
-      align-items: center;
-      gap: 11px;
-      margin: 0 0 24px;
-      color: var(--gold);
-      font: 600 11px/1.2 var(--mono);
-      letter-spacing: .16em;
-      text-transform: uppercase;
-    }
-
-    .eyebrow::before { content: ""; width: 28px; height: 1px; background: currentColor; }
-
-    h1 {
-      max-width: 760px;
-      margin: 0;
-      font: 600 clamp(48px, 6.8vw, 86px)/.98 var(--mono);
-      letter-spacing: -.055em;
-      text-wrap: balance;
-    }
-
-    h1 span { color: var(--gold); }
-
-    .lead {
-      max-width: 610px;
-      margin: 28px 0 0;
-      color: var(--muted);
-      font-size: clamp(17px, 1.8vw, 21px);
-      line-height: 1.55;
-      text-wrap: pretty;
-    }
-
-    .lead strong { color: var(--text); font-weight: 600; }
-
-    .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 34px; }
-
-    .btn {
-      min-height: 50px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 10px;
-      padding: 0 21px;
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      background: transparent;
-      color: var(--text);
-      font: 600 13px/1 var(--mono);
-      letter-spacing: .02em;
-      text-decoration: none;
-      transition: transform 180ms ease, color 180ms ease, border-color 180ms ease, background 180ms ease;
-    }
-
-    .btn:hover { transform: translateY(-2px); border-color: var(--gold); color: var(--gold-hot); }
-    .btn-primary { background: var(--gold); border-color: var(--gold); color: #0a0b0e; box-shadow: 0 12px 40px rgba(232, 178, 58, .16); }
-    .btn-primary:hover { background: var(--gold-hot); border-color: var(--gold-hot); color: #0a0b0e; }
-    .arrow { font-size: 17px; transition: transform 180ms ease; }
-    .btn:hover .arrow { transform: translateX(3px); }
-
-    .fine {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 9px 18px;
-      margin-top: 17px;
-      padding: 0;
-      list-style: none;
-      color: var(--quiet);
-      font: 500 10px/1.4 var(--mono);
-      letter-spacing: .06em;
-      text-transform: uppercase;
-    }
-
-    .fine li::before { content: "✓"; margin-right: 7px; color: var(--green); }
-
-    .console-wrap { position: relative; }
-    .console-wrap::before {
-      content: "";
-      position: absolute;
-      inset: 12% 8% -10%;
-      z-index: -1;
-      border-radius: 50%;
-      background: rgba(232, 178, 58, .15);
-      filter: blur(70px);
-    }
-
-    .console {
-      position: relative;
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      background: linear-gradient(155deg, rgba(27, 32, 41, .94), rgba(10, 12, 17, .97));
-      box-shadow: 0 28px 90px rgba(0, 0, 0, .52), inset 0 1px rgba(255, 255, 255, .035);
-      overflow: hidden;
-    }
-
-    .console-head {
-      min-height: 52px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-      padding: 0 18px;
-      border-bottom: 1px solid var(--line-soft);
-      color: var(--quiet);
-      font: 600 10px/1 var(--mono);
-      letter-spacing: .11em;
-      text-transform: uppercase;
-    }
-
-    .live { display: inline-flex; align-items: center; gap: 7px; color: var(--green); }
-    .live::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 4px rgba(56, 199, 148, .09); }
-
-    .console-body { padding: 22px; }
-
-    .league {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 20px;
-      padding-bottom: 20px;
-      border-bottom: 1px solid var(--line-soft);
-    }
-
-    .league small, .label {
-      display: block;
-      margin-bottom: 7px;
-      color: var(--quiet);
-      font: 500 9px/1 var(--mono);
-      letter-spacing: .12em;
-      text-transform: uppercase;
-    }
-
-    .league strong { display: block; font: 600 15px/1.2 var(--mono); }
-    .chip { padding: 7px 9px; border: 1px solid rgba(111, 180, 232, .35); border-radius: 5px; color: var(--blue); font: 600 9px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; }
-
-    .rank-card { margin-top: 20px; padding: 18px; border: 1px solid rgba(232, 178, 58, .25); border-radius: 9px; background: rgba(232, 178, 58, .055); }
-    .rank-top { display: flex; align-items: start; justify-content: space-between; gap: 20px; }
-    .rank-top h2 { margin: 0; font: 600 18px/1.25 var(--mono); }
-    .value { color: var(--gold-hot); font: 600 26px/1 var(--mono); }
-    .meter { height: 6px; margin: 17px 0 10px; overflow: hidden; border-radius: 999px; background: #090b0f; }
-    .meter i { display: block; width: 82%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #8a6d1e, var(--gold-hot)); transform-origin: left; animation: load 1.1s cubic-bezier(.16, 1, .3, 1) both .25s; }
-    .reason { color: var(--muted); font-size: 13px; line-height: 1.5; }
-
-    .behavior-card { margin-top: 10px; padding: 17px 18px; border: 1px solid rgba(111, 180, 232, .25); border-radius: 9px; background: rgba(111, 180, 232, .045); }
-    .behavior-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
-    .behavior-head .label { margin: 0; color: var(--blue); }
-    .ai-badge { display: inline-flex; align-items: center; gap: 6px; color: var(--green); font: 600 8px/1 var(--mono); letter-spacing: .09em; text-transform: uppercase; }
-    .ai-badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 3px rgba(56, 199, 148, .08); }
-    .owner-row { display: flex; align-items: baseline; justify-content: space-between; gap: 18px; margin-top: 13px; }
-    .owner-row h3 { margin: 0; font: 600 15px/1.3 var(--mono); }
-    .owner-row h3 span { color: var(--blue); }
-    .panic { flex: none; color: var(--gold); font: 600 10px/1 var(--mono); letter-spacing: .05em; text-transform: uppercase; }
-    .tell { margin: 9px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
-    .tell strong { color: var(--text); font-weight: 600; }
-    .traits { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 0; padding: 0; list-style: none; }
-    .traits li { padding: 5px 7px; border: 1px solid var(--line); border-radius: 4px; color: var(--quiet); font: 500 8px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; }
-
-    .signal {
-      display: flex;
-      align-items: center;
-      gap: 11px;
-      margin: 22px 0 0;
-      color: var(--quiet);
-      font: 500 9px/1.5 var(--mono);
-      letter-spacing: .06em;
-      text-transform: uppercase;
-    }
-
-    .signal::before { content: ""; width: 28px; height: 1px; background: var(--line); }
-
-    .proof {
-      margin-top: clamp(82px, 10vw, 132px);
-      padding-top: 24px;
-      border-top: 1px solid var(--line-soft);
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr auto;
-      gap: 22px;
-      align-items: center;
-    }
-
-    .proof-item { min-width: 0; }
-    .proof-item b { display: block; margin-bottom: 5px; font: 600 12px/1.25 var(--mono); }
-    .proof-item span { display: block; color: var(--quiet); font-size: 13px; line-height: 1.4; }
-    .proof-link { justify-self: end; color: var(--gold); font: 600 11px/1.4 var(--mono); text-decoration: none; }
-    .proof-link:hover { color: var(--gold-hot); }
-
-    @keyframes load { from { transform: scaleX(0); } to { transform: scaleX(1); } }
-
-    @media (max-width: 900px) {
-      main { padding-top: 48px; }
-      .hero { grid-template-columns: 1fr; }
-      .hero-copy { text-align: center; }
-      .eyebrow, .actions, .fine { justify-content: center; }
-      .lead { margin-inline: auto; }
-      .console-wrap { width: min(580px, 100%); margin: 0 auto; }
-      .proof { grid-template-columns: repeat(3, 1fr); }
-      .proof-link { grid-column: 1 / -1; justify-self: center; margin-top: 4px; }
-    }
-
-    @media (max-width: 620px) {
-      .shell { width: min(100% - 30px, 1180px); }
-      .nav { min-height: 68px; }
-      .brand { font-size: 12px; }
-      .brand img { width: 32px; height: 32px; }
-      .nav-link { display: none; }
-      main { padding: 48px 0 62px; }
-      h1 { font-size: clamp(43px, 13vw, 62px); }
-      .lead { margin-top: 22px; font-size: 17px; }
-      .actions { flex-direction: column; }
-      .btn { width: 100%; }
-      .fine { gap: 7px 13px; }
-      .console-body { padding: 15px; }
-      .rank-card { padding: 15px; }
-      .owner-row { align-items: flex-start; flex-direction: column; gap: 6px; }
-      .proof { grid-template-columns: 1fr; text-align: center; gap: 18px; }
-      .proof-link { grid-column: auto; }
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      html { scroll-behavior: auto; }
-      *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; }
-    }
+    *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+    :root{--gold:#D4AF37;--dark-gold:#B8941E;--bg:#0A0A0A;--bg2:#141414;--border:rgba(255,255,255,.1);--white:#FFFFFF;--silver:#C0C0C0;--muted:rgba(255,255,255,.5);--green:#34d399;--red:#f87171}
+    html,body{min-height:100%;font-family:'Inter',sans-serif;background:var(--bg);color:var(--white);-webkit-font-smoothing:antialiased}
+    body{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px 24px 10vh}
+    body::before{content:'';position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:clamp(400px,60vw,900px);height:clamp(400px,60vw,900px);background:url('icon-192.png') center/contain no-repeat;opacity:.06;filter:brightness(1.2);z-index:0;pointer-events:none}
+    .card{position:relative;z-index:1;width:100%;max-width:460px;text-align:center}
+    .logo{width:64px;height:64px;border-radius:15px;margin:0 auto 16px;display:block;box-shadow:0 4px 22px rgba(212,175,55,.25)}
+    .step{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--gold);margin-bottom:8px}
+    h1{font-size:24px;font-weight:800;margin-bottom:10px}
+    .sub{font-size:14px;color:var(--silver);line-height:1.55;margin-bottom:22px}
+    .plans{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
+    .plan{position:relative;padding:18px 14px;border-radius:12px;cursor:pointer;font-family:inherit;text-align:center;background:var(--bg2);border:1px solid var(--border);color:var(--silver);transition:border-color .15s,box-shadow .15s,transform .12s}
+    .plan:hover{border-color:rgba(212,175,55,.45);transform:translateY(-1px)}
+    .plan.on{color:var(--white);border-color:var(--gold);box-shadow:0 0 0 1px var(--gold) inset,0 4px 18px rgba(212,175,55,.12)}
+    .plan .nm{font-size:13px;font-weight:700;letter-spacing:.02em}
+    .plan .pr{font-size:22px;font-weight:800;color:var(--white);margin:6px 0 2px}
+    .plan .pr span{font-size:12px;font-weight:600;color:var(--muted)}
+    .plan .note{font-size:11px;font-weight:600;color:var(--muted)}
+    .plan.on .note{color:var(--gold)}
+    .plan .badge{position:absolute;top:-9px;left:50%;transform:translateX(-50%);font-size:9.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;background:var(--gold);color:#1a1204;border-radius:5px;padding:2px 7px;white-space:nowrap}
+    .perks{text-align:left;font-size:12.5px;color:var(--silver);line-height:1.7;background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:16px}
+    .perks strong{color:var(--white)}
+    .alert{font-size:13px;padding:11px 14px;border-radius:8px;margin-bottom:12px;display:none;text-align:left}
+    .alert.show{display:block}
+    .alert-error{background:rgba(248,113,113,.1);color:var(--red);border:1px solid rgba(248,113,113,.25)}
+    .alert-success{background:rgba(52,211,153,.1);color:var(--green);border:1px solid rgba(52,211,153,.25)}
+    .btn{width:100%;min-height:52px;font-size:15px;font-weight:800;border-radius:10px;border:none;background:linear-gradient(135deg,var(--gold),var(--dark-gold));color:#0a0a0a;cursor:pointer;transition:box-shadow .15s,opacity .15s}
+    .btn:hover{box-shadow:0 6px 20px rgba(212,175,55,.3)}
+    .btn:disabled{opacity:.6;cursor:not-allowed;box-shadow:none}
+    .hint{font-size:12px;color:var(--muted);margin-top:14px;line-height:1.6}
+    .back{margin-top:18px;background:none;border:none;color:var(--muted);font-size:12px;text-decoration:underline;cursor:pointer;font-family:inherit}
+    .back:hover{color:var(--gold)}
   </style>
 </head>
 <body>
-  <header class="shell nav">
-    <a class="brand" href="index.html" aria-label="Dynasty HQ home">
-      <img src="img/logo.png" alt="">
-      <span>Dynasty HQ</span>
-      <span class="beta">Beta</span>
-    </a>
-    <a class="nav-link" href="index.html">← Back to Dynasty HQ</a>
-  </header>
+  <main class="card">
+    <img src="icon-192.png" alt="Dynasty HQ" class="logo">
+    <div class="step" id="eyebrow">Go Pro</div>
+    <h1 id="title">Unlock the full engine</h1>
+    <p class="sub" id="subtitle">7-day free trial on either plan. Cancel anytime.</p>
 
-  <main class="shell">
-    <section class="hero" aria-labelledby="hero-title">
-      <div class="hero-copy">
-        <p class="eyebrow">Unique rankings · Behavioral AI</p>
-        <h1 id="hero-title">Your rankings. <span>Their tells.</span> Your edge.</h1>
-        <p class="lead">Dynasty HQ rebuilds every player value around <strong>your scoring, roster, and market.</strong> Then Behavioral AI studies how every rival trades, drafts, claims, and sets lineups—so you know the offer they’re most likely to take.</p>
-        <div class="actions">
-          <a class="btn btn-primary" href="onboarding.html?manage=true&amp;upgrade=1">Upgrade to Dynasty HQ <span class="arrow" aria-hidden="true">→</span></a>
-          <a class="btn" href="onboarding.html?manage=true&amp;upgrade=1">Start 30-day free trial</a>
-        </div>
-        <ul class="fine" aria-label="Product details">
-          <li>$9.99 / month</li>
-          <li>30-day free trial</li>
-          <li>Cancel anytime</li>
-        </ul>
+    <div class="alert" id="alertPayment"></div>
+
+    <div id="chooser">
+      <div class="plans" role="group" aria-label="Billing period">
+        <button class="plan on" id="planMonthly" onclick="pickBilling('monthly')">
+          <div class="nm">PRO MONTHLY</div>
+          <div class="pr">$9.99 <span>/mo</span></div>
+          <div class="note">7-day free trial</div>
+        </button>
+        <button class="plan" id="planAnnual" onclick="pickBilling('annual')">
+          <span class="badge">Best value</span>
+          <div class="nm">PRO ANNUAL</div>
+          <div class="pr">$99.99 <span>/yr</span></div>
+          <div class="note">~$8.33/mo · save ~17%</div>
+        </button>
       </div>
 
-      <div class="console-wrap">
-        <article class="console" aria-label="Example Dynasty HQ league analysis">
-          <header class="console-head">
-            <span>Your front office</span>
-            <span class="live">League synced</span>
-          </header>
-          <div class="console-body">
-            <div class="league">
-              <div>
-                <small>League model</small>
-                <strong>12-team · Superflex · PPR</strong>
-              </div>
-              <span class="chip">Unique to you</span>
-            </div>
-
-            <div class="rank-card">
-              <span class="label">Your league’s #1 asset</span>
-              <div class="rank-top">
-                <h2>Josh Allen</h2>
-                <strong class="value">9,842</strong>
-              </div>
-              <div class="meter" aria-hidden="true"><i></i></div>
-              <div class="reason">Superflex demand and your league’s QB scarcity push him above the generic market.</div>
-            </div>
-
-            <div class="behavior-card">
-              <div class="behavior-head">
-                <span class="label">Behavioral AI · Rival profile</span>
-                <span class="ai-badge">Model active</span>
-              </div>
-              <div class="owner-row">
-                <h3>Cole Banner · <span>The Desperate</span></h3>
-                <span class="panic">Panic 4/5</span>
-              </div>
-              <p class="tell"><strong>Empty starter slot.</strong> He overpays now. Lead with a proven starter and strike before the bye.</p>
-              <ul class="traits" aria-label="Observed manager tendencies">
-                <li>Chases points</li>
-                <li>Moves after losses</li>
-                <li>Prefers veterans</li>
-              </ul>
-            </div>
-
-            <p class="signal">Know the values. Know the room.</p>
-          </div>
-        </article>
+      <div class="perks">
+        <strong>Everything in Pro:</strong> unlimited Sleeper leagues, 15 AI calls a day, Owner DNA profiles, trade memory + finder, draft command center, Scout + War Room access.
       </div>
-    </section>
 
-    <section class="proof" aria-label="What Dynasty HQ understands">
-      <div class="proof-item"><b>Unique rankings</b><span>Your rules and market reprice every player.</span></div>
-      <div class="proof-item"><b>Behavioral AI</b><span>Every rival’s history becomes a readable profile.</span></div>
-      <div class="proof-item"><b>Actionable edge</b><span>Know what to offer—and when to move.</span></div>
-      <a class="proof-link" href="https://discord.gg/UspK4KAVt" target="_blank" rel="noopener">Join the beta community →</a>
-    </section>
+      <button class="btn" id="stripeBtn" onclick="goToStripe()">Proceed to Secure Checkout &rarr;</button>
+      <p class="hint">Payments are handled by Stripe. We never see your card details.</p>
+      <p class="hint">Subscriptions renew automatically at the price shown until cancelled. Manage or cancel anytime from Settings inside the app. (Subscribed through the iOS App Store? Manage that plan in your Apple&nbsp;ID settings — it unlocks Pro here too.)</p>
+    </div>
+
+    <!-- Shown instead of the plan chooser when the account is already Pro:
+         opens the Stripe Billing Portal (cancel / change plan / update card)
+         via the fw-billing-portal edge function. -->
+    <button class="btn" id="manageBtn" style="display:none" onclick="manageSubscription()">Manage Subscription</button>
+
+    <p class="hint" style="margin-top:16px"><a href="legal/terms-of-service.html" style="color:rgba(255,255,255,.5)">Terms of Use</a> &nbsp;&middot;&nbsp; <a href="legal/privacy-policy.html" style="color:rgba(255,255,255,.5)">Privacy Policy</a></p>
+
+    <button class="back" onclick="window.location.href='index.html'">&larr; Back to my leagues</button>
   </main>
+
+  <script src="js/billing.js?v=20260722webonly1"></script>
+  <script>
+    const SUPABASE_URL = 'https://sxshiqyxhhifvtfqawbq.supabase.co';
+    const SESSION_KEY = 'fw_session_v1';
+    let selectedBilling = 'monthly';
+
+    function pickBilling(which) {
+      selectedBilling = which === 'annual' ? 'annual' : 'monthly';
+      document.getElementById('planMonthly').classList.toggle('on', selectedBilling === 'monthly');
+      document.getElementById('planAnnual').classList.toggle('on', selectedBilling === 'annual');
+    }
+
+    function showAlert(type, message) {
+      const el = document.getElementById('alertPayment');
+      el.className = 'alert alert-' + type + ' show';
+      el.textContent = message;
+    }
+
+    function getSession() {
+      try { return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch { return null; }
+    }
+
+    async function goToStripe() {
+      const btn = document.getElementById('stripeBtn');
+      const session = getSession();
+      const token = session?.token;
+      if (!token) { showAlert('error', 'Session expired. Please sign in again.'); return; }
+
+      // Web build: all purchases go through Stripe Checkout (fw-create-checkout).
+      // Apple In-App Purchase exists only in the separate iOS app; both funnels
+      // land in the same public.subscriptions rows server-side.
+      btn.disabled = true;
+      btn.textContent = 'Redirecting to Checkout…';
+      try {
+        const resp = await fetch(`${SUPABASE_URL}/functions/v1/fw-create-checkout`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            productSlug: 'dhq',
+            billing: selectedBilling === 'annual' ? 'annual' : 'monthly',
+            successUrl: window.location.origin + window.location.pathname + '?payment=success',
+            cancelUrl: window.location.origin + window.location.pathname + '?payment=cancel',
+          }),
+        });
+        const data = await resp.json();
+        if (!resp.ok || !data.checkoutUrl) throw new Error(data.error || 'Failed to create checkout session.');
+        window.location.href = data.checkoutUrl;
+      } catch (err) {
+        showAlert('error', err.message || 'Something went wrong. Please try again.');
+        btn.disabled = false;
+        btn.textContent = 'Proceed to Secure Checkout →';
+      }
+    }
+
+    // After a confirmed payment: re-mint the session so the fresh Pro
+    // entitlement lands immediately (the JWT would otherwise stay Scout-tier
+    // for up to a day), then head into the app. Retries briefly because
+    // Stripe's webhook can land a few seconds after the redirect.
+    async function onPaymentConfirmed() {
+      document.getElementById('chooser').style.display = 'none';
+      document.getElementById('eyebrow').textContent = 'Payment confirmed';
+      document.getElementById('title').textContent = 'Welcome to Pro';
+      document.getElementById('subtitle').textContent = 'Activating your upgrade…';
+      showAlert('success', 'Payment confirmed — unlocking the full engine…');
+      for (const delayMs of [0, 4000, 10000]) {
+        if (delayMs) await new Promise(r => setTimeout(r, delayMs));
+        try {
+          const cur = getSession();
+          if (!cur?.token) break;
+          const resp = await fetch(`${SUPABASE_URL}/functions/v1/fw-refresh-session`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${cur.token}` },
+          });
+          if (!resp.ok) continue;
+          const data = await resp.json();
+          if (data?.token && data?.user?.id) {
+            localStorage.setItem(SESSION_KEY, JSON.stringify(
+              Object.assign({}, cur, { token: data.token, user: Object.assign({}, cur.user || {}, data.user) })
+            ));
+            if (data.user.tier === 'pro') break; // entitlement landed
+          }
+        } catch { /* transient — next attempt */ }
+      }
+      window.location.href = 'index.html';
+    }
+
+    // Already Pro: open the Stripe Billing Portal (fw-billing-portal) where
+    // cancel / change-plan / update-card live. Accounts with no Stripe
+    // history (e.g. subscribed on iOS) get a helpful message instead.
+    async function manageSubscription() {
+      const btn = document.getElementById('manageBtn');
+      const token = getSession()?.token;
+      if (!token) { showAlert('error', 'Session expired. Please sign in again.'); return; }
+      btn.disabled = true;
+      btn.textContent = 'Opening Billing Portal…';
+      try {
+        const resp = await fetch(`${SUPABASE_URL}/functions/v1/fw-billing-portal`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ returnUrl: window.location.origin + window.location.pathname }),
+        });
+        const data = await resp.json();
+        if (!resp.ok || !data.url) {
+          throw new Error(data.code === 'no_stripe_customer'
+            ? 'No web subscription on this account. If you subscribed through the App Store, manage it in your Apple ID settings.'
+            : (data.error || 'Could not open the billing portal.'));
+        }
+        window.location.href = data.url;
+        return;
+      } catch (err) {
+        showAlert('error', err.message || 'Could not open the billing portal. Please try again.');
+      }
+      btn.disabled = false;
+      btn.textContent = 'Manage Subscription';
+    }
+
+    (function handleReturn() {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('payment') === 'success') { onPaymentConfirmed(); return; }
+      if (params.get('payment') === 'cancel') {
+        showAlert('error', 'Checkout cancelled — you have not been charged. Pick a plan whenever you’re ready.');
+        return;
+      }
+      // Already Pro? Hide the Buy buttons and offer Manage instead of selling again.
+      const tier = getSession()?.user?.tier;
+      if (tier === 'pro') {
+        document.getElementById('eyebrow').textContent = 'Your plan';
+        document.getElementById('title').textContent = 'You’re on Pro';
+        document.getElementById('subtitle').textContent = 'The full engine is already unlocked on this account.';
+        document.getElementById('chooser').style.display = 'none';
+        document.getElementById('manageBtn').style.display = '';
+      }
+    })();
+  </script>
 </body>
 </html>

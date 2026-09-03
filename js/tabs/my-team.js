@@ -42,8 +42,10 @@ function MyTeamTab({
   setAlexAvatar,
   setAvatarKey,
 
-  // Navigation
+  // Navigation / Recon panel
   setActiveTab,
+  setReconPanelOpen,
+  sendReconMessage,
 
   // Misc
   timeRecomputeTs,
@@ -133,83 +135,22 @@ function MyTeamTab({
     });
   }, [gmSellPositions, gmSellRulesParsed]);
 
-  // GM Strategy-aware cut/taxi scoring — how strongly a bench player's OWN
-  // mode nudges him toward CUT or STASH, independent of raw DHQ. Rebuild
-  // protects developing players and pushes out aging vets; Win Now does the
-  // opposite (protects proven vets, pushes out pieces that can't help THIS
-  // season); Compete stays close to raw DHQ with a light decline-phase nudge.
-  // Feeds both the drop/taxi candidate ranking below and the GM's Desk copy.
-  //
-  // Positional scarcity — mirrors free-agency.js's getScarcityMultiplier
-  // (same league-format signal: superflex QB, TE-premium TE, RB-heavy roster
-  // shape) so "scarce" means the same thing everywhere in the app. This is a
-  // standing protection nudge, not a strategy preference — losing your only
-  // real depth at a scarce position is a mistake in ANY mode, so it applies
-  // on top of (not instead of) the rebuild/compete/win_now signal below.
-  const _scarcityMult = React.useCallback((pos) => {
-    const positions = currentLeague?.roster_positions || [];
-    const scoring = currentLeague?.scoring_settings || {};
-    let mult = 1.0;
-    if (positions.includes('SUPER_FLEX') && pos === 'QB') mult = 1.8;
-    if ((scoring.bonus_rec_te || scoring.rec_te || 0) > 0 && pos === 'TE') mult = 1.5;
-    const rbSlots = positions.filter(s => s === 'RB').length;
-    if (pos === 'RB' && rbSlots >= 2) mult = Math.max(mult, 1.3);
-    return mult;
-  }, [currentLeague]);
-  const _cutScore = React.useCallback((r) => {
-    let score = 0;
-    const mode = gm?.mode;
-    const ageCutoff = gm?.tradeWeights?.ageCutoff || 30;
-    if (mode === 'rebuild') {
-      if (r.peakPhase === 'VET' || r.peakPhase === 'POST') score += 15;
-      if (r.age != null && r.age >= ageCutoff) score += 10;
-      if (r.peakPhase === 'PRE') score -= 20;
-    } else if (mode === 'win_now') {
-      if (r.peakPhase === 'PRE') score += 15;
-      if (r.age != null && r.age <= 22 && !r.curGP) score += 10;
-      if (r.peakPhase === 'VET') score -= 15;
-    } else {
-      if (r.peakPhase === 'POST') score += 5;
-    }
-    if (gmSellPositions.has(String(r.pos))) score += 8;
-    if (gmTargetPositions.has(String(r.pos))) score -= 5;
-    score -= (_scarcityMult(r.pos) - 1) * 20;
-    return score;
-  }, [gm?.mode, gm?.tradeWeights, gmSellPositions, gmTargetPositions, _scarcityMult]);
-  // Strategy's influence is capped to a FRACTION of the player's own DHQ (max
-  // ±20%), not a flat point deduction — so it can only reorder near-equal-value
-  // bench players. A blunt age/phase signal must never outrank real production:
-  // a still-strong older player (last year's 3rd-best scorer at his position,
-  // say) keeps ~80%+ of his real value and stays well clear of the worst bench
-  // spots, even in Rebuild mode. Only players ALREADY close in raw DHQ get
-  // reshuffled by strategy fit.
-  const _adjustedDhq = React.useCallback((r) => {
-    const scorePct = Math.max(-0.2, Math.min(0.2, _cutScore(r) / 200));
-    return r.dhq * (1 - scorePct);
-  }, [_cutScore]);
-  // One-line, strategy-grounded reasoning for a GM's Desk call.
-  const _gmDeskReason = React.useCallback((r, verdict) => {
-    const mode = gm?.mode;
-    const ageTxt = r.age != null ? r.age + '-year-old ' : '';
-    if (verdict === 'STASH') {
-      if (mode === 'win_now') return 'Not ready to move the needle this season — taxi him and save the bench spot for a win-now piece.';
-      if (mode === 'rebuild') return ageTxt + r.pos + ', still building — exactly what a rebuild protects. Taxi him, don’t cut him.';
-      return 'Taxi-eligible with real upside left — no reason to burn a bench spot on him yet.';
-    }
-    if (mode === 'rebuild') {
-      if (r.valueYrsLeft <= 0) return 'Value window’s closed — that’s trade bait in a rebuild, not a roster spot.';
-      return ageTxt + r.pos + ' doesn’t fit a youth build. Sell him or cut him.';
-    }
-    if (mode === 'win_now') {
-      if (!r.curGP) return 'Hasn’t played a snap that matters — a win-now roster can’t carry a developmental piece.';
-      return ageTxt + r.pos + ' isn’t helping this year’s push.';
-    }
-    return 'Lowest DHQ on the bench — not developing, not producing.';
-  }, [gm?.mode]);
-
   // ── Weekly start/sit projections (redraft) — league-scored via App.WeeklyProj.
   // Computed once; the 'proj' column + its sort read it. Neutral matchup until the
   // projections feed lands; guarded so dynasty/offseason rows just render '—'.
+  // Load Sleeper's OWN published weekly projections so the Proj column shows the
+  // exact number the owner sees in Sleeper (scored to this league); recompute
+  // when they land or when any other tab loads them (wr:proj-updated).
+  const [projTick, setProjTick] = React.useState(0);
+  React.useEffect(() => {
+    const SP = window.App && window.App.SleeperProj;
+    if (!SP || !SP.loadCurrent) return;
+    let alive = true;
+    SP.loadCurrent(currentLeague && currentLeague.season).then(wk => { if (alive && wk) setProjTick(t => t + 1); }).catch(() => {});
+    const onProj = () => { if (alive) setProjTick(t => t + 1); };
+    window.addEventListener('wr:proj-updated', onProj);
+    return () => { alive = false; window.removeEventListener('wr:proj-updated', onProj); };
+  }, [currentLeague && (currentLeague.league_id || currentLeague.id), currentLeague && currentLeague.season]);
   const weeklyLineup = React.useMemo(() => {
     const WP = window.App && window.App.WeeklyProj;
     if (!WP || !myRoster || !currentLeague) return null;
@@ -217,7 +158,7 @@ function MyTeamTab({
       const res = WP.optimalForRoster(myRoster, currentLeague, { playersData, statsData, priorData: stats2025Data });
       return { res, starterSet: new Set((res.optimal.starters || []).map(s => String(s.pid))), objective: res.objective };
     } catch (e) { if (window.wrLog) window.wrLog('myteam.weeklyProj', e); return null; }
-  }, [myRoster, currentLeague, playersData, statsData, stats2025Data, timeRecomputeTs]);
+  }, [myRoster, currentLeague, playersData, statsData, stats2025Data, timeRecomputeTs, projTick]);
   const projFor = (pid) => (weeklyLineup && weeklyLineup.res.projections[pid]) || null;
 
   // Build rest-of-season values for REDRAFT leagues so the value column + sort
@@ -254,6 +195,15 @@ function MyTeamTab({
         const gd = (getRowGroupRank(a) - getRowGroupRank(b)) || String(getRowGroupKey(a)).localeCompare(String(getRowGroupKey(b)));
         if (gd !== 0) return gd;
       }
+      // Within a position group, rows band by roster slot — Starter, Bench,
+      // Taxi, IR (owner ruling 2026-09-01). Slot flags come fresh from the
+      // live Sleeper roster every load, so lineup moves re-band on their own;
+      // the chosen column sort still orders players inside each band.
+      if (rosterGroupMode === 'position') {
+        const slotRank = r => r.isIR ? 3 : r.isTaxi ? 2 : r.isStarter ? 0 : 1;
+        const sd = slotRank(a) - slotRank(b);
+        if (sd !== 0) return sd;
+      }
       if (key === 'dhq') return (b.dhq - a.dhq) * dir;
       if (key === 'age') return ((a.age||99) - (b.age||99)) * dir;
       if (key === 'ppg') {
@@ -270,8 +220,8 @@ function MyTeamTab({
         return (bv - av) * dir;
       }
       if (key === 'proj') {
-        const obj = weeklyLineup?.objective || 'median';
-        const pv = r => { const p = projFor(r.pid); return p && p.available ? (p.points[obj] || 0) : -1; };
+        // Sort by the same median projection the column now displays.
+        const pv = r => { const p = projFor(r.pid); return p && p.available ? ((p.points && (p.points.median != null ? p.points.median : p.points.mean)) || 0) : -1; };
         return (pv(b) - pv(a)) * dir;
       }
       if (key === 'hi' || key === 'lo') {
@@ -292,6 +242,7 @@ function MyTeamTab({
         return (fam(b) - fam(a)) * dir;
       }
       if (key === 'yrsExp') return ((b.p.years_exp||0) - (a.p.years_exp||0)) * dir;
+      if (key === 'pts') { const t = (r) => { const s = statsData[r.pid] || {}; return s.gp > 0 ? calcRawPts(s) : 0; }; return (t(a) - t(b)) * dir; }
       if (key === 'college') { const ca = (a.p.college||'').toLowerCase(), cb = (b.p.college||'').toLowerCase(); return (ca < cb ? -1 : ca > cb ? 1 : 0) * dir; }
       if (key === 'nflDraft') return (((a.p.draft_round || (a.p.draft_pick ? Math.ceil(a.p.draft_pick/32) : 99)) - (b.p.draft_round || (b.p.draft_pick ? Math.ceil(b.p.draft_pick/32) : 99))) * dir);
       if (key === 'posRankLg') return (a.dhq - b.dhq) * dir; // proxy: higher dhq = better rank
@@ -350,7 +301,8 @@ function MyTeamTab({
     age:        { label: 'Age', shortLabel: 'Age', width: '38px', group: 'dynasty' },
     dhq:        { label: valueLabel, shortLabel: valueShortLabel, width: '60px', group: 'dynasty' },
     ppg:        { label: 'Points Per Game', shortLabel: 'PPG', width: '48px', group: 'stats' },
-    proj:       { label: isPro && wkVerdict ? 'This Week — projected pts + start/sit (league-scored)' : 'This Week — projected pts (league-scored)', shortLabel: 'Wk', width: '62px', group: 'stats' },
+    pts:        { label: 'Total Points (season)', shortLabel: 'Pts', width: '52px', group: 'stats' },
+    proj:       { label: isPro && wkVerdict ? 'This Week — projected pts + start/sit (league-scored)' : 'This Week — projected pts (league-scored)', shortLabel: 'Proj', width: '62px', group: 'stats' },
     hi:         { label: 'Season High — most fantasy pts in a week', shortLabel: 'Hi', width: '40px', group: 'stats' },
     lo:         { label: 'Season Low — fewest fantasy pts in a played week', shortLabel: 'Lo', width: '40px', group: 'stats' },
     prev:       { label: 'Previous Season PPG', shortLabel: 'Last', width: '44px', group: 'stats' },
@@ -368,7 +320,7 @@ function MyTeamTab({
     height:     { label: 'Height', shortLabel: 'Ht', width: '42px', group: 'scout' },
     weight:     { label: 'Weight (lbs)', shortLabel: 'Wt', width: '42px', group: 'scout' },
     depthChart: { label: 'Depth Chart Position', shortLabel: 'Depth', width: '48px', group: 'scout' },
-    slot:       { label: 'Roster Slot', shortLabel: 'Slot', width: '48px', group: 'core' },
+    slot:       { label: 'Roster Slot', shortLabel: 'Slot', width: '62px', group: 'core' },
     acquired:   { label: 'Acquisition Method', shortLabel: 'Added', width: '74px', group: 'core' },
     acquiredDate: { label: 'Date Acquired', shortLabel: 'When', width: '60px', group: 'core' },
     sos:        { label: 'Sched Strength (1=hardest, 32=easiest)', shortLabel: 'SOS', width: '44px', group: 'stats' },
@@ -395,7 +347,7 @@ function MyTeamTab({
   const COLUMN_PRESETS = {
     default: ['pos','age','dhq','posRankLg','ppg',...(wkVerdict ? ['proj'] : []),'durability','peak','action','sos'].filter(k => ROSTER_COLUMNS[k]),
     ...(wkVerdict ? { redraft: ['pos','proj','ppg','prev','trend','hi','lo','sos'] } : {}),
-    stats:   ['pos','dhq','ppg','prev','trend','gp','durability','sos'],
+    stats:   ['pos','dhq','pts','ppg','prev','trend','gp','durability','sos'],
     scout:   ['pos','age','college','slot','height','weight','depthChart','yrsExp','starterSzn','posRankNfl'],
     rookie:  ['pos','age','college','rkSlot','rkTeam','rkProfile'],
     full:    Object.keys(ROSTER_COLUMNS),
@@ -435,12 +387,7 @@ function MyTeamTab({
     const p = playersData[pid];
     if (!p) return null;
     const pos = normPos(p.position) || p.position || '?';
-    // league-skin.js already labels this column "Keeper-Adjusted Value" for
-    // keeper leagues (buildVocabulary) — route the actual number through the
-    // keeper blend so the label matches what's shown, not pure dynasty DHQ.
-    const dhq = resolvedLeagueSkin?.type === 'keeper' && window.App?.PlayerValue?.getKeeperValue
-        ? window.App.PlayerValue.getKeeperValue(pid, { skin: resolvedLeagueSkin })
-        : window.App?.PlayerValue?.getValue ? window.App.PlayerValue.getValue(pid, { skin: resolvedLeagueSkin }) : (window.App?.LI?.playerScores?.[pid] || 0);
+    const dhq = window.App?.PlayerValue?.getValue ? window.App.PlayerValue.getValue(pid, { skin: resolvedLeagueSkin }) : (window.App?.LI?.playerScores?.[pid] || 0);
     const meta = window.App?.LI?.playerMeta?.[pid];
     const st = statsData[pid] || {};
     const prev = stats2025Data?.[pid] || {};
@@ -519,198 +466,136 @@ function MyTeamTab({
 
   // Cell background helpers (FM-style colored cells)
   const dhqBg = () => 'transparent';
-  // Position-relative DHQ tiers — same rule as the Analytics All Players
-  // table (league-map.js): top 5% of the LEAGUE-WIDE pool at that position
-  // green, next tier (top 20%) blue, top 50% silver, rest faded. The flat
-  // 7000/4000/2000 cutoffs (kept below as a fallback when the league-wide
-  // pool isn't built yet) are tuned to offense's absolute ceiling and
-  // structurally never light up green/blue for lower-ceiling positions like
-  // IDP or K — a position's own best players never got colored no matter
-  // how dominant they are at that position.
-  const posDhqRank = React.useMemo(() => {
-    const scores = window.App?.LI?.playerScores || {};
-    const meta = window.App?.LI?.playerMeta || {};
-    const byPos = {};
-    Object.keys(scores).forEach(pid => {
-      const v = scores[pid];
-      if (!(v > 0)) return;
-      const pos = meta[pid]?.pos;
-      if (!pos) return;
-      (byPos[pos] = byPos[pos] || []).push([pid, v]);
-    });
-    const rank = {};
-    Object.entries(byPos).forEach(([pos, arr]) => {
-      arr.sort((a, b) => b[1] - a[1]);
-      const map = new Map();
-      arr.forEach(([pid], i) => map.set(String(pid), (i + 1) / arr.length));
-      rank[pos] = map;
-    });
-    return rank;
-  }, [timeRecomputeTs]);
-  const dhqCol = (v, pid, pos) => {
-    const pct = pid != null && pos ? posDhqRank[pos]?.get(String(pid)) : null;
-    if (pct != null) {
-      if (pct <= 0.05) return 'var(--good)';
-      if (pct <= 0.20) return 'var(--k-3498db, #3498db)';
-      if (pct <= 0.50) return 'var(--silver)';
-      return 'var(--ov-8, rgba(255,255,255,0.3))';
-    }
-    return v >= 7000 ? 'var(--good)' : v >= 4000 ? 'var(--k-3498db, #3498db)' : v >= 2000 ? 'var(--silver)' : 'var(--ov-8, rgba(255,255,255,0.3))';
-  };
+  const dhqCol = v => v > 0 ? 'var(--white)' : 'var(--ov-7, rgba(255,255,255,0.25))';
   const ageBg = () => 'transparent';
   const ageCol = () => 'var(--silver)';
   const ppgBg = () => 'transparent';
   const trendBg = () => 'transparent';
   const posColors = window.App.POS_COLORS;
 
-  // Roster Cutdown Day (window.App.RosterCutdown) — a league rule set from
-  // GM's Office: on a given date the active+taxi roster shrinks to a smaller
-  // cap. Only surfaced once the date is near (isNear: within NEAR_DAYS or
-  // past) so it doesn't nag all season for a rule that isn't imminent yet.
-  const cutdownLeagueId = currentLeague?.league_id || currentLeague?.id || '';
-  const [cutdownTick, setCutdownTick] = React.useState(0);
+  // DROP? candidates — owner rules 2026-08-31 (replaces "bottom 3 bench by
+  // value", which flagged rising rookies while missing NFL cuts):
+  //   A. Cut and unsigned (NFL team = FA) → automatic drop candidate.
+  //   B. Otherwise, ALL of: the waiver wire offers a better player at his
+  //      position for free, he isn't trending up, and the engine isn't
+  //      calling him a Stash/Core/Buy.
+  //   NEVER flagged: rookie first-round picks, GM untouchables, your only
+  //   player at a position, starters, IR, or taxi.
+  // dropCandidateReasons carries the WHY for each flag (chip tooltip).
+  // Sleeper's 24h trending-adds list — the market's situation signal. A player
+  // thousands of managers are racing to claim is not a cut, whatever his value
+  // number says (owner ask 2026-08-31: Kolar/Holani). Best-effort: an empty
+  // set simply skips that guard.
+  const [trendingAddPids, setTrendingAddPids] = React.useState(() => new Set());
+  const [sitTick, setSitTick] = React.useState(0); // bumps when ADP / NFL roles land
   React.useEffect(() => {
-    const h = () => setCutdownTick(t => t + 1);
-    window.addEventListener('wr:cutdown-rule-changed', h);
-    return () => window.removeEventListener('wr:cutdown-rule-changed', h);
-  }, []);
-  const cutdownInfo = React.useMemo(() => {
-    const rule = cutdownLeagueId ? window.App?.RosterCutdown?.getRule?.(cutdownLeagueId) : null;
-    const RC = window.App?.RosterCutdown;
-    if (!rule || !RC) return null;
-    const rosterStatus = RC.status(rule, Date.now());
-    if (!rosterStatus || !rosterStatus.isNear) return null;
-    const rosterCount = rows.filter(r => !r.isIR).length;
-    // Active and taxi are separate caps (NFL-style "42 active / 10 taxi") —
-    // check each pool against its OWN limit. The shared module's overage()
-    // treats them as one combined pool, which can mask a taxi-only overage
-    // when the bench has room to spare (bench comfortably under cap, taxi
-    // stuffed) — bucket them here so the roster board flags taxi cuts too.
-    const activeCount = rows.filter(r => !r.isIR && !r.isTaxi).length;
-    const taxiCount = rows.filter(r => r.isTaxi && !r.isIR).length;
-    const activeOver = Math.max(0, activeCount - (rule.activeSlots || 0));
-    const taxiOver = Math.max(0, taxiCount - (rule.taxiSlots || 0));
-    const over = activeOver + taxiOver;
-    return { rule, status: rosterStatus, rosterCount, over, activeOver, taxiOver };
-  }, [cutdownLeagueId, rows, cutdownTick]);
-
-  // Sleeper's taxi_years league setting caps who's taxi-eligible by years_exp;
-  // most leagues never touch it, so fall back to rookies + 2nd-year (<=1) —
-  // the common default dynasty leagues actually run.
-  const taxiEligibleCap = React.useMemo(() => {
-    const configured = Number(currentLeague?.settings?.taxi_years);
-    return Number.isFinite(configured) ? configured : 1;
-  }, [currentLeague]);
-
-  // Real taxi-squad capacity from the league's own roster shape — distinct
-  // from the GM's Office Cutdown Day rule (a separate, opt-in pending-limit
-  // concept below). This is what lets the standing (no-cutdown-pending) taxi
-  // suggestion know whether taxi room genuinely exists today.
-  const taxiSlotsCap = React.useMemo(() => {
-    const configured = Number(currentLeague?.settings?.taxi_slots);
-    if (Number.isFinite(configured) && configured > 0) return configured;
-    return (currentLeague?.roster_positions || []).filter(p => p === 'TAXI').length;
-  }, [currentLeague]);
-
-  // Drop/taxi candidate PIDs: non-starters ranked by strategy-adjusted DHQ
-  // (_adjustedDhq — see GM Strategy scoring above), so a rebuild pushes aging
-  // vets to the top of the cut list even over a slightly-higher-DHQ prospect,
-  // and Win Now does the reverse. Untouchable players never enter the pool.
-  // Once a Cutdown rule is set, bench and taxi are ranked separately against
-  // cutdownInfo's per-pool overage; otherwise this is a standing "3 weakest
-  // bench spots" advisory that runs every time. Either way, a taxi-eligible
-  // active-side candidate is routed to taxiCandidatePids instead of a cut
-  // whenever real taxi room exists — he's still on your roster, just off the
-  // active cap.
-  const { dropCandidatePids, taxiCandidatePids } = React.useMemo(() => {
-    const benchPlayers = rows
-      .filter(r => !r.isStarter && !r.isIR && !r.isTaxi && !r.gmIsUntouchable)
-      .sort((a, b) => _adjustedDhq(a) - _adjustedDhq(b));
-    const taxiPlayers = rows.filter(r => r.isTaxi && !r.isIR).sort((a, b) => a.dhq - b.dhq);
-    const routeToTaxiOrCut = (candidates, roomStart) => {
-      let taxiRoomLeft = roomStart;
-      const cutPicks = [], taxiPicks = [];
-      candidates.forEach(r => {
-        const eligible = (r.p?.years_exp ?? 99) <= taxiEligibleCap;
-        if (eligible && taxiRoomLeft > 0) { taxiPicks.push(r.pid); taxiRoomLeft--; }
-        else cutPicks.push(r.pid);
-      });
-      return { cutPicks, taxiPicks };
-    };
-    if (cutdownInfo) {
-      const activeCandidates = benchPlayers.slice(0, cutdownInfo.activeOver > 0 ? cutdownInfo.activeOver : 3);
-      const roomStart = cutdownInfo.activeOver > 0 ? Math.max(0, (cutdownInfo.rule.taxiSlots || 0) - taxiPlayers.length) : 0;
-      const { cutPicks, taxiPicks } = routeToTaxiOrCut(activeCandidates, roomStart);
-      return {
-        dropCandidatePids: new Set([...cutPicks, ...taxiPlayers.slice(0, cutdownInfo.taxiOver).map(r => r.pid)]),
-        taxiCandidatePids: new Set(taxiPicks),
-      };
-    }
-    const { cutPicks, taxiPicks } = routeToTaxiOrCut(benchPlayers.slice(0, 3), Math.max(0, taxiSlotsCap - taxiPlayers.length));
-    return { dropCandidatePids: new Set(cutPicks), taxiCandidatePids: new Set(taxiPicks) };
-  }, [rows, cutdownInfo, taxiEligibleCap, taxiSlotsCap, _adjustedDhq]);
-
-  // Keeper recommendations — rows.dhq is already the keeper-blended value for
-  // keeper leagues (see the dhq computation above), so ranking by it here
-  // guarantees the recommendation list and the DHQ column never disagree.
-  const maxKeepers = Number(currentLeague?.settings?.max_keepers || currentLeague?.settings?.keeper_count || currentLeague?.metadata?.keeper_count || 0) || 3;
-  const keeperRanked = React.useMemo(() => {
-    if (resolvedLeagueSkin?.type !== 'keeper') return [];
-    return rows.slice().sort((a, b) => (b.dhq || 0) - (a.dhq || 0));
-  }, [rows, resolvedLeagueSkin?.type]);
-  const keeperTopPids = React.useMemo(
-    () => new Set(keeperRanked.slice(0, maxKeepers).map(r => r.pid)),
-    [keeperRanked, maxKeepers]
-  );
-  // Keeper take — one-shot, ask once, no back-and-forth (same idiom as the
-  // waiver-take/team-diagnosis/trade-idea cards). A single cached AI reaction
-  // to the WHOLE recommended set, not one call per player.
-  const [keeperTake, setKeeperTake] = React.useState(null); // null | {loading} | {text} | {error}
-  const keeperTakeKey = 'keeper-take:' + (currentLeague?.league_id || currentLeague?.id || '') + ':' + keeperRanked.slice(0, maxKeepers).map(r => r.pid).join(',');
-  async function getKeeperTake() {
-    if (typeof window.AlexVoice?.enhance !== 'function' || !isPro) return;
-    setKeeperTake({ loading: true });
+    let alive = true;
+    try { window.App?.fetchRedraftAdp?.().then(() => { if (alive) setSitTick(t => t + 1); }).catch(() => {}); } catch (e) {}
+    // Fresh ESPN depth charts (owner rule 2026-08-31): checked on open; a
+    // player listed with a starting-caliber role never gets a drop flag.
+    try { window.App?.NflRoles?.load?.().then(() => { if (alive) setSitTick(t => t + 1); }).catch(() => {}); } catch (e) {}
+    const onRoles = () => { if (alive) setSitTick(t => t + 1); };
+    window.addEventListener('wr:roles-loaded', onRoles);
     try {
-      const context = JSON.stringify({
-        keeperSlots: maxKeepers,
-        topKeeps: keeperRanked.slice(0, maxKeepers).map(r => ({ name: getPlayerName(r.pid), pos: r.pos, keeperValue: r.dhq })),
-        bubble: keeperRanked.slice(maxKeepers, maxKeepers + 2).map(r => ({ name: getPlayerName(r.pid), pos: r.pos, keeperValue: r.dhq })),
-      });
-      const text = await window.AlexVoice.enhance({
-        type: 'pick-analysis',
-        message: 'In 1-2 sentences, react to this team’s keeper picks — call out if one is a clear reach, or if a bubble player should bump a top pick.',
-        context,
-        fallback: null,
-        cacheKey: keeperTakeKey,
-      });
-      setKeeperTake(text ? { text } : null);
-    } catch (e) {
-      setKeeperTake({ error: e?.message || 'AI call failed' });
-    }
-  }
-  function sendKeeperTakeFeedback(action) {
-    setKeeperTake(prev => prev ? { ...prev, feedback: action } : prev);
-    window.WR?.AIFeedback?.send?.({
-      leagueId: currentLeague?.league_id || currentLeague?.id,
-      surface: 'keeper_take',
-      recId: keeperTakeKey,
-      action,
+      if (window.Sleeper?.fetchTrending) {
+        window.Sleeper.fetchTrending('add', 24, 25).then(list => {
+          if (!alive || !Array.isArray(list)) return;
+          setTrendingAddPids(new Set(list.map(t => String(t && (t.player_id != null ? t.player_id : t))).filter(Boolean)));
+        }).catch(() => {});
+      }
+    } catch (e) { /* trending optional */ }
+    return () => { alive = false; window.removeEventListener('wr:roles-loaded', onRoles); };
+  }, []);
+  const [dropCandidatePids, dropCandidateReasons] = React.useMemo(() => {
+    const out = new Set();
+    const reasons = new Map();
+    const posCounts = {};
+    rows.forEach(r => { posCounts[r.pos] = (posCounts[r.pos] || 0) + 1; });
+    // Best unrostered value per position = what the wire hands you for free.
+    const wireBest = {};
+    try {
+      const scores = window.App?.LI?.playerScores || {};
+      const rostered = new Set();
+      (currentLeague?.rosters || []).forEach(rr => (rr.players || []).forEach(pid => rostered.add(String(pid))));
+      for (const pid in scores) {
+        if (rostered.has(String(pid))) continue;
+        const p = playersData?.[pid];
+        // Employed players only set the replacement bar — a teamless player's
+        // stale value number is not an upgrade (the Elijah Moore case: the
+        // 'better WR on the wire' had no NFL team).
+        if (!p || !p.team || p.team === 'FA') continue;
+        const pos = (window.App?.normPos?.(p.position) || p.position);
+        if (!pos) continue;
+        if (!(wireBest[pos] >= scores[pid])) wireBest[pos] = scores[pid];
+      }
+    } catch (e) { /* wire read is best-effort — rule B just goes quiet */ }
+    // Owner conviction: a manual verdict (other than Cut/Drop) set on the
+    // player silences the chip — the human already made this call.
+    let manualVerdicts = {};
+    try {
+      const lid = currentLeague?.id || currentLeague?.league_id || '';
+      manualVerdicts = JSON.parse(localStorage.getItem('dhq_roster_verdict_v1:' + lid) || '{}') || {};
+    } catch (e) {}
+    // Roster pressure (owner rule 2026-08-31): with open active spots, you
+    // can add without dropping anyone — wire-comparison flags stay quiet.
+    const activeCap = (currentLeague?.roster_positions || []).filter(s => s !== 'IR').length;
+    const activeCount = rows.filter(r => !r.isIR && !r.isTaxi).length;
+    const rosterFull = activeCap > 0 && activeCount >= activeCap;
+    rows.forEach(r => {
+      if (r.gmIsUntouchable) return;
+      // Rookie first-round picks are development capital — never auto-drop.
+      const pr = prospectForRow(r);
+      const cap = draftCapFor(r.pid);
+      const rookieR1 = (pr && Number(pr.draftRound) === 1)
+        || (cap && cap.round === 1 && Number(r.p?.years_exp ?? 1) === 0);
+      if (rookieR1) return;
+      const mv = manualVerdicts[r.pid];
+      if (mv && !/^(cut|drop)$/i.test(String(mv))) return;
+      // Rule A — cut and unsigned. Applies to EVERY roster section: a taxi
+      // stash the NFL let go (owner report 2026-08-31: Will Levis) deserves
+      // the flag as much as a bench body.
+      const isFA = !r.p?.team || r.p.team === 'FA';
+      if (isFA) {
+        out.add(r.pid);
+        reasons.set(r.pid, 'Cut by his NFL team — currently an unsigned free agent');
+        return;
+      }
+      if (r.isStarter || r.isIR || r.isTaxi) return; // rule B judges bench only
+      if ((posCounts[r.pos] || 0) <= 1) return;   // only body at the position
+      if (r.trend >= 10) return;                   // trending up — protected
+      if (/^(STASH|CORE|BUY)/.test(r.recAction || '')) return; // engine wants him kept
+      // Situation guards (owner ask 2026-08-31): a low value number is not a
+      // cut when his real-world role says otherwise. ESPN's editorial depth
+      // chart is the primary source (Sleeper's lags by days); Sleeper's own
+      // depth field stays as the fallback when the feed hasn't loaded.
+      if (window.App?.NflRoles?.starterRole?.(r.p)) return; // fresh chart: starting-caliber role
+      if (r.p?.depth_chart_order === 1) return;    // #1 on his NFL depth chart (fallback)
+      const wproj = projFor(r.pid);
+      const projPts = wproj && wproj.available ? ((wproj.points && (wproj.points.median != null ? wproj.points.median : wproj.points.mean)) || 0) : 0;
+      if (projPts >= 6) return;                    // projected for real points this week
+      if (trendingAddPids.has(String(r.pid))) return; // hot add across all of Sleeper
+      // Still being taken in real drafts right now — the market says he's
+      // rosterable, whatever his value number reads (catches role-change
+      // players like Kolar whose value model runs behind the news).
+      const adpE = window.App?.getRedraftAdp?.(r.pid);
+      if (adpE && adpE.rank > 0 && adpE.rank <= 240) return;
+      if (!rosterFull) return; // open roster spots — nothing needs dropping
+      // Meaningful upgrade only: at least double his value AND +500 — never
+      // sideways churn on model noise.
+      const wire = wireBest[r.pos] || 0;
+      if (wire >= r.dhq * 2 && (wire - r.dhq) >= 500) {
+        out.add(r.pid);
+        reasons.set(r.pid, 'Roster is full and the wire has a clearly better ' + r.pos + ' available free');
+      }
     });
-  }
+    return [out, reasons];
+  }, [rows, currentLeague, playersData, prospectForRow, trendingAddPids, weeklyLineup, sitTick]);
 
   // Dismissed drop alerts (persisted in localStorage per league)
   const [dismissedDrops, setDismissedDrops] = React.useState(() => {
     try {
       const leagueId = currentLeague?.id || currentLeague?.league_id || '';
       const stored = localStorage.getItem('wr_dismissed_drops_' + leagueId);
-      return stored ? new Set(JSON.parse(stored)) : new Set();
-    } catch { return new Set(); }
-  });
-  // Dismissed "move to taxi" suggestions — same persistence shape as drops.
-  const [dismissedTaxiSuggestions, setDismissedTaxiSuggestions] = React.useState(() => {
-    try {
-      const leagueId = currentLeague?.id || currentLeague?.league_id || '';
-      const stored = localStorage.getItem('wr_dismissed_taxi_' + leagueId);
       return stored ? new Set(JSON.parse(stored)) : new Set();
     } catch { return new Set(); }
   });
@@ -743,6 +628,7 @@ function MyTeamTab({
   React.useEffect(() => {
     if (!isPro && rosterGroupMode === 'action') setRosterGroupMode('position');
   }, [isPro, rosterGroupMode]);
+  const [, forceAcquisitionRerender] = React.useState(0);
   // Force a re-render when weekly points become available so rolling-PPG cells update.
   const [, forcePpgRerender] = React.useState(0);
   React.useEffect(() => {
@@ -751,6 +637,10 @@ function MyTeamTab({
     return () => window.removeEventListener('wr:weekly-points-loaded', h);
   }, []);
 
+  // Dynasty Read AI — paid-tier web-search news synthesis, fired only for the
+  // currently expanded row (one open at a time), template-first. Result is keyed
+  // by pid; the shared weekly cache means repeat opens are an instant hit.
+  const [aiReads, setAiReads] = React.useState({});
   // The clamp+fade+"Full read" disclosure that used to live here was extracted
   // to the shared WR.ClampedRead (js/components/wr-primitives.js); it measures
   // its own overflow and remounts (collapsed) per expanded row.
@@ -768,6 +658,35 @@ function MyTeamTab({
     window.addEventListener('resize', measure);
     return () => { if (ro) ro.disconnect(); window.removeEventListener('resize', measure); };
   }, []);
+  React.useEffect(() => {
+    const pid = expandedPid;
+    // Free: never auto-fire dynasty_read on row expand — BYOK routes (S.apiKey
+    // → callClaude) bypass the OD.callAI tripwire, so the trigger itself must
+    // gate. The seeded buildDynastyRead template below still renders.
+    if (!isPro) return;
+    if (!pid || aiReads[pid] || typeof window.fetchDynastyRead !== 'function') return;
+    const p = playersData?.[pid];
+    if (!p) return;
+    let alive = true;
+    const nfl = window.S?.nflState || {};
+    const ctx = {
+      pid,
+      name: p.full_name || ((p.first_name || '') + ' ' + (p.last_name || '')).trim(),
+      team: p.team || '',
+      pos: (window.App?.normPos ? window.App.normPos(p.position) : p.position) || '',
+      age: p.age || null,
+      season: nfl.season || '',
+      week: nfl.display_week || nfl.week || 0,
+    };
+    // Debounce: only fetch after the row stays expanded briefly, so quickly
+    // expanding/collapsing rows doesn't fire a scouting call per glance.
+    const timer = setTimeout(() => {
+      window.fetchDynastyRead(ctx, { fallback: '' }).then((txt) => {
+        if (alive && txt) setAiReads(prev => (prev[pid] ? prev : { ...prev, [pid]: txt }));
+      });
+    }, 600);
+    return () => { alive = false; clearTimeout(timer); };
+  }, [expandedPid]);
   const dismissDrop = React.useCallback((pid) => {
     const playerName = window.App?.playersData?.[pid]?.full_name || pid;
     setDismissedDrops(prev => {
@@ -782,66 +701,6 @@ function MyTeamTab({
     window.wrLogAction?.('\uD83D\uDEAB', 'Dismissed drop alert for ' + playerName, 'roster', { players: [{ name: playerName, pid: pid }], actionType: 'dismiss-drop' });
   }, [currentLeague]);
 
-  // Manual "mark to cut" \u2014 a one-tap toggle, distinct from the algorithmic
-  // DROP? suggestion above. Writes the shared window._playerTags 'cut' tag
-  // (same store player-card's Tag As menu and the Dashboard's Cut Candidates
-  // widget already read), so a mark here shows up there too. Marking a
-  // suggested drop candidate also dismisses its DROP? flag \u2014 the decision's
-  // made, no need to keep asking.
-  const toggleCutTag = React.useCallback((pid) => {
-    const playerName = window.App?.playersData?.[pid]?.full_name || pid;
-    const lid = currentLeague?.id || currentLeague?.league_id || '';
-    const wasCut = window._playerTags?.[pid] === 'cut';
-    try {
-      const tags = { ...(window._playerTags || {}) };
-      if (wasCut) delete tags[pid]; else tags[pid] = 'cut';
-      window._playerTags = tags;
-      if (window.OD?.savePlayerTags) window.OD.savePlayerTags(lid, tags);
-    } catch (e) {}
-    if (!wasCut && dropCandidatePids.has(pid) && !dismissedDrops.has(pid)) dismissDrop(pid);
-    try { setTimeRecomputeTs(Date.now()); } catch (e) {}
-    window.wrLogAction?.(wasCut ? '\u21A9\uFE0F' : '\u2702\uFE0F', (wasCut ? 'Unmarked cut for ' : 'Marked to cut: ') + playerName, 'roster', { players: [{ name: playerName, pid: pid }], actionType: wasCut ? 'unmark-cut' : 'mark-cut' });
-  }, [currentLeague, dropCandidatePids, dismissedDrops, dismissDrop, setTimeRecomputeTs]);
-
-  const dismissTaxiSuggestion = React.useCallback((pid) => {
-    const playerName = window.App?.playersData?.[pid]?.full_name || pid;
-    setDismissedTaxiSuggestions(prev => {
-      const next = new Set(prev);
-      next.add(pid);
-      try {
-        const leagueId = currentLeague?.id || currentLeague?.league_id || '';
-        localStorage.setItem('wr_dismissed_taxi_' + leagueId, JSON.stringify([...next]));
-      } catch {}
-      return next;
-    });
-    window.wrLogAction?.('\uD83D\uDEAB', 'Dismissed taxi suggestion for ' + playerName, 'roster', { players: [{ name: playerName, pid: pid }], actionType: 'dismiss-taxi' });
-  }, [currentLeague]);
-
-  // Manual "mark to stash on taxi" \u2014 the alternative to toggleCutTag above:
-  // same shared window._playerTags store, 'taxi' value instead of 'cut', so
-  // marking one clears the other if it was set. Confirming a suggested taxi
-  // move dismisses its TAXI? flag the same way toggleCutTag resolves DROP?.
-  const toggleTaxiTag = React.useCallback((pid) => {
-    const playerName = window.App?.playersData?.[pid]?.full_name || pid;
-    const lid = currentLeague?.id || currentLeague?.league_id || '';
-    const wasTaxiTag = window._playerTags?.[pid] === 'taxi';
-    try {
-      const tags = { ...(window._playerTags || {}) };
-      if (wasTaxiTag) delete tags[pid]; else tags[pid] = 'taxi';
-      window._playerTags = tags;
-      if (window.OD?.savePlayerTags) window.OD.savePlayerTags(lid, tags);
-    } catch (e) {}
-    if (!wasTaxiTag && taxiCandidatePids.has(pid) && !dismissedTaxiSuggestions.has(pid)) dismissTaxiSuggestion(pid);
-    try { setTimeRecomputeTs(Date.now()); } catch (e) {}
-    window.wrLogAction?.(wasTaxiTag ? '\u21A9\uFE0F' : '\uD83C\uDFF7\uFE0F', (wasTaxiTag ? 'Unmarked taxi stash for ' : 'Marked to stash on taxi: ') + playerName, 'roster', { players: [{ name: playerName, pid: pid }], actionType: wasTaxiTag ? 'unmark-taxi' : 'mark-taxi' });
-  }, [currentLeague, taxiCandidatePids, dismissedTaxiSuggestions, dismissTaxiSuggestion, setTimeRecomputeTs]);
-
-  // How many candidates have been resolved (cut OR stashed) \u2014 progress
-  // readout for the Review Roster banner.
-  const cutMarkedCount = React.useMemo(() => {
-    return rows.filter(r => window._playerTags?.[r.pid] === 'cut' || window._playerTags?.[r.pid] === 'taxi').length;
-  }, [rows, timeRecomputeTs]);
-
   const GROUP_MODES = [
     { key: 'position', label: 'Position' },
     { key: 'slot', label: 'Slot' },
@@ -852,7 +711,7 @@ function MyTeamTab({
   ].filter(g => isPro || g.key !== 'action'); // Action lens = verdict grouping → Pro
   const activeGroupModeLabel = GROUP_MODES.find(g => g.key === rosterGroupMode)?.label || 'Position';
   const slotOrder = { starter: 0, bench: 1, taxi: 2, ir: 3 };
-  const recGroup = (rec) => /sell/i.test(rec || '') ? 'Sell'
+  const recGroup = (rec) => /sell|drop/i.test(rec || '') ? 'Sell'
     : /buy|build|core/i.test(rec || '') ? 'Build'
     : /stash/i.test(rec || '') ? 'Stash'
     : 'Hold';
@@ -898,19 +757,20 @@ function MyTeamTab({
     cut: { bg: 'rgba(231,76,60,0.13)', col: 'var(--bad)', lbl: 'Cut' },
     untouchable: { bg: 'rgba(46,204,113,0.13)', col: 'var(--good)', lbl: 'Core' },
     watch: { bg: 'rgba(52,152,219,0.13)', col: 'var(--k-3498db, #3498db)', lbl: 'Watch' },
-    taxi: { bg: 'rgba(52,152,219,0.13)', col: 'var(--k-3498db, #3498db)', lbl: 'Stash' },
   };
+  // Spelled out + color-coded (owner ruling 2026-09-01) — same light-fill
+  // idiom as rosterTagMeta above so both chip families read as one system.
   const slotTagMeta = {
-    starter: { bg: 'var(--ov-3, rgba(255,255,255,0.045))', col: 'var(--white)', lbl: 'STR' },
-    bench: { bg: 'var(--ov-2, rgba(255,255,255,0.03))', col: 'var(--silver)', lbl: 'BN' },
-    taxi: { bg: 'var(--ov-2, rgba(255,255,255,0.03))', col: 'var(--silver)', lbl: 'TAX' },
-    ir: { bg: 'var(--ov-2, rgba(255,255,255,0.03))', col: 'var(--silver)', lbl: 'IR' },
+    starter: { bg: 'rgba(46,204,113,0.13)', col: 'var(--good)', lbl: 'Starter' },
+    bench: { bg: 'rgba(240,165,0,0.13)', col: 'var(--warn)', lbl: 'Bench' },
+    taxi: { bg: 'rgba(52,152,219,0.13)', col: 'var(--k-3498db, #3498db)', lbl: 'Taxi' },
+    ir: { bg: 'rgba(231,76,60,0.13)', col: 'var(--bad)', lbl: 'IR' },
   };
   const inlineTag = (cfg, key) => cfg ? (
     <span key={key} style={{
       fontSize: 'var(--text-micro, 0.6875rem)',
       padding: '2px 5px',
-      borderRadius: 'var(--card-radius-xs, 5px)',
+      borderRadius: '4px',
       fontWeight: 600,
       background: cfg.bg,
       color: cfg.col,
@@ -932,10 +792,29 @@ function MyTeamTab({
     background: active ? 'var(--gold)' : 'var(--ov-3, rgba(255,255,255,0.045))',
     color: active ? 'var(--black)' : 'var(--silver)',
     border: '1px solid ' + (active ? 'var(--gold)' : 'var(--ov-5, rgba(255,255,255,0.09))'),
-    borderRadius: 'var(--card-radius-sm, 8px)',
+    borderRadius: '6px',
     cursor: 'pointer',
     whiteSpace: 'nowrap',
   });
+  // Amber jump to the GM's Office → My Strategy — deliberately off-palette
+  // (warn amber, not gold/silver) so the door to the plan behind the
+  // TGT/SELL accents stands out from the view controls around it.
+  const gmStrategyBtnStyle = {
+    padding: '6px 11px',
+    minHeight: '44px',
+    fontSize: '0.72rem',
+    fontWeight: 800,
+    fontFamily: 'var(--font-body)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+    background: 'rgba(240,165,0,0.14)',
+    color: 'var(--warn)',
+    border: '1px solid rgba(240,165,0,0.4)',
+    borderRadius: 'var(--card-radius-sm, 8px)',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+  };
+  const openGmStrategy = () => { try { window.wrNavigateTab?.('strategy'); } catch (_) {} };
   // Compact dropdown used across the roster toolbar (mirrors free-agency's rkSelectStyle).
   const rosterSelectStyle = (active) => ({
     padding: '4px 6px',
@@ -948,7 +827,7 @@ function MyTeamTab({
     background: active ? 'var(--acc-fill2, rgba(212,175,55,0.13))' : 'var(--ov-3, rgba(255,255,255,0.045))',
     color: active ? 'var(--gold)' : 'var(--silver)',
     border: '1px solid ' + (active ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--ov-6, rgba(255,255,255,0.1))'),
-    borderRadius: 'var(--card-radius-sm, 8px)',
+    borderRadius: '6px',
     cursor: 'pointer',
     outline: 'none',
     minWidth: 0,
@@ -977,13 +856,33 @@ function MyTeamTab({
   // shared window._playerTags store so existing consumers (untouchable
   // protection, trade finder, the desktop row tag badge) keep working; the
   // verdict-values live in verdictOverrides. Per-league localStorage.
-  const VERDICT_OPTIONS = ['Untouchable', 'Hold', 'Watch', 'Stash', 'Trade Block', 'Sell', 'Drop'];
+  const VERDICT_OPTIONS = ['Untouchable', 'Hold', 'Watch', 'Stash', 'Trade Block', 'Sell', 'Cut', 'Drop'];
   const _LABEL_TO_TAG = { 'Trade Block': 'trade', 'Cut': 'cut', 'Untouchable': 'untouchable', 'Watch': 'watch' };
   const _TAG_TO_LABEL = { trade: 'Trade Block', cut: 'Cut', untouchable: 'Untouchable', watch: 'Watch' };
   const [verdictOverrides, setVerdictOverrides] = React.useState(() => {
     try { const lid = currentLeague?.id || currentLeague?.league_id || ''; return JSON.parse(localStorage.getItem('dhq_roster_verdict_v1:' + lid) || '{}') || {}; } catch (e) { return {}; }
   });
   const [tagEditPid, setTagEditPid] = React.useState(null); // which player's verdict picker is open
+  // Cloud sync (owner report 2026-08-13): the app's WKWebView and Safari
+  // keep separate localStorage, so a verdict set on one surface was
+  // invisible on the other. Pull the cloud copy on league open (newest
+  // wins) and push on every change via OD.saveLeagueDoc.
+  React.useEffect(() => {
+    const lid = currentLeague?.id || currentLeague?.league_id || '';
+    if (!lid || !window.OD?.loadLeagueDoc) return;
+    let alive = true;
+    window.OD.loadLeagueDoc(lid, 'verdicts').then((doc) => {
+      if (!alive || !doc) return;
+      const cloud = { ...doc };
+      delete cloud.ts;
+      setVerdictOverrides((prev) => {
+        const merged = { ...prev, ...cloud };
+        try { localStorage.setItem('dhq_roster_verdict_v1:' + lid, JSON.stringify(merged)); } catch (e) {}
+        return merged;
+      });
+    }).catch((e) => window.wrLog?.('verdicts.cloudLoad', e));
+    return () => { alive = false; };
+  }, [currentLeague?.id || currentLeague?.league_id]);
   const setPlayerVerdict = (pid, v) => {
     // Sync the shared player-tag store for the 4 tag-values (else clear it).
     try {
@@ -998,6 +897,7 @@ function MyTeamTab({
       const next = { ...prev };
       if (v) next[pid] = v; else delete next[pid];
       try { const lid = currentLeague?.id || currentLeague?.league_id || ''; localStorage.setItem('dhq_roster_verdict_v1:' + lid, JSON.stringify(next)); } catch (e) {}
+      try { const lid = currentLeague?.id || currentLeague?.league_id || ''; window.OD?.saveLeagueDoc?.(lid, 'verdicts', next); } catch (e) {}
       return next;
     });
     try { setTimeRecomputeTs(Date.now()); } catch (e) {}
@@ -1017,21 +917,19 @@ function MyTeamTab({
     const manual = _manualCall(r);
     return !(manual && !/drop|cut/i.test(manual));
   };
-  // Same idea for taxi suggestions: marking the player 'taxi' auto-dismisses
-  // (toggleTaxiTag), so the only other resolution to check for here is the
-  // user overriding the suggestion by marking the player 'cut' instead.
-  const _isActiveTaxiSuggestion = (r) => {
-    if (!isPro || !taxiCandidatePids.has(r.pid) || dismissedTaxiSuggestions.has(r.pid)) return false;
-    return window._playerTags?.[r.pid] !== 'cut';
-  };
-  // GM's Desk — the top 3 unresolved cut/taxi calls, strategy-ranked (most
-  // urgent first), for the memo-style panel below. Same active/unresolved
-  // definition as the chips and Review Roster strip so a mark or dismiss
-  // anywhere resolves it everywhere.
-  const gmDeskCalls = !isPro ? [] : [
-    ...rows.filter(_isActiveDrop).map(r => ({ r, verdict: 'CUT' })),
-    ...rows.filter(_isActiveTaxiSuggestion).map(r => ({ r, verdict: 'STASH' })),
-  ].sort((a, b) => _adjustedDhq(a.r) - _adjustedDhq(b.r)).slice(0, 3);
+
+  // One voice (owner rule 2026-08-31): when the app itself flags a player as
+  // a drop candidate, its Move verdict says Drop too — the app never shows
+  // its own 'Hold' beside its own red DROP? chip. A manual YOU verdict is
+  // different: the owner's call stands and the chip remains, the app politely
+  // asking a question. Dismissing the chip restores the engine verdict.
+  rows.forEach(r => {
+    if (_isActiveDrop(r) && !_manualCall(r) && !/^drop/i.test(r.rec || '')) {
+      r.rec = 'Drop';
+      r.recAction = 'DROP';
+      r.recDropReason = dropCandidateReasons.get(r.pid) || 'Drop candidate';
+    }
+  });
   // Call → accent color, shared by chip + badge + picker + desktop action col.
   const _recColor = (rec) => {
     const s = String(rec || '');
@@ -1096,6 +994,26 @@ function MyTeamTab({
     const rank = allAtPos.findIndex(x => x.pid === r.pid) + 1;
     return rank > 0 ? rank : null;
   };
+  const dynastyTierLabel = r => (typeof window.App?.isElitePlayer === 'function' ? window.App.isElitePlayer(r.pid) : r.dhq >= 7000) ? 'elite asset'
+    : r.dhq >= 4000 ? 'starter-grade asset'
+    : r.dhq >= 2000 ? 'depth asset'
+    : 'stash-level asset';
+  const buildDynastyRead = r => {
+    const rank = getLeaguePositionRank(r);
+    // Unscored players get a neutral opener — no tier verdict fabricated from a missing score.
+    const valueLine = r.dhq > 0
+      ? r.dhq.toLocaleString() + ' ' + valueShortLabel + (rank ? ' and ' + r.pos + rank + ' in this league' : '') + ' makes him a ' + dynastyTierLabel(r) + '.'
+      : 'No ' + valueShortLabel + ' score yet — judge on role and production.';
+    const productionLine = r.effectivePPG ? r.effectivePPG + ' PPG across ' + (r.effectiveGP || 0) + ((r.effectiveGP || 0) === 1 ? ' game' : ' games') : 'No stable recent production sample';
+    const ageLine = r.age ? 'Age ' + r.age + ' is ' + (r.peakPhase === 'PRE' ? 'before the prime window' : r.peakPhase === 'PRIME' ? 'inside the prime window' : r.peakPhase === 'VET' ? 'in the veteran value band' : 'past the normal value window') : 'Age window unknown';
+    const trendLine = r.trend >= 15 ? 'production is rising' : r.trend <= -15 ? 'production is sliding' : 'production is steady';
+    // Free: the "roster call is X" clause is a verdict — the raw restatement
+    // (value, tier-from-value, production, age window, trend) stays.
+    const recClause = isPro
+      ? ', so the current roster call is ' + String(r.rec || 'Hold').toLowerCase() + ' while ' + trendLine
+      : ', and ' + trendLine;
+    return valueLine + ' ' + productionLine + '; ' + ageLine + recClause + '.';
+  };
 
   // renderCell — renders each data cell with FM-style coloring
   function renderCell(colKey, r) {
@@ -1108,18 +1026,18 @@ function MyTeamTab({
         const p = projFor(r.pid);
         if (!p) return <div key={colKey} style={{...base}}><span style={{ color: 'var(--silver)', opacity: 0.45 }}>{'—'}</span></div>;
         if (!p.available) return <div key={colKey} style={{...base}}><span style={{ color: 'var(--warn)', opacity: 0.85, fontSize: '0.6rem', fontWeight: 700, letterSpacing: '0.03em' }}>{p.injuryStatus || 'OUT'}</span></div>;
-        const obj = weeklyLineup?.objective || 'median';
-        const pts = p.points[obj] || 0;
+        // Proj = the straight weekly projection (median) — the number the owner
+        // sees in Sleeper. NOT the GM-mode floor/ceiling (win-now optimizes for
+        // floor, which read low here); those bands stay inside start/sit only.
+        const pts = (p.points && (p.points.median != null ? p.points.median : p.points.mean)) || 0;
         const isStart = !!(weeklyLineup && weeklyLineup.starterSet.has(String(r.pid)));
         const g = p.matchupGrade;
-        const gcol = g === 'A' ? 'var(--good)' : g === 'B' ? 'var(--gold)' : g === 'D' ? 'var(--warn)' : g === 'F' ? 'var(--bad)' : 'var(--silver)';
         // Free: raw projected pts keep rendering; START/SIT (optimizer output)
-        // + matchup grade (interpretive read) are the Pro line. Dynasty (E2):
-        // only the START/SIT verdict is suppressed — Pro keeps the matchup
-        // grade, and saved views keep the raw pts.
+        // is the Pro line. The bare matchup-grade letter is not surfaced in the
+        // column (it read as a stray "c"); it stays in the hover tooltip only.
         return <div key={colKey} style={{...base, flexDirection: 'column', gap: '0px'}} title={'Projected ' + pts.toFixed(1) + ' pts' + (isPro ? ' · matchup ' + g : '') + (p.opponent && p.opponent.abbr ? ' vs ' + p.opponent.abbr : '')}>
           <span style={{ color: 'var(--white)', fontWeight: 600, fontSize: '0.76rem', fontFamily: 'var(--font-body)' }}>{pts > 0 ? pts.toFixed(1) : '—'}</span>
-          {isPro && <span style={{ fontSize: '0.54rem', fontWeight: 700, letterSpacing: '0.03em', color: wkVerdict ? (isStart ? 'var(--good)' : 'var(--silver)') : gcol }}>{wkVerdict ? (isStart ? 'START' : 'SIT') : ''}<span style={{ color: gcol, marginLeft: wkVerdict ? '3px' : '0px' }}>{g}</span></span>}
+          {isPro && wkVerdict && <span style={{ fontSize: '0.54rem', fontWeight: 700, letterSpacing: '0.03em', color: isStart ? 'var(--good)' : 'var(--silver)' }}>{isStart ? 'START' : 'SIT'}</span>}
         </div>;
       }
       case 'hi': { const fs = window.App?.WeeklyProj?.formStats?.(r.pid, 'season'); return <div key={colKey} style={{...base}}><span style={{ color: fs ? 'var(--good, #2ecc71)' : 'var(--silver)', opacity: fs ? 1 : 0.45, fontWeight: 550 }}>{fs ? fs.high.toFixed(1) : '—'}</span></div>; }
@@ -1133,7 +1051,7 @@ function MyTeamTab({
         const showRos = rosPts != null;
         const disp = showRos ? (rosPts > 0 ? Math.round(rosPts).toLocaleString() : '\u2014') : (r.dhq > 0 ? r.dhq.toLocaleString() : '\u2014');
         const title = showRos ? ('\u2248 ' + Math.round(rosPts) + ' projected pts rest-of-season') : '';
-        return <div key={colKey} style={{...base, background: dhqBg(r.dhq)}} title={title}><span style={{ color: dhqCol(r.dhq, r.pid, r.pos), fontWeight: 600, fontFamily: 'var(--font-body)', fontSize: '0.78rem' }}>{disp}</span></div>;
+        return <div key={colKey} style={{...base, background: dhqBg(r.dhq)}} title={title}><span style={{ color: dhqCol(r.dhq), fontWeight: 600, fontFamily: 'var(--font-body)', fontSize: '0.78rem' }}>{disp}</span></div>;
       }
       case 'ppg': {
         // Rolling PPG override — swap in last-N-games PPG when user toggled the window.
@@ -1174,13 +1092,22 @@ function MyTeamTab({
       case 'action': {
         const ann = getPlayerAnnotation(r.pid);
         const gmNudgeTitle = r.gmSellNudge ? 'Nudged to Sell by GM Strategy (position/age trips a sell rule)' : '';
+        // Retired / no-longer-active players (Sleeper active:false) can't help
+        // you — the move is simply to cut them.
+        const isRetired = r.p && r.p.active === false;
+        if (isRetired) {
+          return <div key={colKey} style={{...base, flexDirection:'column', gap:'2px', alignItems:'center'}} title="Player is no longer active in the NFL — cut to free the roster spot">
+            <span style={{ fontSize:'var(--text-micro, 0.6875rem)', fontWeight:800, textTransform:'uppercase', letterSpacing:'0.04em', color:'var(--bad)' }}>Cut</span>
+          </div>;
+        }
         const _ar = _effRec(r);
         const _amanual = !!(verdictOverrides[r.pid] || (window._playerTags && window._playerTags[r.pid]));
-        return <div key={colKey} style={{...base, flexDirection:'column', gap:'2px', alignItems:'center'}} title={_amanual ? 'Your call — set in the player card' : (gmNudgeTitle || ann?.text || '')}>
+        return <div key={colKey} style={{...base, flexDirection:'column', gap:'2px', alignItems:'center'}} title={_amanual ? 'Your call — set in the player card' : (r.recDropReason || gmNudgeTitle || ann?.text || '')}>
           <span style={{ fontSize:'var(--text-micro, 0.6875rem)',fontWeight:600,textTransform:'uppercase',letterSpacing:'0.03em',color: _recColor(_ar) }}>{_ar}</span>
           {_amanual ? <span style={{ fontSize: '0.56rem', fontWeight: 800, color: 'var(--gold)', letterSpacing: '0.05em', opacity: 0.85, lineHeight: 1 }}>YOU</span> : (r.gmSellNudge && <span style={{ fontSize: '0.56rem', fontWeight: 800, color: 'var(--warn)', letterSpacing: '0.05em', opacity: 0.85, lineHeight: 1 }}>GM</span>)}
         </div>;
       }
+      case 'pts': { const stv = statsData[r.pid] || {}; const tot = stv.gp > 0 ? calcRawPts(stv) : 0; return <div key={colKey} style={{...base}}><span style={{ color: 'var(--silver)', fontWeight: 550 }}>{tot > 0 ? tot.toFixed(1) : '\u2014'}</span></div>; }
       case 'gp': return <div key={colKey} style={{...base}}><span style={{ color: 'var(--silver)', fontSize: '0.74rem' }}>{r.effectiveGP > 0 ? r.effectiveGP : '\u2014'}{r.curGP === 0 && r.prevGP > 0 ? '*' : ''}</span></div>;
       case 'durability': { const gpForDur = r.durabilityGP || 0; return <div key={colKey} style={{...base}} title={'Avg GP: ' + gpForDur + '/17'}><div style={{ width:'24px',height:'4px',borderRadius:'2px',background:'var(--ov-4, rgba(255,255,255,0.06))',overflow:'hidden' }}><div style={{ width:Math.min(100,(gpForDur/17)*100)+'%',height:'100%',background:'var(--silver)',opacity:0.7,borderRadius:'2px' }}></div></div></div>; }
       case 'yrsExp': return <div key={colKey} style={{...base}}><span style={{ color: 'var(--silver)' }}>{r.p.years_exp ?? '\u2014'}</span></div>;
@@ -1200,20 +1127,32 @@ function MyTeamTab({
         return <div key={colKey} style={{...base}}><span style={{ color: 'var(--silver)', fontSize: '0.72rem' }}>{h ? Math.floor(h/12)+"'"+h%12+'"' : '\u2014'}</span></div>;
       }
       case 'weight': return <div key={colKey} style={{...base}}><span style={{ color: 'var(--silver)', fontSize: '0.72rem' }}>{r.p.weight || '\u2014'}</span></div>;
-      case 'depthChart': return <div key={colKey} style={{...base}}><span style={{ color: r.p.depth_chart_order != null ? 'var(--silver)' : 'var(--ov-8, rgba(255,255,255,0.3))', fontSize: '0.72rem' }}>{r.p.depth_chart_order != null ? r.pos + (r.p.depth_chart_order + 1) : (r.section === 'ir' ? 'IR' : (!r.p.team || r.p.team === 'FA') ? 'FA' : 'N/A')}</span></div>;
-      case 'slot': return <div key={colKey} style={{...base}}><span style={{ fontSize:'0.76rem',color:'var(--silver)',opacity:0.65,textTransform:'uppercase' }}>{r.section==='starter'?'STR':r.section==='ir'?'IR':r.section==='taxi'?'TAX':'BN'}</span></div>;
+      case 'depthChart': return <div key={colKey} style={{...base}}><span style={{ color: r.p.depth_chart_order != null ? 'var(--silver)' : 'var(--ov-8, rgba(255,255,255,0.3))', fontSize: '0.72rem' }}>{r.p.depth_chart_order != null ? r.pos + r.p.depth_chart_order : (r.section === 'ir' ? 'IR' : (!r.p.team || r.p.team === 'FA') ? 'FA' : 'N/A')}</span></div>;
+      case 'slot': { const sm = slotTagMeta[r.section] || slotTagMeta.bench; return <div key={colKey} style={{...base}}><span style={{ fontSize:'0.76rem',color:sm.col,opacity:0.85,textTransform:'uppercase' }}>{_slotLabel(r)}</span></div>; }
       case 'acquired': {
         const acq = getAcquisitionInfo(r.pid, myRoster?.roster_id);
         const col = 'var(--silver)';
-        return <div key={colKey} style={{...base, minWidth: 0, overflow: 'hidden'}}><span
-          style={{ fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 600, color: col, padding: '1px 5px', borderRadius: '3px', border: `1px solid ${col}40`, background: `${col}10`, display: 'inline-block', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'bottom' }}
-          title={acq.method + (acq.cost ? ' · ' + acq.cost : '')}
-        >{acq.method}{acq.cost ? ' · ' + acq.cost : ''}</span></div>;
+        const methods = ['Drafted', 'Traded', 'Waiver', 'FA', 'Original'];
+        return <div key={colKey} style={{...base}}><span
+          style={{ fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 600, color: col, padding: '1px 5px', borderRadius: '3px', border: `1px solid ${col}40`, background: `${col}10`, cursor: 'pointer' }}
+          title="Click to change acquisition method"
+          onClick={e => {
+            e.stopPropagation();
+            const curIdx = methods.indexOf(acq.method);
+            const next = methods[(curIdx + 1) % methods.length];
+            try {
+              const overrides = JSON.parse(localStorage.getItem('wr_acquired_overrides') || '{}');
+              overrides[r.pid] = { method: next, date: acq.date || '\u2014', cost: '' };
+              localStorage.setItem('wr_acquired_overrides', JSON.stringify(overrides));
+              forceAcquisitionRerender(n => n + 1);
+            } catch {}
+          }}
+        >{acq.method}{acq.cost ? ' ' + acq.cost : ''}</span></div>;
       }
       case 'acquiredDate': {
         const acq = getAcquisitionInfo(r.pid, myRoster?.roster_id);
         const show = acq.date && acq.date !== '\u2014' ? acq.date : '';
-        return <div key={colKey} style={{...base, minWidth: 0, overflow: 'hidden'}} title={show || undefined}><span style={{ fontSize: '0.7rem', color: 'var(--silver)', opacity: 0.8, display: 'inline-block', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{show || '\u2014'}</span></div>;
+        return <div key={colKey} style={{...base}}><span style={{ fontSize: '0.7rem', color: 'var(--silver)', opacity: 0.8 }}>{show || '\u2014'}</span></div>;
       }
       case 'sos': {
         const sosMod = window.App?.SOS;
@@ -1222,10 +1161,9 @@ function MyTeamTab({
         if (!team || team === 'FA') return <div key={colKey} style={{...base}}><span style={{ color: 'var(--ov-7, rgba(255,255,255,0.2))' }}>{'\u2014'}</span></div>;
         const sos = sosMod.getPlayerSOS(r.pid, r.pos, team);
         if (!sos) return <div key={colKey} style={{...base}}><span style={{ color: 'var(--ov-7, rgba(255,255,255,0.2))' }}>{'\u2014'}</span></div>;
-        // Color already carries the tier (Easy/Favorable/Neutral/Tough/Hard);
-        // the label was redundant text on every row \u2014 full context stays in the title.
-        return <div key={colKey} style={{...base, minWidth: 0, overflow: 'hidden'}} title={sos.label + ' schedule (' + sos.avgRank + '/32)'}>
-          <span style={{ color: sos.color || 'var(--silver)', fontWeight: 600, fontSize: '0.8rem', fontFamily: 'var(--font-body)' }}>{sos.avgRank}</span>
+        return <div key={colKey} style={{...base, flexDirection: 'column', gap: '1px'}} title={sos.label + ' schedule (' + sos.avgRank + '/32)'}>
+          <span style={{ color: 'var(--silver)', fontWeight: 600, fontSize: '0.82rem', fontFamily: 'var(--font-body)' }}>{sos.avgRank}</span>
+          <span style={{ color: 'var(--silver)', fontSize: 'var(--text-micro, 0.6875rem)', opacity: 0.7 }}>{sos.label.toUpperCase()}</span>
         </div>;
       }
       case 'rkSlot': case 'rkTeam': case 'rkRank': case 'rkTier': case 'rkProfile': {
@@ -1273,21 +1211,22 @@ function MyTeamTab({
                     const tier =(typeof window.App?.isElitePlayer === 'function' ? window.App.isElitePlayer(r.pid) : r.dhq >= 7000) ? 'Elite' : r.dhq >= 4000 ? 'Starter' : r.dhq >= 2000 ? 'Depth' : 'Stash';
                     const field = (currentLeague.rosters || []).flatMap(ros => (ros.players || []).filter(pid2 => normPos(playersData[pid2]?.position) === r.pos)).map(pid2 => ({ pid: pid2, dhq: window.App?.LI?.playerScores?.[pid2] || 0 })).filter(x => x.dhq > 0).sort((a, b) => b.dhq - a.dhq);
                     const rank = field.findIndex(x => x.pid === r.pid) + 1;
+                    const narrow = rosterViewportWidth <= 834;
                     const posLbl = window.App?.posLabel?.(r.pos) || (r.pos === 'DEF' ? 'D/ST' : r.pos);
                     const chip = (bg, col) => ({ fontSize: '0.72rem', fontWeight: 700, padding: '3px 10px', borderRadius: '999px', background: bg, color: col, whiteSpace: 'nowrap' });
                     const primeEnd = r.peakYrsLeft > 0 && r.age ? r.age + r.peakYrsLeft : null;
                     const sigWindow = (r.peakPhase || '—') + (primeEnd ? ' · thru ' + primeEnd : r.valueYrsLeft > 0 ? ' · ~' + r.valueYrsLeft + 'yr value' : '');
                     const sigRisk = r.injury ? r.injury : (r.durabilityGP && r.durabilityGP < 13 ? '~' + r.durabilityGP + ' GP/yr' : 'no current flags');
-                    const sigFloor = r.isStarter ? 'weekly starter' : (r.p.depth_chart_order != null && r.p.depth_chart_order <= 1 ? 'rotation role' : 'bench / depth');
+                    const sigFloor = r.isStarter ? 'weekly starter' : (r.p.depth_chart_order != null && r.p.depth_chart_order <= 2 ? 'rotation role' : 'bench / depth');
                     const sigCeiling = r.trend >= 10 ? 'trending up' : (tier === 'Elite' || tier === 'Starter') ? 'proven ' + tier.toLowerCase() : r.peakPhase === 'PRE' ? 'developing' : 'limited upside';
-                    const sigCell = (label, val) =>(<div style={{ fontSize: '0.74rem' }}><span style={{ color: 'var(--silver)', opacity: 0.65 }}>{label}{' '}</span><span style={{ color: 'var(--white)', fontWeight: 600 }}>{val}</span></div>);
+                    const sigRow = (label, val, last) =>(<div style={{ display: 'flex', gap: '9px', alignItems: 'baseline', padding: '6px 0', borderBottom: last ? 'none' : '1px solid rgba(255,255,255,0.05)', fontSize: '0.74rem' }}><span style={{ minWidth: '52px', color: 'var(--silver)', opacity: 0.65 }}>{label}</span><span style={{ color: 'var(--white)', fontWeight: 600 }}>{val}</span></div>);
                     return (<React.Fragment>
                       {/* Identity + roster call */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '10px', flexWrap: 'wrap' }}>
                         <div style={{ flexShrink: 0, position: 'relative' }}>
-                          <img src={'https://sleepercdn.com/content/nfl/players/' + r.pid + '.jpg'} alt="" onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }} style={{ width: '58px', height: '58px', borderRadius: 'var(--card-radius-sm, 8px)', objectFit: 'cover', objectPosition: 'top', border: '1px solid var(--acc-line1, rgba(212,175,55,0.24))' }} />
-                          <div style={{ display: 'none', width: '58px', height: '58px', borderRadius: 'var(--card-radius-sm, 8px)', background: 'var(--charcoal)', alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem', fontWeight: 700, color: 'var(--silver)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))' }}>{(r.p.first_name || '?')[0]}{(r.p.last_name || '?')[0]}</div>
-                          <div style={{ position: 'absolute', bottom: '-4px', left: '50%', transform: 'translateX(-50%)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, padding: '1px 7px', borderRadius: 'var(--card-radius-sm, 8px)', background: (posColors[r.pos] || 'var(--k-666666, #666666)') + '22', color: posColors[r.pos] || 'var(--silver)', whiteSpace: 'nowrap' }}>{posLbl}</div>
+                          <img src={'https://sleepercdn.com/content/nfl/players/' + r.pid + '.jpg'} alt="" onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }} style={{ width: '58px', height: '58px', borderRadius: '8px', objectFit: 'cover', objectPosition: 'top', border: '1px solid var(--acc-line1, rgba(212,175,55,0.24))' }} />
+                          <div style={{ display: 'none', width: '58px', height: '58px', borderRadius: '8px', background: 'var(--charcoal)', alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem', fontWeight: 700, color: 'var(--silver)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))' }}>{(r.p.first_name || '?')[0]}{(r.p.last_name || '?')[0]}</div>
+                          <div style={{ position: 'absolute', bottom: '-4px', left: '50%', transform: 'translateX(-50%)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, padding: '1px 7px', borderRadius: '7px', background: (posColors[r.pos] || 'var(--k-666666, #666666)') + '22', color: posColors[r.pos] || 'var(--silver)', whiteSpace: 'nowrap' }}>{posLbl}</div>
                         </div>
                         <div style={{ flex: 1, minWidth: '150px' }}>
                           <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.35rem', color: 'var(--white)', letterSpacing: '0.01em', lineHeight: 1.04 }}>{r.p.full_name || getPlayerName(r.pid)}</div>
@@ -1295,17 +1234,7 @@ function MyTeamTab({
                             {posLbl} {'·'} {r.p.team || 'FA'} {'·'} Age {r.age || '?'} {'·'} {r.p.years_exp || 0}yr exp
                             {formatHeight(r.p.height) ? ' · ' + formatHeight(r.p.height) : ''}
                             {r.p.college ? ' · ' + r.p.college : ''}
-                            {(() => {
-                                // Prefer the rookie prospect record (RookieFields/CSV) over the
-                                // static vendored WR_DRAFT_PROFILE dataset — same precedence the
-                                // rkSlot column already uses. WR_DRAFT_PROFILE is a third-party
-                                // snapshot that can lag a real pick (was showing round-2 rookies
-                                // as "UDFA" here while the prospect CSV had the correct capital).
-                                const rf = window.App?.RookieFields?.fields?.(prospectForRow(r)) || null;
-                                const d = draftCapFor(r.pid);
-                                const slot = rf?.draftSlot || (d ? (d.round > 0 ? 'R' + d.round + ' #' + d.overall + (d.year ? ' ’' + String(d.year).slice(2) : '') + (d.team ? ' ' + d.team : '') : 'UDFA' + (d.year ? ' ’' + String(d.year).slice(2) : '')) : null);
-                                return slot ? ' · ' + slot : '';
-                            })()}
+                            {(() => { const d = draftCapFor(r.pid); if (!d) return ''; return ' · ' + (d.round > 0 ? 'R' + d.round + ' #' + d.overall + (d.year ? ' ’' + String(d.year).slice(2) : '') + (d.team ? ' ' + d.team : '') : 'UDFA' + (d.year ? ' ’' + String(d.year).slice(2) : '')); })()}
                             {r.injury ? <span style={{ color: 'var(--bad)', fontWeight: 700 }}> {'·'} {r.injury}</span> : null}
                           </div>
                         </div>
@@ -1339,32 +1268,48 @@ function MyTeamTab({
                         {VERDICT_OPTIONS.map(t => {
                           const active = cur === t.toLowerCase();
                           const c = _recColor(t);
-                          return <button key={t} onClick={e => { e.stopPropagation(); setPlayerVerdict(r.pid, t); setTagEditPid(null); }} style={{ minHeight: '38px', padding: '6px 12px', fontFamily: 'var(--font-mono)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', borderRadius: 'var(--card-radius-sm, 8px)', cursor: 'pointer', color: active ? c : 'var(--silver)', background: active ? wrAlpha(c, '22') : 'transparent', border: '1px solid ' + (active ? wrAlpha(c, '99') : 'var(--ov-6, rgba(255,255,255,0.12))') }}>{t}</button>;
+                          return <button key={t} onClick={e => { e.stopPropagation(); setPlayerVerdict(r.pid, t); setTagEditPid(null); }} style={{ minHeight: '38px', padding: '6px 12px', fontFamily: 'var(--font-mono)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', borderRadius: '6px', cursor: 'pointer', color: active ? c : 'var(--silver)', background: active ? wrAlpha(c, '22') : 'transparent', border: '1px solid ' + (active ? wrAlpha(c, '99') : 'var(--ov-6, rgba(255,255,255,0.12))') }}>{t}</button>;
                         })}
-                        {hasOverride && <button onClick={e => { e.stopPropagation(); setPlayerVerdict(r.pid, null); setTagEditPid(null); }} title="Revert to the DHQ engine call" style={{ minHeight: '38px', padding: '6px 12px', fontFamily: 'var(--font-mono)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', borderRadius: 'var(--card-radius-sm, 8px)', cursor: 'pointer', color: 'var(--text-muted)', background: 'transparent', border: '1px dashed var(--ov-6, rgba(255,255,255,0.14))' }}>{'↺'} Auto</button>}
+                        {hasOverride && <button onClick={e => { e.stopPropagation(); setPlayerVerdict(r.pid, null); setTagEditPid(null); }} title="Revert to the DHQ engine call" style={{ minHeight: '38px', padding: '6px 12px', fontFamily: 'var(--font-mono)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', borderRadius: '6px', cursor: 'pointer', color: 'var(--text-muted)', background: 'transparent', border: '1px dashed var(--ov-6, rgba(255,255,255,0.14))' }}>{'↺'} Auto</button>}
                       </div>
                         );
                       })()}
 
                       {/* Signals chip strip */}
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
-                        <span style={chip(dhqBg(r.dhq), dhqCol(r.dhq, r.pid, r.pos))}>{tier} {'·'} {r.dhq.toLocaleString()} DHQ</span>
+                        <span style={chip(dhqBg(r.dhq), dhqCol(r.dhq))}>{tier} {'·'} {r.dhq.toLocaleString()} DHQ</span>
                         {rank > 0 ? <span style={chip('var(--ov-3, rgba(255,255,255,0.05))', 'var(--gold)')}>{r.pos}{rank}</span> : null}
                         <span style={chip(r.peakPhase === 'PRE' ? 'rgba(46,204,113,0.1)' : r.peakPhase === 'POST' ? 'rgba(231,76,60,0.1)' : 'var(--acc-fill2, rgba(212,175,55,0.08))', r.peakPhase === 'PRE' ? 'var(--good)' : r.peakPhase === 'POST' ? 'var(--bad)' : 'var(--gold)')}>{r.peakPhase}{r.peakYrsLeft > 0 ? ' · ~' + r.peakYrsLeft + 'yr' : ''}</span>
                         {r.effectivePPG ? <span style={chip('var(--ov-3, rgba(255,255,255,0.05))', 'var(--white)')}>{r.effectivePPG} PPG</span> : null}
                         {r.injury ? <span style={chip('rgba(231,76,60,0.13)', 'var(--bad)')}>{r.injury}</span> : null}
                       </div>
 
-                      {/* Signals — 2x2 grid, compact now that this box runs full width */}
-                      <div style={{ background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.065))', borderRadius: 'var(--card-radius-sm, 8px)', padding: '9px 11px', marginBottom: '10px' }}>
-                        <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.58, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 800, marginBottom: '6px' }}>Signals</div>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '6px 16px' }}>
-                          {sigCell('Ceiling', sigCeiling)}
-                          {sigCell('Floor', sigFloor)}
-                          {sigCell('Risk', sigRisk)}
-                          {sigCell('Window', sigWindow)}
+                      {/* Dynasty read | signals */}
+                      <div style={{ display: 'grid', gridTemplateColumns: narrow ? '1fr' : 'minmax(0, 1.5fr) minmax(0, 1fr)', gap: '10px', marginBottom: '10px', alignItems: 'start' }}>
+                        <div style={{ background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.065))', borderRadius: '8px', padding: '9px 11px', minWidth: 0 }}>
+                          <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 800, marginBottom: '5px' }}>Dynasty Read</div>
+                          {window.WR?.ClampedRead
+                            ? React.createElement(window.WR.ClampedRead, { text: aiReads[r.pid] || buildDynastyRead(r), maxHeight: 104, style: { fontSize: '0.8rem', color: 'var(--k-d8d8de, #d8d8de)', lineHeight: 1.45 } })
+                            : <div style={{ fontSize: '0.8rem', color: 'var(--k-d8d8de, #d8d8de)', lineHeight: 1.45 }}>{aiReads[r.pid] || buildDynastyRead(r)}</div>}
+                        </div>
+                        <div style={{ background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.065))', borderRadius: '8px', padding: '9px 11px', minWidth: 0 }}>
+                          <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.58, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 800, marginBottom: '4px' }}>Signals</div>
+                          {sigRow('Ceiling', sigCeiling)}
+                          {sigRow('Floor', sigFloor)}
+                          {sigRow('Risk', sigRisk)}
+                          {sigRow('Window', sigWindow, true)}
                         </div>
                       </div>
+
+                      {/* Player Brief — the full layered summary (The Wire + DHQ
+                          Read, stamped top-right). Alex's text already shows in the
+                          Dynasty Read box above, so it isn't passed here (no dupe). */}
+                      {window.WR?.PlayerBriefBlock ? React.createElement(window.WR.PlayerBriefBlock, {
+                        pid: r.pid,
+                        playersData,
+                        ppg: parseFloat(r.effectivePPG) || undefined,
+                        style: { marginBottom: '10px' },
+                      }) : null}
                     </React.Fragment>);
                   })()}
 
@@ -1377,12 +1322,12 @@ function MyTeamTab({
 	                    const [pLo, pHi] = curve.peak;
 	                    const declineHi = curve.decline[1];
 	                    const ages = Array.from({length: 17}, (_, i) => i + 20);
-                    return <div style={{ background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.06))', borderRadius: 'var(--card-radius-sm, 8px)', padding: '10px 12px', marginBottom: '12px' }}>
+                    return <div style={{ background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.06))', borderRadius: '8px', padding: '10px 12px', marginBottom: '12px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                         <div style={{ fontFamily: 'var(--font-body)', fontSize: '0.7rem', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Age Curve</div>
 	                        <div style={{ fontSize: '0.72rem', color: 'var(--silver)' }}>{'Currently age ' + (r.age || '?') + ' \u00B7 ' + r.peakPhase + ' \u00B7 ' + (r.peakYrsLeft > 0 ? '~' + r.peakYrsLeft + ' peak yr left' : r.valueYrsLeft > 0 ? '~' + r.valueYrsLeft + ' value yr left' : 'Past value window')}</div>
                       </div>
-                      <div style={{ display: 'flex', height: '22px', borderRadius: 'var(--card-radius-xs, 5px)', overflow: 'hidden', gap: '1px' }}>
+                      <div style={{ display: 'flex', height: '22px', borderRadius: '5px', overflow: 'hidden', gap: '1px' }}>
                         {ages.map(a => {
 	                          const col = a < pLo - 3 ? 'rgba(96,165,250,0.3)' : a < pLo ? 'rgba(46,204,113,0.45)' : (a >= pLo && a <= pHi) ? 'rgba(46,204,113,0.75)' : a <= declineHi ? 'var(--acc-line3, rgba(212,175,55,0.45))' : 'rgba(231,76,60,0.35)';
                           const isMe = a === (r.age || 0);
@@ -1400,21 +1345,11 @@ function MyTeamTab({
 
                   {/* Action buttons */}
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    {window.WR_ALEX_CHAT !== false && <button onClick={e => { e.stopPropagation(); const playerName = r.p.full_name || getPlayerName(r.pid); setReconPanelOpen(true); sendReconMessage("I'd like help with " + playerName + ". Here are my options:\n1. Who are the best trade partners for " + playerName + "?\n2. What's the long-term projection for " + playerName + "?\n3. Should I hold or sell " + playerName + " right now?"); }} style={{ padding: '7px 16px', minHeight: '44px', fontSize: '0.78rem', fontFamily: 'var(--font-body)', background: 'rgba(124,107,248,0.15)', color: 'var(--purple)', border: '1px solid rgba(124,107,248,0.3)', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}>ASK ALEX</button>}
                     {/* Phase 2: News button removed per user feedback (2026-04-18) */}
                     {/* TRADE BLOCK/CUT/UNTOUCHABLE/WATCH buttons removed 2026-07-09 \u2014
                         rolled into the verdict picker (tap the call badge above). */}
-                    <button onClick={e => {
-                      e.stopPropagation();
-                      try {
-                        // Trade Center listens on window._wrTradeFinderTarget \u2014 same
-                        // deep-link contract as the player-card modal's Trade Finder.
-                        window._wrTradeFinderTarget = { pid: r.pid, mode: 'my', ts: Date.now() };
-                        if (typeof window.wrNavigateTab === 'function') window.wrNavigateTab('trades');
-                        else if (typeof setActiveTab === 'function') setActiveTab('trades');
-                        window.dispatchEvent(new CustomEvent('wr:open-trade-finder', { detail: { pid: r.pid } }));
-                      } catch (err) { console.warn('[MyTeam] Trade Finder deep-link unavailable', err); }
-                    }} style={{ padding: '7px 16px', minHeight: '44px', fontSize: '0.78rem', fontFamily: 'var(--font-body)', background: 'var(--acc-fill2, rgba(212,175,55,0.12))', color: 'var(--gold)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: 'var(--card-radius-sm, 8px)', cursor: 'pointer', fontWeight: 600 }}>Trade Finder</button>
-                    <button onClick={e => { e.stopPropagation(); setExpandedPid(null); }} style={{ padding: '7px 16px', minHeight: '44px', fontSize: '0.78rem', fontFamily: 'var(--font-body)', background: 'transparent', color: 'var(--silver)', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: 'var(--card-radius-sm, 8px)', cursor: 'pointer' }}>COLLAPSE</button>
+                    <button onClick={e => { e.stopPropagation(); setExpandedPid(null); }} style={{ padding: '7px 16px', minHeight: '44px', fontSize: '0.78rem', fontFamily: 'var(--font-body)', background: 'transparent', color: 'var(--silver)', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: '6px', cursor: 'pointer' }}>COLLAPSE</button>
                   </div>
   </React.Fragment>);
 
@@ -1455,10 +1390,12 @@ function MyTeamTab({
       }
       case 'proj': {
         const p = projFor(r.pid);
-        if (!p) return { label: 'Wk', value: '—', tone: 'mute' };
-        if (!p.available) return { label: 'Wk', value: p.injuryStatus || 'OUT', tone: 'warn' };
-        const pts = p.points[weeklyLineup?.objective || 'median'] || 0;
-        return { label: 'Wk', value: pts > 0 ? pts.toFixed(1) : '—' };
+        if (!p) return { label: 'Proj', value: '—', tone: 'mute' };
+        if (!p.available) return { label: 'Proj', value: p.injuryStatus || 'OUT', tone: 'warn' };
+        // Same #232 rule as the desktop cell: straight weekly median (the number
+        // the owner sees in Sleeper), never the GM-mode floor/ceiling objective.
+        const pts = (p.points && (p.points.median != null ? p.points.median : p.points.mean)) || 0;
+        return { label: 'Proj', value: pts > 0 ? pts.toFixed(1) : '—' };
       }
       case 'ppg': {
         // Same rolling-window override + seasonal fallback as renderCell;
@@ -1476,6 +1413,7 @@ function MyTeamTab({
       case 'prev': return { label: short, value: r.prevPPG > 0 ? r.prevPPG : '—', tone: 'mute' };
       case 'trend': return { label: short, value: r.trend > 0 ? '+' + r.trend + '%' : r.trend < 0 ? r.trend + '%' : '—', tone: 'mute' };
       case 'age': return { label: short, value: r.age || '—', tone: 'mute' };
+      case 'pts': { const stv = statsData[r.pid] || {}; const tot = stv.gp > 0 ? calcRawPts(stv) : 0; return { label: short, value: tot > 0 ? tot.toFixed(1) : '—', tone: 'mute' }; }
       case 'gp': return { label: short, value: r.effectiveGP > 0 ? r.effectiveGP : '—', tone: 'mute' };
       case 'hi': { const fs = window.App?.WeeklyProj?.formStats?.(r.pid, 'season'); return { label: short, value: fs ? fs.high.toFixed(1) : '—', tone: fs ? 'good' : 'mute' }; }
       case 'lo': { const fs = window.App?.WeeklyProj?.formStats?.(r.pid, 'season'); return { label: short, value: fs ? fs.low.toFixed(1) : '—', tone: 'mute' }; }
@@ -1505,7 +1443,6 @@ function MyTeamTab({
     const bits = [r.p.team || 'FA'];
     if (r.age) bits.push(String(r.age));
     bits.push(r.injury ? r.injury : _slotLabel(r));
-    if (isPro && resolvedLeagueSkin?.type === 'keeper' && keeperTopPids.has(r.pid)) bits.push('KEEP');
     return bits.join(' · ');
   };
   // Verdict chip (Move-column analog) — Pro-only, exactly mirroring the
@@ -1518,7 +1455,7 @@ function MyTeamTab({
     const isManual = !!verdictOverrides[r.pid];
     const col = _recColor(rec);
     return (
-      <span title={isManual ? 'Your call (tap the badge in the player card to change)' : (r.gmSellNudge ? 'Nudged to Sell by GM Strategy (position/age trips a sell rule)' : '')} style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 600, padding: '2px 6px', borderRadius: 'var(--card-radius-xs, 5px)', border: '1px solid ' + wrAlpha(col, '80'), color: col, letterSpacing: '0.02em', whiteSpace: 'nowrap', textTransform: 'uppercase' }}>
+      <span title={isManual ? 'Your call (tap the badge in the player card to change)' : (r.gmSellNudge ? 'Nudged to Sell by GM Strategy (position/age trips a sell rule)' : '')} style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 600, padding: '2px 6px', borderRadius: '4px', border: '1px solid ' + wrAlpha(col, '80'), color: col, letterSpacing: '0.02em', whiteSpace: 'nowrap', textTransform: 'uppercase' }}>
         {rec}{isManual ? ' *' : (r.gmSellNudge ? ' ·GM' : '')}
       </span>
     );
@@ -1531,24 +1468,20 @@ function MyTeamTab({
     // already computes (dropCandidatePids / dismissedDrops are Pro
     // verdicts — free renders raw roster facts, zero gate drift).
     const dropAlerts = isPro ? rows.filter(_isActiveDrop) : [];
-    const taxiAlerts = isPro ? rows.filter(_isActiveTaxiSuggestion) : [];
     const modeLabel = String((gm && gm.modeLabel) || 'Compete');
     // Override-aware (owner ask): a user-kept player drops out of the hero
     // count too, matching the review list below (both read _effRec).
     const sellCalls = isPro ? rows.filter(r => /sell/i.test(_effRec(r) || '')).length : 0;
-    const totalRosterAlerts = dropAlerts.length + taxiAlerts.length;
     const heroHeadline = (isPro
-      ? (totalRosterAlerts > 0 ? totalRosterAlerts + ' ROSTER ALERT' + (totalRosterAlerts === 1 ? '' : 'S') : 'ROSTER CLEAN')
+      ? (dropAlerts.length > 0 ? dropAlerts.length + ' DROP ALERT' + (dropAlerts.length === 1 ? '' : 'S') : 'ROSTER CLEAN')
       : allPlayers.length + ' PLAYERS') + ' · WINDOW: ' + modeLabel.toUpperCase();
     const heroFacts = isPro
       ? ((dropAlerts.length > 0
           ? dropAlerts.slice(0, 2).map(r => r.p.last_name || getPlayerName(r.pid)).join(' + ') + ' flagged dead weight'
-          : taxiAlerts.length > 0
-            ? taxiAlerts.slice(0, 2).map(r => r.p.last_name || getPlayerName(r.pid)).join(' + ') + ' better stashed than cut'
-            : 'no drop flags on the bench')
+          : 'no drop flags on the bench')
         + (sellCalls > 0 ? ' · ' + sellCalls + ' sell call' + (sellCalls === 1 ? '' : 's') : ''))
       : ((myRoster.starters || []).length + ' starters · strategy ' + modeLabel);
-    const heroGhost = totalRosterAlerts > 0 ? 'Review' : null;
+    const heroGhost = dropAlerts.length > 0 ? 'Review' : null;
     _phoneHeroEl = React.createElement(window.WR.HeroCard, {
       kicker: 'Roster call',
       headline: heroHeadline,
@@ -1616,6 +1549,9 @@ function MyTeamTab({
             {GROUP_MODES.map(opt => <option key={opt.key} value={opt.key}>{opt.label}</option>)}
           </select>
         ) },
+        { label: 'GM plan', node: (
+          <button onClick={() => { setFiltersOpen(false); openGmStrategy(); }} style={{ ...gmStrategyBtnStyle, width: '100%' }} title="Open the GM's Office — My Strategy (targets, sell positions, untouchables)">GM Strategy</button>
+        ) },
         { label: 'Saved views', node: (
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.62, whiteSpace: 'nowrap' }}>{filtered.length} / {allPlayers.length} shown</span>
@@ -1648,7 +1584,6 @@ function MyTeamTab({
     const _reviewRow = (r) => React.createElement(window.WR.AssetRow, {
       key: 'rv-' + r.pid,
       pos: r.pos,
-      pid: r.pid,
       name: getPlayerName(r.pid),
       tag: _phoneTagFor(r),
       slots: [{ label: 'DHQ', value: r.dhq > 0 ? r.dhq.toLocaleString() : '—', strong: true }],
@@ -1664,7 +1599,6 @@ function MyTeamTab({
     const _sellRows = isPro ? rows.filter(r => /sell/i.test(_effRec(r) || '') && !_dropPidSet.has(r.pid)) : [];
     const _reviewGroups = [];
     if (dropAlerts.length) _reviewGroups.push({ label: 'Drop alerts', sub: String(dropAlerts.length), rows: dropAlerts.map(_reviewRow) });
-    if (taxiAlerts.length) _reviewGroups.push({ label: 'Taxi suggestions', sub: String(taxiAlerts.length), rows: taxiAlerts.map(_reviewRow) });
     if (_sellRows.length) _reviewGroups.push({ label: 'Sell calls', sub: String(_sellRows.length), rows: _sellRows.map(_reviewRow) });
     if (_reviewGroups.length) {
       _reviewSheetEl = React.createElement(window.WR.Sheet, { open: reviewOpen, onClose: () => setReviewOpen(false), title: 'Review roster' },
@@ -1695,15 +1629,13 @@ function MyTeamTab({
       g.rows.push(React.createElement(window.WR.AssetRow, {
         key: r.pid,
         pos: r.pos,
-        pid: r.pid,
         name: getPlayerName(r.pid),
         tag: _phoneTagFor(r),
         slots: _phoneSlotKeys.map(k => _phoneSlotFor(k, r)),
-        // Verdict chip dropped from the collapsed row (owner ask, 2026-08-30)
-        // to give the name/slots more width — Hold/Stash/Sell is still the
-        // first thing you see when you tap into the player card.
-        // No colored row accent either — the outline read as ambiguous
-        // (owner call). Rows keep AssetRow's default faint border.
+        verdict: _phoneVerdictChip(r),
+        // No colored row accent — the verdict chip + injury tag already carry
+        // the status; the outline read as ambiguous (owner call). Rows keep
+        // AssetRow's default faint border.
         expanded: isExpanded,
         onClick: () => setExpandedPid(prev => prev === r.pid ? null : r.pid),
         title: 'Open roster player detail',
@@ -1712,7 +1644,7 @@ function MyTeamTab({
       }, isExpanded ? renderExpandBody(r) : null));
     });
     if (!groups.length) {
-      return <div style={{ padding: '14px', border: '1px dashed var(--ov-6, rgba(255,255,255,0.12))', borderRadius: 'var(--card-radius, 10px)', color: 'var(--silver)', opacity: 0.7, fontSize: '0.78rem' }}>No roster rows match this view.</div>;
+      return <div style={{ padding: '14px', border: '1px dashed var(--ov-6, rgba(255,255,255,0.12))', borderRadius: '9px', color: 'var(--silver)', opacity: 0.7, fontSize: '0.78rem' }}>No roster rows match this view.</div>;
     }
     return React.createElement(window.WR.CardList, {
       groups: groups.map(g => ({ label: g.label, sub: g.rows.length + (g.rows.length === 1 ? ' player' : ' players'), rows: g.rows })),
@@ -1729,7 +1661,10 @@ function MyTeamTab({
             <div style={{ fontFamily: 'Rajdhani, sans-serif', color: 'var(--white)', fontSize: 'var(--text-title, 1.125rem)', fontWeight: 700 }}>Roster Board</div>
             <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: isDeepData ? 'var(--gold)' : 'var(--silver)', opacity: isDeepData ? 0.86 : 0.58 }}>{activePresetMeta.label} · {visibleCols.length} fields</div>
             <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: rosterGroupMode === 'none' ? 'var(--silver)' : 'var(--gold)', opacity: 0.62 }}>Grouped by {activeGroupModeLabel}</div>
-            <div style={{ marginLeft: 'auto', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.52, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            <div style={{ marginLeft: 'auto', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.04em' }}>
+              {filtered.length} player{filtered.length === 1 ? '' : 's'}
+            </div>
+            <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.52, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
               Sort: {ROSTER_COLUMNS[rosterSort.key]?.shortLabel || (rosterSort.key === 'name' ? 'Player' : rosterSort.key)}
             </div>
           </div>
@@ -1783,18 +1718,24 @@ function MyTeamTab({
           const actionClass = _recLower === 'sell now' || _recLower === 'sell' ? 'wr-row-sell' :
             _recLower === 'sell high' ? 'wr-row-sell-high' :
             _recLower === 'hold core' || _recLower === 'build around' ? 'wr-row-core' : '';
-          const untouchables = (window._wrGmStrategy?.untouchable || []);
-          const isUntouchable = untouchables.includes(r.pid);
+          // One untouchable read (2026-09-02): r.gmIsUntouchable comes from
+          // GmMode.effects (string-normalized, store-precedence aware) — the
+          // old raw window._wrGmStrategy read could disagree with the row 🛡.
+          const isUntouchable = !!r.gmIsUntouchable;
 
           return (
             <React.Fragment key={r.pid}>
               {startsPositionGroup && (
-	                <div style={{ display: 'flex', height: isCompactRows ? '24px' : '28px', borderTop: idx === 0 ? 'none' : '2px solid var(--acc-line3, rgba(212,175,55,0.45))', borderBottom: '1px solid var(--ov-5, rgba(255,255,255,0.08))', background: 'var(--ov-2, rgba(255,255,255,0.045))' }}>
-	                  <div style={{ width: playerColWidth + 'px', flexShrink: 0, position: 'sticky', left: 0, zIndex: 4, display: 'flex', alignItems: 'center', gap: '8px', padding: '0 10px', background: 'var(--k-1b1d23, #1b1d23)', borderLeft: '3px solid var(--gold)', borderRight: '1px solid var(--ov-5, rgba(255,255,255,0.08))', boxShadow: '8px 0 14px rgba(0,0,0,0.16)' }}>
+	                <div style={{ display: 'flex', height: isCompactRows ? '24px' : '28px', borderTop: idx === 0 ? 'none' : '2px solid var(--acc-line3, rgba(212,175,55,0.45))', borderBottom: '1px solid var(--ov-5, rgba(255,255,255,0.08))', background: 'var(--ov-6, rgba(255,255,255,0.10))' }}>
+	                  <div style={{ width: playerColWidth + 'px', flexShrink: 0, position: 'sticky', left: 0, zIndex: 4, display: 'flex', alignItems: 'center', gap: '8px', padding: '0 10px', background: 'var(--k-262932, #262932)', borderLeft: '3px solid var(--gold)', borderRight: '1px solid var(--ov-5, rgba(255,255,255,0.08))', boxShadow: '8px 0 14px rgba(0,0,0,0.16)' }}>
 	                    <span style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '0.84rem', color: getRowGroupColor(r), fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{getRowGroupLabel(r)}</span>
 	                    <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.5, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{filteredPosCounts[rowGroupKey]} players</span>
                   </div>
-                  <div style={{ flex: 1, borderLeft: '1px solid var(--ov-2, rgba(255,255,255,0.025))' }} />
+                  <div style={{ flex: 1, borderLeft: '1px solid var(--ov-2, rgba(255,255,255,0.025))', display: 'flex', alignItems: 'center', overflow: 'hidden' }}>
+                    {rosterGroupMode === 'position' && gmTargetPositions.has(String(rowGroupKey)) && (
+                      <span title="GM Strategy: your plan marks this position as an acquisition target" style={{ position: 'sticky', left: (playerColWidth + 10) + 'px', marginLeft: '10px', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, padding: '2px 7px', borderRadius: 'var(--card-radius-xs, 5px)', background: 'var(--acc-fill2, rgba(212,175,55,0.12))', color: 'var(--gold)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.28))', letterSpacing: '0.05em', textTransform: 'uppercase', whiteSpace: 'nowrap', lineHeight: 1 }}>{_phone ? 'GM TGT Group' : 'GM Target Acquisition Group Strategy'}</span>
+                    )}
+                  </div>
                 </div>
               )}
               {/* Normal row */}
@@ -1813,43 +1754,12 @@ function MyTeamTab({
                           phone Deep Data keeps the name cell to photo · name · team. */}
                       {!_phone && <React.Fragment>
                       {inlineTag(slotTagMeta[r.section], 'slot-' + r.pid)}
-                      {window._playerTags?.[r.pid] && window._playerTags[r.pid] !== 'cut' && window._playerTags[r.pid] !== 'taxi' && inlineTag(rosterTagMeta[window._playerTags[r.pid]], 'tag-' + r.pid)}
+                      {inlineTag(rosterTagMeta[window._playerTags?.[r.pid]], 'tag-' + r.pid)}
                       {/* GM Strategy: untouchable lock — distinct from manual tag system */}
                       {r.gmIsUntouchable && <span title="GM Strategy: untouchable — locked from sell flags" style={{ fontSize: 'var(--text-micro, 0.6875rem)', flexShrink: 0, lineHeight: 1, color: 'var(--good)' }}>{'🛡'}</span>}
-                      {/* GM Strategy: acquisition-focus / sell-candidate position accents */}
-                      {!r.gmIsUntouchable && r.gmIsTarget && <span title="GM Strategy: acquisition-focus position" style={{ fontSize: 'var(--text-micro, 0.6875rem)', padding: '1px 4px', borderRadius: '3px', fontWeight: 800, background: 'var(--acc-fill2, rgba(212,175,55,0.12))', color: 'var(--gold)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.28))', flexShrink: 0, lineHeight: 1, letterSpacing: '0.03em' }}>TGT</span>}
+                      {/* GM Strategy: sell-candidate position accent (acquisition-target moved to the position group header) */}
                       {!r.gmIsUntouchable && r.gmIsSellPos && <span title="GM Strategy: sell-candidate position" style={{ fontSize: 'var(--text-micro, 0.6875rem)', padding: '1px 4px', borderRadius: '3px', fontWeight: 800, background: 'rgba(240,165,0,0.13)', color: 'var(--warn)', border: '1px solid rgba(240,165,0,0.32)', flexShrink: 0, lineHeight: 1, letterSpacing: '0.03em' }}>SELL</span>}
-                      {isPro && dropCandidatePids.has(r.pid) && !dismissedDrops.has(r.pid) && <span className="wr-drop-chip" onClick={e => { e.stopPropagation(); dismissDrop(r.pid); }} title="Drop candidate (click to dismiss)" style={{ fontSize: 'var(--text-micro, 0.6875rem)', padding: '1px 4px', borderRadius: '3px', fontWeight: 700, background: 'rgba(231,76,60,0.2)', color: 'var(--bad)', border: '1px solid rgba(231,76,60,0.4)', flexShrink: 0, cursor: 'pointer', lineHeight: 1 }}>DROP?</span>}
-                      {isPro && taxiCandidatePids.has(r.pid) && !dismissedTaxiSuggestions.has(r.pid) && <span className="wr-drop-chip" onClick={e => { e.stopPropagation(); dismissTaxiSuggestion(r.pid); }} title={(cutdownInfo ? 'Better stashed than cut — room on taxi under the pending cutdown' : 'Better stashed than cut — real taxi room open on your roster') + ' (click to dismiss)'} style={{ fontSize: 'var(--text-micro, 0.6875rem)', padding: '1px 4px', borderRadius: '3px', fontWeight: 700, background: 'rgba(52,152,219,0.2)', color: 'var(--k-3498db, #3498db)', border: '1px solid rgba(52,152,219,0.4)', flexShrink: 0, cursor: 'pointer', lineHeight: 1 }}>TAXI?</span>}
-                      {isPro && (() => {
-                        const isCut = window._playerTags?.[r.pid] === 'cut';
-                        return (
-                          <span className="wr-cut-toggle-chip" onClick={e => { e.stopPropagation(); toggleCutTag(r.pid); }}
-                            title={isCut ? 'Marked to cut — click to unmark' : 'Mark this player to cut'}
-                            style={{ fontSize: 'var(--text-micro, 0.6875rem)', padding: '1px 4px', borderRadius: '3px', fontWeight: 700,
-                              background: isCut ? 'rgba(231,76,60,0.2)' : 'transparent',
-                              color: isCut ? 'var(--bad)' : 'var(--silver)',
-                              border: '1px solid ' + (isCut ? 'rgba(231,76,60,0.4)' : 'var(--ov-6, rgba(255,255,255,0.14))'),
-                              opacity: isCut ? 1 : 0.5, flexShrink: 0, cursor: 'pointer', lineHeight: 1 }}>
-                            {isCut ? 'CUTTING ✕' : '+ CUT'}
-                          </span>
-                        );
-                      })()}
-                      {isPro && !r.isStarter && !r.isTaxi && !r.isIR && (r.p?.years_exp ?? 99) <= taxiEligibleCap && (() => {
-                        const isStashed = window._playerTags?.[r.pid] === 'taxi';
-                        return (
-                          <span className="wr-cut-toggle-chip" onClick={e => { e.stopPropagation(); toggleTaxiTag(r.pid); }}
-                            title={isStashed ? 'Marked to stash on taxi — click to unmark' : 'Mark this player to move to taxi'}
-                            style={{ fontSize: 'var(--text-micro, 0.6875rem)', padding: '1px 4px', borderRadius: '3px', fontWeight: 700,
-                              background: isStashed ? 'rgba(52,152,219,0.2)' : 'transparent',
-                              color: isStashed ? 'var(--k-3498db, #3498db)' : 'var(--silver)',
-                              border: '1px solid ' + (isStashed ? 'rgba(52,152,219,0.4)' : 'var(--ov-6, rgba(255,255,255,0.14))'),
-                              opacity: isStashed ? 1 : 0.5, flexShrink: 0, cursor: 'pointer', lineHeight: 1 }}>
-                            {isStashed ? 'STASHING ✕' : '+ STASH'}
-                          </span>
-                        );
-                      })()}
-                      {isPro && resolvedLeagueSkin?.type === 'keeper' && keeperTopPids.has(r.pid) && <span title={'Recommended keep — top ' + maxKeepers + ' by keeper value'} style={{ fontSize: 'var(--text-micro, 0.6875rem)', padding: '1px 4px', borderRadius: '3px', fontWeight: 800, background: 'var(--acc-fill2, rgba(212,175,55,0.12))', color: 'var(--gold)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.28))', flexShrink: 0, lineHeight: 1, letterSpacing: '0.03em' }}>KEEP</span>}
+                      {isPro && dropCandidatePids.has(r.pid) && !dismissedDrops.has(r.pid) && <span className="wr-drop-chip" onClick={e => { e.stopPropagation(); dismissDrop(r.pid); }} title={(dropCandidateReasons.get(r.pid) || 'Drop candidate') + ' (click to dismiss)'} style={{ fontSize: 'var(--text-micro, 0.6875rem)', padding: '1px 4px', borderRadius: '3px', fontWeight: 700, background: 'rgba(231,76,60,0.2)', color: 'var(--bad)', border: '1px solid rgba(231,76,60,0.4)', flexShrink: 0, cursor: 'pointer', lineHeight: 1 }}>DROP?</span>}
                       </React.Fragment>}
                     </div>
                     <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.62, marginTop: '1px' }}>{r.p.team || 'FA'}{!_phone && r.injury ? ' \u00B7 '+r.injury : ''}</div>
@@ -1881,6 +1791,37 @@ function MyTeamTab({
         </div>
       </div>
   );
+
+  // ── Draft-pick inventory (owned future picks) — shown under the roster ──
+  // Mirrors the draft-capital widget: a pick is yours unless you traded it
+  // away; picks acquired via trade show who they came from.
+  const myDraftPicks = (() => {
+    try {
+      const myRid = myRoster?.roster_id;
+      if (myRid == null || !currentLeague) return [];
+      const season = parseInt(currentLeague.season || new Date().getFullYear(), 10);
+      const draftRounds = currentLeague.settings?.draft_rounds || 5;
+      const tradedPicks = window.S?.tradedPicks || [];
+      const rosters = currentLeague.rosters || [];
+      const users = window.S?.leagueUsers || currentLeague.users || [];
+      const out = [];
+      for (let yr = season; yr <= season + 2; yr++) {
+        for (let rd = 1; rd <= draftRounds; rd++) {
+          const tradedAway = tradedPicks.find(p => parseInt(p.season, 10) === yr && p.round === rd && p.roster_id === myRid && p.owner_id !== myRid);
+          const acquired = tradedPicks.filter(p => parseInt(p.season, 10) === yr && p.round === rd && p.owner_id === myRid && p.roster_id !== myRid);
+          if (!tradedAway) out.push({ year: yr, round: rd, own: true, from: null });
+          acquired.forEach(a => {
+            const fromRoster = rosters.find(r => r.roster_id === a.roster_id);
+            const fromUser = fromRoster ? users.find(u => u.user_id === fromRoster.owner_id) : null;
+            out.push({ year: yr, round: rd, own: false, from: (fromUser?.display_name || ('Team ' + a.roster_id)) });
+          });
+        }
+      }
+      return out.sort((a, b) => a.year - b.year || a.round - b.round);
+    } catch (e) { return []; }
+  })();
+  const picksByYear = {};
+  myDraftPicks.forEach(p => { (picksByYear[p.year] = picksByYear[p.year] || []).push(p); });
 
   return (
     <div style={{ padding: _phone ? '12px var(--wr-phone-gutter, 12px) 8px' : 'var(--card-pad, 16px 18px)', display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
@@ -1943,6 +1884,8 @@ function MyTeamTab({
           {GROUP_MODES.map(opt => <option key={opt.key} value={opt.key}>{opt.label}</option>)}
         </select>
 
+        <button onClick={openGmStrategy} style={gmStrategyBtnStyle} title="Open the GM's Office — My Strategy (targets, sell positions, untouchables)">GM Strategy</button>
+
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
           <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.62, whiteSpace: 'nowrap' }}>{filtered.length} / {allPlayers.length} shown</span>
           {window.WR?.SavedViews?.SavedViewBar && React.createElement(window.WR.SavedViews.SavedViewBar, {
@@ -1968,7 +1911,7 @@ function MyTeamTab({
           the SAME showColPicker state into the WR.FilterSheet below (shared
           customizer treatment with Free Agency's colpick). */}
       {showColPicker && !_phone && (
-        <div style={{ background: 'linear-gradient(180deg, var(--surf-solid, rgba(22,22,29,0.98)), var(--surf-solid, rgba(10,10,14,0.98)))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.22))', borderRadius: 'var(--card-radius, 10px)', padding: '12px', marginBottom: '10px', boxShadow: '0 10px 28px rgba(0,0,0,0.24)' }}>
+        <div style={{ background: 'linear-gradient(180deg, var(--surf-solid, rgba(22,22,29,0.98)), var(--surf-solid, rgba(10,10,14,0.98)))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.22))', borderRadius: '10px', padding: '12px', marginBottom: '10px', boxShadow: '0 10px 28px rgba(0,0,0,0.24)' }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', marginBottom: '10px', flexWrap: 'wrap' }}>
             <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: 'var(--text-title, 1.125rem)', color: 'var(--white)', fontWeight: 700, letterSpacing: '0.04em' }}>Customize Columns</div>
             <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.58 }}>{visibleCols.length} of {Object.keys(ROSTER_COLUMNS).length} active</div>
@@ -1979,23 +1922,23 @@ function MyTeamTab({
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: rosterViewportWidth <= 820 ? '1fr' : 'minmax(280px, 0.9fr) minmax(360px, 1.4fr)', gap: '12px', alignItems: 'start' }}>
-            <div style={{ background: 'var(--ov-2, rgba(255,255,255,0.025))', border: '1px solid var(--ov-4, rgba(255,255,255,0.07))', borderRadius: 'var(--card-radius-sm, 8px)', padding: '10px', minWidth: 0 }}>
+            <div style={{ background: 'var(--ov-2, rgba(255,255,255,0.025))', border: '1px solid var(--ov-4, rgba(255,255,255,0.07))', borderRadius: '8px', padding: '10px', minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '8px' }}>
                 <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 800 }}>Active Order</div>
                 <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.54 }}>{activeColumnOrder.length} visible</div>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', paddingRight: '2px' }}>
                 {activeColumnOrder.length === 0 ? (
-                  <div style={{ padding: '12px', borderRadius: 'var(--card-radius-sm, 8px)', border: '1px dashed var(--ov-6, rgba(255,255,255,0.12))', color: 'var(--silver)', opacity: 0.62, fontSize: '0.74rem' }}>Only the player column is visible.</div>
+                  <div style={{ padding: '12px', borderRadius: '8px', border: '1px dashed var(--ov-6, rgba(255,255,255,0.12))', color: 'var(--silver)', opacity: 0.62, fontSize: '0.74rem' }}>Only the player column is visible.</div>
                 ) : activeColumnOrder.map((key, idx) => {
                   const col = ROSTER_COLUMNS[key];
                   return (
-                    <div key={key} style={{ display: 'grid', gridTemplateColumns: '22px minmax(0, 1fr) 26px 26px 26px', gap: '5px', alignItems: 'center', padding: '5px 6px', borderRadius: 'var(--card-radius-sm, 8px)', background: 'var(--acc-fill2, rgba(212,175,55,0.075))', border: '1px solid var(--acc-fill3, rgba(212,175,55,0.14))' }}>
+                    <div key={key} style={{ display: 'grid', gridTemplateColumns: '22px minmax(0, 1fr) 26px 26px 26px', gap: '5px', alignItems: 'center', padding: '5px 6px', borderRadius: '7px', background: 'var(--acc-fill2, rgba(212,175,55,0.075))', border: '1px solid var(--acc-fill3, rgba(212,175,55,0.14))' }}>
                       <span style={{ color: 'var(--silver)', opacity: 0.55, fontSize: 'var(--text-micro, 0.6875rem)', textAlign: 'right' }}>{idx + 1}</span>
                       <span title={col.label} style={{ color: 'var(--white)', fontSize: '0.74rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{col.shortLabel || col.label}</span>
-                      <button disabled={idx === 0} onClick={() => moveVisibleColumn(key, -1)} title="Move left" style={{ height: '24px', borderRadius: 'var(--card-radius-xs, 5px)', border: '1px solid var(--ov-5, rgba(255,255,255,0.09))', background: idx === 0 ? 'var(--ov-2, rgba(255,255,255,0.025))' : 'var(--ov-4, rgba(255,255,255,0.06))', color: idx === 0 ? 'var(--ov-7, rgba(255,255,255,0.24))' : 'var(--silver)', cursor: idx === 0 ? 'default' : 'pointer' }}>{'\u2039'}</button>
-                      <button disabled={idx === activeColumnOrder.length - 1} onClick={() => moveVisibleColumn(key, 1)} title="Move right" style={{ height: '24px', borderRadius: 'var(--card-radius-xs, 5px)', border: '1px solid var(--ov-5, rgba(255,255,255,0.09))', background: idx === activeColumnOrder.length - 1 ? 'var(--ov-2, rgba(255,255,255,0.025))' : 'var(--ov-4, rgba(255,255,255,0.06))', color: idx === activeColumnOrder.length - 1 ? 'var(--ov-7, rgba(255,255,255,0.24))' : 'var(--silver)', cursor: idx === activeColumnOrder.length - 1 ? 'default' : 'pointer' }}>{'\u203A'}</button>
-                      <button onClick={() => removeVisibleColumn(key)} title="Hide column" style={{ height: '24px', borderRadius: 'var(--card-radius-xs, 5px)', border: '1px solid rgba(231,76,60,0.22)', background: 'rgba(231,76,60,0.08)', color: 'var(--bad)', cursor: 'pointer' }}>{'\u00D7'}</button>
+                      <button disabled={idx === 0} onClick={() => moveVisibleColumn(key, -1)} title="Move left" style={{ height: '24px', borderRadius: '5px', border: '1px solid var(--ov-5, rgba(255,255,255,0.09))', background: idx === 0 ? 'var(--ov-2, rgba(255,255,255,0.025))' : 'var(--ov-4, rgba(255,255,255,0.06))', color: idx === 0 ? 'var(--ov-7, rgba(255,255,255,0.24))' : 'var(--silver)', cursor: idx === 0 ? 'default' : 'pointer' }}>{'\u2039'}</button>
+                      <button disabled={idx === activeColumnOrder.length - 1} onClick={() => moveVisibleColumn(key, 1)} title="Move right" style={{ height: '24px', borderRadius: '5px', border: '1px solid var(--ov-5, rgba(255,255,255,0.09))', background: idx === activeColumnOrder.length - 1 ? 'var(--ov-2, rgba(255,255,255,0.025))' : 'var(--ov-4, rgba(255,255,255,0.06))', color: idx === activeColumnOrder.length - 1 ? 'var(--ov-7, rgba(255,255,255,0.24))' : 'var(--silver)', cursor: idx === activeColumnOrder.length - 1 ? 'default' : 'pointer' }}>{'\u203A'}</button>
+                      <button onClick={() => removeVisibleColumn(key)} title="Hide column" style={{ height: '24px', borderRadius: '5px', border: '1px solid rgba(231,76,60,0.22)', background: 'rgba(231,76,60,0.08)', color: 'var(--bad)', cursor: 'pointer' }}>{'\u00D7'}</button>
                     </div>
                   );
                 })}
@@ -2013,13 +1956,13 @@ function MyTeamTab({
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '10px' }}>
               {columnGroups.map(({ group, columns }) => (
-                <div key={group} style={{ background: 'var(--ov-2, rgba(255,255,255,0.025))', border: '1px solid var(--ov-4, rgba(255,255,255,0.07))', borderRadius: 'var(--card-radius-sm, 8px)', padding: '8px' }}>
+                <div key={group} style={{ background: 'var(--ov-2, rgba(255,255,255,0.025))', border: '1px solid var(--ov-4, rgba(255,255,255,0.07))', borderRadius: '8px', padding: '8px' }}>
                   <div style={{ marginBottom: '6px', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 800 }}>{group}</div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     {columns.map(([key, col]) => {
                       const active = visibleCols.includes(key);
                       return (
-                        <label key={key} style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '5px 7px', borderRadius: 'var(--card-radius-sm, 8px)', cursor: 'pointer', fontSize: '0.74rem', background: active ? 'var(--acc-fill2, rgba(212,175,55,0.1))' : 'var(--ov-1, rgba(255,255,255,0.018))', color: active ? 'var(--gold)' : 'var(--silver)', border: '1px solid ' + (active ? 'var(--acc-fill3, rgba(212,175,55,0.18))' : 'var(--ov-3, rgba(255,255,255,0.04))') }}>
+                        <label key={key} style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '5px 7px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.74rem', background: active ? 'var(--acc-fill2, rgba(212,175,55,0.1))' : 'var(--ov-1, rgba(255,255,255,0.018))', color: active ? 'var(--gold)' : 'var(--silver)', border: '1px solid ' + (active ? 'var(--acc-fill3, rgba(212,175,55,0.18))' : 'var(--ov-3, rgba(255,255,255,0.04))') }}>
                           <input type="checkbox" checked={active} onChange={() => {
                             if (active) removeVisibleColumn(key);
                             else addVisibleColumn(key);
@@ -2051,16 +1994,16 @@ function MyTeamTab({
           { label: 'Active (' + activeColumnOrder.length + ')', node: (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
               {activeColumnOrder.length === 0 ? (
-                <div style={{ padding: '12px', borderRadius: 'var(--card-radius-sm, 8px)', border: '1px dashed var(--ov-6, rgba(255,255,255,0.12))', color: 'var(--silver)', opacity: 0.62, fontSize: '0.74rem' }}>Only the player column is visible.</div>
+                <div style={{ padding: '12px', borderRadius: '8px', border: '1px dashed var(--ov-6, rgba(255,255,255,0.12))', color: 'var(--silver)', opacity: 0.62, fontSize: '0.74rem' }}>Only the player column is visible.</div>
               ) : activeColumnOrder.map((key, idx) => {
                 const col = ROSTER_COLUMNS[key];
                 return (
-                  <div key={key} style={{ display: 'grid', gridTemplateColumns: '18px minmax(0, 1fr) 44px 44px 44px', gap: '3px', alignItems: 'center', minHeight: '44px', padding: '0 2px 0 8px', borderRadius: 'var(--card-radius-sm, 8px)', background: 'var(--acc-fill2, rgba(212,175,55,0.075))', border: '1px solid var(--acc-fill3, rgba(212,175,55,0.14))' }}>
+                  <div key={key} style={{ display: 'grid', gridTemplateColumns: '18px minmax(0, 1fr) 44px 44px 44px', gap: '3px', alignItems: 'center', minHeight: '44px', padding: '0 2px 0 8px', borderRadius: '7px', background: 'var(--acc-fill2, rgba(212,175,55,0.075))', border: '1px solid var(--acc-fill3, rgba(212,175,55,0.14))' }}>
                     <span style={{ color: 'var(--silver)', opacity: 0.55, fontSize: 'var(--text-micro, 0.6875rem)', textAlign: 'right' }}>{idx + 1}</span>
                     <span title={col.label} style={{ color: 'var(--white)', fontSize: '0.78rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{col.shortLabel || col.label}</span>
-                    <button disabled={idx === 0} onClick={() => moveVisibleColumn(key, -1)} title="Move up" style={{ minWidth: '44px', minHeight: '44px', borderRadius: 'var(--card-radius-xs, 5px)', border: '1px solid var(--ov-5, rgba(255,255,255,0.09))', background: idx === 0 ? 'var(--ov-2, rgba(255,255,255,0.025))' : 'var(--ov-4, rgba(255,255,255,0.06))', color: idx === 0 ? 'var(--ov-7, rgba(255,255,255,0.24))' : 'var(--silver)', cursor: idx === 0 ? 'default' : 'pointer' }}>{'▲'}</button>
-                    <button disabled={idx === activeColumnOrder.length - 1} onClick={() => moveVisibleColumn(key, 1)} title="Move down" style={{ minWidth: '44px', minHeight: '44px', borderRadius: 'var(--card-radius-xs, 5px)', border: '1px solid var(--ov-5, rgba(255,255,255,0.09))', background: idx === activeColumnOrder.length - 1 ? 'var(--ov-2, rgba(255,255,255,0.025))' : 'var(--ov-4, rgba(255,255,255,0.06))', color: idx === activeColumnOrder.length - 1 ? 'var(--ov-7, rgba(255,255,255,0.24))' : 'var(--silver)', cursor: idx === activeColumnOrder.length - 1 ? 'default' : 'pointer' }}>{'▼'}</button>
-                    <button onClick={() => removeVisibleColumn(key)} title="Hide column" style={{ minWidth: '44px', minHeight: '44px', borderRadius: 'var(--card-radius-xs, 5px)', border: '1px solid rgba(231,76,60,0.22)', background: 'rgba(231,76,60,0.08)', color: 'var(--bad)', cursor: 'pointer' }}>{'×'}</button>
+                    <button disabled={idx === 0} onClick={() => moveVisibleColumn(key, -1)} title="Move up" style={{ minWidth: '44px', minHeight: '44px', borderRadius: '5px', border: '1px solid var(--ov-5, rgba(255,255,255,0.09))', background: idx === 0 ? 'var(--ov-2, rgba(255,255,255,0.025))' : 'var(--ov-4, rgba(255,255,255,0.06))', color: idx === 0 ? 'var(--ov-7, rgba(255,255,255,0.24))' : 'var(--silver)', cursor: idx === 0 ? 'default' : 'pointer' }}>{'▲'}</button>
+                    <button disabled={idx === activeColumnOrder.length - 1} onClick={() => moveVisibleColumn(key, 1)} title="Move down" style={{ minWidth: '44px', minHeight: '44px', borderRadius: '5px', border: '1px solid var(--ov-5, rgba(255,255,255,0.09))', background: idx === activeColumnOrder.length - 1 ? 'var(--ov-2, rgba(255,255,255,0.025))' : 'var(--ov-4, rgba(255,255,255,0.06))', color: idx === activeColumnOrder.length - 1 ? 'var(--ov-7, rgba(255,255,255,0.24))' : 'var(--silver)', cursor: idx === activeColumnOrder.length - 1 ? 'default' : 'pointer' }}>{'▼'}</button>
+                    <button onClick={() => removeVisibleColumn(key)} title="Hide column" style={{ minWidth: '44px', minHeight: '44px', borderRadius: '5px', border: '1px solid rgba(231,76,60,0.22)', background: 'rgba(231,76,60,0.08)', color: 'var(--bad)', cursor: 'pointer' }}>{'×'}</button>
                   </div>
                 );
               })}
@@ -2079,7 +2022,7 @@ function MyTeamTab({
                     <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 800, marginBottom: '6px' }}>{group}</div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                       {inactive.map(([key, col]) => (
-                        <button key={key} onClick={() => addVisibleColumn(key)} title={'Add ' + col.label} style={{ minHeight: '44px', padding: '7px 12px', fontSize: '0.74rem', fontFamily: 'var(--font-body)', background: 'var(--ov-1, rgba(255,255,255,0.018))', color: 'var(--silver)', border: '1px solid var(--ov-5, rgba(255,255,255,0.09))', borderRadius: 'var(--card-radius-sm, 8px)', cursor: 'pointer', whiteSpace: 'nowrap' }}>+ {col.shortLabel || col.label}</button>
+                        <button key={key} onClick={() => addVisibleColumn(key)} title={'Add ' + col.label} style={{ minHeight: '44px', padding: '7px 12px', fontSize: '0.74rem', fontFamily: 'var(--font-body)', background: 'var(--ov-1, rgba(255,255,255,0.018))', color: 'var(--silver)', border: '1px solid var(--ov-5, rgba(255,255,255,0.09))', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}>+ {col.shortLabel || col.label}</button>
                       ))}
                     </div>
                   </div>
@@ -2097,121 +2040,6 @@ function MyTeamTab({
         ),
       })}
 
-      {/* GM's Desk — the standing cut/taxi advisory, framed as a decision memo
-          rather than another data row. Same dropCandidatePids/taxiCandidatePids
-          engine that drives the chips and Review Roster strip elsewhere on this
-          page, now strategy-ranked (_adjustedDhq) and given a one-line reason
-          in the active GM Strategy mode's own voice. Confirm/Keep write to the
-          same window._playerTags store as every other tag surface (player card,
-          Dashboard's Cut Candidates widget), so a call made here is made
-          everywhere. Pro-gated like the rest of the roster call engine. */}
-      {isPro && (
-        <section style={{ border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: 'var(--card-radius)', background: 'var(--surf-solid, rgba(20,20,26,0.72))', padding: 'var(--card-pad-sm)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-            <span style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: 'var(--text-title, 1.125rem)', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.04em' }}>GM's Desk</span>
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', padding: '2px 8px', borderRadius: '999px', color: gm?.badgeColor || 'var(--gold)', border: '1px solid ' + wrAlpha(gm?.badgeColor || 'var(--gold)', '55'), background: wrAlpha(gm?.badgeColor || 'var(--gold)', '14') }}>{(gm?.modeLabel || 'Compete') + ' Mode'}</span>
-          </div>
-          <div style={{ fontSize: '0.78rem', color: 'var(--silver)', opacity: 0.75, fontStyle: 'italic', marginTop: '-4px' }}>{window.WR.GmMode.getPreset(gm?.mode)?.tagline || ''}</div>
-          {gmDeskCalls.length === 0 ? (
-            <div style={{ fontSize: '0.82rem', color: 'var(--silver)', opacity: 0.7, padding: '4px 0' }}>Bench is settled — no cuts or stashes flagged under {(gm?.modeLabel || 'Compete').toUpperCase()} mode.</div>
-          ) : React.createElement(window.WR.CardList, {
-            groups: [{
-              label: 'Recommended Moves',
-              sub: gmDeskCalls.length + ' call' + (gmDeskCalls.length === 1 ? '' : 's'),
-              rows: gmDeskCalls.map(({ r, verdict }) => {
-                const col = verdict === 'CUT' ? 'var(--bad)' : 'var(--k-3498db, #3498db)';
-                return React.createElement(window.WR.AssetRow, {
-                  key: 'desk-' + r.pid,
-                  pid: r.pid,
-                  pos: r.pos,
-                  name: getPlayerName(r.pid),
-                  tag: [r.p?.team || 'FA', r.age ? String(r.age) : null, r.peakPhase].filter(Boolean).join(' · '),
-                  slots: [{ label: 'DHQ', value: (r.dhq || 0).toLocaleString(), strong: true }],
-                  verdict: React.createElement('span', {
-                    style: { fontFamily: 'var(--font-mono)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, padding: '2px 6px', borderRadius: 'var(--card-radius-xs, 5px)', border: '1px solid ' + wrAlpha(col, '80'), color: col, letterSpacing: '0.02em', whiteSpace: 'nowrap', textTransform: 'uppercase' },
-                  }, verdict === 'CUT' ? 'CUT' : 'STASH → TAXI'),
-                  expanded: true,
-                }, (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <span style={{ fontSize: '0.8rem', color: 'var(--text-primary)', lineHeight: 1.4 }}>{_gmDeskReason(r, verdict)}</span>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button onClick={() => verdict === 'CUT' ? toggleCutTag(r.pid) : toggleTaxiTag(r.pid)} style={{ padding: '5px 11px', fontSize: '0.76rem', fontWeight: 700, fontFamily: 'var(--font-body)', background: wrAlpha(col, '14'), color: col, border: '1px solid ' + wrAlpha(col, '55'), borderRadius: 'var(--card-radius-sm, 8px)', cursor: 'pointer' }}>
-                        {'✓ Confirm ' + (verdict === 'CUT' ? 'cut' : 'stash')}
-                      </button>
-                      <button onClick={() => verdict === 'CUT' ? dismissDrop(r.pid) : dismissTaxiSuggestion(r.pid)} style={{ padding: '5px 11px', fontSize: '0.76rem', fontWeight: 600, fontFamily: 'var(--font-body)', background: 'transparent', color: 'var(--silver)', border: '1px solid var(--ov-5, rgba(255,255,255,0.09))', borderRadius: 'var(--card-radius-sm, 8px)', cursor: 'pointer' }}>
-                        Keep him
-                      </button>
-                    </div>
-                  </div>
-                ));
-              }),
-            }],
-          })}
-        </section>
-      )}
-
-      {/* Keeper recommendations — keeper leagues only, Pro-gated same as the
-          Move column / Dynasty Read. Additive to the existing roster board,
-          not a replacement for the Move column (different questions: "should
-          I trade him" vs "should I spend a keeper slot on him"). */}
-      {resolvedLeagueSkin?.type === 'keeper' && isPro && keeperRanked.length > 0 && (() => {
-        const keeperRowEl = (r, isBubble) => {
-          const ka = window.getKeeperAction ? window.getKeeperAction(r.pid) : null;
-          return React.createElement(window.WR.AssetRow, {
-            key: r.pid,
-            pos: r.pos,
-            name: getPlayerName(r.pid),
-            tag: [r.p?.team || 'FA', r.age ? String(r.age) : null].filter(Boolean).join(' · '),
-            slots: [{ label: 'KEEPER VAL', value: (r.dhq || 0).toLocaleString(), strong: true }],
-            verdict: ka && React.createElement('span', {
-              title: ka.reason,
-              style: { fontFamily: 'var(--font-mono)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, padding: '2px 6px', borderRadius: 'var(--card-radius-xs, 5px)', border: '1px solid ' + wrAlpha(ka.col, '80'), color: ka.col, letterSpacing: '0.02em', whiteSpace: 'nowrap', textTransform: 'uppercase' }
-            }, ka.label),
-            expanded: expandedPid === r.pid,
-            onClick: () => setExpandedPid(prev => prev === r.pid ? null : r.pid),
-            title: isBubble ? 'On the bubble — open full detail' : 'Recommended keep — open full detail',
-          }, expandedPid === r.pid && ka ? React.createElement('div', { style: { fontSize: '0.8rem', color: 'var(--silver)', lineHeight: 1.4 } }, ka.reason) : null);
-        };
-        const topRows = keeperRanked.slice(0, maxKeepers).map(r => keeperRowEl(r, false));
-        const bubbleRows = keeperRanked.slice(maxKeepers, maxKeepers + 2).map(r => keeperRowEl(r, true));
-        return (
-          <section style={{ border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: 'var(--card-radius)', background: 'var(--surf-solid, rgba(20,20,26,0.72))', padding: 'var(--card-pad-sm)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-              <span style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: 'var(--text-title, 1.125rem)', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.04em' }}>Keeper Recommendations</span>
-              <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{maxKeepers} keeper slot{maxKeepers === 1 ? '' : 's'}</span>
-            </div>
-            {React.createElement(window.WR.CardList, {
-              groups: [
-                { label: 'Recommended Keeps', sub: topRows.length + (topRows.length === 1 ? ' player' : ' players'), rows: topRows },
-                ...(bubbleRows.length ? [{ label: 'On the Bubble', sub: bubbleRows.length + (bubbleRows.length === 1 ? ' player' : ' players'), rows: bubbleRows }] : []),
-              ],
-            })}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              {keeperTake?.error ? (
-                <span style={{ fontSize: '0.78rem', color: 'var(--k-e74c3c, #e74c3c)' }}>Alex couldn’t generate a take: {keeperTake.error}</span>
-              ) : keeperTake?.text ? (
-                <React.Fragment>
-                  <span style={{ fontSize: '0.84rem', color: 'var(--text-primary)', lineHeight: 1.4 }}>✦ {keeperTake.text}</span>
-                  {keeperTake.feedback
-                    ? <span style={{ fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.6 }}>{keeperTake.feedback === 'up' ? 'Glad it helped.' : 'Noted — Alex learns from this.'}</span>
-                    : (
-                      <React.Fragment>
-                        <span style={{ fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.6 }}>Useful?</span>
-                        <button onClick={() => sendKeeperTakeFeedback('up')} style={{ background: 'none', border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: 'var(--card-radius-xs, 5px)', color: 'var(--silver)', cursor: 'pointer', fontSize: '0.78rem', padding: '2px 9px' }}>👍</button>
-                        <button onClick={() => sendKeeperTakeFeedback('down')} style={{ background: 'none', border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: 'var(--card-radius-xs, 5px)', color: 'var(--silver)', cursor: 'pointer', fontSize: '0.78rem', padding: '2px 9px' }}>👎</button>
-                      </React.Fragment>
-                    )}
-                </React.Fragment>
-              ) : (
-                <button onClick={getKeeperTake} disabled={keeperTake?.loading} style={{ padding: '6px 12px', fontSize: '0.8rem', fontFamily: 'var(--font-body)', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: 'var(--card-radius-sm, 8px)', cursor: 'pointer' }}>
-                    {keeperTake?.loading ? '✨ Thinking…' : '✨ Alex’s take'}
-                  </button>
-                )}
-            </div>
-          </section>
-        );
-      })()}
-
       {/* Review Roster triage strip (iPad pass, owner-approved 2026-07-12):
           the phone triage SHEET had no ≥768 equivalent — flags only lived
           inline per row. Same data seams as the phone sheet (_isActiveDrop /
@@ -2219,40 +2047,27 @@ function MyTeamTab({
           to a one-line count by default. */}
       {!_phone && isPro && (() => {
         const dropAlerts = rows.filter(_isActiveDrop);
-        const taxiAlerts = rows.filter(_isActiveTaxiSuggestion);
         const sellCalls = rows.filter(r => /sell/i.test(_effRec(r) || '') && !dropAlerts.some(d => d.pid === r.pid));
-        if (!dropAlerts.length && !taxiAlerts.length && !sellCalls.length) return null;
-        const chipColor = { DROP: 'var(--bad)', STASH: 'var(--k-3498db, #3498db)', SELL: 'var(--warn)' };
-        const chipBorder = { DROP: 'rgba(231,76,60,0.4)', STASH: 'rgba(52,152,219,0.4)', SELL: 'rgba(240,165,0,0.35)' };
+        if (!dropAlerts.length && !sellCalls.length) return null;
         const chip = (r, kind) => (
           <button key={kind + '-' + r.pid} type="button" onClick={() => setExpandedPid(prev => prev === r.pid ? null : r.pid)}
             title="Expand this player on the board below"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '5px 10px', borderRadius: '999px', cursor: 'pointer', background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid ' + chipBorder[kind], color: 'var(--white)', fontFamily: 'var(--font-body)', fontSize: '0.76rem', fontWeight: 600 }}>
-            <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, color: chipColor[kind], letterSpacing: '0.04em' }}>{kind}</span>
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '5px 10px', borderRadius: '999px', cursor: 'pointer', background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid ' + (kind === 'DROP' ? 'rgba(231,76,60,0.4)' : 'rgba(240,165,0,0.35)'), color: 'var(--white)', fontFamily: 'var(--font-body)', fontSize: '0.76rem', fontWeight: 600 }}>
+            <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, color: kind === 'DROP' ? 'var(--bad)' : 'var(--warn)', letterSpacing: '0.04em' }}>{kind}</span>
             {getPlayerName(r.pid)}
             <span style={{ color: 'var(--silver)', opacity: 0.6, fontSize: 'var(--text-micro, 0.6875rem)' }}>{r.pos}</span>
           </button>
         );
         return (
-          <div style={{ marginBottom: '10px', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: 'var(--card-radius-sm, 8px)', background: 'var(--ov-1, rgba(255,255,255,0.015))', overflow: 'hidden' }}>
+          <div style={{ marginBottom: '10px', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '8px', background: 'var(--ov-1, rgba(255,255,255,0.015))', overflow: 'hidden' }}>
             <button type="button" onClick={() => setReviewStripOpen(v => !v)} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 12px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
               <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Review Roster</span>
-              {cutdownInfo && (
-                <span style={{ fontSize: '0.76rem', fontWeight: 700, color: cutdownInfo.over > 0 ? 'var(--bad)' : 'var(--warn)' }}>
-                  {cutdownInfo.status.isPast
-                    ? (cutdownInfo.over > 0 ? 'Cutdown day passed — ' + cutdownInfo.over + ' over the ' + (cutdownInfo.rule.activeSlots + cutdownInfo.rule.taxiSlots) + '-man limit' : 'Cutdown day passed')
-                    : 'Cutdown in ' + cutdownInfo.status.daysUntil + ' day' + (cutdownInfo.status.daysUntil === 1 ? '' : 's') + (cutdownInfo.over > 0 ? ' — ' + cutdownInfo.over + ' over the ' + (cutdownInfo.rule.activeSlots + cutdownInfo.rule.taxiSlots) + '-man limit' : '')}
-                  {cutdownInfo.over > 0 && ' — ' + cutMarkedCount + ' of ' + (dropCandidatePids.size + taxiCandidatePids.size) + ' resolved'}
-                  {' ·'}
-                </span>
-              )}
-              <span style={{ fontSize: '0.76rem', color: 'var(--silver)' }}>{dropAlerts.length} drop alert{dropAlerts.length === 1 ? '' : 's'} · {taxiAlerts.length} taxi suggestion{taxiAlerts.length === 1 ? '' : 's'} · {sellCalls.length} sell call{sellCalls.length === 1 ? '' : 's'}</span>
+              <span style={{ fontSize: '0.76rem', color: 'var(--silver)' }}>{dropAlerts.length} drop alert{dropAlerts.length === 1 ? '' : 's'} · {sellCalls.length} sell call{sellCalls.length === 1 ? '' : 's'}</span>
               <span style={{ marginLeft: 'auto', fontSize: '0.74rem', color: 'var(--gold)', fontWeight: 700 }}>{reviewStripOpen ? 'Hide ▴' : 'Review ▾'}</span>
             </button>
             {reviewStripOpen && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', padding: '2px 12px 10px' }}>
                 {dropAlerts.map(r => chip(r, 'DROP'))}
-                {taxiAlerts.map(r => chip(r, 'STASH'))}
                 {sellCalls.map(r => chip(r, 'SELL'))}
               </div>
             )}
@@ -2265,10 +2080,31 @@ function MyTeamTab({
           list by default, or the full board inside the scoped Deep Data
           scroll wrap (P7) so no column is ever lost. */}
       {!_phone && _renderRosterBoard()}
-      {_phone && isDeepData && (
-        <div className="wr-sticky-table-wrap" style={{ border: 'none' }}>{_renderRosterBoard()}</div>
+      {/* Owner ruling 2026-08-24 (continuity with the Big Board card style):
+          phones ALWAYS render the positional card boxes — the Deep Data
+          scrolling table stays a tablet/desktop treatment. */}
+      {_phone && _renderPhoneCards()}
+
+      {myDraftPicks.length > 0 && (
+        <div style={{ marginTop: '12px', border: '1px solid var(--ov-5, rgba(255,255,255,0.075))', borderRadius: 'var(--card-radius)', overflow: 'hidden', background: 'var(--surf-solid, rgba(12,12,17,0.98))', boxShadow: '0 10px 24px rgba(0,0,0,0.2)' }}>
+          <div style={{ padding: '7px 10px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))', background: 'var(--ov-1, rgba(255,255,255,0.018))', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ fontFamily: 'Rajdhani, sans-serif', color: 'var(--white)', fontSize: 'var(--text-title, 1.125rem)', fontWeight: 700 }}>Draft Picks</div>
+            <div style={{ marginLeft: 'auto', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: 'var(--gold)' }}>{myDraftPicks.length} pick{myDraftPicks.length === 1 ? '' : 's'}</div>
+          </div>
+          <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {Object.keys(picksByYear).sort().map(yr => (
+              <div key={yr} style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.78rem', fontWeight: 700, color: 'var(--gold)', minWidth: '42px' }}>{yr}</span>
+                {picksByYear[yr].map((p, i) => (
+                  <span key={i} title={p.own ? 'Your own pick' : ('Acquired from ' + p.from)} style={{ fontSize: '0.72rem', fontWeight: 700, padding: '3px 8px', borderRadius: '5px', fontFamily: 'JetBrains Mono, monospace', background: p.own ? 'var(--acc-fill2, rgba(212,175,55,0.10))' : 'rgba(124,107,248,0.13)', color: p.own ? 'var(--gold)' : 'var(--k-9b8afb, #9b8afb)', border: '1px solid ' + (p.own ? 'var(--acc-fill3, rgba(212,175,55,0.2))' : 'rgba(124,107,248,0.28)') }}>
+                    R{p.round}{p.own ? '' : ' · ' + String(p.from).slice(0, 8)}
+                  </span>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
       )}
-      {_phone && !isDeepData && _renderPhoneCards()}
 
       </div>
     </div>

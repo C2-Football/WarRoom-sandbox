@@ -137,9 +137,6 @@
                 youthPremium: num(fx.draftWeights?.youthPremium, 1) || 1,
                 targets: fx.targetPositions instanceof Set ? fx.targetPositions : new Set(),
                 fades: fx.sellPositions instanceof Set ? fx.sellPositions : new Set(),
-                // Which positions to lean toward (RB-Heavy/Hero-RB/etc.) — same
-                // archetype key + multiplier table the Big Board's AI lane uses.
-                archetypeKey: fx.draftArchetype || 'balanced',
             };
         } catch (_) { return null; }
     }
@@ -166,17 +163,10 @@
         const gmYouthBoost = (gm && age && age <= 24 && ['QB', 'RB', 'WR', 'TE'].includes(posOf(player)))
             ? Math.max(-12, Math.min(12, (gm.youthPremium - 1) * 30))
             : 0;
-        // Same archetype multiplier table the Big Board's AI lane uses (RB
-        // Heavy/Zero-RB/etc.) — scaled down to a ±10 boost, same order as the
-        // other GM-steer terms above, so it nudges rather than dominates.
-        const gmArchBoost = (gm?.archetypeKey && window.App?.DraftGameplan?.archetypeMultiplier)
-            ? Math.max(-10, Math.min(10, (window.App.DraftGameplan.archetypeMultiplier(gm.archetypeKey, posOf(player)) - 1) * 60))
-            : 0;
         const score = dhq / 100
             + needBoost
             + gmPosBoost
             + gmYouthBoost
-            + gmArchBoost
             + (tagTarget ? 24 : 0)
             - (tagFade ? 42 : 0)
             + Math.max(-12, Math.min(18, growth / 180))

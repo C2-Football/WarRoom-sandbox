@@ -81,6 +81,7 @@ function build() {
   // loader injects executable copies on demand. They are still compiled like any
   // other JSX module so the compiled overlay exists for the loader to fetch.
   const deferType = (a, b, c) => /\bdata-wr-defer\b/i.test((a || '') + (b || '') + (c || '')) ? ' type="text/wr-deferred"' : '';
+
   html = html.replace(/<script\b([^>]*?)\bsrc=["']([^"']+)["']([^>]*)type=["']text\/babel["']([^>]*)><\/script>/gi,
     (_match, before, src, between, after) => {
       const outSrc = compileScript(src);

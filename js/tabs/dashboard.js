@@ -49,7 +49,9 @@ const WIDGET_MODULES = {
         metrics: [],
         sizes: ['md', 'lg', 'tall', 'xl', 'xxl'],
         clickTarget: {},
-        pro: true, proFeature: 'briefing_reasoning', formatFlag: null,
+        // Free on purpose (owner call 2026-07-11): the brief is the hook that
+        // shows free users what Alex can do and pulls them toward Pro.
+        pro: false, proFeature: 'briefing_reasoning', formatFlag: null,
     },
     'roster-pulse': {
         label: 'Roster Pulse',
@@ -90,10 +92,12 @@ const WIDGET_MODULES = {
     'gap-plan': {
         label: 'Gap Plan',
         icon: '🧩',
+        // 'narrow' (1 col × 4 rows) lists every position gap in a skinny
+        // side column, mirroring power-rankings' narrow tier.
         description: 'Positional gaps in player counts vs elite tier teams',
         accent: () => T().color?.('negative') || 'var(--k-e74c3c, #e74c3c)',
         metrics: [],
-        sizes: ['sm', 'md', 'lg'],
+        sizes: ['sm', 'narrow', 'md', 'lg'],
         clickTarget: { sm: 'myteam' },
         pro: true, proFeature: 'analytics_depth', formatFlag: null,
     },
@@ -112,20 +116,23 @@ const WIDGET_MODULES = {
     'league-standings': {
         label: 'League Standings',
         icon: '📊',
+        // Narrow (skinny side column) + Tall / Full Page show EVERY team;
+        // md/lg cap the list to fit.
         description: 'Current records, value, and roster strength by team',
         accent: () => T().color?.('accent') || 'var(--k-d4af37, #d4af37)',
         metrics: [],
-        sizes: ['md', 'lg'],
+        sizes: ['narrow', 'md', 'lg', 'tall', 'xxl'],
         clickTarget: { md: 'analytics' },
         pro: false, formatFlag: null,
     },
     'transaction-ticker': {
         label: 'Transaction Ticker',
         icon: '📰',
+        // slim / narrow are skinny side-column versions.
         description: 'Recent adds, drops, waivers, and trade drill-ins',
         accent: () => T().color?.('info') || 'var(--k-3498db, #3498db)',
         metrics: [],
-        sizes: ['md', 'lg'],
+        sizes: ['slim', 'narrow', 'md', 'lg'],
         clickTarget: {},
         pro: false, formatFlag: null,
     },
@@ -139,11 +146,13 @@ const WIDGET_MODULES = {
         clickTarget: { sm: 'trades', md: 'trades' },
         pro: true, proFeature: 'faab_intelligence', formatFlag: null,
     },
+    // FAAB Command (lab port 2026-08-16): the FA tab's league-aware bid plan,
+    // auto-picking the top wire target so it works without opening FA first.
     'faab-command': {
         label: 'FAAB Command',
         icon: '💰',
         description: 'League-aware bid plan for the top add on the wire',
-        accent: () => T().color?.('accent') || 'var(--k-d4af37, #d4af37)',
+        accent: () => T().color?.('gold') || 'var(--gold, #d4af37)',
         metrics: [],
         sizes: ['sm', 'md', 'lg'],
         clickTarget: { sm: 'fa', md: 'fa', lg: 'fa' },
@@ -160,16 +169,6 @@ const WIDGET_MODULES = {
         // Free widget: xxl "Pick Strategy" rec panel gated inside
         // draft-capital.js
         pro: false, formatFlag: null,
-    },
-    'analyst-mock': {
-        label: 'Analyst Mock',
-        icon: '🧭',
-        description: "Alex's projected Round 1 mock — your pick, this league's history",
-        accent: () => T().color?.('accent') || 'var(--k-d4af37, #d4af37)',
-        metrics: [],
-        sizes: ['sm', 'md', 'lg'],
-        clickTarget: { sm: 'draft', md: 'draft' },
-        pro: true, proFeature: 'draft_analyst_mock', formatFlag: null,
     },
     'field-notes': {
         label: 'Field Notes',
@@ -198,7 +197,9 @@ const WIDGET_MODULES = {
         description: 'Blended health, contender PPG, and value rankings',
         accent: () => T().color?.('positive') || 'var(--k-2ecc71, #2ecc71)',
         metrics: [],
-        sizes: ['sm', 'md', 'lg', 'tall', 'xxl'],
+        // 'narrow' (1 col × 4 rows) shows the full 16-team board in a single
+        // column so it can tuck into a side column next to a wide command brief.
+        sizes: ['sm', 'md', 'narrow', 'lg', 'tall', 'xxl'],
         clickTarget: { sm: 'analytics', md: 'analytics' },
         pro: false, formatFlag: null, // ranking, not advice (owner Q7)
     },
@@ -252,11 +253,49 @@ const WIDGET_MODULES = {
         description: 'Next league date + a running agenda — draft, deadline, playoffs, waivers',
         accent: () => T().color?.('info') || 'var(--k-3498db, #3498db)',
         metrics: [],
-        sizes: ['sm', 'md', 'lg', 'tall', 'xl', 'xxl'],
+        sizes: ['sm', 'narrow', 'md', 'lg', 'tall', 'xl', 'xxl'],
         clickTarget: { sm: 'trophies', md: 'trophies' },
         pro: false, formatFlag: null,
     },
 };
+
+// ─── Content-height widget caps (owner requirement 2026-07-22) ────
+// The dashboard grid rows are content-driven (minmax(0,auto)) so every
+// card only extends as far as its text — no dead space below — and the
+// widgets beneath slide up. Sizes keep their meaning for WIDTH (column
+// span) and act as a CEILING for list-y widgets: these max-heights
+// recreate the old fixed budget (rows × 160px + 12px --space-md row
+// gaps) so long content (transaction feed, full standings, market
+// radar lists) still caps and scrolls exactly as before AT MOST, while
+// short content hugs. Applied to the card (direct child of the
+// .wr-widget shell) — inner `flex:1;minHeight:0;overflow:auto` lists
+// then resolve against the capped card instead of growing unbounded.
+// Injected by BOTH the desktop/tablet render and the phone branch.
+// Ceilings apply at ≥768px only: the phone tier's rows were already
+// minmax(160px,auto) — content there has always been free to grow past
+// the desktop budget, so a hard cap would clip what phones show today.
+// Phone keeps grow-with-content and just loses the 160px dead-space floor.
+const WIDGET_CAP_CSS = `
+    .wr-dashboard-grid>.wr-widget{ min-height:0; min-width:0; }
+    @media(min-width:768px){
+        /* 1 row (sm/md): 160px */
+        .wr-dashboard-grid>.wr-widget>*{ max-height:160px; }
+        /* 2 rows (slim/lg/xl): 2×160 + 12 */
+        .wr-dashboard-grid>.wr-widget[data-widget-size="slim"]>*,
+        .wr-dashboard-grid>.wr-widget[data-widget-size="lg"]>*,
+        .wr-dashboard-grid>.wr-widget[data-widget-size="xl"]>*{ max-height:332px; }
+        /* 4 rows (narrow/tall/xxl): 4×160 + 3×12 */
+        .wr-dashboard-grid>.wr-widget[data-widget-size="narrow"]>*,
+        .wr-dashboard-grid>.wr-widget[data-widget-size="tall"]>*,
+        .wr-dashboard-grid>.wr-widget[data-widget-size="xxl"]>*{ max-height:676px; }
+        /* Intel Brief tall reserves 3 rows (see WidgetShell): 3×160 + 2×12 */
+        .wr-dashboard-grid>.wr-widget[data-widget-key="intel-brief"][data-widget-size="tall"]>*{ max-height:504px; }
+    }
+    /* Transaction Ticker narrow: compact ceiling on EVERY tier (phone too) —
+       cut-down day feeds run hundreds deep, so this card stays short and the
+       feed scrolls inside it instead of running down the page. */
+    .wr-dashboard-grid>.wr-widget[data-widget-key="transaction-ticker"][data-widget-size="narrow"]>*{ max-height:360px; }
+`;
 
 // Legacy module keys → new keys (for migration of saved widget configs)
 const LEGACY_MODULE_MAP = {
@@ -354,7 +393,7 @@ function DashboardWidgetPicker({ onAdd, onClose, editWidget }) {
         const monoCaps = { fontFamily: 'JetBrains Mono, monospace', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' };
         const chipBase = (active, accentCol) => ({
             display: 'inline-flex', alignItems: 'center', gap: '6px',
-            minHeight: '44px', padding: '8px 14px', borderRadius: 'var(--card-radius-sm, 8px)', cursor: 'pointer',
+            minHeight: '44px', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer',
             border: '1px solid ' + (active ? (accentCol || 'var(--gold)') : 'var(--ov-6, rgba(255,255,255,0.1))'),
             background: active ? 'var(--acc-fill2, rgba(212,175,55,0.1))' : 'var(--ov-1, rgba(255,255,255,0.02))',
             color: active ? 'var(--gold)' : 'var(--silver)',
@@ -432,7 +471,7 @@ function DashboardWidgetPicker({ onAdd, onClose, editWidget }) {
                     borderTop: '1px solid var(--ov-4, rgba(255,255,255,0.07))',
                 }}>
                     <button type="button" onClick={handleConfirm} disabled={!selectedModule || !selectedSize} style={{
-                        width: '100%', minHeight: '48px', padding: '12px', borderRadius: 'var(--card-radius-sm, 8px)',
+                        width: '100%', minHeight: '48px', padding: '12px', borderRadius: '8px',
                         cursor: (selectedModule && selectedSize) ? 'pointer' : 'not-allowed',
                         background: (selectedModule && selectedSize) ? 'var(--gold)' : 'var(--ov-4, rgba(255,255,255,0.06))',
                         border: 'none', color: (selectedModule && selectedSize) ? 'var(--k-000000, #000000)' : 'var(--silver)',
@@ -459,10 +498,11 @@ function DashboardWidgetPicker({ onAdd, onClose, editWidget }) {
                     .wr-picker-metric-chip{ min-height:44px; }
                 }`}</style>
 
-            {/* .wr-widget-picker-panel/-body: phone tier (index.html ≤767 CSS) makes
-                the step body scrollable — 18 modules at 2 columns (~345px panel)
-                overflow the overflow:hidden panel and are unreachable otherwise.
-                No visual change ≥768 (classes unstyled there). */}
+            {/* Picker body scrolls on EVERY tier (owner report 2026-08-16: the
+                19th widget pushed the list past the 90vh overflow:hidden panel on
+                iPad, with no way to reach it — the phone ≤767 CSS had the only
+                scroll path). Inline overflowY:auto + minHeight:0 on the flex body
+                covers desktop/iPad; the phone CSS remains a harmless double-up. */}
             <div className="wr-widget-picker-panel" style={{
                 background: 'var(--k-0d0d0d, #0d0d0d)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))',
                 borderRadius: '20px', width: 'min(600px, 92vw)', maxHeight: '90vh',
@@ -482,17 +522,17 @@ function DashboardWidgetPicker({ onAdd, onClose, editWidget }) {
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                         {step !== 'module' && (
                             <button onClick={() => setStep(step === 'size' ? 'module' : 'size')}
-                                style={{ background: 'var(--ov-4, rgba(255,255,255,0.06))', border: 'none', borderRadius: 'var(--card-radius-sm, 8px)', padding: '6px 12px', minHeight: '44px', color: 'var(--silver)', cursor: 'pointer', fontSize: 'var(--text-body, 1rem)', fontFamily: 'DM Sans, sans-serif' }}>
+                                style={{ background: 'var(--ov-4, rgba(255,255,255,0.06))', border: 'none', borderRadius: '8px', padding: '6px 12px', minHeight: '44px', color: 'var(--silver)', cursor: 'pointer', fontSize: 'var(--text-body, 1rem)', fontFamily: 'DM Sans, sans-serif' }}>
                                 ← Back
                             </button>
                         )}
-                        <button onClick={onClose} style={{ background: 'var(--ov-4, rgba(255,255,255,0.06))', border: 'none', borderRadius: 'var(--card-radius-sm, 8px)', padding: '6px 10px', minWidth: '44px', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--silver)', cursor: 'pointer', fontSize: '1rem', lineHeight: 1 }}>✕</button>
+                        <button onClick={onClose} style={{ background: 'var(--ov-4, rgba(255,255,255,0.06))', border: 'none', borderRadius: '8px', padding: '6px 10px', minWidth: '44px', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--silver)', cursor: 'pointer', fontSize: '1rem', lineHeight: 1 }}>✕</button>
                     </div>
                 </div>
 
                 {/* Step 1: Module grid — 3×2 compact, no scroll */}
                 {step === 'module' && (
-                    <div className="wr-widget-picker-body" style={{ padding: '16px 20px' }}>
+                    <div className="wr-widget-picker-body" style={{ padding: '16px 20px', overflowY: 'auto', minHeight: 0, WebkitOverflowScrolling: 'touch' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '10px' }}>
                             {Object.entries(WIDGET_MODULES).map(([key, m]) => (
                                 <button key={key}
@@ -503,7 +543,7 @@ function DashboardWidgetPicker({ onAdd, onClose, editWidget }) {
                                     style={{
                                         background: hoverModule === key ? 'var(--acc-fill2, rgba(212,175,55,0.08))' : 'var(--ov-2, rgba(255,255,255,0.03))',
                                         border: '1px solid ' + (hoverModule === key ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--ov-5, rgba(255,255,255,0.08))'),
-                                        borderRadius: 'var(--card-radius, 10px)', padding: '14px 12px', cursor: 'pointer',
+                                        borderRadius: '10px', padding: '14px 12px', cursor: 'pointer',
                                         transition: 'all 0.15s', textAlign: 'center', fontFamily: 'inherit',
                                     }}>
                                     <div style={{ fontSize: '1.5rem', marginBottom: '4px', lineHeight: 1 }}>{m.icon}</div>
@@ -522,9 +562,9 @@ function DashboardWidgetPicker({ onAdd, onClose, editWidget }) {
 
                 {/* Step 2: Size picker — compact, no scroll */}
                 {step === 'size' && mod && (
-                    <div className="wr-widget-picker-body" style={{ padding: '16px 20px' }}>
+                    <div className="wr-widget-picker-body" style={{ padding: '16px 20px', overflowY: 'auto', minHeight: 0, WebkitOverflowScrolling: 'touch' }}>
                         {/* Module info — compact */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px', padding: '10px 14px', background: 'var(--ov-2, rgba(255,255,255,0.03))', borderRadius: 'var(--card-radius-sm, 8px)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px', padding: '10px 14px', background: 'var(--ov-2, rgba(255,255,255,0.03))', borderRadius: '8px' }}>
                             <span style={{ fontSize: '1.4rem' }}>{mod.icon}</span>
                             <div>
                                 <div style={{ fontFamily: 'Rajdhani, sans-serif', fontWeight: 700, color: 'var(--white)', fontSize: 'var(--text-body, 1rem)' }}>{mod.label}</div>
@@ -542,7 +582,7 @@ function DashboardWidgetPicker({ onAdd, onClose, editWidget }) {
                                 return (
                                     <div key={sz} onClick={() => setSelectedSize(sz)} style={{
                                         display: 'flex', flexDirection: 'column', alignItems: 'center',
-                                        padding: '10px 14px', borderRadius: 'var(--card-radius-sm, 8px)', cursor: 'pointer',
+                                        padding: '10px 14px', borderRadius: '8px', cursor: 'pointer',
                                         border: '1.5px solid ' + (isActive ? (accentCol || 'var(--gold)') : 'var(--ov-5, rgba(255,255,255,0.08))'),
                                         background: isActive ? 'var(--acc-fill2, rgba(212,175,55,0.1))' : 'var(--ov-1, rgba(255,255,255,0.02))',
                                         transition: 'all 0.12s', minWidth: 70,
@@ -570,7 +610,7 @@ function DashboardWidgetPicker({ onAdd, onClose, editWidget }) {
                                         const accentCol = typeof mod.accent === 'function' ? mod.accent() : mod.accent;
                                         return (
                                             <button key={m.key} className="wr-picker-metric-chip" onClick={() => setSelectedMetric(m.key)} style={{
-                                                padding: '4px 10px', borderRadius: 'var(--card-radius-lg, 14px)', cursor: 'pointer',
+                                                padding: '4px 10px', borderRadius: '14px', cursor: 'pointer',
                                                 border: '1px solid ' + (selectedMetric === m.key ? (accentCol || 'var(--gold)') : 'var(--ov-6, rgba(255,255,255,0.1))'),
                                                 background: selectedMetric === m.key ? 'var(--acc-fill3, rgba(212,175,55,0.15))' : 'transparent',
                                                 color: selectedMetric === m.key ? 'var(--gold)' : 'var(--silver)',
@@ -585,7 +625,7 @@ function DashboardWidgetPicker({ onAdd, onClose, editWidget }) {
 
                         {/* Add button */}
                         <button onClick={handleConfirm} disabled={!selectedSize} style={{
-                            width: '100%', padding: '12px', borderRadius: 'var(--card-radius-sm, 8px)', cursor: selectedSize ? 'pointer' : 'not-allowed',
+                            width: '100%', padding: '12px', borderRadius: '8px', cursor: selectedSize ? 'pointer' : 'not-allowed',
                             background: selectedSize ? 'var(--gold)' : 'var(--ov-4, rgba(255,255,255,0.06))',
                             border: 'none', color: selectedSize ? 'var(--k-000000, #000000)' : 'var(--silver)',
                             fontFamily: 'Rajdhani, sans-serif', fontSize: 'var(--text-body, 1rem)', fontWeight: 700,
@@ -676,7 +716,7 @@ function WrDashReorder({ widgets, modules, onReorder, onClose }) {
                             padding: '10px', minHeight: '52px',
                             background: isDrag ? 'var(--surface-3, #27262E)' : 'var(--black, #121217)',
                             border: '1px solid ' + (isDrag ? 'rgba(212,175,55,0.5)' : 'rgba(255,255,255,0.07)'),
-                            borderRadius: 'var(--card-radius, 10px)',
+                            borderRadius: '9px',
                             boxShadow: isDrag ? '0 8px 22px rgba(0,0,0,0.5)' : 'none',
                             opacity: (dragRef.current && !isDrag) ? 0.7 : 1,
                             touchAction: 'pan-y',
@@ -723,15 +763,14 @@ function DashboardPanel({
     timeRecomputeTs,
 }) {
     const resolvedLeagueSkin = leagueSkin || window.App?.LeagueSkin?.getCurrent?.() || null;
+    // CHOPPED leagues: survival is the headline number, so it leads BOTH
+    // layouts. Defined above the phone/desktop split because the phone branch
+    // early-returns below — and Game Day (the other natural home) is hidden
+    // pre-draft, exactly when the block is most interesting.
+    const chopBlockEl = (resolvedLeagueSkin?.features?.showElimination && window.WrChopBlock)
+        ? <div style={{ padding: '14px 16px 0' }}><window.WrChopBlock active currentLeague={currentLeague} myRoster={myRoster} /></div>
+        : null;
     const valueShortLabel = resolvedLeagueSkin?.vocabulary?.valueShortLabel || 'DHQ';
-    // Redraft + Chopped Home is fixed (owner ask) — league-detail.js force-
-    // resets selectedWidgets to REDRAFT_FIXED_WIDGETS (same list for both
-    // formats — no chopped-specific widget) whenever this is true; every
-    // customize affordance below (drag, gear, remove, ▲▼, Add Widget) is
-    // gated off it so the layout can't drift back open. Chopped's survival
-    // read (chopBlockEl / WrChopBlock, below) renders separately above the
-    // grid regardless of this flag — it isn't a selectedWidgets entry.
-    const isFixedHome = resolvedLeagueSkin?.type === 'redraft' || resolvedLeagueSkin?.type === 'chopped';
     const [pickerOpen, setPickerOpen] = React.useState(false);
     const [reorderOpen, setReorderOpen] = React.useState(false); // phone widget-reorder sheet
     const [editingWidget, setEditingWidget] = React.useState(null); // { widgetId, widget }
@@ -743,6 +782,16 @@ function DashboardPanel({
     const dashViewport = window.WR.useViewport();
     const touchReorder = dashViewport.isPhone || dashViewport.isCoarse;
     const [starredWidgets, setStarredWidgets] = React.useState(() => window.WrStarWidget?.getAll() || []);
+    // Transaction Ticker → tap to expand into a full-detail overlay (all
+    // transactions, both sides of every trade). null = closed, true = show all,
+    // a txn object = open focused on that one. Never navigates to the Trade page.
+    const [txnDetail, setTxnDetail] = React.useState(null);
+    React.useEffect(() => {
+        if (!txnDetail) return undefined;
+        const onKey = e => { if (e.key === 'Escape') setTxnDetail(null); };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [txnDetail]);
     const navigateWidget = React.useCallback((target) => {
         const tab = resolveWidgetDestination(target);
         if (tab && setActiveTab) setActiveTab(tab);
@@ -769,12 +818,17 @@ function DashboardPanel({
         if (WrSt.get(MIGRATED_KEY, false)) return;
         const old = selectedWidgets || [];
         if (!old.length) { WrSt.set(MIGRATED_KEY, true); return; }
+        // A key is only legacy if it is NOT a current module: 'transaction-ticker'
+        // and 'league-standings' returned to WIDGET_MODULES after the v2 map was
+        // written (and now seed the default board), so mapping every occurrence
+        // would clobber a fresh user's defaults into league-landscape.
+        const isLegacy = (k) => !WIDGET_MODULES[k] && !!LEGACY_MODULE_MAP[k];
         // Check if ANY old key needs mapping
-        const needsMigration = old.some(w => LEGACY_MODULE_MAP[w.key]);
+        const needsMigration = old.some(w => isLegacy(w.key));
         if (!needsMigration) { WrSt.set(MIGRATED_KEY, true); return; }
         const seen = new Set();
         const migrated = old.map(w => {
-            const newKey = LEGACY_MODULE_MAP[w.key] || w.key;
+            const newKey = isLegacy(w.key) ? LEGACY_MODULE_MAP[w.key] : w.key;
             if (!WIDGET_MODULES[newKey]) return null; // orphaned module
             if (seen.has(newKey)) return null;         // dedup (e.g., roster + competitive both → roster-pulse)
             seen.add(newKey);
@@ -953,12 +1007,14 @@ function DashboardPanel({
     // ══════════════════════════════════════════════════════════════
     // LARGE CARD — 2×2 — mini-panel with multiple stats + list
     // ══════════════════════════════════════════════════════════════
-    function LargeModuleCard({ moduleKey, primaryMetric }) {
+    function LargeModuleCard({ moduleKey, primaryMetric, size = 'lg' }) {
         const mod = WIDGET_MODULES[moduleKey];
         if (!mod) return null;
 
-        if (moduleKey === 'league-standings') return renderStandings('lg');
-        if (moduleKey === 'transaction-ticker') return renderTransactionTicker('lg');
+        // Standings/ticker honor the real size so Tall/Full Page can show all
+        // teams instead of the lg cap.
+        if (moduleKey === 'league-standings') return renderStandings(size === 'md' ? 'lg' : size);
+        if (moduleKey === 'transaction-ticker') return renderTransactionTicker(size === 'md' ? 'lg' : size);
         if (moduleKey === 'intel-brief') return renderIntelligenceBrief('lg');
         if (moduleKey === 'field-notes') return renderFieldNotes('lg');
 
@@ -1000,7 +1056,7 @@ function DashboardPanel({
                 {allMetrics.length > 1 && (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', marginBottom: '12px' }}>
                         {allMetrics.map(m => (
-                            <div key={m.key} style={{ background: 'var(--ov-2, rgba(255,255,255,0.03))', borderRadius: 'var(--card-radius-sm, 8px)', padding: '8px 10px' }}>
+                            <div key={m.key} style={{ background: 'var(--ov-2, rgba(255,255,255,0.03))', borderRadius: '8px', padding: '8px 10px' }}>
                                 <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: S, opacity: 0.6, fontFamily: dmFont, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '2px' }}>{m.label}</div>
                                 <div style={{ fontFamily: monoFont, fontSize: 'var(--text-body, 1rem)', fontWeight: 600, color: m.val.color || W }}>{m.val.value}</div>
                                 <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: S, opacity: 0.5, fontFamily: dmFont, marginTop: '1px' }}>{m.val.sub}</div>
@@ -1035,6 +1091,21 @@ function DashboardPanel({
         if (typeof window.IntelligenceBriefWidget !== 'function') {
             return <div style={{ ...cardBase, padding: 'var(--card-pad, 14px 16px)' }}>Intelligence brief unavailable</div>;
         }
+        // Never grade a half-loaded league: until league intelligence is built
+        // and player scores exist, a fresh sign-in would compute the tier from
+        // a partial snapshot (wrong grade that later flips). Hold a reading
+        // state instead — the dashboard re-renders when the data lands.
+        const briefDataReady = !!(window.App?.LI?.builtAt)
+            && Object.keys(window.App?.LI?.playerScores || {}).length > 0
+            && !!(myRoster?.players?.length);
+        if (!briefDataReady) {
+            return (
+                <div style={{ ...cardBase, padding: 'var(--card-pad, 14px 16px)', display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--silver)' }}>
+                    <span style={{ fontSize: '1.1rem' }}>🧠</span>
+                    <span style={{ fontSize: 'var(--text-label, 0.8rem)', fontFamily: 'var(--font-mono)' }}>Alex is reading your league…</span>
+                </div>
+            );
+        }
         return React.createElement(window.IntelligenceBriefWidget, {
             size,
             myRoster,
@@ -1067,8 +1138,11 @@ function DashboardPanel({
     // ══════════════════════════════════════════════════════════════
     function renderTransactionTicker(size) {
         // Row budget per size: each entry is ~46px (2 lines). md = 1 grid row
-        // (160px) fits 2 entries after the header; lg (2 rows, ~330px) fits 5.
-        const transactionLimit = size === 'lg' ? 5 : 2;
+        // (160px) fits 2 entries after the header; lg (2 rows, ~330px) fits 5;
+        // slim (2 rows) ~4. Narrow is the deep-feed view: its card is capped
+        // short (360px, see WIDGET_CAP_CSS) and the list scrolls inside it, so
+        // it carries a cut-down-day-sized backlog instead of a visual budget.
+        const transactionLimit = size === 'narrow' ? 50 : size === 'lg' ? 5 : size === 'slim' ? 4 : 2;
         let visibleTransactions = (transactions || []).slice(0, transactionLimit);
         if (size === 'lg' && !visibleTransactions.some(t => t.type === 'trade')) {
             const firstTrade = (transactions || []).find(t => t.type === 'trade');
@@ -1076,146 +1150,135 @@ function DashboardPanel({
                 visibleTransactions = [...visibleTransactions.slice(0, transactionLimit - 1), firstTrade];
             }
         }
-        function openTickerPlayer(pid) {
-            if (!pid) return;
-            if (window.WR?.openPlayerCard) {
-                window.WR.openPlayerCard(pid);
-                return;
-            }
-            if (typeof window._wrSelectPlayer === 'function') {
-                window._wrSelectPlayer(pid);
-                return;
-            }
-            if (typeof window.openPlayerModal === 'function') {
-                window.openPlayerModal(pid);
-            }
-        }
-        function tickerPlayerProps(pid) {
-            return {
-                role: 'button',
-                tabIndex: 0,
-                title: 'Open player card',
-                onClick: e => { e.stopPropagation(); openTickerPlayer(pid); },
-                onKeyDown: e => {
-                    if (e.key !== 'Enter' && e.key !== ' ') return;
-                    e.preventDefault();
-                    e.stopPropagation();
-                    openTickerPlayer(pid);
-                },
-            };
-        }
-        function buildTickerTradeContext(txn) {
-            const rosterIds = txn?.roster_ids || [];
-            const owners = rosterIds.map(rid => ({ rosterId: rid, name: getOwnerName(rid) || ('Team ' + rid) }));
-            const adds = Object.keys(txn?.adds || {}).map(pid => ({ pid, name: getPlayerName(pid) }));
-            const drops = Object.keys(txn?.drops || {}).map(pid => ({ pid, name: getPlayerName(pid) }));
-            const pickCount = txn?.draft_picks?.length || 0;
-            const assetSummary = [
-                adds.length ? adds.slice(0, 3).map(p => '+' + p.name).join(', ') : null,
-                drops.length ? drops.slice(0, 3).map(p => '-' + p.name).join(', ') : null,
-                pickCount ? pickCount + ' pick' + (pickCount === 1 ? '' : 's') : null,
-            ].filter(Boolean).join(' | ');
-            return {
-                context: 'transaction_ticker_trade',
-                transactionId: txn?.transaction_id || txn?.transactionId || txn?.created || null,
-                created: txn?.created || null,
-                rosterIds,
-                owners,
-                adds,
-                drops,
-                pickCount,
-                summary: owners.map(o => o.name).join(' vs ') + (assetSummary ? ': ' + assetSummary : ''),
-                transaction: txn,
-            };
-        }
-        function openTickerTrade(txn) {
-            if (txn?.type !== 'trade') return;
-            const detail = buildTickerTradeContext(txn);
-            window._wrTradeContext = detail;
-            try { window.dispatchEvent(new CustomEvent('wr:open-trade-context', { detail })); } catch (_) {}
-            if (navigateWidget) navigateWidget('trades');
-            else if (setActiveTab) setActiveTab('trades');
-            else if (typeof window.wrNavigateTab === 'function') window.wrNavigateTab('trades');
-        }
-        function tickerTradeProps(txn) {
-            if (txn?.type !== 'trade') return {};
-            return {
-                role: 'button',
-                tabIndex: 0,
-                title: 'Open trade context',
-                onClick: () => openTickerTrade(txn),
-                onKeyDown: e => {
-                    if (e.key !== 'Enter' && e.key !== ' ') return;
-                    e.preventDefault();
-                    openTickerTrade(txn);
-                },
-            };
-        }
-        // Sleeper trades carry every traded player in BOTH adds{} (keyed to the
-        // receiving roster) and drops{} (keyed to the sending roster) — without
-        // a side split a 2-for-2 renders '+A +B -A -B'. Render the trade from
-        // roster_ids[0]'s perspective (the owner named on the row): + what they
-        // received, - what they sent. Non-trades are one-sided already.
-        function tickerAddPids(txn) {
-            const pids = Object.keys(txn.adds || {});
-            if (txn.type !== 'trade' || txn.roster_ids?.[0] == null) return pids;
-            return pids.filter(pid => String(txn.adds[pid]) === String(txn.roster_ids[0]));
-        }
-        function tickerDropPids(txn) {
-            const pids = Object.keys(txn.drops || {});
-            if (txn.type !== 'trade' || txn.roster_ids?.[0] == null) return pids;
-            return pids.filter(pid => String(txn.drops[pid]) === String(txn.roster_ids[0]));
-        }
         const hiddenCount = Math.max(0, (transactions || []).length - visibleTransactions.length);
+        const hasTxns = !!(transactions && transactions.length);
+        const openDetail = () => { if (hasTxns) setTxnDetail(true); };
+        // No inline maxHeight on the card — an inline value would override the
+        // WIDGET_CAP_CSS per-size ceiling that caps this card now that grid
+        // rows are content-driven.
         return (
-            <div style={{ ...cardBase, padding: 'var(--card-pad, 14px 16px)', maxHeight: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                <div style={{ fontFamily: rajFont, fontSize: 'var(--text-title, 1.125rem)', fontWeight: 700, color: 'var(--k-34d399, #34d399)', letterSpacing: '0.07em', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div data-wr-widget="transaction-ticker" style={{ ...cardBase, padding: 'var(--card-pad, 14px 16px)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                {/* Tap the header to expand the ticker into the full-detail overlay. */}
+                <div role={hasTxns ? 'button' : undefined} tabIndex={hasTxns ? 0 : undefined}
+                    title={hasTxns ? 'Tap to see every transaction in full detail' : undefined}
+                    onClick={openDetail}
+                    onKeyDown={e => { if (hasTxns && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openDetail(); } }}
+                    style={{ fontFamily: rajFont, fontSize: 'var(--text-title, 1.125rem)', fontWeight: 700, color: 'var(--k-34d399, #34d399)', letterSpacing: '0.07em', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px', cursor: hasTxns ? 'pointer' : 'default' }}>
                     📰 TRANSACTION TICKER
-                    {hiddenCount > 0 && (
-                        <span role="button" tabIndex={0} title="Open League Analytics"
-                            onClick={() => navigateWidget && navigateWidget('analytics')}
-                            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigateWidget && navigateWidget('analytics'); } }}
-                            style={{ marginLeft: 'auto', fontSize: 'var(--text-label, 0.75rem)', fontWeight: 600, color: S, opacity: 0.7, fontFamily: dmFont, letterSpacing: 0, textTransform: 'none', cursor: 'pointer' }}>
-                            +{hiddenCount} more →
+                    {hasTxns && (
+                        <span style={{ marginLeft: 'auto', fontSize: 'var(--text-label, 0.75rem)', fontWeight: 600, color: S, opacity: 0.7, fontFamily: dmFont, letterSpacing: 0, textTransform: 'none' }}>
+                            {hiddenCount > 0 ? ('+' + hiddenCount + ' more →') : 'See all →'}
                         </span>
                     )}
                 </div>
                 <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
                 {(!transactions || transactions.length === 0) ? (
-                    <SkeletonRows count={size === 'lg' ? 5 : 2} />
-                ) : visibleTransactions.map((txn, ti) => (
-                    <div key={ti} {...tickerTradeProps(txn)} style={{ padding: '8px 0', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.05))', cursor: txn.type === 'trade' ? 'pointer' : 'default', outline: 'none' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px', flexWrap: 'wrap' }}>
-                            <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: S, opacity: 0.55, minWidth: '36px' }}>{timeAgo(txn.created)}</span>
-                            <span style={{ fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700, padding: '1px 5px', borderRadius: '3px',
-                                background: txn.type === 'trade' ? 'var(--acc-fill3, rgba(212,175,55,0.15))' : txn.type === 'waiver' ? 'rgba(52,211,153,0.15)' : 'rgba(96,165,250,0.15)',
-                                color: txn.type === 'trade' ? G : txn.type === 'waiver' ? 'var(--k-34d399, #34d399)' : 'var(--k-60a5fa, #60a5fa)',
-                            }}>{(txn.type === 'free_agent' ? 'FA' : txn.type || '').toUpperCase()}</span>
-                            <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: S }}>{getOwnerName(txn.roster_ids?.[0])}</span>
-                            {txn.type === 'trade' && txn.roster_ids?.[1] && (
-                                <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: S, opacity: 0.6 }}>↔ {getOwnerName(txn.roster_ids[1])}</span>
-                            )}
-                        </div>
-                        <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: W, paddingLeft: '42px' }}>
-                            {tickerAddPids(txn).map(pid => (
-                                <span key={'a'+pid} style={{ color: 'var(--good)', cursor: 'pointer', marginRight: '5px' }}
-                                    {...tickerPlayerProps(pid)}>
-                                    +{getPlayerName(pid)}
-                                </span>
-                            ))}
-                            {tickerDropPids(txn).map(pid => (
-                                <span key={'d'+pid} style={{ color: 'var(--bad)', cursor: 'pointer', marginRight: '5px' }}
-                                    {...tickerPlayerProps(pid)}>
-                                    -{getPlayerName(pid)}
-                                </span>
-                            ))}
-                            {txn.settings?.waiver_bid > 0 && <span style={{ color: 'var(--warn)', marginLeft: '2px' }}>${txn.settings.waiver_bid}</span>}
-                            {txn.type === 'trade' && txn.draft_picks?.length > 0 && (
-                                <span style={{ color: G, fontSize: 'var(--text-label, 0.75rem)', marginLeft: '4px' }}>+{txn.draft_picks.length} pick{txn.draft_picks.length !== 1 ? 's' : ''}</span>
-                            )}
-                        </div>
+                    <SkeletonRows count={size === 'narrow' ? 8 : size === 'lg' ? 5 : size === 'slim' ? 4 : 2} />
+                ) : typeof window.WrTxnTickerList === 'function' ? (
+                    /* Rows live in the shared widget (js/widgets/txn-ticker.js) so the
+                       Free Agency ticker is a direct lift of this one. Tapping a row
+                       opens the in-place detail overlay for THAT deal — it never
+                       navigates to the Trade page (owner ruling). */
+                    React.createElement(window.WrTxnTickerList, {
+                        transactions: visibleTransactions,
+                        getOwnerName, getPlayerName, timeAgo,
+                        onRowTap: txn => setTxnDetail(txn || true),
+                        colors: { S, W, G },
+                    })
+                ) : <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: S, opacity: 0.6 }}>Ticker unavailable</div>}
+                </div>
+            </div>
+        );
+    }
+
+    // Full-detail overlay for the Transaction Ticker: every transaction, and for
+    // a trade BOTH sides — each owner and exactly what they received (players +
+    // picks). Players are tappable into the player card. Backdrop / ✕ / Esc close.
+    function renderTransactionDetailModal() {
+        const all = transactions || [];
+        // A specific tapped transaction opens focused (just that deal); the
+        // header / "See all" chip open the full list. true = show all.
+        const focused = (txnDetail && txnDetail !== true) ? txnDetail : null;
+        const txns = focused ? [focused] : all;
+        const openPlayer = (pid) => {
+            if (!pid) return;
+            if (window.WR?.openPlayerCard) return window.WR.openPlayerCard(pid);
+            if (typeof window._wrSelectPlayer === 'function') return window._wrSelectPlayer(pid);
+            if (typeof window.openPlayerModal === 'function') window.openPlayerModal(pid);
+        };
+        const badge = (txn) => (
+            <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '1px 6px', borderRadius: '3px',
+                background: txn.type === 'trade' ? 'var(--acc-fill3, rgba(212,175,55,0.15))' : txn.type === 'waiver' ? 'rgba(52,211,153,0.15)' : 'rgba(96,165,250,0.15)',
+                color: txn.type === 'trade' ? G : txn.type === 'waiver' ? 'var(--k-34d399, #34d399)' : 'var(--k-60a5fa, #60a5fa)' }}>
+                {(txn.type === 'free_agent' ? 'FA' : txn.type || '').toUpperCase()}</span>
+        );
+        const pchip = (pid, name, color, ki) => (
+            <span key={ki} role="button" tabIndex={0} title="Open player card"
+                onClick={() => openPlayer(pid)}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openPlayer(pid); } }}
+                style={{ color, cursor: 'pointer', fontSize: '0.82rem', padding: '2px 7px', borderRadius: '4px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', whiteSpace: 'nowrap' }}>
+                {name}</span>
+        );
+        const tradeSides = (txn) => (txn.roster_ids || []).map((rid, si) => {
+            const adds = Object.keys(txn.adds || {}).filter(pid => String(txn.adds[pid]) === String(rid));
+            const picks = (txn.draft_picks || []).filter(p => String(p.owner_id) === String(rid)).map(p => ((p.season || '') + ' R' + (p.round || '?')));
+            return (
+                <div key={si} style={{ padding: '8px 10px', borderRadius: '6px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div style={{ fontSize: '0.8rem', fontWeight: 700, color: W, marginBottom: '5px' }}>{getOwnerName(rid) || ('Team ' + rid)} <span style={{ color: S, fontWeight: 500, opacity: 0.7 }}>receives</span></div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+                        {adds.length === 0 && picks.length === 0 && <span style={{ color: S, fontSize: '0.8rem', opacity: 0.6 }}>—</span>}
+                        {adds.map((pid, ai) => pchip(pid, getPlayerName(pid), 'var(--good)', 'a' + ai))}
+                        {picks.map((lbl, pi) => <span key={'p' + pi} style={{ color: G, fontSize: '0.82rem', padding: '2px 7px', borderRadius: '4px', background: 'rgba(212,175,55,0.1)', border: '1px solid rgba(212,175,55,0.25)', whiteSpace: 'nowrap' }}>{lbl} pick</span>)}
                     </div>
-                ))}
+                </div>
+            );
+        });
+        const nonTrade = (txn) => {
+            const adds = Object.keys(txn.adds || {});
+            const drops = Object.keys(txn.drops || {});
+            return (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', alignItems: 'center' }}>
+                    {adds.map((pid, ai) => pchip(pid, '+' + getPlayerName(pid), 'var(--good)', 'a' + ai))}
+                    {drops.map((pid, di) => pchip(pid, '−' + getPlayerName(pid), 'var(--bad)', 'd' + di))}
+                    {txn.settings?.waiver_bid > 0 && <span style={{ color: 'var(--warn)', fontSize: '0.82rem', fontWeight: 700 }}>${txn.settings.waiver_bid}</span>}
+                    {adds.length === 0 && drops.length === 0 && <span style={{ color: S, fontSize: '0.8rem', opacity: 0.6 }}>—</span>}
+                </div>
+            );
+        };
+        return (
+            <div role="dialog" aria-modal="true" aria-label={focused ? 'Transaction detail' : 'All transactions'}
+                onClick={() => setTxnDetail(null)}
+                style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
+                <div onClick={e => e.stopPropagation()}
+                    style={{ ...cardBase, width: '100%', maxWidth: '640px', maxHeight: '86vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', border: '1px solid rgba(212,175,55,0.25)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '14px 16px', borderBottom: '1px solid rgba(255,255,255,0.08)', flexShrink: 0 }}>
+                        <span style={{ fontFamily: rajFont, fontSize: '1.05rem', fontWeight: 700, color: 'var(--k-34d399, #34d399)', letterSpacing: '0.06em' }}>📰 {focused ? 'TRANSACTION' : 'ALL TRANSACTIONS'}</span>
+                        {focused
+                            ? (all.length > 1 && <span role="button" tabIndex={0} onClick={() => setTxnDetail(true)}
+                                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setTxnDetail(true); } }}
+                                style={{ color: G, fontSize: '0.76rem', fontWeight: 600, cursor: 'pointer' }}>See all {all.length} →</span>)
+                            : <span style={{ color: S, fontSize: '0.78rem', opacity: 0.7 }}>{all.length} total</span>}
+                        <button type="button" onClick={() => setTxnDetail(null)} aria-label="Close"
+                            style={{ marginLeft: 'auto', background: 'transparent', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '6px', color: W, cursor: 'pointer', fontSize: '1rem', lineHeight: 1, padding: '5px 10px' }}>✕</button>
+                    </div>
+                    <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '10px 14px' }}>
+                        {txns.length === 0 ? (
+                            <div style={{ color: S, fontSize: '0.85rem', padding: '20px', textAlign: 'center' }}>No transactions yet.</div>
+                        ) : txns.map((txn, ti) => (
+                            <div key={ti} style={{ padding: '11px 0', borderBottom: ti === txns.length - 1 ? 'none' : '1px solid var(--ov-3, rgba(255,255,255,0.06))' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '7px', flexWrap: 'wrap' }}>
+                                    <span style={{ fontSize: '0.72rem', color: S, opacity: 0.6 }}>{timeAgo(txn.status_updated || txn.created)}</span>
+                                    {badge(txn)}
+                                    <span style={{ fontSize: '0.82rem', fontWeight: 700, color: W }}>
+                                        {(txn.roster_ids || []).map(rid => getOwnerName(rid) || ('Team ' + rid)).join(txn.type === 'trade' ? ' ↔ ' : '')}
+                                    </span>
+                                </div>
+                                {txn.type === 'trade'
+                                    ? <div style={{ display: 'grid', gap: '7px' }}>{tradeSides(txn)}</div>
+                                    : nonTrade(txn)}
+                            </div>
+                        ))}
+                    </div>
                 </div>
             </div>
         );
@@ -1226,53 +1289,48 @@ function DashboardPanel({
     // ══════════════════════════════════════════════════════════════
     function renderStandings(size) {
         const isOffseason = currentLeague?.status === 'complete' || currentLeague?.status === 'pre_draft';
-        const isCompact = size === 'md';
-        // Flat, budget-aware list: division grouping can't fit a fixed-height
-        // card (4 divisions × 5+ rows used to render ~740px into 160px and
-        // hard-clip). Rank globally, cap rows to the card budget, and always
-        // include the user's row. Full division standings live in Analytics.
-        const sorted = [...(standings || [])].sort((a, b) => {
-            if (isOffseason) {
-                const ra = currentLeague?.rosters?.find(r => r.owner_id === a.userId);
-                const rb = currentLeague?.rosters?.find(r => r.owner_id === b.userId);
-                const ha = window.assessTeamFromGlobal?.(ra?.roster_id)?.healthScore || 0;
-                const hb = window.assessTeamFromGlobal?.(rb?.roster_id)?.healthScore || 0;
-                return hb !== ha ? hb - ha : b.pointsFor - a.pointsFor;
-            }
-            if (b.wins !== a.wins) return b.wins - a.wins;
-            if (a.losses !== b.losses) return a.losses - b.losses;
-            return b.pointsFor - a.pointsFor;
-        }).map((team, idx) => ({ team, rank: idx + 1 }));
-        const budget = isCompact ? 4 : 10;
-        const myIdx = sorted.findIndex(({ team }) => team.userId === sleeperUserId);
-        let visible = sorted.slice(0, budget);
-        if (myIdx >= budget) visible = [...sorted.slice(0, budget - 1), sorted[myIdx]];
-        const hiddenCount = sorted.length - visible.length;
+        // md and the skinny narrow/slim column use the tight 4-column layout.
+        const isCompact = size === 'md' || size === 'narrow' || size === 'slim';
+        // Narrow / Tall / Full Page show every team (scrolls if needed); md/lg/slim cap to fit.
+        const showAll = size === 'tall' || size === 'xxl' || size === 'xl' || size === 'narrow';
+        // skjjcruz production keeps division-grouped standings on the dashboard
+        // (explicitly preserved in the prod sync — do not replace with the flat list).
+        const divisions = {};
+        (standings || []).forEach(t => { const div = t.division || 0; if (!divisions[div]) divisions[div] = []; divisions[div].push(t); });
+        const divKeys = Object.keys(divisions).sort((a, b) => a - b);
+        const hasDivisions = divKeys.length > 1;
+        const divNameMap = {};
+        if (hasDivisions && currentLeague?.metadata) {
+            divKeys.forEach(dk => { divNameMap[dk] = currentLeague.metadata['division_' + dk + '_name'] || currentLeague.metadata['division_' + dk] || ('Division ' + dk); });
+        }
 
         return (
-            <div style={{ ...cardBase, padding: 'var(--card-pad, 14px 16px)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                <div style={{ fontFamily: rajFont, fontSize: 'var(--text-title, 1.125rem)', fontWeight: 700, color: G, letterSpacing: '0.07em', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    📊 LEAGUE STANDINGS
-                    {hiddenCount > 0 && (
-                        <span role="button" tabIndex={0} title="Open League Analytics"
-                            onClick={() => navigateWidget && navigateWidget('analytics')}
-                            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigateWidget && navigateWidget('analytics'); } }}
-                            style={{ marginLeft: 'auto', fontSize: 'var(--text-label, 0.75rem)', fontWeight: 600, color: S, opacity: 0.7, fontFamily: dmFont, letterSpacing: 0, textTransform: 'none', cursor: 'pointer' }}>
-                            +{hiddenCount} more →
-                        </span>
-                    )}
-                </div>
-                <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: isCompact ? '16px 1fr 44px 50px' : '16px 24px 1fr 44px 44px 50px', gap: '4px', padding: '3px 6px', fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700, color: G, fontFamily: dmFont, textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid var(--acc-fill2, rgba(212,175,55,0.12))' }}>
-                        <span>#</span>
-                        {!isCompact && <span/>}
-                        <span>Team</span>
-                        <span style={{ textAlign: 'right' }}>{isOffseason ? 'HP' : 'W-L'}</span>
-                        {!isCompact && <span style={{ textAlign: 'right' }}>PF</span>}
-                        <span style={{ textAlign: 'right' }}>{valueShortLabel}</span>
-                    </div>
-                    {visible.map(({ team, rank }) => {
-                        const idx = rank - 1;
+            <div style={{ ...cardBase, padding: 'var(--card-pad, 14px 16px)', overflow: showAll ? 'auto' : 'hidden' }}>
+                <div style={{ fontFamily: rajFont, fontSize: 'var(--text-title, 1.125rem)', fontWeight: 700, color: G, letterSpacing: '0.07em', marginBottom: '10px' }}>📊 LEAGUE STANDINGS</div>
+                {divKeys.map(divKey => (
+                    <div key={divKey} style={{ marginBottom: hasDivisions ? '14px' : 0 }}>
+                        {hasDivisions && <div style={{ fontFamily: dmFont, fontSize: 'var(--text-label, 0.75rem)', color: G, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, marginBottom: '6px', paddingBottom: '3px', borderBottom: '1px solid var(--acc-fill3, rgba(212,175,55,0.15))' }}>{divNameMap[divKey]}</div>}
+                        <div style={{ display: 'grid', gridTemplateColumns: isCompact ? '16px 1fr 44px 50px' : '16px 24px 1fr 44px 44px 50px', gap: '4px', padding: '3px 6px', fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700, color: G, fontFamily: dmFont, textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid var(--acc-fill2, rgba(212,175,55,0.12))' }}>
+                            <span>#</span>
+                            {!isCompact && <span/>}
+                            <span>Team</span>
+                            <span style={{ textAlign: 'right' }}>{isOffseason ? 'HP' : 'W-L'}</span>
+                            {!isCompact && <span style={{ textAlign: 'right' }}>PF</span>}
+                            <span style={{ textAlign: 'right' }}>{valueShortLabel}</span>
+                        </div>
+                        {divisions[divKey].sort((a, b) => {
+                            if (isOffseason) {
+                                const ra = currentLeague?.rosters?.find(r => r.owner_id === a.userId);
+                                const rb = currentLeague?.rosters?.find(r => r.owner_id === b.userId);
+                                // One rank (2026-09-02): offseason order = blended power.
+                                const ha = window.assessTeamFromGlobal?.(ra?.roster_id)?.powerScore || 0;
+                                const hb = window.assessTeamFromGlobal?.(rb?.roster_id)?.powerScore || 0;
+                                return hb !== ha ? hb - ha : b.pointsFor - a.pointsFor;
+                            }
+                            if (b.wins !== a.wins) return b.wins - a.wins;
+                            if (a.losses !== b.losses) return a.losses - b.losses;
+                            return b.pointsFor - a.pointsFor;
+                        }).slice(0, showAll ? 999 : isCompact ? 5 : 8).map((team, idx) => {
                             const isMe = team.userId === sleeperUserId;
                             const roster = currentLeague?.rosters?.find(r => r.owner_id === team.userId);
                             const totalDHQ = roster?.players?.reduce((s, pid) => s + ((window.App?.PlayerValue?.getValue ? window.App.PlayerValue.getValue(pid) : (window.App?.LI?.playerScores?.[pid] || 0))), 0) || 0;
@@ -1306,7 +1364,8 @@ function DashboardPanel({
                                 </div>
                             );
                         })}
-                </div>
+                    </div>
+                ))}
             </div>
         );
     }
@@ -1345,10 +1404,10 @@ function DashboardPanel({
                 data-widget-id={widget.id || ''}
                 data-widget-key={widget.key || ''}
                 data-widget-size={widget.size || ''}
-                draggable={!isFixedHome}
-                onDragStart={isFixedHome ? undefined : e => { setDragIdx(idx); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(idx)); }}
-                onDragOver={isFixedHome ? undefined : e => e.preventDefault()}
-                onDrop={isFixedHome ? undefined : e => {
+                draggable
+                onDragStart={e => { setDragIdx(idx); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(idx)); }}
+                onDragOver={e => e.preventDefault()}
+                onDrop={e => {
                     e.preventDefault();
                     if (dragIdx === null || dragIdx === idx) return;
                     const updated = [...selectedWidgets];
@@ -1361,17 +1420,22 @@ function DashboardPanel({
                 onMouseLeave={() => setShowGear(false)}
                 style={{
                     gridColumn: sizeSpan[widget.size] || 'span 1',
-                    gridRow: rowSpan[widget.size] || 'span 1',
+                    // Intel Brief (tall) reserves 3 rows instead of 4 — it fills
+                    // them, so its content sits tight AND the widget beneath it
+                    // slides up flush to the border (no unfillable dead row).
+                    gridRow: (widget.key === 'intel-brief' && widget.size === 'tall') ? 'span 3' : (rowSpan[widget.size] || 'span 1'),
                     position: 'relative',
                     opacity: dragIdx === idx ? 0.4 : 1,
                     transition: theme.effects?.transition || 'opacity 0.15s',
-                    minHeight: widget.size === 'sm' ? '160px' : undefined,
+                    // No forced heights: with content-driven grid rows the card
+                    // hugs its content (WIDGET_CAP_CSS supplies the per-size
+                    // max-height ceiling that keeps long lists scrolling).
                 }}
             >
                 {children}
 
                 {/* Gear button */}
-                {!isFixedHome && !shellPhone && showGear && (
+                {!shellPhone && showGear && (
                     <button
                         onClick={e => { e.stopPropagation(); setEditingWidget({ widget, idx }); setPickerOpen(true); }}
                         title="Widget settings"
@@ -1393,7 +1457,7 @@ function DashboardPanel({
                 )}
 
                 {/* Remove button */}
-                {!isFixedHome && !shellPhone && showGear && (
+                {!shellPhone && showGear && (
                     <button
                         onClick={e => { e.stopPropagation(); setSelectedWidgets(selectedWidgets.filter((_, i) => i !== idx)); }}
                         title="Remove widget"
@@ -1420,7 +1484,7 @@ function DashboardPanel({
                     these per-card arrows are the fallback for coarse-pointer
                     TABLETS only (isCoarse && !isPhone). Fine-pointer desktop
                     never renders them (touchReorder false). */}
-                {!isFixedHome && showGear && touchReorder && !shellPhone && [
+                {showGear && touchReorder && !shellPhone && [
                     { glyph: '▼', delta: 1, ok: canMoveDown, right: '77px', label: 'Move widget down' },
                     { glyph: '▲', delta: -1, ok: canMoveUp, right: '121px', label: 'Move widget up' },
                 ].map(b => (
@@ -1451,7 +1515,7 @@ function DashboardPanel({
                     inline action row (⚙ Edit / ✕ Remove) wired to the same
                     setters the desktop gear/remove buttons use. ▲/▼ above
                     stay as shipped. */}
-                {!isFixedHome && shellPhone && (
+                {shellPhone && (
                     <button
                         onClick={e => { e.stopPropagation(); setPhoneMenu(v => !v); }}
                         aria-label="Widget actions"
@@ -1473,12 +1537,12 @@ function DashboardPanel({
                             transition: 'all 0.12s', pointerEvents: 'none', fontWeight: 700, letterSpacing: '1px',
                         }}>⋯</span></button>
                 )}
-                {!isFixedHome && shellPhone && phoneMenu && (
+                {shellPhone && phoneMenu && (
                     <div style={{
                         position: 'absolute', top: '26px', right: '2px', zIndex: 7,
                         display: 'flex', gap: '4px', padding: '3px 4px',
                         background: 'var(--surf-solid, rgba(10,10,10,0.92))', backdropFilter: 'blur(4px)',
-                        border: '1px solid var(--ov-6, rgba(255,255,255,0.15))', borderRadius: 'var(--card-radius, 10px)',
+                        border: '1px solid var(--ov-6, rgba(255,255,255,0.15))', borderRadius: '9px',
                     }}>
                         <button
                             onClick={e => { e.stopPropagation(); setPhoneMenu(false); setEditingWidget({ widget, idx }); setPickerOpen(true); }}
@@ -1570,16 +1634,33 @@ function DashboardPanel({
         if (size === 'lg' || size === 'tall') {
             return (
                 <WidgetShell key={widget.id || key + idx} widget={widget} idx={idx}>
-                    <LargeModuleCard moduleKey={key} primaryMetric={primaryMetric} />
+                    <LargeModuleCard moduleKey={key} primaryMetric={primaryMetric} size={size} />
                 </WidgetShell>
             );
         }
         if (size === 'xl' || size === 'xxl') {
             return (
                 <WidgetShell key={widget.id || key + idx} widget={widget} idx={idx}>
-                    <LargeModuleCard moduleKey={key} primaryMetric={primaryMetric} />
+                    <LargeModuleCard moduleKey={key} primaryMetric={primaryMetric} size={size} />
                 </WidgetShell>
             );
+        }
+        // Skinny side-column sizes for the inline-rendered ticker + standings.
+        if (size === 'slim' || size === 'narrow') {
+            if (key === 'transaction-ticker') {
+                return (
+                    <WidgetShell key={widget.id || key + idx} widget={widget} idx={idx}>
+                        {renderTransactionTicker(size)}
+                    </WidgetShell>
+                );
+            }
+            if (key === 'league-standings') {
+                return (
+                    <WidgetShell key={widget.id || key + idx} widget={widget} idx={idx}>
+                        {renderStandings(size)}
+                    </WidgetShell>
+                );
+            }
         }
         return null;
     }
@@ -1640,7 +1721,7 @@ function DashboardPanel({
                 playersData, setActiveTab, navigateWidget,
             });
         }
-        // FAAB Command → FaabCommandWidget (js/widgets/faab-command.js)
+        // FAAB Command -> FaabCommandWidget (js/widgets/faab-command.js)
         if (moduleKey === 'faab-command' && typeof window.FaabCommandWidget === 'function') {
             return React.createElement(window.FaabCommandWidget, {
                 size, myRoster, currentLeague, playersData, setActiveTab, navigateWidget,
@@ -1652,12 +1733,6 @@ function DashboardPanel({
             return React.createElement(DCW, {
                 size, myRoster, currentLeague, playersData, briefDraftInfo,
                 setActiveTab, navigateWidget,
-            });
-        }
-        // Analyst Mock → AnalystMockWidget (js/widgets/analyst-mock.js)
-        if (moduleKey === 'analyst-mock' && typeof window.AnalystMockWidget === 'function') {
-            return React.createElement(window.AnalystMockWidget, {
-                size, myRoster, currentLeague, setActiveTab, navigateWidget,
             });
         }
         // Phase 3: Competitive Tiers widget (js/widgets/competitive-tiers.js)
@@ -1704,7 +1779,7 @@ function DashboardPanel({
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '10px' }}>
                     {starredWidgets.map(item => (
-                        <div key={item.id} style={{ background: 'var(--acc-fill1, rgba(212,175,55,0.05))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: 'var(--card-radius, 10px)', padding: '12px 14px', position: 'relative' }}>
+                        <div key={item.id} style={{ background: 'var(--acc-fill1, rgba(212,175,55,0.05))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '10px', padding: '12px 14px', position: 'relative' }}>
                             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px', marginBottom: '6px' }}>
                                 <div style={{ fontFamily: dmFont, fontSize: 'var(--text-body, 1rem)', fontWeight: 600, color: W, lineHeight: 1.3 }}>{item.title}</div>
                                 <button onClick={() => window.WrStarWidget?.remove(item.id)} title="Unpin" style={{ background: 'none', border: 'none', cursor: 'pointer', color: G, fontSize: 'var(--text-body, 1rem)', flexShrink: 0, padding: 0, lineHeight: 1, minWidth: '44px', minHeight: '44px', margin: '-12px -14px -12px 0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>★</button>
@@ -1755,14 +1830,6 @@ function DashboardPanel({
         catch (e) { if (window.wrLog) window.wrLog('dashboard.phoneHero', e); return null; }
     }, [_phone, wrPro, myRoster, currentLeague, playersData, statsData, prevStatsData]);
 
-    // CHOPPED leagues: survival is the headline number, so it leads BOTH
-    // layouts. Defined above the phone/desktop split because the phone branch
-    // early-returns at the line below — and Game Day (the other natural home)
-    // is hidden pre-draft, exactly when the block is most interesting.
-    const chopBlockEl = (resolvedLeagueSkin?.features?.showElimination && window.WrChopBlock)
-        ? <div style={{ padding: '14px 16px 0' }}><window.WrChopBlock active currentLeague={currentLeague} myRoster={myRoster} /></div>
-        : null;
-
     if (_phone) {
         // ── Hero: latest pinned insight only. The old rung-1 "lineup alert"
         // hero moved INTO the Intel Brief (owner ask 2026-07-12,
@@ -1805,7 +1872,7 @@ function DashboardPanel({
             const clickTab = resolveWidgetDestination(mod?.clickTarget?.sm || mod?.clickTarget?.md || null);
             const tileBase = {
                 background: BK, border: '1px solid var(--ov-5, rgba(255,255,255,0.08))',
-                borderRadius: 'var(--card-radius, 10px)', padding: '9px 11px', minHeight: '68px', maxWidth: '150px',
+                borderRadius: '9px', padding: '9px 11px', minHeight: '68px', maxWidth: '150px',
                 display: 'flex', flexDirection: 'column', gap: '2px', cursor: 'pointer', boxSizing: 'border-box',
             };
             const labelCss = { fontFamily: monoFont, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 600, color: S, opacity: 0.65, letterSpacing: '0.05em', textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
@@ -1849,7 +1916,7 @@ function DashboardPanel({
                     <div key={tileKey} {...tileProps(goTab, metricLabel)}>
                         <div style={labelCss}>{metricLabel}</div>
                         <div style={valCss(val.color)}>{val.value}{trendArrow(val.sparkData, val.color)}</div>
-                        <div style={subCss}>{val.sub || ' '}</div>
+                        <div style={subCss}>{val.sub || ' '}</div>
                     </div>
                 );
             }
@@ -1881,10 +1948,13 @@ function DashboardPanel({
                     self-evident. Desktop banner (showHint, further down) is
                     untouched. */}
 
-                {/* Widgets carry inline grid spans — flatten them to the 1-col stack */}
+                {/* Widgets carry inline grid spans — flatten them to the 1-col stack.
+                    WIDGET_CAP_CSS contributes the min-height:0 reset here; its
+                    per-size ceilings are ≥768px-scoped so phone cards keep
+                    growing with content (they always could at this tier). */}
                 <style>{`@media(max-width:767px){
                     .wr-dashboard-grid>.wr-widget{ grid-column:1 / -1 !important; grid-row:auto !important; min-width:0; }
-                }`}</style>
+                }` + WIDGET_CAP_CSS}</style>
 
                 {/* Severity hero only — the sm KPI strip (Health Score /
                     Power Rankings tiles) is removed on phone (owner ask
@@ -1902,12 +1972,12 @@ function DashboardPanel({
                     ⇅ Reorder button opens the drag-to-rearrange sheet (replaces
                     the per-card ▲▼ arrows on phone, owner ask). */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '16px var(--space-md) 2px', background: BK }}>
-                    <div role="heading" aria-level={2} style={{ fontFamily: "'Rajdhani', sans-serif", fontSize: '1.05rem', fontWeight: 700, letterSpacing: '0.03em', color: W, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{isFixedHome ? 'Home' : 'Customizable Widgets'}</div>
-                    {!isFixedHome && widgets.length >= 2 && (
+                    <div role="heading" aria-level={2} style={{ fontFamily: "'Rajdhani', sans-serif", fontSize: '1.05rem', fontWeight: 700, letterSpacing: '0.03em', color: W, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Customizable Widgets</div>
+                    {widgets.length >= 2 && (
                         <button type="button" onClick={() => setReorderOpen(true)} style={{
                             flex: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px', minHeight: '40px', padding: '0 14px',
                             background: 'var(--acc-fill2, rgba(212,175,55,0.10))', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))',
-                            borderRadius: 'var(--card-radius-sm, 8px)', color: G, cursor: 'pointer', fontFamily: dmFont, fontSize: 'var(--text-label, 0.75rem)', fontWeight: 600, letterSpacing: '0.04em',
+                            borderRadius: '8px', color: G, cursor: 'pointer', fontFamily: dmFont, fontSize: 'var(--text-label, 0.75rem)', fontWeight: 600, letterSpacing: '0.04em',
                         }}>
                             <span aria-hidden="true" style={{ fontSize: '1rem', lineHeight: 1 }}>⇅</span> Reorder
                         </button>
@@ -1918,7 +1988,7 @@ function DashboardPanel({
                 <div className="wr-dashboard-grid" style={{
                     display: 'grid',
                     gridTemplateColumns: 'minmax(0,1fr)',
-                    gridAutoRows: 'minmax(160px,auto)',
+                    gridAutoRows: 'minmax(0,auto)',
                     gap: 'var(--space-md)',
                     padding: 'var(--space-md) var(--space-md) 0',
                     background: BK,
@@ -1930,7 +2000,6 @@ function DashboardPanel({
                 </div>
 
                 {/* Add widget — bottom of the phone stack */}
-                {!isFixedHome && (
                 <div style={{ padding: 'var(--space-md)', background: BK, borderBottom: '1px solid ' + (theme.colors?.border || 'var(--acc-fill2, rgba(212,175,55,0.12))') }}>
                     <button
                         type="button"
@@ -1939,7 +2008,7 @@ function DashboardPanel({
                         style={{
                             width: '100%', minHeight: '56px',
                             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-                            border: '1px dashed var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: 'var(--card-radius, 10px)',
+                            border: '1px dashed var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: '10px',
                             background: 'transparent', cursor: 'pointer',
                             color: 'var(--acc-line2, rgba(212,175,55,0.35))', fontFamily: 'inherit',
                         }}
@@ -1948,10 +2017,14 @@ function DashboardPanel({
                         <span style={{ fontSize: 'var(--text-label, 0.75rem)', fontFamily: dmFont, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Add Widget</span>
                     </button>
                 </div>
-                )}
 
                 {/* Pinned / starred section */}
                 <PinnedSection />
+
+                {/* Transaction Ticker full-detail overlay — the ticker renders
+                    in the phone stack too, so its tap-to-expand must keep
+                    working at this tier (prod #254/#255/#257). */}
+                {txnDetail && renderTransactionDetailModal()}
 
                 {/* Full-screen widget picker overlay (same wiring as desktop) */}
                 {pickerOpen && (
@@ -1990,7 +2063,7 @@ function DashboardPanel({
         <React.Fragment>
             {chopBlockEl}
             {/* First-visit hint */}
-            {!isFixedHome && showHint && (
+            {showHint && (
                 <div style={{
                     display: 'flex', alignItems: 'center', gap: '12px',
                     padding: '12px 20px',
@@ -2009,16 +2082,16 @@ function DashboardPanel({
                     <button onClick={dismissHint} style={{
                         padding: '5px 14px', fontSize: 'var(--text-label, 0.75rem)', fontFamily: dmFont, fontWeight: 600,
                         background: 'var(--acc-fill2, rgba(212,175,55,0.12))', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))',
-                        borderRadius: 'var(--card-radius-xs, 5px)', color: G, cursor: 'pointer', flexShrink: 0,
+                        borderRadius: '5px', color: G, cursor: 'pointer', flexShrink: 0,
                     }}>Got it</button>
                 </div>
             )}
 
-            <style>{`
+            <style>{WIDGET_CAP_CSS + `
                 @media(max-width:767px){
                     .wr-dashboard-grid{
                         grid-template-columns:minmax(0,1fr) !important;
-                        grid-auto-rows:minmax(160px,auto) !important;
+                        grid-auto-rows:minmax(0,auto) !important;
                         padding:var(--space-md) !important;
                         gap:var(--space-md) !important;
                         overflow-x:hidden;
@@ -2087,7 +2160,10 @@ function DashboardPanel({
             <div className="wr-dashboard-grid" style={{
                 display: 'grid',
                 gridTemplateColumns: 'repeat(4, minmax(140px, 1fr))',
-                gridAutoRows: '160px',
+                // Content-driven rows: unfilled spanned rows collapse to 0 so a
+                // card only extends as far as its content and the widgets below
+                // slide up (WIDGET_CAP_CSS provides the per-size ceilings).
+                gridAutoRows: 'minmax(0, auto)',
                 gap: 'var(--space-md)',
                 padding: 'var(--space-lg) var(--space-xl)',
                 background: BK,
@@ -2099,7 +2175,6 @@ function DashboardPanel({
                 {widgets.map((widget, idx) => renderWidget(widget, idx))}
 
                 {/* Add widget button */}
-                {!isFixedHome && (
                 <button
                     type="button"
                     className="wr-add-widget"
@@ -2107,9 +2182,11 @@ function DashboardPanel({
                     style={{
                         gridColumn: 'span 1', gridRow: 'span 1',
                         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '6px',
-                        border: '1px dashed var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: 'var(--card-radius, 10px)',
+                        border: '1px dashed var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: '10px',
                         background: 'transparent',
-                        cursor: 'pointer', minHeight: '160px',
+                        // 64px tap target, not 160: a forced 160px would inflate
+                        // its whole (now content-sized) grid row.
+                        cursor: 'pointer', minHeight: '64px',
                         transition: 'all 0.15s', color: 'var(--acc-line2, rgba(212,175,55,0.35))',
                         fontFamily: 'inherit',
                     }}
@@ -2119,11 +2196,13 @@ function DashboardPanel({
                     <span style={{ fontSize: '1.4rem', lineHeight: 1 }}>+</span>
                     <span style={{ fontSize: 'var(--text-label, 0.75rem)', fontFamily: dmFont, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Add Widget</span>
                 </button>
-                )}
             </div>
 
             {/* Pinned / starred section */}
             <PinnedSection />
+
+            {/* Transaction Ticker full-detail overlay */}
+            {txnDetail && renderTransactionDetailModal()}
 
             {/* Full-screen widget picker overlay */}
             {pickerOpen && (

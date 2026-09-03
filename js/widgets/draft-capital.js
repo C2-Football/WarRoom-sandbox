@@ -326,7 +326,7 @@
                     padding: '6px 10px',
                     background: 'var(--ov-1, rgba(255,255,255,0.02))',
                     border: '1px solid ' + (colors.border || 'var(--ov-4, rgba(255,255,255,0.06))'),
-                    borderRadius: 'var(--card-radius-sm, 8px)',
+                    borderRadius: '6px',
                 }}>
                     <div style={{ textAlign: 'center', flex: 1 }}>
                         <div style={{ fontFamily: fonts.mono, fontSize: fs(1.05), fontWeight: 700, color: valCol, lineHeight: 1 }} className="wr-data-value">
@@ -359,7 +359,7 @@
                     )}
                     <span style={{ flex: 1 }} />
                     {countdown && <span style={{ fontSize: fs(0.62), color: countdown.live ? colors.positive : colors.accent, fontWeight: 700, fontFamily: fonts.ui }}>{countdown.live ? '🔴 LIVE' : countdown.text}</span>}
-                    <button onClick={openDraft} title="Open Draft Command" style={{ padding: '3px 8px', background: wrAlpha(colors.warn || 'var(--k-f0a500, #f0a500)', '1A'), color: colors.warn || 'var(--k-f0a500, #f0a500)', border: '1px solid ' + wrAlpha(colors.warn || 'var(--k-f0a500, #f0a500)', '47'), borderRadius: 'var(--card-radius-xs, 5px)', cursor: 'pointer', fontSize: fs(0.56), fontFamily: fonts.ui, fontWeight: 700, whiteSpace: 'nowrap' }}>Draft</button>
+                    <button onClick={openDraft} title="Open Draft Command" style={{ padding: '3px 8px', background: wrAlpha(colors.warn || 'var(--k-f0a500, #f0a500)', '1A'), color: colors.warn || 'var(--k-f0a500, #f0a500)', border: '1px solid ' + wrAlpha(colors.warn || 'var(--k-f0a500, #f0a500)', '47'), borderRadius: '5px', cursor: 'pointer', fontSize: fs(0.56), fontFamily: fonts.ui, fontWeight: 700, whiteSpace: 'nowrap' }}>Draft</button>
                 </div>
             );
         }
@@ -379,10 +379,13 @@
 
         // ── XXL: lg + Big Board + Pick Strategy + League Capital chart ──
         if (size === 'xxl') {
-            // Top available players (proxy for big board): un-rostered, sorted by DHQ
+            // Top available players (proxy for big board): un-rostered, sorted by DHQ.
+            // Only positions this league actually rosters — otherwise team
+            // defenses (DEF) leak into IDP leagues like Psycho that don't use them.
             const scores = window.App?.LI?.playerScores || {};
             const rostered = new Set();
             (currentLeague?.rosters || []).forEach(r => (r.players || []).concat(r.taxi || [], r.reserve || []).forEach(pid => rostered.add(String(pid))));
+            const allowedPos = (window.App?.leaguePlayablePositions ? window.App.leaguePlayablePositions(currentLeague?.roster_positions) : null);
             const bigBoard = Object.entries(scores)
                 .filter(([pid]) => !rostered.has(pid))
                 .map(([pid, dhq]) => {
@@ -395,6 +398,7 @@
                         team: p.team || 'FA', dhq,
                     };
                 })
+                .filter(p => !allowedPos || !allowedPos.length || allowedPos.includes(p.pos))
                 .sort((a, b) => b.dhq - a.dhq)
                 .slice(0, 20);
 
@@ -453,7 +457,7 @@
                     {/* Bottom half: Pick Strategy + League Capital chart */}
                     <div style={{ flexShrink: 0, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '16px' }}>
                         {/* Pick Strategy */}
-                        <div style={{ padding: '8px 10px', background: wrAlpha(colors.warn || 'var(--k-f0a500, #f0a500)', '0D'), border: '1px solid ' + wrAlpha(colors.warn || 'var(--k-f0a500, #f0a500)', '33'), borderRadius: 'var(--card-radius-sm, 8px)' }}>
+                        <div style={{ padding: '8px 10px', background: wrAlpha(colors.warn || 'var(--k-f0a500, #f0a500)', '0D'), border: '1px solid ' + wrAlpha(colors.warn || 'var(--k-f0a500, #f0a500)', '33'), borderRadius: '6px' }}>
                             <div style={{ fontSize: fs(0.6), fontWeight: 700, color: colors.warn || 'var(--k-f0a500, #f0a500)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px', fontFamily: fonts.ui }}>Pick Strategy · Capital & Needs</div>
                             {/* pairs pick capital with the roster-needs assessment — a rec → Pro */}
                             {!pro ? (
@@ -491,7 +495,7 @@
                             )}
                         </div>
                         {/* League Capital Distribution */}
-                        <div style={{ padding: '8px 10px', background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.06))', borderRadius: 'var(--card-radius-sm, 8px)' }}>
+                        <div style={{ padding: '8px 10px', background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.06))', borderRadius: '6px' }}>
                             <div style={{ fontSize: fs(0.6), fontWeight: 700, color: colors.accent, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px', fontFamily: fonts.ui }}>League Capital Distribution</div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                                 {capRows.map((t, i) => {

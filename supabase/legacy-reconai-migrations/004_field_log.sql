@@ -1,7 +1,0 @@
--- Deprecated migration kept as a no-op for filename/order compatibility.
---
--- The old contents created a second incompatible public.field_log shape
--- using auth.users/user_id/event_type columns. That conflicted with the
--- shared app client, which writes username/client_id/category/action_type
--- rows. The canonical initial schema is 004_create_field_log.sql, and
--- 008_field_log_canonical_rls.sql normalizes older databases safely.

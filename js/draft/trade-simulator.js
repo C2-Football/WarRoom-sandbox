@@ -166,9 +166,6 @@
     function playerValueFor(pid) {
         const resolved = window.DraftCC?.state?.resolvePlayerDhq?.({ pid });
         if (resolved?.value > 0) return resolved.value;
-        // Redraft board: a resolved 0 is the honest ROS price — falling back
-        // to dynasty playerScores would price the trade in the wrong currency.
-        if (resolved?.source === 'ros-zero') return 0;
         const scores = window.App?.LI?.playerScores || {};
         return Math.round(scores[pid] || 0);
     }

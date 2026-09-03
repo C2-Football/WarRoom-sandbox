@@ -57,18 +57,12 @@
     }
 
     // ── Fetch a single week's player + team stats ─────────────────────────────
-    // seasonType is Sleeper's own path segment: 'regular' (default) | 'pre' |
-    // 'post'. Defaults to 'regular' so every existing caller is unchanged.
-    // The cache key MUST carry it: preseason week 2 and regular week 2 are
-    // completely different payloads under the same (season, week) pair, so a
-    // type-blind key would serve one as the other.
-    async function fetchWeeklyStats(season, week, seasonType) {
-        const type = (seasonType === 'pre' || seasonType === 'post') ? seasonType : 'regular';
-        const cacheKey = `wr_sos_wk_${season}_${type}_${week}`;
+    async function fetchWeeklyStats(season, week) {
+        const cacheKey = `wr_sos_wk_${season}_${week}`;
         const cached = getCached(cacheKey);
         if (cached) return cached;
         try {
-            const resp = await fetch(`${SLEEPER_BASE}/stats/nfl/${type}/${season}/${week}`);
+            const resp = await fetch(`${SLEEPER_BASE}/stats/nfl/regular/${season}/${week}`);
             if (!resp.ok) return {};
             const data = await resp.json();
             setCache(cacheKey, data);

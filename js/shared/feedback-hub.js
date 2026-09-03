@@ -56,9 +56,7 @@
     try { return (window.S && window.S.currentLeagueId) || null; } catch (e) { return null; }
   }
   function platform() {
-    try {
-      if (window.Capacitor && window.Capacitor.getPlatform) return 'capacitor/' + window.Capacitor.getPlatform();
-    } catch (e) {}
+    // Web-only build — the iOS app ships its own copy that reports its platform.
     return 'web';
   }
   function appVersion() {

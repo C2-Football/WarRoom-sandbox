@@ -3,22 +3,128 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://skjjcruz.github.io https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://sxshiqyxhhifvtfqawbq.supabase.co https://api.sleeper.app https://api.myfantasyleague.com https://*.myfantasyleague.com https://lm-api-reads.fantasy.espn.com https://fantasysports.yahooapis.com https://*.sentry.io; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; object-src 'none';">
 <title>Dynasty HQ — Your world. Your rankings. Your strategy.</title>
-<link rel="icon" type="image/png" href="img/logo.png">
+  <meta name="description" content="Dynasty HQ scores your Sleeper league by its own rules — then reads how every manager you face actually trades. Free, or $9.99/mo.">
+<link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="img/logo.png">
+  <style id="preboot-hide">html{visibility:hidden!important}</style>
+  <noscript><style>html{visibility:visible!important}</style></noscript>
+  <script>
+    (function () {
+      function reveal(){ var s=document.getElementById('preboot-hide'); if(s&&s.parentNode){ s.parentNode.removeChild(s); } }
+      function showSigningIn(){
+        try {
+          var d = document.createElement('div');
+          d.id = 'wr-signing-in';
+          // visibility:visible overrides the hidden <html>, so this splash shows
+          // while the marketing page underneath stays hidden. Includes the same
+          // subdued DHQ watermark used in-app / on the Sleeper-connect page.
+          d.setAttribute('style', 'visibility:visible!important;position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#0A0A0A');
+          d.innerHTML =
+            '<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:clamp(400px,60vw,1000px);height:clamp(400px,60vw,1000px);background:url(icon-192.png) center/contain no-repeat;opacity:.05;filter:brightness(1.2);pointer-events:none"></div>' +
+            '<div style="position:relative;color:#E8B23A;font:600 15px/1.4 Inter,system-ui,sans-serif;letter-spacing:.02em">Signing you in…</div>';
+          (document.body || document.documentElement).appendChild(d);
+        } catch (e) {}
+      }
+      try {
+        var q = new URLSearchParams(window.location.search);
+        // Session handoff from the marketing site (dhqfootball.com): it signs the
+        // user in on its own origin, then sends them here with the app session in
+        // the URL fragment (never sent to the server, same trick as OAuth).
+        // Ingest it before the session checks below so the user lands signed in.
+        var hs = (window.location.hash || '').match(/[#&]dhq_session=([^&]+)/);
+        var handedIsNew = false;
+        if (hs) {
+          try {
+            var b64 = hs[1].replace(/-/g, '+').replace(/_/g, '/');
+            while (b64.length % 4) b64 += '=';
+            var handed = JSON.parse(decodeURIComponent(escape(window.atob(b64))));
+            // Only ingest complete sessions. A stale cached copy of the
+            // marketing page can still hand off records without user.id (the
+            // Jul 9–11 sign-in bug shape), which the shared client resolves
+            // to the free tier — storing one would re-poison this origin.
+            if (handed && handed.token && handed.user && handed.user.id) {
+              // isNew is a one-shot routing hint, not session state — consume
+              // it here so later visits don't re-trigger onboarding.
+              handedIsNew = handed.isNew === true;
+              delete handed.isNew;
+              localStorage.setItem('fw_session_v1', JSON.stringify(handed));
+            }
+          } catch (e) {}
+          try { history.replaceState(null, '', window.location.pathname + window.location.search); } catch (e) {}
+        }
+        // Editor preview, explicit sign-out, and ?home (the league hub's
+        // brand icon — a deliberate visit to this page) stay on this page.
+        // Without the ?home escape this head-level check bounces a signed-in
+        // visitor back into the app before the body's STAY_HOME-aware
+        // handlers ever run, making the hub logo appear to do nothing.
+        if (q.has('landingPreview') || q.has('signout') || q.has('home')) { reveal(); return; }
+        // OAuth return: Supabase brings us back here with the session in the URL
+        // (hash #access_token=… for implicit, ?code=… for PKCE) BEFORE the page's
+        // callback handler has stored it. Show a neutral splash, not the marketing
+        // page; the handler stores the session and redirects to step 2 shortly.
+        var hash = window.location.hash || '';
+        var oauthReturn = hash.indexOf('access_token=') !== -1 || /[?&]code=/.test(window.location.search);
+        var oauthError  = hash.indexOf('error=') !== -1 || q.has('error');
+        if (oauthReturn && !oauthError) {
+          showSigningIn();
+          // Fallback: if the callback never redirects, drop the splash + reveal the
+          // page after a few seconds so no one is trapped on a blank screen.
+          setTimeout(function () {
+            var sp = document.getElementById('wr-signing-in');
+            if (sp && sp.parentNode) sp.parentNode.removeChild(sp);
+            reveal();
+          }, 8000);
+          return;
+        }
+        // Returning guest: a guest with a connected league goes straight in
+        // (restored 2026-08-21 — same line the pre-swap page carried; MFL-only
+        // guests count too, 2026-08-31).
+        var ga = null; try { ga = JSON.parse(localStorage.getItem('od_auth_v1') || 'null'); } catch (e) {}
+        if (localStorage.getItem('wr_guest_v1') === '1' && ((ga && ga.username) || localStorage.getItem('mfl_league_id'))) { window.location.replace('index.html'); return; }
+        // Guest mid-setup (flag set, no league yet): resume at the connect
+        // page instead of stranding them on the marketing page. An app
+        // relaunch between tapping Guest and connecting a league used to
+        // land exactly here (owner bug report 2026-08-31). Sign out on the
+        // connect page clears the flag, so this can't loop.
+        if (localStorage.getItem('wr_guest_v1') === '1') { window.location.replace('connect-sleeper.html'); return; }
+        var sess = JSON.parse(localStorage.getItem('fw_session_v1') || 'null');
+        if (!sess || !sess.token) { reveal(); return; } // not signed in -> show landing
+        var profile = JSON.parse(localStorage.getItem('od_profile_v1') || 'null');
+        var legacy  = JSON.parse(localStorage.getItem('od_auth_v1') || 'null');
+        var onboarded = (profile && (profile.onboardingComplete === true || profile.sleeperUsername))
+          || (legacy && legacy.username)
+          || localStorage.getItem('mfl_league_id');
+        // Brand-new accounts ALWAYS start at the connect-your-leagues page —
+        // even on a device where a previous account already finished
+        // onboarding. That progress is stored per DEVICE, so without this
+        // reset a fresh account inherits the old session's linked leagues
+        // and jumps straight to the league page.
+        if (handedIsNew) {
+          try {
+            var np = JSON.parse(localStorage.getItem('od_profile_v1') || 'null') || {};
+            delete np.sleeperUsername; delete np.sleeperUserId;
+            np.onboardingComplete = false;
+            localStorage.setItem('od_profile_v1', JSON.stringify(np));
+          } catch (e) {}
+          try { localStorage.removeItem('od_auth_v1'); } catch (e) {}
+          try { localStorage.removeItem('od_locked_username_v2'); } catch (e) {}
+          try { localStorage.removeItem('dynastyhq_username'); } catch (e) {}
+          try { localStorage.removeItem('mfl_league_id'); } catch (e) {}
+          try { localStorage.removeItem('mfl_year'); } catch (e) {}
+          try { localStorage.removeItem('mfl_franchise_id'); } catch (e) {}
+          window.location.replace('connect-sleeper.html'); return;
+        }
+        if (!onboarded) { window.location.replace('connect-sleeper.html'); return; }
+        var pref = localStorage.getItem('fw_preferred_view');
+        window.location.replace(pref === 'scout' ? 'https://skjjcruz.github.io/ReconAI-sandbox-dev/' : 'index.html');
+      } catch (e) { reveal(); }
+    })();
+  </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=EB+Garamond:ital,wght@1,400;1,500&display=swap" rel="stylesheet">
-<!-- Apple-style motion: Lenis smooth scroll + GSAP ScrollTrigger. Deferred so they execute
-     before DOMContentLoaded (when the motion layer runs) but never block the engine, which
-     keeps working with zero libraries. If any of these fail, the page falls back to native scroll. -->
-<link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
-<link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
-<link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
-<script defer src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
-<script defer src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
-<script defer src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/CustomEase.min.js"></script>
-<script defer src="https://cdn.jsdelivr.net/npm/lenis@1.1.18/dist/lenis.min.js"></script>
 <script>/* enable motion only when JS on AND user allows it (no-JS => content visible, no flash) */
 try{if(!matchMedia('(prefers-reduced-motion: reduce)').matches){document.documentElement.className='anim';}}catch(e){}</script>
 <style>
@@ -263,7 +369,7 @@ html.js-nav .topbar--frosted{background:rgba(8,9,12,.78);backdrop-filter:blur(10
 .hero__in{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;text-align:center;padding:var(--sp-9) 0}
 .hero__in>.reveal{max-width:880px;width:100%}
 .eyebrow{display:inline-flex;align-items:center;gap:var(--sp-3);font:500 var(--fs-label) var(--font-mono);letter-spacing:.16em;text-transform:uppercase;color:var(--forge);margin-bottom:var(--sp-5)}
-.eyebrow::before{content:"";width:26px;height:1px;background:var(--forge)}
+.eyebrow::before,.eyebrow::after{content:"";width:26px;height:1px;background:var(--forge)}
 .hero h1{font:600 clamp(46px,7vw,88px)/.98 var(--font-mono);letter-spacing:-.02em;margin:0 0 var(--sp-5);color:var(--text-1)}
 .hero h1 .f{color:var(--forge);display:block}
 .gild{color:var(--forge)}
@@ -592,7 +698,7 @@ html.js-nav .topbar--frosted{background:rgba(8,9,12,.78);backdrop-filter:blur(10
   .hero h1{font-size:clamp(30px,8.2vw,44px);line-height:1.04}
   .hero__sub{font-size:16px}
   .eyebrow{display:block}
-  .eyebrow::before{display:none}
+  .eyebrow::before,.eyebrow::after{display:none}
   .intro h2{font-size:clamp(25px,7vw,34px)}
   .section{padding:var(--sp-8) 0}
   .inscribe__in,.closing__in{padding:var(--sp-8) var(--sp-4)}
@@ -608,27 +714,17 @@ html.js-nav .topbar--frosted{background:rgba(8,9,12,.78);backdrop-filter:blur(10
 }
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 /* ===== inline copy editor (dev/edit tool — only shows on local server or with #edit in the URL) ===== */
-#editbar{position:fixed;left:14px;bottom:14px;z-index:60;display:flex;gap:8px;align-items:center;flex-wrap:wrap;max-width:calc(100vw - 28px);background:rgba(8,9,12,.93);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.14);border-radius:7px;padding:8px 10px;box-shadow:0 10px 34px rgba(0,0,0,.5)}
-#editbar button{font:700 11px/1 ui-monospace,Menlo,monospace;letter-spacing:.06em;text-transform:uppercase;color:#e8eaf0;background:#14161c;border:1px solid rgba(255,255,255,.16);border-radius:5px;padding:8px 11px;cursor:pointer}
-#editbar button#ed-toggle{background:var(--forge);color:#08090c;border-color:var(--forge)}
-#editbar #ed-hint{font:400 11px ui-sans-serif,system-ui,sans-serif;color:#9aa0ad}
 body.editing .ed-box{outline:1px dashed var(--forge-dim);outline-offset:3px;border-radius:2px;cursor:text}
 body.editing .ed-box:hover{outline-color:var(--forge);background:rgba(232,178,58,.05)}
 body.editing [contenteditable="true"]:focus{outline:2px solid var(--forge);background:rgba(232,178,58,.07)}
 body.moving .ed-box{cursor:move;outline-style:solid;background:rgba(232,178,58,.04)}
 body.moving .ed-box:hover{outline-color:var(--forge);background:rgba(232,178,58,.09)}
-#editbar #ed-move.on{background:var(--forge);color:#08090c;border-color:var(--forge)}
 body.editing .ed-card{outline:1px dashed rgba(245,204,92,.32);outline-offset:5px;border-radius:9px}
 body.editing .ed-card:hover{outline-color:var(--forge)}
 body.editing .ed-sel{outline:2px solid var(--forge)!important;outline-offset:5px;box-shadow:0 0 0 4px rgba(232,178,58,.12)}
 body.moving .ed-card{cursor:move}
 body.editing .ed-card.ed-del{opacity:.45;text-decoration:none;outline:1px dashed #d9534f!important}
-#editbar .ed-fmt{display:inline-flex;gap:4px;align-items:center;flex-wrap:wrap;padding-left:8px;margin-left:2px;border-left:1px solid rgba(255,255,255,.16)}
-#editbar .ed-fmt button{min-width:32px;padding:7px 8px;text-transform:none;font-size:12.5px}
-#editbar .ed-fmt button[data-act="gold"]{color:var(--forge)}
-#editbar .ed-fmt button.on{background:var(--forge);color:#08090c;border-color:var(--forge)}
 body.editing .ed-del{opacity:.45;text-decoration:line-through;outline:1px dashed #d9534f!important;outline-offset:3px}
-@media print{#editbar{display:none}}
 </style>
 </head>
 <body>
@@ -641,7 +737,8 @@ body.editing .ed-del{opacity:.45;text-decoration:line-through;outline:1px dashed
     <button class="btn btn--ghost nav-features" onclick="document.getElementById('pricing').scrollIntoView({behavior:'smooth'})">Plans</button>
     <button class="btn btn--ghost nav-features" onclick="document.getElementById('about').scrollIntoView({behavior:'smooth'})">Vision</button>
     <button class="btn btn--ghost nav-features" onclick="document.getElementById('community').scrollIntoView({behavior:'smooth'})">Discord</button>
-    <button class="btn btn--primary" onclick="document.getElementById('engine').scrollIntoView({behavior:'smooth'})">Start free</button>
+    <button class="btn btn--ghost" id="navSignin" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'})">Sign in</button>
+    <button class="btn btn--primary" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});document.getElementById('acctEmail').focus()">Start free</button>
   </div>
 </div></header>
 
@@ -650,11 +747,11 @@ body.editing .ed-del{opacity:.45;text-decoration:line-through;outline:1px dashed
   <div class="hero-fx"><div class="fog-stack"><div class="fog"></div><div class="fog fog--b"></div><div class="fog fog--c"></div></div><div class="grid-faint"></div></div>
   <div class="wrap hero__in">
     <div class="reveal">
-      <span class="eyebrow">Fantasy front office · Dynasty &amp; redraft · Free on Sleeper</span>
+      <span class="eyebrow">Fantasy front office · Dynasty &amp; redraft · All your Sleeper and MFL teams in one place</span>
       <h1>Generic advice: stop here.<span class="f">This is your world.</span></h1>
       <p class="hero__sub">Every other tool ranks players for a league that isn't yours. Dynasty HQ rebuilds every value, trade, and draft call around <b>your exact scoring and roster</b> — and reads <b>how each rival actually operates.</b></p>
       <div class="hero__cta">
-        <button class="btn btn--primary btn--lg" onclick="document.getElementById('engine').scrollIntoView({behavior:'smooth'})">Start free with Sleeper</button>
+        <button class="btn btn--primary btn--lg" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});document.getElementById('acctEmail').focus()">Start free</button>
         <button class="btn btn--ghost" onclick="document.getElementById('pricing').scrollIntoView({behavior:'smooth'})">or see plans</button>
       </div>
       <div class="hero__fine" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:center"><span class="chip">$0 · no credit card</span><span class="chip">Dynasty + redraft</span><span class="chip">Sleeper · MFL</span></div>
@@ -726,36 +823,32 @@ body.editing .ed-del{opacity:.45;text-decoration:line-through;outline:1px dashed
   <div class="aha-cta">
     <p class="aha-cta__t">That's your board — recomputed live on your settings.</p>
     <p class="aha-cta__s">Connect your Sleeper league to make it real — your rosters, your matchups, your market, season over season.</p>
-    <button class="btn btn--primary btn--lg" onclick="document.getElementById('engine').scrollIntoView({behavior:'smooth'})">Start free with Sleeper</button>
-    <span class="hero__fine">Free for one Sleeper league · no credit card</span>
+    <button class="btn btn--primary btn--lg" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});document.getElementById('acctEmail').focus()">Start free</button>
+    <span class="hero__fine">Free to start · no credit card</span>
   </div>
   </div>
 </div></section>
 
 <!-- PRICING (pulled up to follow the live engine — free-first on-ramp) -->
 <section class="section" id="pricing"><div class="wrap">
-  <div class="intro reveal"><span class="intro__eye">Start free</span><h2>Free to start. <span class="gild">Yours to conquer.</span></h2><p>Connect one Sleeper league free — no credit card. Go Pro for the full front office, monthly or annual (save ~17%). And what's next is already taking shape in DHQ Labs.</p></div>
+  <div class="intro reveal"><span class="intro__eye">Start free</span><h2>Free to start. <span class="gild">Yours to conquer.</span></h2><p>Connect your leagues free — no credit card. And for the 2026 season, Pro — the full front office — is free for everyone. What's next is already taking shape in DHQ Labs.</p></div>
   <div class="tiers reveal">
     <div class="tier">
       <div class="tier__name">Scout</div><div class="tier__price"><span class="price-amt">$0</span></div><div class="tier__note">Free forever</div>
-      <ul><li>Mobile and desktop experience</li><li>A curated-feature experience</li><li>The raw data, you do your own analysis</li><li>One AI-call per day</li></ul>
-      <button class="btn btn--primary" onclick="document.getElementById('engine').scrollIntoView({behavior:'smooth'})">Start free with Sleeper</button>
+      <ul><li>Mobile and desktop experience</li><li>A curated-feature experience</li><li>The raw data, you do your own analysis</li></ul>
+      <button class="btn btn--primary" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});document.getElementById('acctEmail').focus()">Start free</button>
     </div>
     <div class="tier tier--feat" id="tier-dhq">
       <div class="tier__name" style="color:var(--forge)">Dynasty HQ Pro</div>
-      <div class="billseg" role="group" aria-label="Billing period">
-        <button type="button" class="billseg__b on" data-bill="mo">Monthly</button>
-        <button type="button" class="billseg__b" data-bill="yr">Annual <span class="billseg__save">SAVE 17%</span></button>
-      </div>
-      <div class="tier__price"><span class="price-amt">$9.99</span><span class="price-per">/mo</span></div>
-      <div class="tier__note tier__save" hidden>Billed $99.99/yr · ≈ $8.33/mo · save ~17%</div>
-      <ul><li>The full Dynasty HQ experience</li><li>DHQ Engine, Owner DNA, Follow-live draft</li><li>Deep GM-strategy customization</li><li>Alex Ingram, your AI GM.</li><li>20 AI calls per-day</li></ul>
-      <button class="btn btn--primary" onclick="document.getElementById('engine').scrollIntoView({behavior:'smooth'})">Go Pro</button>
+      <div class="tier__price"><span class="price-amt" style="text-decoration:line-through;text-decoration-thickness:3px;text-decoration-color:var(--forge);color:var(--text-3)">$9.99</span><span class="price-per" style="text-decoration:line-through;text-decoration-color:var(--forge);color:var(--text-3)">/mo</span>&nbsp;&nbsp;<span class="price-amt" style="color:var(--forge)">Free</span></div>
+      <div class="tier__note" style="color:var(--forge);font-family:var(--font-mono);letter-spacing:.08em;text-transform:uppercase">Free for the 2026 season</div>
+      <ul><li>The full Dynasty HQ experience</li><li>DHQ Engine, Owner DNA, Follow-live draft</li><li>Deep GM-strategy customization</li><li>Alex Ingram, your AI GM.</li></ul>
+      <button class="btn btn--primary" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});document.getElementById('acctEmail').focus()">Claim the season</button>
     </div>
     <div class="tier">
       <div class="tier__name">DHQ Labs</div><div class="tier__price"><span class="price-amt">Soon</span></div><div class="tier__note" style="color:var(--tactical)">In development</div>
       <ul><li>Full redraft functionality</li><li>Empire mode — all leagues, one terminal</li><li>MFL sync</li></ul>
-      <button class="btn btn--secondary" onclick="document.getElementById('engine').scrollIntoView({behavior:'smooth'})">Get early access</button>
+      <button class="btn btn--secondary" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});document.getElementById('acctEmail').focus()">Get early access</button>
     </div>
   </div>
 </div></section>
@@ -1024,7 +1117,7 @@ body.editing .ed-del{opacity:.45;text-decoration:line-through;outline:1px dashed
     </div>
     <div class="joinband__cta">
       <div class="joinband__stat"><i></i> The war room is open</div>
-      <a class="btn btn--discord btn--lg" href="https://discord.gg/UspK4KAVt" target="_blank" rel="noopener">Join the Discord</a>
+      <a class="btn btn--discord btn--lg" href="https://discord.gg/3VFRJbWVnH" target="_blank" rel="noopener">Join the Discord</a>
       <span class="joinband__note">Free to join · #dhq-labs · beta testers welcome</span>
     </div>
   </div>
@@ -1051,21 +1144,220 @@ body.editing .ed-del{opacity:.45;text-decoration:line-through;outline:1px dashed
   <div class="closing__in reveal">
     <h2>A universe built around your league.</h2>
     <p>Your scoring. Your rivals. Your history. No other system cares this much about making the experience yours — and only yours.</p>
-    <button class="btn btn--primary btn--lg" onclick="document.getElementById('engine').scrollIntoView({behavior:'smooth'})">Start free with Sleeper</button>
-    <div class="hero__fine" style="margin-top:var(--sp-4)">Free for one Sleeper league · no credit card</div>
+    <button class="btn btn--primary btn--lg" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});document.getElementById('acctEmail').focus()">Start free</button>
+    <div class="hero__fine" style="margin-top:var(--sp-4)">Free to start · no credit card</div>
   </div>
 </section>
 
-<footer class="foot"><div class="wrap foot__in">
-  <div class="brand"><img class="brand-logo" src="img/logo.png" alt="Dynasty HQ">DYNASTY&nbsp;HQ <span class="beta-badge">Beta</span></div>
-  <div class="foot__chip"><span style="width:6px;height:6px;border-radius:50%;background:var(--warn);display:inline-block"></span>DHQ ENGINE v0.4 · DEMO BOARD — PLAYER NAMES SHOWN FOR ILLUSTRATION; VALUES ARE MODEL OUTPUT, NOT LIVE PROJECTIONS</div>
-  <div class="micro">© 2026 · C2Football <a href="https://x.com/DHQfootball" target="_blank" rel="noopener" style="color:var(--forge);margin-left:8px;text-decoration:none">𝕏 @DHQfootball</a></div>
-</div></footer>
+  <!-- PHONE-ONLY SIGN-UP HEADER (≤767px only). display:none by default so
+       desktop / iPad ≥768px never render it. Shown only inside the phone
+       media query further below, sitting directly above the SAME #auth
+       section (same inputs, buttons and handlers) which becomes a
+       native-app-style DHQ dark/gold sign-up screen on phones.
+       ───────────────────────────────────────────────────────────────── -->
+  <style>
+    /* Transplanted-auth support styles: the #auth organ came from the old
+       landing page whose main stylesheet held these rules — without them the
+       card sprawls full-width and the phone-only header leaks onto desktop. */
+    :root{--accent:var(--forge);--accent-bright:var(--forge-bright);--radius:10px;--muted:var(--text-3);--silver:var(--text-2)}
+    .phone-auth-head{display:none}
+    .auth{max-width:430px;margin:0 auto;padding:84px 24px 96px}
+    .auth-title{text-align:center;font-family:var(--font-mono);font-size:18px;font-weight:600;letter-spacing:.04em;margin-bottom:22px;color:var(--text-1)}
+    .auth-input{width:100%;min-height:46px;padding:0 14px;font-size:14px;font-family:var(--font-mono);background:var(--bg-inset);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-1);margin-bottom:10px;outline:none;box-sizing:border-box;transition:border-color 90ms ease}
+    .auth-input:focus{border-color:var(--accent)}
+    .auth-input::placeholder{color:var(--text-3)}
+    .auth-submit{width:100%;min-height:48px;font-family:var(--font-mono);font-size:14px;font-weight:600;letter-spacing:.03em;border-radius:var(--radius);border:1px solid var(--accent);background:var(--accent);color:var(--bg-0);margin-top:4px;cursor:pointer;transition:background 90ms ease}
+    .auth-submit:hover{background:var(--accent-bright);border-color:var(--accent-bright)}
+    .alert{font-size:13px;padding:10px 14px;border-radius:var(--radius);margin-bottom:12px;display:none;font-family:var(--font-mono)}
+    .alert.show{display:block}
+    .alert-error{background:rgba(240,73,92,.08);color:var(--neg);border:1px solid rgba(240,73,92,.3)}
+    .alert-success{background:rgba(47,191,136,.08);color:var(--pos);border:1px solid rgba(47,191,136,.3)}
+    @media (max-width:767px){.auth{padding:64px 16px 64px}.auth-input{font-size:16px}}
+  </style>
+  <header class="phone-auth-head">
+    <img class="phone-auth-crest" src="img/dhq-crest.jpg" alt="Dynasty HQ">
+    <div class="phone-auth-wordmark">DYNASTY HQ</div>
+    <p class="phone-auth-tag">Your fantasy front office.</p>
+  </header>
+
+  <!-- Join -->
+  <section class="auth" id="auth">
+    <img src="icon-192.png" alt="Dynasty HQ" style="display:block;width:56px;height:56px;border-radius:14px;margin:0 auto 16px;box-shadow:0 4px 20px rgba(212,175,55,.2)">
+    <h2 class="auth-title" id="authTitle">Create your account</h2>
+    <p id="authSub" style="text-align:center;font-size:14px;color:var(--silver);line-height:1.55;margin:-12px 0 22px">Step 1 of 2 — create your account with Google or email. Next, you'll connect your leagues.</p>
+
+    <div class="alert" id="alertJoin"></div>
+
+    <!-- Google -->
+    <!-- Guest lane (restored 2026-08-21; owner ruling: show it on the website
+         too). Originally shipped 2026-08-05 for Apple 5.1.1(v) — registration
+         must be optional — and lost in the 2026-08-17 marketing-page swap.
+         Sets the guest flag and heads straight to the league-connect page; no
+         account, no personal info. connect-sleeper.html and the index.html
+         auth gate both honor the flag. -->
+    <button class="auth-submit" id="btnGuest" style="margin-bottom:14px"
+      onclick="try{localStorage.setItem('wr_guest_v1','1')}catch(e){};window.location.href='connect-sleeper.html'">Guest Sign In</button>
+    <div class="auth-or"><span>or</span></div>
+
+    <button id="btnGoogle" class="auth-google" onclick="handleGoogle()">
+      <svg viewBox="0 0 48 48" width="18" height="18" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.4 29.3 35 24 35c-6.1 0-11-4.9-11-11s4.9-11 11-11c2.8 0 5.4 1.1 7.3 2.8l5.7-5.7C33.6 6.1 29.1 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.3-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 16 19 13 24 13c2.8 0 5.4 1.1 7.3 2.8l5.7-5.7C33.6 6.1 29.1 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35 26.7 36 24 36c-5.3 0-9.7-2.6-11.3-7l-6.6 5.1C9.6 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.1-4.1 5.6l6.2 5.2C39.9 36 44 30.6 44 24c0-1.3-.1-2.3-.4-3.5z"/></svg>
+      Continue with Google
+    </button>
+
+    <!-- Apple -->
+    <button id="btnApple" class="auth-apple" onclick="handleApple()">
+      <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" fill="currentColor"><path d="M17.05 12.04c-.03-2.65 2.16-3.92 2.26-3.98-1.23-1.8-3.15-2.05-3.83-2.08-1.63-.16-3.18.96-4.01.96-.82 0-2.1-.94-3.46-.91-1.78.03-3.42 1.03-4.34 2.62-1.85 3.21-.47 7.95 1.33 10.55.88 1.27 1.93 2.7 3.3 2.65 1.32-.05 1.82-.85 3.42-.85 1.59 0 2.04.85 3.44.82 1.42-.02 2.32-1.3 3.19-2.58 1-1.47 1.42-2.89 1.44-2.97-.03-.01-2.76-1.06-2.79-4.2zM14.6 4.48c.73-.89 1.22-2.12 1.08-3.35-1.05.04-2.32.7-3.07 1.58-.67.78-1.26 2.03-1.1 3.23 1.17.09 2.36-.6 3.09-1.46z"/></svg>
+      Continue with Apple
+    </button>
+
+    <div class="auth-or"><span>or</span></div>
+
+    <!-- Email signup / signin -->
+    <input class="auth-input" type="email" id="acctEmail" placeholder="Email" autocomplete="email" autocapitalize="off">
+    <input class="auth-input" type="password" id="acctPassword" placeholder="Password (8+ characters)" autocomplete="current-password">
+    <button class="auth-submit" id="btnJoin" onclick="handleEmailAuth()">Create account →</button>
+
+    <p style="text-align:center;font-size:12px;color:var(--muted);margin-top:12px">
+      <span id="sleeperHint">Step 1 of 2 — next you'll connect your leagues (Sleeper or MFL).</span>
+    </p>
+    <div style="text-align:center;margin-top:14px;font-size:13px">
+      <button class="auth-linkbtn" id="toggleMode" onclick="toggleAuthMode()">Already have an account? Sign in</button>
+      <button class="auth-linkbtn" id="forgotBtn" onclick="handleForgot()" style="display:none">Forgot password?</button>
+    </div>
+  </section>
+
+  <style>
+    .auth-google{width:100%;display:flex;align-items:center;justify-content:center;gap:10px;min-height:48px;border-radius:10px;border:1px solid var(--border);background:#fff;color:#1f2328;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:6px}
+    .auth-google:hover{box-shadow:0 4px 14px rgba(0,0,0,.25)}
+    .auth-apple{width:100%;display:flex;align-items:center;justify-content:center;gap:10px;min-height:48px;border-radius:10px;border:1px solid #000;background:#000;color:#fff;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:6px}
+    .auth-apple:hover{box-shadow:0 4px 14px rgba(0,0,0,.4)}
+    .auth-or{display:flex;align-items:center;text-align:center;color:var(--muted);font-size:12px;margin:14px 0;gap:10px}
+    .auth-or::before,.auth-or::after{content:'';flex:1;height:1px;background:var(--border)}
+    .auth-linkbtn{background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;text-decoration:underline;font-family:inherit}
+    .auth-linkbtn:hover{color:var(--accent)}
+  </style>
+
+  <div style="max-width:1160px;margin:0 auto;padding:10px 24px 0;font:500 10px/1.5 'JetBrains Mono',monospace;letter-spacing:.08em;color:rgba(189,184,173,.55);text-transform:uppercase">DHQ Engine demo board — player names shown for illustration; values are model output, not live projections</div>
+  <!-- ══════════ Professional footer (approved league-room mock) ══════════
+       Scoped .dhqf-* classes + local custom properties so the mock's gold
+       identity renders faithfully without touching this page's own tokens. -->
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;500;600;700&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet">
+  <style>
+    .dhqf{--dhqf-gold:#D4AF37;--dhqf-black:#121217;--dhqf-silver:#BDB8AD;--dhqf-white:#F5F2EA;
+      --dhqf-line1:rgba(212,175,55,.18);--dhqf-line2:rgba(212,175,55,.30);--dhqf-ov1:rgba(255,255,255,.02);
+      --dhqf-ft:'Rajdhani',sans-serif;--dhqf-fb:'DM Sans',sans-serif;--dhqf-fm:'JetBrains Mono',monospace;
+      border-top:1px solid var(--dhqf-line2);background:var(--bg-0);font-family:var(--dhqf-fb);color:var(--dhqf-white)}
+    .dhqf a{color:inherit;text-decoration:none}
+    .dhqf-in{max-width:var(--maxw);margin:0 auto;padding:0 24px}
+    .dhqf-grid{display:grid;grid-template-columns:1.3fr 1fr 1fr 1.2fr;gap:34px;padding:34px 0 26px}
+    .dhqf-h{font-family:var(--dhqf-fm);font-size:.64rem;letter-spacing:.22em;color:var(--dhqf-gold);text-transform:uppercase;margin-bottom:14px}
+    .dhqf-brand{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+    .dhqf-brand img{width:44px;height:44px;border-radius:11px;border:1px solid var(--dhqf-line2)}
+    .dhqf-brand .dhqf-bn{font-family:var(--dhqf-ft);font-weight:700;font-size:1.2rem;letter-spacing:.1em;color:var(--dhqf-gold);text-transform:uppercase}
+    .dhqf-tag{font-size:.82rem;color:var(--dhqf-silver);line-height:1.6;max-width:30ch}
+    .dhqf-links{display:flex;flex-direction:column;gap:10px}
+    .dhqf-links a{font-size:.86rem;color:var(--dhqf-silver);transition:color .13s;width:fit-content}
+    .dhqf-links a:hover{color:var(--dhqf-gold)}
+    .dhqf-appstore{display:flex;align-items:center;gap:10px;border:1px solid var(--dhqf-line2);border-radius:11px;padding:9px 15px;width:fit-content;transition:all .15s;background:var(--dhqf-ov1)}
+    .dhqf-appstore:hover{border-color:var(--dhqf-gold);box-shadow:0 0 14px rgba(212,175,55,.2)}
+    .dhqf-appstore[data-live="false"]{cursor:default}
+    .dhqf-appstore .dhqf-ab-s{font-size:.6rem;color:var(--dhqf-silver);letter-spacing:.04em}
+    .dhqf-appstore .dhqf-ab-b{font-family:var(--dhqf-ft);font-weight:700;font-size:1rem;color:var(--dhqf-white);letter-spacing:.03em;line-height:1.1}
+    .dhqf-soon{display:block;font-family:var(--dhqf-fm);font-size:.58rem;letter-spacing:.1em;color:var(--dhqf-gold);border:1px solid var(--dhqf-line1);border-radius:5px;padding:1px 6px;margin-top:8px;width:fit-content}
+    .dhqf-socials{display:flex;gap:9px;margin-top:14px}
+    .dhqf-sq{width:42px;height:42px;border-radius:10px;border:1px solid var(--dhqf-line2);display:flex;align-items:center;justify-content:center;transition:all .16s;background:var(--dhqf-ov1)}
+    .dhqf-sq:hover{border-color:var(--dhqf-gold);box-shadow:0 0 14px rgba(212,175,55,.22)}
+    .dhqf-discord{display:flex;align-items:center;justify-content:center;gap:10px;font-family:var(--dhqf-ft);font-weight:700;font-size:1.05rem;letter-spacing:.1em;color:var(--dhqf-black);background:var(--dhqf-gold);border-radius:12px;padding:14px 22px;text-transform:uppercase;transition:all .16s;width:100%;box-sizing:border-box}
+    .dhqf-discord:hover{box-shadow:0 0 26px rgba(212,175,55,.5);transform:translateY(-1px)}
+    .dhqf-x{display:flex;align-items:center;justify-content:center;gap:9px;font-family:var(--dhqf-fm);font-size:.74rem;letter-spacing:.08em;color:var(--dhqf-silver);border:1px solid var(--dhqf-line2);border-radius:11px;padding:11px 18px;margin-top:10px;width:100%;transition:all .15s;box-sizing:border-box}
+    .dhqf-x:hover{border-color:var(--dhqf-gold);color:var(--dhqf-gold)}
+    .dhqf-base{border-top:1px solid var(--dhqf-line1);padding:16px 0 26px;display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;font-family:var(--dhqf-fm);font-size:.64rem;letter-spacing:.1em;color:var(--dhqf-silver);opacity:.7}
+    @media (max-width:900px){.dhqf-grid{grid-template-columns:1fr 1fr}}
+    @media (max-width:540px){.dhqf-grid{grid-template-columns:1fr}}
+    @media (max-width:767px){
+      /* Owner ask (IMG_2049): the Company/admin links move to the very
+         bottom of the footer as one horizontally scrollable pill row
+         instead of a tall vertical list. Phone only. */
+      .dhqf-socials{display:none} /* tiny Discord/X squares — the big Community buttons remain */
+      /* Square up the brand block (owner ask, IMG_2051): crest + wordmark
+         centered as an emblem, tagline centered beneath, wordmark's line
+         box tightened so the caps sit on the crest's optical center. */
+      .dhqf-brand{justify-content:center}
+      .dhqf-brand .dhqf-bn{line-height:1;transform:translateY(1px)}
+      .dhqf-tag{text-align:center;margin-left:auto;margin-right:auto}
+      .dhqf-h{text-align:center}
+      .dhqf-appstore{margin:0 auto}
+      .dhqf-soon{margin-left:auto;margin-right:auto}
+      .dhqf-links{justify-content:safe center}
+      .dhqf-grid>div{min-width:0} /* grid items must shrink, not stretch the column */
+      .dhqf-grid>div:nth-child(3){order:5}
+      .dhqf-grid>div:nth-child(3) .dhqf-h{display:none}
+      .dhqf-links{flex-direction:row;overflow-x:auto;gap:8px;padding:2px 0 6px;
+        -webkit-overflow-scrolling:touch;scrollbar-width:none}
+      .dhqf-links::-webkit-scrollbar{display:none}
+      .dhqf-links a{flex:none;white-space:nowrap;border:1px solid var(--dhqf-line2);
+        border-radius:999px;padding:8px 14px;font-size:.78rem;background:var(--dhqf-ov1)}
+    }
+  </style>
+  <footer class="dhqf">
+    <div class="dhqf-in">
+      <div class="dhqf-grid">
+        <div>
+          <div class="dhqf-brand">
+            <img src="img/dhq-crest.jpg" alt="">
+            <span class="dhqf-bn">Dynasty HQ</span>
+          </div>
+          <div class="dhqf-tag">The fantasy football command center. Built by owners, for owners &mdash; every league, one war room.</div>
+        </div>
+        <div>
+          <div class="dhqf-h">Get the App</div>
+          <a class="dhqf-appstore" data-live="true" href="https://apps.apple.com/us/app/dynasty-hq-fantasy-football/id6770052133" target="_blank" rel="noopener" aria-label="Download Dynasty HQ on the App Store">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="#F5F2EA"><path d="M17.05 12.54c0-2.2 1.8-3.26 1.88-3.31-1.02-1.5-2.61-1.7-3.18-1.72-1.35-.14-2.64.8-3.33.8-.69 0-1.75-.78-2.88-.76-1.48.02-2.85.86-3.61 2.19-1.54 2.67-.39 6.62 1.11 8.79.73 1.06 1.6 2.25 2.75 2.21 1.1-.04 1.52-.71 2.85-.71s1.71.71 2.88.69c1.19-.02 1.94-1.08 2.67-2.15.84-1.23 1.19-2.42 1.21-2.48-.03-.01-2.32-.89-2.35-3.55zM14.86 5.9c.61-.74 1.02-1.77.91-2.8-.88.04-1.94.59-2.57 1.32-.56.65-1.06 1.7-.93 2.7.98.08 1.98-.5 2.59-1.22z"/></svg>
+            <span><span class="dhqf-ab-s">Download on the</span><br><span class="dhqf-ab-b">App Store</span></span>
+          </a>
+          <div class="dhqf-socials">
+            <a class="dhqf-sq" href="https://discord.gg/3VFRJbWVnH" target="_blank" rel="noopener" aria-label="Discord">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="#BDB8AD"><path d="M20.3 4.4A19.8 19.8 0 0 0 15.4 3l-.2.4c1.8.5 2.6 1.1 3.5 1.9a16.2 16.2 0 0 0-13.4 0c.9-.8 1.9-1.5 3.5-1.9L8.6 3a19.8 19.8 0 0 0-4.9 1.4A20.3 20.3 0 0 0 .4 18.1a19.9 19.9 0 0 0 6 3l.5-.7a12.3 12.3 0 0 1-2.4-1.2l.6-.4a14.2 14.2 0 0 0 12.2 0l.6.4c-.8.5-1.6.9-2.4 1.2l.5.7a19.9 19.9 0 0 0 6-3A20.3 20.3 0 0 0 20.3 4.4zM8.7 15.3c-1 0-1.8-.9-1.8-2s.8-2 1.8-2 1.8.9 1.8 2-.8 2-1.8 2zm6.6 0c-1 0-1.8-.9-1.8-2s.8-2 1.8-2 1.8.9 1.8 2-.8 2-1.8 2z"/></svg>
+            </a>
+            <a class="dhqf-sq" href="https://x.com/DHQfootball" target="_blank" rel="noopener" aria-label="X">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="#BDB8AD"><path d="M18.9 2H22l-6.8 7.8L23.3 22h-6.3l-4.9-6.4L6.5 22H3.4l7.3-8.3L1 2h6.5l4.5 5.9zM17.8 20.1h1.7L7.6 3.8H5.7z"/></svg>
+            </a>
+          </div>
+        </div>
+        <div>
+          <div class="dhqf-h">Company</div>
+          <div class="dhqf-links">
+            <a href="https://dhqfootball.com/our-vision.html">Our Values</a>
+            <a href="mailto:admin@dhqfootball.com">Contact Us</a>
+            <a href="https://dhqfootball.com/legal/privacy-policy.html">Privacy Policy</a>
+            <a href="https://dhqfootball.com/legal/terms-of-service.html">Terms of Service</a>
+          </div>
+        </div>
+        <div>
+          <div class="dhqf-h">Community</div>
+          <div class="dhqf-tag" style="margin-bottom:14px">Trash talk, trade advice, and first word on new features.</div>
+          <a class="dhqf-discord" href="https://discord.gg/3VFRJbWVnH" target="_blank" rel="noopener">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="#121217"><path d="M20.3 4.4A19.8 19.8 0 0 0 15.4 3l-.2.4c1.8.5 2.6 1.1 3.5 1.9a16.2 16.2 0 0 0-13.4 0c.9-.8 1.9-1.5 3.5-1.9L8.6 3a19.8 19.8 0 0 0-4.9 1.4A20.3 20.3 0 0 0 .4 18.1a19.9 19.9 0 0 0 6 3l.5-.7a12.3 12.3 0 0 1-2.4-1.2l.6-.4a14.2 14.2 0 0 0 12.2 0l.6.4c-.8.5-1.6.9-2.4 1.2l.5.7a19.9 19.9 0 0 0 6-3A20.3 20.3 0 0 0 20.3 4.4zM8.7 15.3c-1 0-1.8-.9-1.8-2s.8-2 1.8-2 1.8.9 1.8 2-.8 2-1.8 2zm6.6 0c-1 0-1.8-.9-1.8-2s.8-2 1.8-2 1.8.9 1.8 2-.8 2-1.8 2z"/></svg>
+            Join the Discord
+          </a>
+          <a class="dhqf-x" href="https://x.com/DHQfootball" target="_blank" rel="noopener">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M18.9 2H22l-6.8 7.8L23.3 22h-6.3l-4.9-6.4L6.5 22H3.4l7.3-8.3L1 2h6.5l4.5 5.9zM17.8 20.1h1.7L7.6 3.8H5.7z"/></svg>
+            Follow @DHQfootball
+          </a>
+        </div>
+      </div>
+      <div class="dhqf-base">
+        <span>&copy; 2026 C2FOOTBALL &middot; DYNASTY HQ</span>
+        <span>DHQFOOTBALL.COM</span>
+      </div>
+    </div>
+  </footer>
+
 
 <!-- mobile sticky CTA (shown under 560px) -->
 <div class="mcta">
-  <button class="btn btn--primary btn--lg" onclick="document.getElementById('engine').scrollIntoView({behavior:'smooth'})">Start free with Sleeper</button>
-  <span class="hero__fine">Free for one Sleeper league · no credit card</span>
+  <button class="btn btn--primary btn--lg" onclick="document.getElementById('auth').scrollIntoView({behavior:'smooth'});document.getElementById('acctEmail').focus()">Start free</button>
+  <span class="hero__fine">Free to start · no credit card</span>
 </div>
 
 <script>
@@ -1528,142 +1820,480 @@ function initMotion(){
 /* run AFTER the engine's init() (which ran during parse) AND after the deferred libs load */
 if(document.readyState==='loading')window.addEventListener('DOMContentLoaded',initMotion);else initMotion();
 </script>
-<script>
-/* ===== inline copy editor — click text to edit it, auto-saves on your device, one-click download ===== */
-(function(){
-  /* an editable FIELD = the lowest element holding its OWN run of text. Multi-part containers (a card's
-     title + description) split into SEPARATE fields, so nothing edits as one weird blob. The live engine
-     tool is skipped; everything else (chips, labels, nav, footer, every card's text) is editable. */
-  var EXCL='#editbar,script,style,svg,noscript,.engine,.readout,#board-rows,#presets,#rgrid,#board-tabs',
-      CARDSEL='.tier,.bcell,.owner,.dpick,.youbox,.fgroup'; /* whole "cards" you can select to move or delete */
-  function ownText(el){var t='';for(var n=el.firstChild;n;n=n.nextSibling){if(n.nodeType===3)t+=n.nodeValue;}return t;}
-  function nodes(root){root=root||document;var out=[];(function visit(el){
-      if(el.nodeType!==1||(el.matches&&el.matches(EXCL)))return;
-      if(!(el.matches&&el.matches(CARDSEL))&&ownText(el).trim()!==''){out.push(el);return;} /* this element owns a run of text → a field */
-      for(var c=el.firstElementChild;c;c=c.nextElementSibling){if(c.textContent&&c.textContent.trim())visit(c);} /* else descend into its text-bearing children */
-    })(root.body||root);return out;}
-  function cardNodes(root){root=root||document;return Array.prototype.filter.call(root.querySelectorAll(CARDSEL),function(el){return !el.closest(EXCL)&&!!(el.textContent&&el.textContent.trim());});}
-  function units(root){return nodes(root).concat(cardNodes(root));}
-  /* ===== CONTENT-anchored keys — the no-more-scrambling fix =====
-     key = section id + tag + hash of the element's ORIGINAL text. Moving an element keeps its key, so an
-     edit follows its text wherever it lands; rewriting an element's text just orphans the edit (it stops
-     applying — it can never mis-apply onto a DIFFERENT element, which is exactly what scrambled before). */
-  function sect(el){var s=el.closest('[id]');return s?s.id:(el.closest('footer')?'foot':el.closest('header')?'top':'hero');}
-  function hashStr(s){var h=5381,i=s.length;while(i)h=(h*33)^s.charCodeAt(--i);return (h>>>0).toString(36);}
-  function computeKey(el){return sect(el)+'|'+el.tagName+'|'+hashStr((el.textContent||'').replace(/\s+/g,' ').trim().slice(0,90));}
-  function keyOf(el){return el._ek||(el._ek=computeKey(el));}
-  var KEY='dhq-edits-v2';
-  function load(){try{return JSON.parse(localStorage.getItem(KEY)||'{}');}catch(e){return{};}}
-  function save(o){try{localStorage.setItem(KEY,JSON.stringify(o));}catch(e){}}
-  function norm(v){return v==null?null:(typeof v==='string'?{h:v}:v);}
-  try{localStorage.removeItem('dhq-copy-edits');}catch(e){} /* drop the OLD position-keyed store (the one that scrambled) */
-  /* editor UI only on the local server (LAN/localhost) or with #edit in the URL; saved edits still apply for that device */
-  var dev=(/^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|\[?::1)/.test(location.hostname)||location.hostname===''),
-      willEdit=dev||/edit/i.test(location.hash);
-  if(!willEdit && !Object.keys(load()).length) return; /* public visitor with nothing saved → skip the whole pass */
-  var fields=nodes(),cards=cardNodes(),live=fields.concat(cards),liveSet=new Set(live),textSet=new Set(fields);
-  live.forEach(function(el){el._ek=computeKey(el);}); /* capture keys NOW, from the file's text, BEFORE any edit is applied */
-  /* apply this device's saved edits (text, alignment, size, position, deletions) on every load */
-  (function(){var s=load();live.forEach(function(el){var v=norm(s[el._ek]);if(!v)return;
-    if(v.h!=null&&v.h!==el.innerHTML)el.innerHTML=v.h;
-    if(v.a)el.style.textAlign=v.a;
-    if(v.s)el.style.fontSize=v.s;
-    if(v.tx||v.ty){el.dataset.tx=v.tx||0;el.dataset.ty=v.ty||0;el.style.transform='translate('+(v.tx||0)+'px,'+(v.ty||0)+'px)';}
-    if(v.del){el.dataset.edDel='1';el.style.display='none';}});})();
-  if(!willEdit) return; /* edits applied for this device, but no toolbar unless dev/#edit */
-  var bar=document.createElement('div');bar.id='editbar';
-  bar.innerHTML='<button id="ed-toggle">✎ Edit text</button>'+
-    '<button id="ed-move" hidden title="Drag boxes to reposition">✥ Move</button>'+
-    '<span class="ed-fmt" hidden>'+
-      '<button data-cmd="bold" title="Bold"><b>B</b></button>'+
-      '<button data-cmd="italic" title="Italic"><i>I</i></button>'+
-      '<button data-cmd="underline" title="Underline"><span style="text-decoration:underline">U</span></button>'+
-      '<button data-act="gold" title="Gold accent"><b>A</b></button>'+
-      '<button data-cmd="removeFormat" title="Clear formatting">Tx</button>'+
-      '<button data-size="down" title="Smaller text">A−</button>'+
-      '<button data-size="up" title="Bigger text">A+</button>'+
-      '<button data-align="left" title="Align left">L</button>'+
-      '<button data-align="center" title="Center">C</button>'+
-      '<button data-align="right" title="Align right">R</button>'+
-      '<button data-act="card" title="Select the whole card (to move or delete it)">◰</button>'+
-      '<button data-act="del" title="Delete this text / card">🗑</button>'+
-    '</span>'+
-    '<button id="ed-dl" hidden>⬇ Download</button>'+
-    '<button id="ed-reset" hidden>↺ Reset</button>'+
-    '<span id="ed-hint" hidden>Click any text to edit · ⬇ Download to save changes into the file</span>';
-  document.body.appendChild(bar);
-  var editing=false,current=null,fmt=bar.querySelector('.ed-fmt');
-  function delEls(){return live.filter(function(el){return el.dataset.edDel==='1';});}
-  function setEditing(on){
-    if(!on&&moving)setMoving(false);
-    editing=on;document.body.classList.toggle('editing',on);
-    live.forEach(function(el){
-      if(textSet.has(el)){if(on){el.setAttribute('contenteditable','true');el.classList.add('ed-box');}else{el.removeAttribute('contenteditable');el.classList.remove('ed-box');}}
-      else{if(on)el.classList.add('ed-card');else{el.classList.remove('ed-card');el.classList.remove('ed-sel');}}});
-    /* show deleted elements (struck-through) while editing so they can be restored; hide them when live */
-    delEls().forEach(function(el){if(on){el.style.display='';el.classList.add('ed-del');}else{el.style.display='none';el.classList.remove('ed-del');}});
-    document.getElementById('ed-toggle').textContent=on?'✓ Done':'✎ Edit text';
-    moveBtn.hidden=!on;
-    fmt.hidden=!on;['ed-dl','ed-reset','ed-hint'].forEach(function(id){document.getElementById(id).hidden=!on;});
-    if(!on){current=null;selEl=null;}
-  }
-  /* ----- move mode: drag any text box to a new spot (stored as a px offset) ----- */
-  var moving=false,drag=null,moveBtn=bar.querySelector('#ed-move');
-  function setMoving(on){moving=on;document.body.classList.toggle('moving',on);
-    textSet.forEach(function(el){if(on)el.removeAttribute('contenteditable');else if(editing)el.setAttribute('contenteditable','true');});
-    moveBtn.textContent=on?'✥ Moving…':'✥ Move';moveBtn.classList.toggle('on',on);fmt.hidden=on||!editing;
-    document.getElementById('ed-hint').textContent=on?'Drag any box to reposition · tap Move again to edit text':'Click any text to edit · ⬇ Download to save changes into the file';}
-  moveBtn.addEventListener('click',function(){setMoving(!moving);});
-  function boxUnder(t){for(var n=t;n&&n!==document.body;n=n.parentNode){if(liveSet.has(n))return n;}return null;}
-  document.addEventListener('pointerdown',function(e){if(!moving)return;var box=boxUnder(e.target);if(!box)return;e.preventDefault();
-    drag={box:box,x0:e.clientX,y0:e.clientY,tx:parseFloat(box.dataset.tx||0),ty:parseFloat(box.dataset.ty||0)};
-    try{box.setPointerCapture(e.pointerId);}catch(_){}box.style.transition='none';},true);
-  document.addEventListener('pointermove',function(e){if(!drag)return;e.preventDefault();
-    var nx=Math.round(drag.tx+(e.clientX-drag.x0)),ny=Math.round(drag.ty+(e.clientY-drag.y0));
-    drag.box.dataset.tx=nx;drag.box.dataset.ty=ny;drag.box.style.transform='translate('+nx+'px,'+ny+'px)';},true);
-  function endDrag(){if(!drag)return;drag.box.style.transition='';persist(drag.box);drag=null;}
-  document.addEventListener('pointerup',endDrag,true);document.addEventListener('pointercancel',endDrag,true);
-  function persist(el){if(!liveSet.has(el))return;var o=load();
-    var v={h:el.innerHTML};if(el.style.textAlign)v.a=el.style.textAlign;if(el.style.fontSize)v.s=el.style.fontSize;
-    var tx=parseFloat(el.dataset.tx||0),ty=parseFloat(el.dataset.ty||0);if(tx||ty){v.tx=tx;v.ty=ty;}
-    if(el.dataset.edDel==='1')v.del=1;
-    o[keyOf(el)]=v;save(o);}
-  var selEl=null;
-  function selectCard(card){if(selEl&&selEl!==card)selEl.classList.remove('ed-sel');selEl=card;card.classList.add('ed-sel');current=card;refreshState();}
-  function selectEnclosingCard(){if(!current)return;var base=(liveSet.has(current)&&current.matches&&current.matches(CARDSEL))?current.parentElement:current;var card=base&&base.closest?base.closest(CARDSEL):null;while(card&&!liveSet.has(card)){card=card.parentElement&&card.parentElement.closest?card.parentElement.closest(CARDSEL):null;}if(card)selectCard(card);}
-  function refreshState(){
-    var isCard=!!(current&&current.matches&&current.matches(CARDSEL)),d=current&&current.dataset.edDel==='1',db=fmt.querySelector('[data-act="del"]');
-    db.textContent=d?'↩':'🗑';db.title=(d?'Restore':'Delete')+(isCard?' this card':' this text');
-    fmt.querySelector('[data-act="card"]').classList.toggle('on',isCard);
-    ['left','center','right'].forEach(function(al){var b=fmt.querySelector('[data-align="'+al+'"]');
-      b.classList.toggle('on',!!(current&&(current.style.textAlign===al||(al==='left'&&!current.style.textAlign))));});
-  }
-  document.getElementById('ed-toggle').addEventListener('click',function(){setEditing(!editing);});
-  document.addEventListener('focusin',function(e){if(editing&&e.target&&liveSet.has(e.target)){if(selEl){selEl.classList.remove('ed-sel');selEl=null;}current=e.target;refreshState();}},true);
-  document.addEventListener('input',function(e){if(editing&&liveSet.has(e.target))persist(e.target);},true);
-  /* click a card's edge/padding (not its text) to select the whole card */
-  document.addEventListener('click',function(e){if(!editing||moving||(e.target.closest&&e.target.closest('#editbar')))return;for(var n=e.target;n&&n!==document.body;n=n.parentNode){if(textSet.has(n))return;if(n.matches&&n.matches(CARDSEL)&&liveSet.has(n)){selectCard(n);return;}}},true);
-  /* in edit mode, clicking an editable link/button edits it instead of navigating or scrolling */
-  document.addEventListener('click',function(e){if(!editing)return;var t=e.target.closest&&e.target.closest('a[href],button,.btn');if(t&&!t.closest('#editbar')&&(liveSet.has(t)||t.closest('[contenteditable="true"]'))){e.preventDefault();e.stopPropagation();}},true);
-  /* act on pointerdown so the editable keeps focus + selection (works on touch and mouse) */
-  fmt.addEventListener('pointerdown',function(e){var b=e.target.closest('button');if(!b)return;e.preventDefault();
-    if(b.dataset.cmd){document.execCommand(b.dataset.cmd,false,null);if(current)persist(current);}
-    else if(b.dataset.act==='gold'){document.execCommand('foreColor',false,'#E8B23A');if(current)persist(current);}
-    else if(b.dataset.size){if(current){var cs=parseFloat(getComputedStyle(current).fontSize)||16;var nv=Math.max(10,Math.min(200,Math.round(b.dataset.size==='up'?cs*1.08:cs/1.08)));current.style.fontSize=nv+'px';persist(current);}}
-    else if(b.dataset.align){if(current){current.style.textAlign=b.dataset.align;persist(current);refreshState();}}
-    else if(b.dataset.act==='card'){selectEnclosingCard();}
-    else if(b.dataset.act==='del'){if(current){if(current.dataset.edDel==='1'){delete current.dataset.edDel;current.classList.remove('ed-del');}else{current.dataset.edDel='1';current.classList.add('ed-del');}persist(current);refreshState();}}
-  });
-  document.getElementById('ed-reset').addEventListener('click',function(){if(confirm('Reset all your text edits on this device?')){localStorage.removeItem(KEY);location.reload();}});
-  document.getElementById('ed-dl').addEventListener('click',function(){
-    fetch(location.href).then(function(r){return r.text();}).then(function(src){
-      var doc=new DOMParser().parseFromString(src,'text/html');var o=load();var dn=units(doc);
-      dn.forEach(function(el){var v=norm(o[keyOf(el)]);if(!v)return;if(v.del){el.remove();return;}if(v.h!=null)el.innerHTML=v.h;if(v.a)el.style.textAlign=v.a;if(v.s)el.style.fontSize=v.s;if(v.tx||v.ty)el.style.transform='translate('+(v.tx||0)+'px,'+(v.ty||0)+'px)';});
-      var html='<!DOCTYPE html>\n'+doc.documentElement.outerHTML;
-      var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([html],{type:'text/html'}));a.download='dynasty-hq_apple.html';a.click();
-    }).catch(function(){alert('Download needs the page opened through the local server (http://...), not the file opened directly.');});
-  });
-})();
-</script>
+
+  <script src="js/vendor/gsap.min.js"></script>
+  <script src="js/vendor/ScrollTrigger.min.js"></script>
+  <script src="js/vendor/CustomEase.min.js"></script>
+  <script src="js/vendor/lenis.min.js"></script>
+  <!-- Value simulator engine (ported from brochure) -->
+  <script src="vendor/supabase.min.js"></script>
+<script>window.supabase||document.write('<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.101.1/dist/umd/supabase.min.js"><\/script>')</script>
+  <script>
+    const FW_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4c2hpcXl4aGhpZnZ0ZnFhd2JxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI3MTExMzAsImV4cCI6MjA4ODI4NzEzMH0.zJi9W986ZLaANiZN6pt6ReFwaQU6yPeidsERIWo2ibI';
+    const SUPABASE_URL = 'https://sxshiqyxhhifvtfqawbq.supabase.co';
+    const SESSION_KEY = 'fw_session_v1';
+    const SCOUT_URL = 'https://skjjcruz.github.io/ReconAI-sandbox-dev/';
+    const LANDING_EDITOR_PREVIEW = new URLSearchParams(window.location.search).has('landingPreview');
+    // ?signout — arrive here from the DHQ logo to land on the sign-in page and
+    // stay put. Suppresses the auto-redirects below and clears the session.
+    const FORCE_SIGNOUT = new URLSearchParams(window.location.search).has('signout');
+    // ?home: deliberate visit to this page (league hub brand icon) — stay here
+    // instead of bouncing a signed-in visitor straight back into the app.
+    const STAY_HOME = new URLSearchParams(window.location.search).has('home');
+
+    // Supabase client — used only for lightweight landing analytics below.
+    let _sbClient = null;
+    function getSbClient() {
+      if (!_sbClient && window.supabase) {
+        _sbClient = window.supabase.createClient(SUPABASE_URL, FW_ANON_KEY);
+      }
+      return _sbClient;
+    }
+
+    const LANDING_ANALYTICS_SESSION_KEY = 'fw_landing_analytics_session_v1';
+    function landingAnalyticsSessionId() {
+      try {
+        let sid = sessionStorage.getItem(LANDING_ANALYTICS_SESSION_KEY);
+        if (!sid) {
+          sid = 'sess_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+          sessionStorage.setItem(LANDING_ANALYTICS_SESSION_KEY, sid);
+        }
+        return sid;
+      } catch {
+        return 'sess_' + Date.now().toString(36);
+      }
+    }
+    // iOS/iPadOS browsers all carry a Safari/ UA token; the app shell's bare
+    // WKWebView does not (iPads report "Macintosh" for desktop pages).
+    function detectSurface() {
+      try {
+        const ua = navigator.userAgent || '';
+        const apple = /iPhone|iPad|iPod|Macintosh/.test(ua);
+        return apple && /AppleWebKit/.test(ua) && !/Safari\//.test(ua) ? 'ios_app' : 'web';
+      } catch { return 'web'; }
+    }
+    function safeLandingMeta(meta) {
+      const out = {
+        route: window.location.pathname || '/landing.html',
+        surface: detectSurface(),
+        host: window.location.hostname || null,
+      };
+      Object.entries(meta || {}).forEach(([key, value]) => {
+        if (/email|password|token|secret|message|content|body/i.test(key)) return;
+        if (value == null) return;
+        if (['string', 'number', 'boolean'].includes(typeof value)) out[key] = value;
+      });
+      return out;
+    }
+    function safeReferrerHost() {
+      try { return document.referrer ? new URL(document.referrer).hostname : null; }
+      catch { return null; }
+    }
+    // Returns a promise that settles when the insert lands (or after 900ms,
+    // whichever is first) so critical-path callers can await it BEFORE
+    // navigating away. Fire-and-forget callers are unaffected. Without this,
+    // signup_succeeded died in flight when the OAuth callback immediately
+    // redirected to the connect page — a REAL Apple signup on 9/1 landed an
+    // account at 14:20:52 and the funnel still read "Signup succeeded: 0"
+    // (owner deep dive 2026-09-02).
+    function trackLandingEvent(eventName, metadata = {}) {
+      try {
+        if (LANDING_EDITOR_PREVIEW) return Promise.resolve();
+        const db = getSbClient();
+        if (!db || !eventName) return Promise.resolve();
+        const insert = db.from('analytics_events').insert([{
+          event_id: 'evt_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10),
+          username: null,
+          league_id: null,
+          session_id: landingAnalyticsSessionId(),
+          platform: 'warroom',
+          module: 'landing',
+          widget: metadata.widget || null,
+          event_name: eventName,
+          event_ts: new Date().toISOString(),
+          entity_type: metadata.entityType || null,
+          entity_id: metadata.entityId || null,
+          metadata: safeLandingMeta(metadata),
+        }]).then(() => {}).catch(() => {});
+        return Promise.race([insert, new Promise(r => setTimeout(r, 900))]);
+      } catch { return Promise.resolve(); }
+    }
+    trackLandingEvent('landing_viewed', {
+      referrerHost: safeReferrerHost(),
+      viewport: window.innerWidth < 768 ? 'mobile' : 'desktop',
+    });
+    document.addEventListener('click', (evt) => {
+      const target = evt.target.closest?.('.hero-cta,.hero-secondary,.price-btn,.nav-btn,.auth-submit,.btn--primary,.btn--secondary');
+      if (!target) return;
+      trackLandingEvent('landing_cta_clicked', {
+        widget: target.className.split(/\s+/)[0],
+        entityType: 'cta',
+        entityId: target.id || target.className.split(/\s+/)[0],
+      });
+    }, { capture: true });
+
+    const WARROOM_URL = 'index.html';
+    const AUTH_KEY = 'od_auth_v1';
+    const PROFILE_KEY = 'od_profile_v1';
+
+    // A brand-new account must walk the full funnel (plan -> Sleeper connect)
+    // even on a device where a previous account already finished onboarding —
+    // that progress is per DEVICE, and inheriting it skips the journey.
+    function resetDeviceOnboardingForNewAccount() {
+      try {
+        const prof = JSON.parse(localStorage.getItem(PROFILE_KEY) || 'null') || {};
+        delete prof.sleeperUsername;
+        delete prof.sleeperUserId;
+        prof.onboardingComplete = false;
+        localStorage.setItem(PROFILE_KEY, JSON.stringify(prof));
+      } catch {}
+      try { localStorage.removeItem(AUTH_KEY); } catch {}
+      try { localStorage.removeItem('od_locked_username_v2'); } catch {}
+      try { localStorage.removeItem('dynastyhq_username'); } catch {}
+      try { localStorage.removeItem('mfl_league_id'); } catch {}
+      try { localStorage.removeItem('mfl_year'); } catch {}
+      try { localStorage.removeItem('mfl_franchise_id'); } catch {}
+    }
+    const FW_API_BASE = SUPABASE_URL + '/functions/v1';
+
+    let authMode = 'signup'; // 'signup' | 'signin'
+
+    function destForUser() {
+      const pref = localStorage.getItem('fw_preferred_view');
+      if (pref === 'scout') return SCOUT_URL;
+      if (pref === 'warroom') return WARROOM_URL;
+      // Deterministic default: always the War Room league picker. (Previously this
+      // keyed off window.innerWidth, which made iPads flip between Scout and War
+      // Room by orientation.) An explicit 'scout' preference still wins above.
+      return WARROOM_URL;
+    }
+
+    const CONNECT_URL = 'connect-sleeper.html';
+
+    function showAlert(type, message) {
+      const el = document.getElementById('alertJoin');
+      el.className = 'alert alert-' + type + ' show';
+      el.textContent = message;
+      if (type !== 'success') setTimeout(() => el.classList.remove('show'), 6000);
+    }
+
+    // Where to send a signed-in user: the connect-your-leagues page until a
+    // league source (Sleeper or MFL) is bound; the app once one is.
+    function nextAfterAuth() {
+      try {
+        const profile = JSON.parse(localStorage.getItem(PROFILE_KEY) || 'null');
+        const legacy = JSON.parse(localStorage.getItem(AUTH_KEY) || 'null');
+        if (profile?.onboardingComplete === true || profile?.sleeperUsername || legacy?.username
+          || localStorage.getItem('mfl_league_id')) return destForUser();
+      } catch {}
+      return CONNECT_URL;
+    }
+
+    function toggleAuthMode() {
+      authMode = authMode === 'signup' ? 'signin' : 'signup';
+      const signup = authMode === 'signup';
+      document.getElementById('authTitle').textContent = signup ? 'Create your account' : 'Welcome back';
+      document.getElementById('authSub').textContent = signup
+        ? "Step 1 of 2 \u2014 create your account with Google or email. Next, you'll connect your leagues."
+        : 'Sign in to your Dynasty HQ account.';
+      document.getElementById('sleeperHint').parentElement.style.display = signup ? '' : 'none';
+      document.getElementById('btnJoin').textContent = signup ? 'Create account \u2192' : 'Sign in \u2192';
+      document.getElementById('btnGoogle').lastChild.textContent = signup ? ' Continue with Google' : ' Sign in with Google';
+      document.getElementById('btnApple').lastChild.textContent = signup ? ' Continue with Apple' : ' Sign in with Apple';
+      document.getElementById('toggleMode').textContent = signup ? 'Already have an account? Sign in' : 'Need an account? Sign up';
+      document.getElementById('forgotBtn').style.display = signup ? 'none' : '';
+    }
+
+    // \u2500\u2500 Email signup / signin (account only \u2014 Sleeper handled on step 2) \u2500
+    async function handleEmailAuth() {
+      const email = document.getElementById('acctEmail').value.trim();
+      const password = document.getElementById('acctPassword').value;
+      const btn = document.getElementById('btnJoin');
+      const signup = authMode === 'signup';
+      if (!email || !password) { showAlert('error', 'Email and password are required.'); return; }
+      if (signup && password.length < 8) { showAlert('error', 'Password must be at least 8 characters.'); return; }
+      trackLandingEvent(signup ? 'signup_started' : 'signin_started');
+      btn.disabled = true; btn.textContent = signup ? 'Creating account\u2026' : 'Signing in\u2026';
+      try {
+        const path = signup ? 'fw-signup' : 'fw-signin';
+        const res = await fetch(`${FW_API_BASE}/${path}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'apikey': FW_ANON_KEY, 'Authorization': `Bearer ${FW_ANON_KEY}` },
+          body: JSON.stringify({ email, password }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.token) {
+          trackLandingEvent(signup ? 'signup_failed' : 'signin_failed', { status: res.status });
+          showAlert('error', data.error || (signup ? 'Sign-up failed.' : 'Invalid email or password.'));
+          btn.disabled = false; btn.textContent = signup ? 'Create account \u2192' : 'Sign in \u2192';
+          return;
+        }
+        localStorage.setItem(SESSION_KEY, JSON.stringify(data));
+        if (signup) resetDeviceOnboardingForNewAccount();
+        trackLandingEvent(signup ? 'signup_succeeded' : 'signin_succeeded');
+        showAlert('success', signup ? 'Account ready \u2014 connect your leagues\u2026' : 'Welcome back\u2026');
+        // New accounts go straight to the connect-your-leagues page;
+        // returning sign-ins resume wherever they left off.
+        setTimeout(() => { window.location.href = signup ? CONNECT_URL : nextAfterAuth(); }, 600);
+      } catch (err) {
+        trackLandingEvent(signup ? 'signup_failed' : 'signin_failed', { reason: 'network' });
+        showAlert('error', 'Network error: ' + (err?.message || String(err)));
+        btn.disabled = false; btn.textContent = signup ? 'Create account \u2192' : 'Sign in \u2192';
+      }
+    }
+
+    // \u2500\u2500 Google OAuth (account only) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    function handleGoogle() {
+      const db = getSbClient();
+      if (!db) { showAlert('error', 'Sign-in is still loading \u2014 try again in a moment.'); return; }
+      trackLandingEvent('oauth_started', { provider: 'google' });
+      // Mission Control's funnel counts signup_started/signup_succeeded.
+      // Without these a Google or Apple signup is invisible and the funnel
+      // reads 0 no matter how many people sign up (owner ask 2026-08-20).
+      trackLandingEvent(authMode === 'signup' ? 'signup_started' : 'signin_started', { method: 'google' });
+      db.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin + window.location.pathname } });
+    }
+
+    // ── Apple OAuth (account only) ──────────────────────────────────────────
+    function handleApple() {
+      const db = getSbClient();
+      if (!db) { showAlert('error', 'Sign-in is still loading — try again in a moment.'); return; }
+      trackLandingEvent('oauth_started', { provider: 'apple' });
+      // Mission Control's funnel counts signup_started/signup_succeeded.
+      // Without these a Google or Apple signup is invisible and the funnel
+      // reads 0 no matter how many people sign up (owner ask 2026-08-20).
+      trackLandingEvent(authMode === 'signup' ? 'signup_started' : 'signin_started', { method: 'apple' });
+      db.auth.signInWithOAuth({ provider: 'apple', options: { redirectTo: window.location.origin + window.location.pathname } });
+    }
+
+    // Handle Google redirect back: store session, then route to step 2.
+    // Captured before Supabase's client consumes the URL: a fresh OAuth return
+    // must always re-sync and replace any stored session — the old "skip if a
+    // token already exists" rule meant a stale or malformed saved session
+    // could never be repaired by signing in again.
+    const FRESH_OAUTH_RETURN =
+      (window.location.hash || '').indexOf('access_token=') !== -1 ||
+      /[?&]code=/.test(window.location.search || '');
+
+    // Best-effort JWT expiry check (mirrors the shared client): true only when
+    // a decodable `exp` claim is in the past (30s skew).
+    function jwtExpired(token) {
+      try {
+        const part = String(token).split('.')[1];
+        if (!part) return false;
+        const claims = JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/')));
+        if (typeof claims?.exp !== 'number') return false;
+        return Date.now() >= claims.exp * 1000 - 30 * 1000;
+      } catch { return false; }
+    }
+    // A session is only worth acting on when it can pass the shared client's
+    // checks in the app: token present, not expired, and user.id attached
+    // (id-less sessions — the Jul 9–11 sign-in bug shape — resolve free).
+    function sessionHealthy(s) {
+      return !!(s?.token && s?.user?.id && !jwtExpired(s.token));
+    }
+    // Cover the OAuth landing bounce with a calm full-screen state instead of
+    // flashing the marketing page mid-redirect. Removed only on paths that
+    // stay on this page; successful sign-ins navigate away underneath it.
+    let _oauthOverlay = null;
+    if (FRESH_OAUTH_RETURN) {
+      _oauthOverlay = document.createElement('div');
+      _oauthOverlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:#0a0c10;display:flex;align-items:center;justify-content:center;color:#e6e9ed;font-family:"JetBrains Mono",monospace;font-size:.85rem;letter-spacing:.12em;text-transform:uppercase';
+      _oauthOverlay.textContent = 'Signing you in…';
+      document.body.appendChild(_oauthOverlay);
+    }
+    function dropOAuthOverlay() {
+      try { if (_oauthOverlay) { _oauthOverlay.remove(); _oauthOverlay = null; } } catch {}
+    }
+    (async function handleOAuthCallback() {
+      try {
+        if (LANDING_EDITOR_PREVIEW || FORCE_SIGNOUT || STAY_HOME) { dropOAuthOverlay(); return; }
+        // A provider bounced us back with an error in the URL — this used to
+        // fall through in complete silence (owner deep dive 2026-09-02:
+        // "Signup submitted… then nothing"). Now it reports itself.
+        const _urlErr = ((window.location.hash || '') + (window.location.search || '')).match(/[#?&]error(?:_description)?=([^&]+)/);
+        if (_urlErr) {
+          dropOAuthOverlay();
+          trackLandingEvent('oauth_returned_error', { detail: decodeURIComponent(_urlErr[1]).slice(0, 120) });
+          showAlert('error', 'Sign-in was cancelled or blocked by the provider. Please try again — or use email.');
+          return;
+        }
+        const db = getSbClient();
+        if (!db) { dropOAuthOverlay(); return; }
+        const { data } = await db.auth.getSession();
+        if (!data?.session) {
+          dropOAuthOverlay();
+          // Only a fresh OAuth return with no resulting session is a failure
+          // worth reporting — a plain landing view with no session is normal.
+          if (FRESH_OAUTH_RETURN) {
+            trackLandingEvent('oauth_no_session', {});
+            showAlert('error', 'Sign-in didn’t finish — the provider sent us back without a session. Please try again.');
+          }
+          return;
+        }
+        const user = data.session.user;
+        const oauthProvider = user.app_metadata?.provider || 'oauth';
+        const fallbackName = user.user_metadata?.full_name || user.user_metadata?.name || user.email;
+        const existing = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
+        let appSession = null;
+        // Re-sync on a fresh OAuth return, when nothing usable is stored, and
+        // also when the stored session is damaged (no user.id / expired) —
+        // a lingering Supabase session is exactly what lets us repair those.
+        if (FRESH_OAUTH_RETURN || !sessionHealthy(existing)) {
+          // Exchange the Supabase OAuth token for a Dynasty HQ app session so the
+          // user is registered in app_users and accepted by authenticated APIs.
+          try {
+            const res = await fetch(`${FW_API_BASE}/fw-oauth-sync`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${data.session.access_token}` },
+              body: JSON.stringify({ productSlug: 'war_room' }),
+            });
+            if (res.ok) appSession = await res.json();
+          } catch (syncErr) { console.warn('[WR] OAuth sync error:', syncErr); }
+
+          if (appSession?.token && appSession?.user?.id) {
+            // Store the WHOLE user record — id/tier/products included. The
+            // shared client refuses account sessions without user.id, so
+            // dropping the id here is what locked every Google sign-in to
+            // the free tier once gating went live.
+            localStorage.setItem(SESSION_KEY, JSON.stringify({
+              token: appSession.token,
+              user: Object.assign({}, appSession.user || {}, {
+                email: appSession.user.email || user.email,
+                displayName: appSession.user.displayName || fallbackName,
+              }),
+            }));
+          } else if (!sessionHealthy(existing)) {
+            // The sync failed and there is no healthy session to fall back
+            // on. Do NOT store the raw Supabase token: a session without
+            // user.id is refused by the shared client and reads as free
+            // tier — the exact shape that locked Google sign-ins to Scout.
+            // Stay here so the user can retry.
+            dropOAuthOverlay();
+            trackLandingEvent('oauth_sync_failed', { provider: oauthProvider });
+            showAlert('error', 'Sign-in hit a snag finishing your account setup. Please try again in a moment.');
+            return;
+          }
+        }
+        const oauthIsNew = !!(appSession && appSession.isNew === true);
+        // AWAITED so the success reaches the server before we navigate away —
+        // otherwise a successful signup reads as a funnel dropout.
+        await Promise.all([
+          trackLandingEvent('oauth_succeeded', { provider: oauthProvider, isNew: oauthIsNew }),
+          trackLandingEvent(oauthIsNew ? 'signup_succeeded' : 'signin_succeeded', { method: oauthProvider }),
+        ]);
+        // First-ever sign-in (fw-oauth-sync just created the account): route
+        // to the connect-your-leagues page instead of straight in.
+        if (appSession && appSession.isNew === true) {
+          resetDeviceOnboardingForNewAccount();
+          window.location.href = CONNECT_URL;
+        } else {
+          window.location.href = nextAfterAuth();
+        }
+      } catch (e) {
+        dropOAuthOverlay();
+        console.warn('[WR] OAuth callback error:', e);
+        trackLandingEvent('oauth_callback_error', { detail: String(e && e.message || e).slice(0, 120) });
+      }
+    })();
+
+    // \u2500\u2500 Forgot password \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    async function handleForgot() {
+      const email = document.getElementById('acctEmail').value.trim();
+      if (!email) { showAlert('error', 'Enter your email first, then tap \u201cForgot password?\u201d'); document.getElementById('acctEmail').focus(); return; }
+      trackLandingEvent('password_reset_requested');
+      try {
+        await fetch(`${FW_API_BASE}/fw-request-password-reset`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'apikey': FW_ANON_KEY, 'Authorization': `Bearer ${FW_ANON_KEY}` },
+          body: JSON.stringify({ email }),
+        });
+      } catch {}
+      // Always show success \u2014 never reveal whether an email exists.
+      showAlert('success', 'If that email has an account, a password reset link is on the way.');
+    }
+
+    // If already signed in, skip ahead \u2014 to step 2 if Sleeper isn't bound yet,
+    // else straight into the app.
+    // Forced sign-out (DHQ logo → ?signout): clear local + Supabase sessions and
+    // stay on this page. The redirect guards above already bail on FORCE_SIGNOUT.
+    (async function forceSignOut() {
+      if (!FORCE_SIGNOUT) return;
+      try { localStorage.removeItem(SESSION_KEY); } catch {}
+      try { localStorage.removeItem(AUTH_KEY); } catch {}
+      try { localStorage.removeItem('od_locked_username_v2'); } catch {}
+      // Drop the Sleeper binding so signing back in lands on the Sleeper connect
+      // page (connect-sleeper.html) rather than skipping straight into the app.
+      // Tier/onboarding state is preserved.
+      try {
+        const prof = JSON.parse(localStorage.getItem(PROFILE_KEY) || 'null');
+        if (prof) {
+          delete prof.sleeperUsername;
+          delete prof.sleeperUserId;
+          localStorage.setItem(PROFILE_KEY, JSON.stringify(prof));
+        }
+      } catch {}
+      try { const db = getSbClient(); if (db) await db.auth.signOut(); } catch {}
+      try { if (authMode === 'signup') toggleAuthMode(); } catch {}
+      try { history.replaceState(null, '', window.location.pathname); } catch {}
+    })();
+
+    (function checkSession() {
+      try {
+        // STAY_HOME (?home): the league hub's brand icon lands here on
+        // purpose — a signed-in visitor must be able to look at this page
+        // without being bounced straight back into the app. Their way back
+        // in is the nav button, which flips from "Sign in" to "Open app".
+        if (LANDING_EDITOR_PREVIEW || FORCE_SIGNOUT || STAY_HOME) {
+          try {
+            const staySession = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
+            const navBtn = document.getElementById('navSignin');
+            if (STAY_HOME && staySession?.token && navBtn) {
+              navBtn.textContent = 'Open app';
+              navBtn.onclick = () => { window.location.href = nextAfterAuth(); };
+            }
+          } catch {}
+          return;
+        }
+        if (FRESH_OAUTH_RETURN) return; // the OAuth callback owns this visit
+        const session = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
+        if (!session?.token) return;
+        if (sessionHealthy(session)) {
+          trackLandingEvent('landing_existing_session_redirected');
+          window.location.href = nextAfterAuth();
+          return;
+        }
+        // Damaged (no user.id) or expired session: repair it through
+        // fw-refresh-session before entering the app — entering with it
+        // shows the account as free tier. Unrepairable ones are cleared so
+        // the normal sign-in flow is the recovery path.
+        (async () => {
+          if (!jwtExpired(session.token)) {
+            try {
+              const res = await fetch(`${FW_API_BASE}/fw-refresh-session`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${session.token}`, 'apikey': FW_ANON_KEY },
+              });
+              if (res.ok) {
+                const data = await res.json();
+                if (data?.token && data?.user?.id) {
+                  localStorage.setItem(SESSION_KEY, JSON.stringify({ token: data.token, user: data.user }));
+                  trackLandingEvent('landing_session_repaired');
+                  window.location.href = nextAfterAuth();
+                  return;
+                }
+              }
+            } catch {}
+          }
+          localStorage.removeItem(SESSION_KEY);
+          trackLandingEvent('landing_dead_session_cleared');
+        })();
+      } catch {}
+    })();
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && ['acctEmail', 'acctPassword'].includes(document.activeElement?.id)) handleEmailAuth();
+    });
+  </script>
 </body>
 </html>

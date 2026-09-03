@@ -324,76 +324,37 @@ window.App.PlayerValue = (function () {
 
     // ── Rest-of-Season (ROS) value — redraft only ────────────────────
     // Format-aware player value: redraft leagues value players by projected
-    // points over the remaining fantasy season (league-scored via the
+    // points over the remaining fantasy regular season (league-scored via the
     // projection engine), scaled into the DHQ range so Trade Center math, pick
     // values, tiers, and coloring all keep working unchanged. Dynasty/keeper
     // fall through to DHQ (App.LI.playerScores). Built once per (league, week).
-    //
-    // REDRAFT DOCTRINE (owner ruling 2026-08-02): the only league-specific
-    // inputs are the league's SCORING and ROSTER settings. Everything else is
-    // baseline shared by everyone — public stats, the provider's season
-    // projection line (via WeeklyProj.buildSeasonBaseline), and a capped
-    // FantasyCalc REDRAFT market calibration. No age curves, draft capital,
-    // or dynasty market may influence redraft values.
     let _ros = null; // { leagueId, week, remainingWeeks, points:{pid}, values:{pid}, scale }
 
-    // ROS value = gross-points share + value-over-replacement share. Tuned
-    // 2026-08-02 against ESPN / Yahoo / FantasyPros / FantasyCalc redraft
-    // consensus on a standard 12-team half-PPR control: the original 0.35
-    // gross share floated 12-16 QBs into a 1QB top-50 (market band: 2-5);
-    // 0.15 lands the QB tier inside the band (ρ 0.87-0.94 across sources)
-    // while VOR keeps flex-starter separation. 0.10 over-deflates and
-    // degrades within-QB ordering.
-    const ROS_GROSS_WT = 0.15, ROS_VOR_WT = 0.85;
-    // FantasyCalc REDRAFT market calibration weight — the redraft mirror of the
-    // dynasty tenet: the league-scored engine is the spine, the market is only
-    // a CAPPED trim (25% influence, only where the market prices a player).
-    const ROS_MARKET_WT = 0.25;
-    // When the dynasty engine isn't loaded (other-platform redraft leagues),
-    // anchor the value ceiling here instead of bestDHQ — pure display scale.
-    const ROS_SCALE_CEILING = 9500;
-    // FantasyCalc redraft values, fetched once per league (redraft only):
-    // { leagueId, map: {sleeperPid: value} | null, fetching }
-    let _rosMarket = { leagueId: null, map: null, fetching: null };
-
-    // Keeper value = dynasty-leaning blend of long-term DHQ and this-season ROS.
-    // A keeper call is closer to a 1-year-ahead dynasty question than to "points
-    // left this season," so weight dynasty higher than a straight split. Tunable —
-    // revisit if real usage shows misranking (e.g. ageing vets held too high).
-    const KEEPER_DYNASTY_WT = 0.6, KEEPER_ROS_WT = 0.4;
+    // ROS value = gross-points share + value-over-replacement share (mirrors the dynasty
+    // engine's lineupValuePPGFor 0.35/0.65 split). Tune toward pure VOR (e.g. 0.25/0.75)
+    // if gross-points players — backup QBs/streamers — still rank above flex starters.
+    const ROS_GROSS_WT = 0.35, ROS_VOR_WT = 0.65;
 
     function _currentLeagueId() {
         return String(window.S?.currentLeagueId
             || window.App?.LeagueSkin?.getCurrent?.()?.leagueId || '');
     }
-    // CHOPPED counts as redraft here: it is a one-season format, so value is
-    // rest-of-season, never dynasty. (The survival-weighted horizon is a
-    // later phase — season-end is already vastly closer than dynasty DHQ.)
     function _isRedraft(skin) {
         const s = skin || window.App?.LeagueSkin?.getCurrent?.() || null;
+        // CHOPPED counts as redraft here: it is a one-season format, so value is
+        // rest-of-season, never dynasty. (The survival-weighted horizon below
+        // shortens it further — season-end is already vastly closer than dynasty.)
         return !!s && (s.type === 'redraft' || s.type === 'chopped');
-    }
-    function _isKeeper(skin) {
-        const s = skin || window.App?.LeagueSkin?.getCurrent?.() || null;
-        return !!s && s.type === 'keeper';
     }
 
     // Healthy, neutral-matchup per-week median for a player, league-scored.
     // Ignores transient injury_status — ROS is a season-long estimate.
-    // When a provider SEASON projection line exists it anchors the baseline
-    // (buildSeasonBaseline) — that is what makes rookies and role-change
-    // players priceable in redraft; pure history is the fallback.
     function _perWeekMedian(pid, ctx) {
         const WP = window.App?.WeeklyProj, SS = window.App?.StartSit;
         if (!WP || !SS || !WP.buildBaseline) return 0;
         const player = ctx.playersData?.[pid];
         if (!player) return 0;
-        const season = ctx.statsData?.[pid] || null;
-        const prior = ctx.priorData?.[pid] || null;
-        const projRow = (ctx.projectionsData && ctx.projectionsData[pid]) || null;
-        const baseline = (projRow && WP.buildSeasonBaseline)
-            ? WP.buildSeasonBaseline(pid, season, prior, projRow, ctx.scoring, ctx.week, ctx.projPreW)
-            : WP.buildBaseline(pid, season, prior, ctx.scoring, ctx.week);
+        const baseline = WP.buildBaseline(pid, ctx.statsData?.[pid] || null, ctx.priorData?.[pid] || null, ctx.scoring, ctx.week);
         if (!baseline) return 0;
         const pos = (window.App?.normPos?.(player.position)) || player.position || '';
         const proj = SS.projectPlayerWeek({ pid, week: ctx.week, position: pos, baseline, dvpMult: 1, vegas: null, injuryStatus: '' });
@@ -401,106 +362,16 @@ window.App.PlayerValue = (function () {
         return (scored && scored.points && scored.points.median) || 0;
     }
 
-    // A projection row with no meaningful projected volume is an empty shell,
-    // not a claim the player will play — keep it out of the redraft universe.
-    function _projHasVolume(row) {
-        if (!row) return false;
-        return (Number(row.pts_ppr) || Number(row.pts_std) || Number(row.pts_half_ppr)
-            || Number(row.pass_att) || Number(row.rush_att) || Number(row.rec_tgt) || Number(row.rec)
-            || Number(row.fga) || Number(row.xpm) || Number(row.idp_tkl) || 0) > 0;
-    }
-
-    // Fetch FantasyCalc REDRAFT values for this league's own settings (teams /
-    // QB count / PPR) — fire-and-forget; when it lands the (league, week) ROS
-    // cache is invalidated so the next read rebuilds with the calibration in.
-    // League-parameterized by design: the market anchor itself follows the
-    // league's roster and scoring shape, never a generic default.
-    function _ensureRosMarket(league, leagueId) {
-        if (_rosMarket.leagueId === leagueId && (_rosMarket.map || _rosMarket.fetching)) return;
-        if (typeof fetch !== 'function') return;
-        const rp = (league.roster_positions || []).map(s => String(s).toUpperCase());
-        const numQbs = rp.some(s => s === 'SUPER_FLEX' || s === 'QB_FLEX' || s === 'OP') ? 2 : 1;
-        const numTeams = Number(league.total_rosters) || 12;
-        const rec = Number((league.scoring_settings || {}).rec);
-        const ppr = !Number.isFinite(rec) ? 0.5 : rec >= 0.9 ? 1 : rec >= 0.4 ? 0.5 : 0;
-        _rosMarket = { leagueId, map: null, fetching: true };
-        fetch('https://api.fantasycalc.com/values/current?isDynasty=false&numQbs=' + numQbs + '&numTeams=' + numTeams + '&ppr=' + ppr)
-            .then(r => (r && r.ok ? r.json() : null))
-            .then(rows => {
-                if (_rosMarket.leagueId !== leagueId) return;
-                const map = {};
-                (Array.isArray(rows) ? rows : []).forEach(d => {
-                    const sid = d && d.player && d.player.sleeperId;
-                    if (sid && d.value > 0 && d.player.position !== 'PICK') map[String(sid)] = Number(d.value);
-                });
-                _rosMarket = { leagueId, map: Object.keys(map).length ? map : null, fetching: null };
-                if (_rosMarket.map && _ros && _ros.leagueId === leagueId) {
-                    _ros = null; // rebuild on next read, calibrated
-                    try { window.dispatchEvent(new CustomEvent('wr:ros-market-loaded', { detail: { leagueId } })); } catch (e) { /* headless */ }
-                }
-            })
-            .catch(() => { if (_rosMarket.leagueId === leagueId) _rosMarket = { leagueId, map: null, fetching: null }; });
-    }
-
     // Replacement-rank (1-indexed) for a position = the last startable player at that
     // position across the league. Reuses the dynasty engine's flex-aware per-team slot
     // count (lineupContext.perTeamSlots) when available; falls back to league starter
     // counts, then a sane per-position default. Used to compute value-over-replacement.
-    function _replacementRank(pos, totalTeams, slotsOverride) {
-        // slotsOverride lets a caller price a league OTHER than the one whose
-        // LeagueIntel happens to be loaded — the whole point of Empire's
-        // mark-to-league pass. Without it, behaviour is unchanged.
-        if (slotsOverride && slotsOverride[pos] > 0) return Math.max(1, Math.round(totalTeams * slotsOverride[pos]));
-        if (slotsOverride) return Math.max(1, Math.round(totalTeams * ({ QB:1, RB:2, WR:3, TE:1, K:1, DL:3, LB:2, DB:3 }[pos] || 1)));
+    function _replacementRank(pos, totalTeams) {
         const lc = window.App?.LI?.lineupContext?.position?.[pos];
         const sc = window.App?.LI?.starterCounts?.[pos];
         const slotsPerTeam = (lc && lc.perTeamSlots > 0) ? lc.perTeamSlots
                            : (sc > 0 ? sc : ({ QB:1, RB:2, WR:3, TE:1, K:1, DL:3, LB:2, DB:3 }[pos] || 1));
         return Math.max(1, Math.round(totalTeams * slotsPerTeam));
-    }
-
-    // Starting slots per team, per position, straight from roster_positions —
-    // flex-aware. FLEX/SUPER_FLEX demand is spread across the positions that
-    // can legally fill them, which is what makes a superflex league price QBs
-    // like the scarce asset they are. Pure: no globals, so Empire can call it
-    // once per league.
-    const _FLEX_ELIGIBLE = {
-        FLEX: ['RB', 'WR', 'TE'],
-        WR_RB_FLEX: ['RB', 'WR'],
-        REC_FLEX: ['WR', 'TE'],
-        SUPER_FLEX: ['QB', 'RB', 'WR', 'TE'],
-        QB_FLEX: ['QB', 'RB', 'WR', 'TE'],
-        OP: ['QB', 'RB', 'WR', 'TE'],
-        IDP_FLEX: ['DL', 'LB', 'DB'],
-    };
-    // How a flex slot's demand splits across its eligible positions. SUPER_FLEX
-    // is overwhelmingly a QB slot in practice, so it is weighted that way
-    // rather than split evenly — an even split would understate QB scarcity,
-    // which is the single biggest cross-league price difference there is.
-    const _FLEX_SHARE = {
-        SUPER_FLEX: { QB: 0.75, RB: 0.08, WR: 0.12, TE: 0.05 },
-        QB_FLEX: { QB: 0.75, RB: 0.08, WR: 0.12, TE: 0.05 },
-        OP: { QB: 0.75, RB: 0.08, WR: 0.12, TE: 0.05 },
-        FLEX: { RB: 0.35, WR: 0.5, TE: 0.15 },
-        WR_RB_FLEX: { RB: 0.45, WR: 0.55 },
-        REC_FLEX: { WR: 0.75, TE: 0.25 },
-        IDP_FLEX: { DL: 0.34, LB: 0.33, DB: 0.33 },
-    };
-    function slotsFromRoster(rosterPositions) {
-        const out = {};
-        const bench = /^(BN|BE|BENCH|IR|TAXI|RES)$/i;
-        (rosterPositions || []).forEach(raw => {
-            const s = String(raw || '').toUpperCase();
-            if (!s || bench.test(s)) return;
-            if (_FLEX_ELIGIBLE[s]) {
-                const share = _FLEX_SHARE[s] || {};
-                _FLEX_ELIGIBLE[s].forEach(pos => { out[pos] = (out[pos] || 0) + (share[pos] || (1 / _FLEX_ELIGIBLE[s].length)); });
-                return;
-            }
-            const pos = (window.App?.normPos?.(s)) || s;
-            out[pos] = (out[pos] || 0) + 1;
-        });
-        return out;
     }
 
     // Build + cache the ROS value map. No-op (leaves _ros null → getValue
@@ -509,103 +380,42 @@ window.App.PlayerValue = (function () {
     function ensureRos(ctx) {
         ctx = ctx || {};
         const skin = ctx.skin || window.App?.LeagueSkin?.getCurrent?.() || null;
-        // Keeper leagues need the same ROS/VOR map built (getKeeperValue blends
-        // it with dynasty DHQ below) — getValue()/getRosPoints() still gate
-        // strictly on redraft, so this widening doesn't change what they return.
-        if (!_isRedraft(skin) && !_isKeeper(skin)) { _ros = null; return null; }
-        const S = window.S || {};
-        const league = ctx.league || skin?.league || (S.leagues && S.leagues[0]) || {};
+        if (!_isRedraft(skin)) { _ros = null; return null; }
+        const league = ctx.league || skin?.league || {};
         const leagueId = String(ctx.leagueId || league.league_id || league.id || _currentLeagueId());
         const WP = window.App?.WeeklyProj;
         const week = WP && WP.currentWeek ? WP.currentWeek() : 1;
-        // Callers that can't thread the hydrated maps (Trade Center's early
-        // mount, the draft stack) inherit them from the hydrate bridge — a
-        // missing priorData/projectionsData must degrade the BASELINE, never
-        // silently flip a redraft surface back to dynasty pricing.
-        const playersData = ctx.playersData || S.players || {};
-        const statsData = ctx.statsData || S.statsData || {};
-        const priorData = ctx.priorData || S.priorData || {};
-        const projectionsData = ctx.projectionsData || S.projectionsData || null;
-        // Market calibration: an injected map wins (tests/harness); otherwise
-        // kick the per-league FantasyCalc REDRAFT fetch (redraft only).
-        if (!ctx.marketRedraft && _isRedraft(skin) && !ctx.noMarketFetch) _ensureRosMarket(league, leagueId);
-        const market = ctx.marketRedraft || (_rosMarket.leagueId === leagueId ? _rosMarket.map : null);
         if (_ros && _ros.leagueId === leagueId && _ros.week === week) return _ros; // cached
-        const built = computePrices({ ...ctx, league, leagueId, week, playersData, statsData, priorData, projectionsData, marketRedraft: market });
-        _ros = built;
-        return _ros;
-    }
 
-    // ── Pure per-league price board ──────────────────────────────────
-    // Everything ensureRos used to do inline, with NO module cache written.
-    // That is what lets Empire mark every league to its OWN book at once:
-    // pass a league's scoring, roster slots and team count and get that
-    // league's board back, without disturbing the single-league _ros cache
-    // every other surface depends on.
-    //   ctx additionally accepts: perTeamSlots (from slotsFromRoster),
-    //   playerScores (universe/ceiling override), totalTeams.
-    function computePrices(ctx) {
-        ctx = ctx || {};
-        const S = window.S || {};
-        const league = ctx.league || {};
-        const leagueId = String(ctx.leagueId || league.league_id || league.id || '');
-        const WP = window.App?.WeeklyProj;
-        const week = Number(ctx.week) || (WP && WP.currentWeek ? WP.currentWeek() : 1);
-        const playersData = ctx.playersData || S.players || {};
-        const statsData = ctx.statsData || S.statsData || {};
-        const priorData = ctx.priorData || S.priorData || {};
-        const projectionsData = ctx.projectionsData || S.projectionsData || null;
-        const market = ctx.marketRedraft || null;
-        const perTeamSlots = ctx.perTeamSlots || null;
-
-        const playerScores = ctx.playerScores || window.App?.LI?.playerScores || null;
-        // The dynasty engine is no longer a hard gate: with a projections map
-        // the redraft board can build on any platform. No projections AND no
-        // dynasty universe → nothing to price.
-        if (!playerScores && !projectionsData) return null;
+        const playerScores = window.App?.LI?.playerScores || null;
+        if (!playerScores) return null; // DHQ is the scale anchor — need it loaded
         const scoring = ctx.scoring || league.scoring_settings || {};
-        // Horizon: the END of the fantasy season (playoffs included) — a
-        // redraft asset keeps scoring through the title game, and this keeps
-        // late-season redraft surfaces from reverting to dynasty pricing.
         const pws = Number(league.settings?.playoff_week_start) || 15;
-        const seasonEnd = pws >= 16 ? 18 : 17;
-        const calendarWeeks = Math.max(0, seasonEnd - week);
+        const calendarWeeks = Math.max(0, (pws - 1) - week);
         // CHOPPED: the calendar is a lie. What a player is worth to you is
         // capped by how many more weeks you can expect to be ALIVE, so the
-        // horizon is the survival expectation when we have one. This is
-        // rank-neutral on its own (a uniform multiplier cancels in the
-        // bestVOR scale) — its real bite is the BYE deduction below: losing
-        // one week out of an expected three is a third of your remaining
-        // season, where out of thirteen it is a rounding error.
+        // horizon is the survival expectation when we have one. Rank-neutral
+        // as a uniform multiplier — its real bite is the BYE deduction below:
+        // losing one week out of an expected three is a third of your season.
         const survival = ctx.horizonWeeks != null
             ? Number(ctx.horizonWeeks)
             : (window.App?.ChopOdds?.horizonFor?.(leagueId, null));
         const remainingWeeks = (survival > 0 && survival < calendarWeeks) ? survival : calendarWeeks;
-        if (remainingWeeks <= 0) return null; // season truly over
+        if (remainingWeeks <= 0) { _ros = null; return null; } // season over → DHQ
 
         const projWeek = week + 1;
-        const totalTeams = Number(ctx.totalTeams) || Number(league.total_rosters) || (S.rosters?.length) || 12;
-
-        // ── Universe: dynasty-scored players ∪ provider-projected players ──
-        // (doctrine: a projectable player must never be invisible in redraft
-        // just because the dynasty engine didn't score them — and vice versa.)
-        const universe = Object.create(null);
-        let bestDHQ = 0;
-        if (playerScores) for (const pid in playerScores) {
-            universe[pid] = 1;
-            if (playerScores[pid] > bestDHQ) bestDHQ = playerScores[pid];
-        }
-        if (projectionsData) for (const pid in projectionsData) {
-            if (!universe[pid] && _projHasVolume(projectionsData[pid])) universe[pid] = 1;
-        }
+        const totalTeams = Number(league.total_rosters) || (window.S?.rosters?.length) || 12;
 
         // ── Pass 1: project each player's healthy per-week points + record position ──
         const perWkByPid = {}, posByPid = {};
-        for (const pid in universe) {
-            const perWk = _perWeekMedian(pid, { playersData, statsData, priorData, projectionsData, projPreW: ctx.projPreW, scoring, week: projWeek });
+        let bestDHQ = 0;
+        for (const pid in playerScores) {
+            const dhq = playerScores[pid] || 0;
+            if (dhq > bestDHQ) bestDHQ = dhq;
+            const perWk = _perWeekMedian(pid, { playersData: ctx.playersData, statsData: ctx.statsData, priorData: ctx.priorData, scoring, week: projWeek });
             if (perWk <= 0) continue;
             perWkByPid[pid] = perWk;
-            const player = playersData[pid];
+            const player = ctx.playersData?.[pid];
             posByPid[pid] = (window.App?.normPos?.(player?.position)) || player?.position || '';
         }
 
@@ -622,25 +432,25 @@ window.App.PlayerValue = (function () {
         for (const pos in byPos) {
             if (!pos) continue; // unknown-position bucket gets no replacement baseline (handled in pass 2)
             const arr = byPos[pos].sort((a, b) => b - a);
-            const rank = _replacementRank(pos, totalTeams, perTeamSlots);
+            const rank = _replacementRank(pos, totalTeams);
             replacementPerWk[pos] = arr[Math.min(rank, arr.length) - 1] || 0;
         }
 
         // ── Pass 2: raw ROS points (display) + VOR-weighted value (ranking/scaling) ──
         const points = {}, values = {}, vor = {};
         let maxVor = 0;
-        for (const pid in universe) {
+        for (const pid in playerScores) {
             const perWk = perWkByPid[pid] || 0;
             const pos = posByPid[pid] || '';
-            // Unprojectable (no projection line AND no NFL history) or unknown position → no
-            // demonstrated ROS value. Pin to 0 EXPLICITLY so getValue returns 0 in redraft rather
-            // than leaking the player's full DYNASTY DHQ score (the value-vs-"0 pts" contradiction).
+            // Unprojectable (rostered rookie/no NFL stats) or unknown position → no demonstrated
+            // ROS value. Pin to 0 EXPLICITLY so getValue returns 0 in redraft rather than leaking
+            // the player's full DYNASTY DHQ score (the value-vs-"0 pts" contradiction from review).
             if (perWk <= 0 || !pos) { points[pid] = 0; values[pid] = 0; continue; }
-            const player = playersData[pid];
+            const player = ctx.playersData?.[pid];
             const bye = player ? Number(player.bye_week) : 0;
             // The bye only costs you if it lands inside the weeks you expect to
-            // PLAY — which under a survival horizon is shorter than the season.
-            const byeInWindow = bye > week && bye <= Math.min(seasonEnd, week + remainingWeeks);
+            // PLAY — under a survival horizon that window is shorter than the season.
+            const byeInWindow = bye > week && bye <= Math.min(pws - 1, week + remainingWeeks);
             const effWeeks = Math.max(0, remainingWeeks - (byeInWindow ? 1 : 0));
             points[pid] = Math.max(0, Math.round(perWk * effWeeks * 10) / 10); // raw projected ROS pts (display)
             const repl = replacementPerWk[pos] || 0;
@@ -648,38 +458,11 @@ window.App.PlayerValue = (function () {
             vor[pid] = Math.max(0, lineupVal * effWeeks);
             if (vor[pid] > maxVor) maxVor = vor[pid];
         }
-        if (maxVor <= 0) return null;
-
-        // ── Capped market calibration (FantasyCalc REDRAFT, league params) ──
-        // Blend in VOR space so the scale anchor sees the calibrated board:
-        // market values are normalized so the market's top asset equals the
-        // local top VOR, then each priced player moves at most ROS_MARKET_WT
-        // of the way toward the market's view. Unpriced players keep their
-        // engine value untouched.
-        if (market) {
-            let maxMkt = 0;
-            for (const pid in market) if (market[pid] > maxMkt) maxMkt = market[pid];
-            if (maxMkt > 0) {
-                const mktScale = maxVor / maxMkt;
-                let newMax = 0;
-                for (const pid in vor) {
-                    const mv = market[pid];
-                    if (mv > 0 && (vor[pid] > 0 || perWkByPid[pid] > 0)) {
-                        vor[pid] = vor[pid] * (1 - ROS_MARKET_WT) + (mv * mktScale) * ROS_MARKET_WT;
-                    }
-                    if (vor[pid] > newMax) newMax = vor[pid];
-                }
-                maxVor = newMax || maxVor;
-            }
-        }
-
-        // Anchor the top asset to the dynasty-scale ceiling so buckets, colors
-        // and Trade Center math keep working; pure display scalar (falls back
-        // to a constant when no dynasty engine is loaded on this platform).
-        const ceiling = bestDHQ > 0 ? bestDHQ : ROS_SCALE_CEILING;
-        const scale = ceiling / maxVor;
+        if (bestDHQ <= 0 || maxVor <= 0) { _ros = null; return null; }
+        const scale = bestDHQ / maxVor;   // anchor the top VOR asset to the dynasty-scale ceiling
         for (const pid in vor) values[pid] = Math.min(10000, Math.round(vor[pid] * scale));
-        return { leagueId, week, remainingWeeks, points, values, scale, bestDHQ: ceiling, maxVor, replacementPerWk, marketApplied: !!market };
+        _ros = { leagueId, week, remainingWeeks, points, values, scale, bestDHQ, maxVor, replacementPerWk };
+        return _ros;
     }
 
     // Format-aware value: redraft (with ROS built for the current league) →
@@ -691,47 +474,12 @@ window.App.PlayerValue = (function () {
         }
         return (window.App?.LI?.playerScores?.[pid]) || 0;
     }
-    // Keeper-adjusted value: blends dynasty DHQ with Rest-of-Season value.
-    // Standalone — does NOT touch getValue()/valueMap(), so every existing
-    // consumer keeps returning pure dynasty for keeper leagues exactly as
-    // before; only a surface that explicitly calls this opts into the blend.
-    function getKeeperValue(pid, opts) {
-        opts = opts || {};
-        const dynastyVal = (window.App?.LI?.playerScores?.[pid]) || 0;
-        if (!dynastyVal) return 0;
-        const rosReady = _ros && _ros.leagueId === _currentLeagueId() && _ros.values[pid] != null && _ros.values[pid] > 0;
-        // No ROS signal (unprojectable rookie/stash, or ROS not built) → lean
-        // on dynasty alone. ensureRos() explicitly zero-pins unprojectable
-        // players for redraft display purposes — that 0 means "no redraft
-        // trade value," not "no keeper value," so it must not drag this blend
-        // toward zero for exactly the stashes a keeper call cares most about.
-        if (!rosReady) return dynastyVal;
-        return Math.min(10000, Math.round(KEEPER_DYNASTY_WT * dynastyVal + KEEPER_ROS_WT * _ros.values[pid]));
-    }
     // Raw projected ROS points for display (null when not built for this league).
     function getRosPoints(pid) {
         if (_ros && _ros.leagueId === _currentLeagueId()) return _ros.points[pid] != null ? _ros.points[pid] : null;
         return null;
     }
     function rosState() { return _ros; }
-    // True only when the CURRENT league is redraft AND its ROS map is built —
-    // the guard bypass surfaces (draft stack, trade calc) use to decide
-    // whether a 0 means "worthless in redraft" (honor it) or "not built yet"
-    // (fall back). Never treat a redraft 0 as permission to price dynasty.
-    function isRedraftActive() {
-        return _isRedraft(null) && !!_ros && _ros.leagueId === _currentLeagueId();
-    }
-    // Build the ROS map purely from the hydrate bridge (window.S) — for
-    // surfaces with no hydrated props in scope (draft room, mock draft).
-    function ensureRosFromState() {
-        const S = window.S || {};
-        return ensureRos({
-            leagueId: S.currentLeagueId,
-            league: (S.leagues && S.leagues[0]) || null,
-            playersData: S.players, statsData: S.statsData,
-            priorData: S.priorData, projectionsData: S.projectionsData,
-        });
-    }
     // A drop-in replacement for App.LI.playerScores: a Proxy over the real map
     // so Object.keys/enumeration still see every player id, but value lookups
     // (map[pid]) route through getValue (ROS for redraft, DHQ otherwise).
@@ -762,12 +510,7 @@ window.App.PlayerValue = (function () {
         resolvePickValue,
         projectPlayerValue,
         ensureRos,
-        computePrices,
-        slotsFromRoster,
-        ensureRosFromState,
-        isRedraftActive,
         getValue,
-        getKeeperValue,
         getRosPoints,
         rosState,
         valueMap,

@@ -11,7 +11,7 @@ const { spawn } = require('child_process');
 // only when the flag is present so other server modes carry no extra cost.
 let Babel = null;
 
-const LIVE_AI_ENDPOINT = 'https://sxshiqyxhhifvtfqawbq.supabase.co/functions/v1/ai-analyze';
+const LIVE_AI_ENDPOINT = 'https://hovnqztlbsgsywrbidbh.supabase.co/functions/v1/ai-analyze';
 
 const MIME_TYPES = {
   '.css': 'text/css; charset=utf-8',

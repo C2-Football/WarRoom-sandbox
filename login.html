@@ -1,477 +1,381 @@
 <!DOCTYPE html>
+
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="theme-color" content="#08080B">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://sxshiqyxhhifvtfqawbq.supabase.co; frame-ancestors 'none'; base-uri 'self'; object-src 'none';">
-  <title>Dynasty HQ — Sign in</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@500;600;700&amp;family=Rajdhani:wght@600;700&amp;display=swap" rel="stylesheet">
-  <style>
-    :root {
-      color-scheme: dark;
-      --gold: #D4AF37;
-      --gold-bright: #F0CD58;
-      --black: #08080B;
-      --off-black: #15151B;
-      --charcoal: #27262E;
-      --white: #F5F2EA;
-      --silver: #BDB8AD;
-      --muted: #77736B;
-      --good: #2ECC71;
-      --bad: #E74C3C;
-      --sat: env(safe-area-inset-top, 0px);
-      --sar: env(safe-area-inset-right, 0px);
-      --sab: env(safe-area-inset-bottom, 0px);
-      --sal: env(safe-area-inset-left, 0px);
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, viewport-fit=cover">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://skjjcruz.github.io https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://sxshiqyxhhifvtfqawbq.supabase.co https://api.sleeper.app https://api.myfantasyleague.com https://*.myfantasyleague.com https://lm-api-reads.fantasy.espn.com https://fantasysports.yahooapis.com https://*.sentry.io; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; object-src 'none';">
+
+    <title>Dynasty HQ - Login</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Rajdhani:wght@600;700&display=swap">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Rajdhani:wght@600;700&display=swap" media="print" onload="this.media='all'">
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Rajdhani:wght@600;700&display=swap"></noscript>
+    <style>
+        :root {
+            --gold: #E8B23A;
+            --dark-gold: #8A6D1E;
+            --black: #08080B;
+            --off-black: #1B1B22;
+            --charcoal: #27262E;
+            --white: #F5F2EA;
+            --silver: #BDB8AD;
+            /* Safe-area insets (iPhone notch / home indicator); 0px on desktop */
+            --sat: env(safe-area-inset-top, 0px);
+            --sar: env(safe-area-inset-right, 0px);
+            --sab: env(safe-area-inset-bottom, 0px);
+            --sal: env(safe-area-inset-left, 0px);
+        }
+
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
     }
 
-    * { box-sizing: border-box; }
-    html, body { margin: 0; min-height: 100%; }
     body {
-      min-height: 100vh;
-      display: grid;
-      place-items: center;
-      padding: max(28px, var(--sat)) max(20px, var(--sar)) max(28px, var(--sab)) max(20px, var(--sal));
-      overflow-x: hidden;
-      color: var(--white);
-      background:
-        radial-gradient(circle at 75% 18%, rgba(53, 91, 148, .16), transparent 28rem),
-        radial-gradient(circle at 18% 88%, rgba(212, 175, 55, .11), transparent 32rem),
-        var(--black);
-      font-family: 'Inter', sans-serif;
-      -webkit-font-smoothing: antialiased;
+        font-family: 'Inter', sans-serif;
+        background: var(--black);
+        color: var(--white);
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: max(2rem, var(--sat)) max(2rem, var(--sar)) max(2rem, var(--sab)) max(2rem, var(--sal));
     }
-
-    body::before {
-      content: '';
-      position: fixed;
-      inset: 0;
-      z-index: -1;
-      pointer-events: none;
-      opacity: .25;
-      background-image:
-        linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px);
-      background-size: 64px 64px;
-      mask-image: linear-gradient(to bottom, #000, transparent 94%);
-    }
-
-    button, input { font: inherit; }
-    button { cursor: pointer; }
-    button:disabled { cursor: wait; opacity: .62; transform: none !important; }
-    :focus-visible { outline: 2px solid var(--gold-bright); outline-offset: 3px; }
-
-    .auth-shell { width: min(100%, 450px); }
-    .back-link {
-      display: inline-flex;
-      margin-bottom: 14px;
-      color: var(--muted);
-      font: 600 11px/1.4 'JetBrains Mono', monospace;
-      letter-spacing: .06em;
-      text-decoration: none;
-      text-transform: uppercase;
-    }
-    .back-link:hover { color: var(--gold); }
 
     .login-container {
-      position: relative;
-      overflow: hidden;
-      width: 100%;
-      padding: 34px;
-      border: 1px solid rgba(212, 175, 55, .45);
-      border-radius: 14px;
-      background: linear-gradient(145deg, rgba(27,27,34,.97), rgba(10,10,14,.98));
-      box-shadow: 0 28px 90px rgba(0,0,0,.55), inset 0 1px rgba(255,255,255,.035);
+        background: linear-gradient(135deg, var(--off-black) 0%, var(--charcoal) 100%);
+        border: 3px solid var(--gold);
+        border-radius: 16px;
+        padding: 3rem 2rem;
+        max-width: 450px;
+        width: 100%;
+        box-shadow: 
+            0 0 0 1px rgba(232, 178, 58, 0.3),
+            0 8px 32px rgba(0, 0, 0, 0.8);
     }
 
-    .login-container::after {
-      content: '';
-      position: absolute;
-      inset: 55% -35% -35% 20%;
-      z-index: 0;
-      pointer-events: none;
-      background: radial-gradient(circle, rgba(212,175,55,.1), transparent 68%);
+    .logo-section {
+        text-align: center;
+        margin-bottom: 2rem;
     }
-    .login-container > * { position: relative; z-index: 1; }
 
-    .logo-section { text-align: center; margin-bottom: 14px; }
     .logo-section img {
-      width: 78px;
-      height: 78px;
-      border: 1px solid rgba(212,175,55,.35);
-      border-radius: 14px;
-      filter: drop-shadow(0 0 16px rgba(212,175,55,.25));
+        width: 100px;
+        height: 100px;
+        margin-bottom: 1rem;
+        filter: drop-shadow(0 0 12px rgba(232, 178, 58, 0.5));
     }
 
-    .login-title-row { display: flex; align-items: center; justify-content: center; gap: 10px; }
     .login-title {
-      margin: 0;
-      color: var(--gold);
-      font: 700 30px/1 'Rajdhani', sans-serif;
-      letter-spacing: .14em;
-      text-align: center;
-      text-transform: uppercase;
+        font-family: 'Rajdhani', sans-serif;
+        font-size: 2rem;
+        color: var(--gold);
+        text-align: center;
+        letter-spacing: 0.15em;
+        margin-bottom: 0.5rem;
     }
-    .beta-tag {
-      padding: 3px 8px;
-      font: 700 10px/1.4 'JetBrains Mono', monospace;
-      letter-spacing: .08em;
-      text-transform: uppercase;
-      color: var(--gold-bright);
-      background: rgba(212, 175, 55, .12);
-      border: 1px solid rgba(212, 175, 55, .4);
-      border-radius: 999px;
-    }
-    .login-subtitle { margin: 8px 0 24px; color: var(--silver); font-size: 14px; text-align: center; }
 
-    .message {
-      display: none;
-      margin-bottom: 14px;
-      padding: 11px 13px;
-      border: 1px solid rgba(231,76,60,.5);
-      border-radius: 7px;
-      color: #FF8B7F;
-      background: rgba(231,76,60,.1);
-      font-size: 13px;
-      line-height: 1.45;
+    .login-subtitle {
+        text-align: center;
+        font-size: 0.9rem;
+        color: var(--silver);
+        margin-bottom: 2rem;
     }
-    .message.show { display: block; }
-    .message.success { color: #69E6A0; border-color: rgba(46,204,113,.5); background: rgba(46,204,113,.1); }
 
-    .oauth-btn {
-      width: 100%;
-      min-height: 47px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 10px;
-      margin-bottom: 10px;
-      border-radius: 7px;
-      font-size: 14px;
-      font-weight: 700;
-      transition: transform .18s ease, opacity .18s ease, box-shadow .18s ease;
+    .form-group {
+        margin-bottom: 1.5rem;
     }
-    .oauth-btn:hover { transform: translateY(-1px); }
-    .oauth-google { color: #3c4043; background: #fff; border: 1px solid #dadce0; }
-    .oauth-google:hover { box-shadow: 0 3px 12px rgba(0,0,0,.35); }
-    .oauth-apple { color: #fff; background: #000; border: 1px solid #444; }
-    .oauth-mark { width: 20px; font-size: 16px; font-weight: 800; text-align: center; }
 
-    .auth-or {
-      display: flex;
-      align-items: center;
-      gap: 11px;
-      margin: 16px 0;
-      color: var(--muted);
-      font: 600 10px/1 'JetBrains Mono', monospace;
-      letter-spacing: .1em;
-      text-transform: uppercase;
-    }
-    .auth-or::before, .auth-or::after { content: ''; flex: 1; height: 1px; background: rgba(212,175,55,.22); }
-
-    .auth-tabs {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      margin-bottom: 20px;
-      overflow: hidden;
-      border: 1px solid rgba(212,175,55,.25);
-      border-radius: 7px;
-      background: var(--black);
-    }
-    .auth-tab {
-      min-height: 44px;
-      border: 0;
-      color: var(--silver);
-      background: transparent;
-      font: 700 11px/1 'JetBrains Mono', monospace;
-      letter-spacing: .06em;
-      text-transform: uppercase;
-    }
-    .auth-tab.active { color: var(--black); background: var(--gold); }
-
-    .auth-panel[hidden] { display: none; }
-    .form-group { margin-bottom: 14px; }
     .form-label {
-      display: block;
-      margin-bottom: 7px;
-      color: var(--gold);
-      font: 700 11px/1.3 'JetBrains Mono', monospace;
-      letter-spacing: .06em;
-      text-transform: uppercase;
+        display: block;
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--gold);
+        margin-bottom: 0.5rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
     }
-    .optional { color: var(--muted); font-weight: 500; text-transform: none; }
+
     .form-input {
-      width: 100%;
-      min-height: 47px;
-      padding: 0 13px;
-      border: 1px solid rgba(212,175,55,.28);
-      border-radius: 7px;
-      outline: none;
-      color: var(--white);
-      background: var(--black);
-      font-size: 16px;
-      transition: border-color .18s ease, box-shadow .18s ease;
+        width: 100%;
+        padding: 0.875rem 1rem;
+        background: var(--black);
+        border: 2px solid rgba(232, 178, 58, 0.3);
+        border-radius: 8px;
+        color: var(--white);
+        font-family: 'Inter', sans-serif;
+        font-size: 1rem;
+        transition: all 0.3s ease;
     }
-    .form-input:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(212,175,55,.1); }
-    .form-input::placeholder { color: #55535B; }
+
+    .form-input:focus {
+        outline: none;
+        border-color: var(--gold);
+        box-shadow: 0 0 0 3px rgba(232, 178, 58, 0.1);
+    }
+
+    .form-input::placeholder {
+        color: rgba(255, 255, 255, 0.3);
+    }
 
     .login-btn {
-      width: 100%;
-      min-height: 49px;
-      margin-top: 3px;
-      border: 1px solid var(--gold);
-      border-radius: 7px;
-      color: var(--black);
-      background: linear-gradient(135deg, var(--gold-bright), var(--gold));
-      font: 700 13px/1 'JetBrains Mono', monospace;
-      letter-spacing: .06em;
-      text-transform: uppercase;
-      box-shadow: 0 8px 26px rgba(212,175,55,.15);
-      transition: transform .18s ease, filter .18s ease;
+        width: 100%;
+        padding: 1rem;
+        background: linear-gradient(135deg, var(--gold) 0%, var(--dark-gold) 100%);
+        border: none;
+        border-radius: 8px;
+        color: var(--black);
+        font-family: 'Inter', sans-serif;
+        font-size: 1rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 12px rgba(232, 178, 58, 0.3);
     }
-    .login-btn:hover { transform: translateY(-1px); filter: brightness(1.06); }
 
-    .text-btn {
-      display: block;
-      width: 100%;
-      min-height: 44px;
-      margin-top: 6px;
-      border: 0;
-      color: var(--silver);
-      background: transparent;
-      font-size: 12px;
-      font-weight: 600;
+    .login-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(232, 178, 58, 0.5);
     }
-    .text-btn:hover { color: var(--gold); }
-    .helper-text { margin: 16px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; text-align: center; }
-    .footer { margin-top: 18px; color: #55535B; font-size: 11px; text-align: center; }
+
+    .login-btn:active {
+        transform: translateY(0);
+    }
+
+    .error-message {
+        background: rgba(231, 76, 60, 0.2);
+        border: 1px solid #E74C3C;
+        border-radius: 6px;
+        padding: 0.75rem;
+        margin-bottom: 1.5rem;
+        color: #E74C3C;
+        font-size: 0.85rem;
+        display: none;
+    }
+
+    .error-message.show {
+        display: block;
+    }
+
+    .helper-text {
+        text-align: center;
+        font-size: 0.75rem;
+        color: rgba(255, 255, 255, 0.5);
+        margin-top: 1.5rem;
+        line-height: 1.5;
+    }
+
+    /* Phone tier: 16px inputs kill iOS Safari zoom-on-focus; 44px tap targets */
+    @media (max-width: 767px) {
+        body {
+            padding: max(1.25rem, var(--sat)) max(1.25rem, var(--sar)) max(1.25rem, var(--sab)) max(1.25rem, var(--sal));
+        }
+
+        .form-input {
+            font-size: 16px;
+        }
+
+        .login-btn {
+            min-height: 44px;
+        }
+    }
 
     @media (max-width: 520px) {
-      .login-container { padding: 26px 20px; }
-      .login-title { font-size: 26px; }
-      .logo-section img { width: 68px; height: 68px; }
+        .login-container {
+            padding: 2rem 1.5rem;
+        }
+
+        .login-title {
+            font-size: 1.5rem;
+        }
     }
-    @media (prefers-reduced-motion: reduce) {
-      *, *::before, *::after { transition-duration: .01ms !important; }
-    }
-  </style>
+</style>
+
 </head>
 <body>
-  <main class="auth-shell">
-    <a class="back-link" href="landing.html">← Back to Dynasty HQ</a>
-    <section class="login-container" aria-labelledby="loginTitle">
-      <div class="logo-section"><img src="icon-192.png" alt="Dynasty HQ"></div>
-      <div class="login-title-row">
-        <h1 class="login-title" id="loginTitle">Dynasty HQ</h1>
-        <span class="beta-tag">Beta</span>
-      </div>
-      <p class="login-subtitle">Sign in to your fantasy front office</p>
-
-      <div id="message" class="message" role="status" aria-live="polite"></div>
-
-      <button type="button" id="btnGoogle" class="oauth-btn oauth-google"><span class="oauth-mark" aria-hidden="true">G</span>Continue with Google</button>
-      <button type="button" id="btnApple" class="oauth-btn oauth-apple"><span class="oauth-mark" aria-hidden="true">●</span>Continue with Apple</button>
-      <div class="auth-or">or use your account</div>
-
-      <div class="auth-tabs" role="tablist" aria-label="Account access">
-        <button type="button" class="auth-tab active" id="tabSignin" role="tab" aria-selected="true" aria-controls="panelSignin">Sign in</button>
-        <button type="button" class="auth-tab" id="tabSignup" role="tab" aria-selected="false" aria-controls="panelSignup">Create account</button>
-      </div>
-
-      <form id="panelSignin" class="auth-panel" role="tabpanel" aria-labelledby="tabSignin">
-        <div class="form-group">
-          <label class="form-label" for="identifier">Email or Sleeper username</label>
-          <input type="text" id="identifier" class="form-input" placeholder="you@example.com or username" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+    <div class="login-container">
+        <div class="logo-section">
+            <img src="icon-192.png" alt="Dynasty HQ Logo">
         </div>
-        <div class="form-group">
-          <label class="form-label" for="password">Password</label>
-          <input type="password" id="password" class="form-input" placeholder="Enter your password" autocomplete="current-password" required>
-        </div>
-        <button type="submit" id="btnSignin" class="login-btn">Sign in</button>
-        <button type="button" id="btnReset" class="text-btn">Forgot password?</button>
-      </form>
 
-      <form id="panelSignup" class="auth-panel" role="tabpanel" aria-labelledby="tabSignup" hidden>
-        <div class="form-group">
-          <label class="form-label" for="displayName">Display name <span class="optional">(optional)</span></label>
-          <input type="text" id="displayName" class="form-input" placeholder="How your league sees you" autocomplete="name">
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="signupEmail">Email</label>
-          <input type="email" id="signupEmail" class="form-input" placeholder="you@example.com" autocomplete="email" required>
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="signupPassword">Password</label>
-          <input type="password" id="signupPassword" class="form-input" placeholder="At least 8 characters" autocomplete="new-password" minlength="8" required>
-        </div>
-        <button type="submit" id="btnSignup" class="login-btn">Create free account</button>
-      </form>
+    <h1 class="login-title">Dynasty HQ</h1>
+    <p class="login-subtitle">Dynasty HQ Command Center</p>
 
-      <p class="helper-text">Secure account access powered by Dynasty HQ.</p>
-    </section>
-    <footer class="footer">© 2026 C2Football. All rights reserved.</footer>
-  </main>
+    <div id="errorMessage" class="error-message"></div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.101.1/dist/umd/supabase.min.js"></script>
-  <script>
-    const FW_API_BASE = 'https://sxshiqyxhhifvtfqawbq.supabase.co/functions/v1';
-    const FW_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4c2hpcXl4aGhpZnZ0ZnFhd2JxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI3MTExMzAsImV4cCI6MjA4ODI4NzEzMH0.zJi9W986ZLaANiZN6pt6ReFwaQU6yPeidsERIWo2ibI';
-    const SUPABASE_URL = 'https://sxshiqyxhhifvtfqawbq.supabase.co';
+    <form id="loginForm">
+        <div class="form-group">
+            <label class="form-label" for="username">Sleeper Username</label>
+            <input 
+                type="text" 
+                id="username" 
+                class="form-input" 
+                placeholder="Enter your Sleeper username"
+                autocomplete="username"
+                required
+            >
+        </div>
+
+        <div class="form-group">
+            <label class="form-label" for="password">Password</label>
+            <input 
+                type="password" 
+                id="password" 
+                class="form-input" 
+                placeholder="Create a secure password"
+                autocomplete="current-password"
+                required
+            >
+        </div>
+
+        <button type="submit" class="login-btn">Access Dynasty HQ</button>
+    </form>
+
+    <p class="helper-text">
+        First time? Enter your Sleeper username and create a password.<br>
+        Your credentials are stored securely in your browser.
+    </p>
+
+    <p style="text-align:center;margin-top:1.25rem">
+        <a href="landing.html" style="color:var(--gold);font-size:0.85rem;font-weight:600;text-decoration:none">&larr; Back to sign-in options</a>
+    </p>
+</div>
+
+<script src="vendor/supabase.min.js"></script>
+<script>window.supabase||document.write('<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.101.1/dist/umd/supabase.min.js"><\/script>')</script>
+<script src="js/shared/shared-loader.js?v=20260531sandbox2"></script>
+<script>WRShared.load('supabase-client.js');</script>
+<script>
+    const AUTH_KEY = 'od_auth_v1';
     const SESSION_KEY = 'fw_session_v1';
-    const LEGACY_SESSION_KEY = 'od_session_v1';
-    const LEGACY_AUTH_KEY = 'od_auth_v1';
-    const WARROOM_URL = 'index.html';
-    const messageEl = document.getElementById('message');
-    const signinForm = document.getElementById('panelSignin');
-    const signupForm = document.getElementById('panelSignup');
-    let sbClient = null;
+    const errorEl = document.getElementById('errorMessage');
+    const loginForm = document.getElementById('loginForm');
 
-    function getSbClient() {
-      if (!sbClient && window.supabase) sbClient = window.supabase.createClient(SUPABASE_URL, FW_ANON_KEY);
-      return sbClient;
+    // A session is valid only when fw_session_v1 holds a well-formed, unexpired JWT.
+    // The app shell (components.js) enforces the same check, so login.html must mint
+    // and store that token rather than relying on od_auth_v1 presence.
+    function jwtIsUnexpired(token) {
+        try {
+            const part = String(token || '').split('.')[1];
+            if (!part) return false;
+            const b64 = part.replace(/-/g, '+').replace(/_/g, '/');
+            const padded = b64.length % 4 ? b64 + '='.repeat(4 - (b64.length % 4)) : b64;
+            const payload = JSON.parse(decodeURIComponent(atob(padded).split('').map(c => '%' + c.charCodeAt(0).toString(16).padStart(2, '0')).join('')));
+            return !payload.exp || Number(payload.exp) * 1000 > Date.now();
+        } catch (e) { return false; }
+    }
+    function storeSession(session, username) {
+        if (!session?.token) return;
+        localStorage.setItem(SESSION_KEY, JSON.stringify({
+            token: session.token,
+            expiresAt: session.expiresAt || null,
+            user: { sleeperUsername: username, isGifted: session.isGifted || false },
+        }));
     }
 
-    function destination() {
-      try {
-        const profile = JSON.parse(localStorage.getItem('od_profile_v1') || 'null');
-        return (!profile || !profile.onboardingComplete) ? 'onboarding.html' : WARROOM_URL;
-      } catch { return 'onboarding.html'; }
+    // Pre-fill username from ?for= URL param (gifted dashboard links)
+    const urlParams = new URLSearchParams(window.location.search);
+    const forUsername = urlParams.get('for');
+    if (forUsername) {
+        const usernameInput = document.getElementById('username');
+        usernameInput.value = forUsername;
+        usernameInput.readOnly = true;
+        usernameInput.style.opacity = '0.7';
     }
 
-    function showMessage(message, type = 'error') {
-      messageEl.textContent = message;
-      messageEl.classList.toggle('success', type === 'success');
-      messageEl.classList.add('show');
-      if (type !== 'success') setTimeout(() => messageEl.classList.remove('show'), 6000);
+    async function hashPassword(password) {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(password);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
     }
 
-    function switchMode(mode) {
-      const signin = mode === 'signin';
-      signinForm.hidden = !signin;
-      signupForm.hidden = signin;
-      document.getElementById('tabSignin').classList.toggle('active', signin);
-      document.getElementById('tabSignup').classList.toggle('active', !signin);
-      document.getElementById('tabSignin').setAttribute('aria-selected', String(signin));
-      document.getElementById('tabSignup').setAttribute('aria-selected', String(!signin));
-      messageEl.classList.remove('show', 'success');
-      (signin ? document.getElementById('identifier') : document.getElementById('signupEmail')).focus();
+    function showError(message) {
+        errorEl.textContent = message;
+        errorEl.classList.add('show');
+        setTimeout(() => errorEl.classList.remove('show'), 5000);
     }
 
-    async function authenticate(endpoint, body, button, workingLabel) {
-      const originalLabel = button.textContent;
-      button.disabled = true;
-      button.textContent = workingLabel;
-      try {
-        const response = await fetch(`${FW_API_BASE}/${endpoint}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'apikey': FW_ANON_KEY, 'Authorization': `Bearer ${FW_ANON_KEY}` },
-          body: JSON.stringify(body),
-        });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(data.error || (endpoint === 'fw-signin' ? 'Invalid email or password.' : 'Account creation failed.'));
-        localStorage.setItem(SESSION_KEY, JSON.stringify(data));
-        return data;
-      } catch (error) {
-        showMessage(error?.message || 'Unable to connect. Please try again.');
-        button.disabled = false;
-        button.textContent = originalLabel;
-        return null;
-      }
-    }
-
-    signinForm.addEventListener('submit', async (event) => {
-      event.preventDefault();
-      const identifier = document.getElementById('identifier').value.trim();
-      const password = document.getElementById('password').value;
-      if (!identifier || !password) { showMessage('Email or username and password are required.'); return; }
-
-      const isEmail = identifier.includes('@');
-      const endpoint = isEmail ? 'fw-signin' : 'get-session-token';
-      const body = isEmail ? { email: identifier, password } : { username: identifier, password };
-      const data = await authenticate(endpoint, body, document.getElementById('btnSignin'), 'Signing in…');
-      if (!data) return;
-
-      if (!isEmail) {
+    // Already logged in only if we hold a valid, unexpired session token — presence
+    // of od_auth_v1 alone is no longer enough to enter the app.
+    try {
+        const existingSession = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
+        if (existingSession?.token && jwtIsUnexpired(existingSession.token)) {
+            window.location.href = 'index.html';
+        }
+    } catch (e) {
         localStorage.removeItem(SESSION_KEY);
-        localStorage.setItem(LEGACY_SESSION_KEY, JSON.stringify(data));
-        localStorage.setItem(LEGACY_AUTH_KEY, JSON.stringify({ username: identifier }));
-        localStorage.setItem('od_locked_username_v2', identifier);
-      }
-      showMessage('Welcome back. Opening Dynasty HQ…', 'success');
-      setTimeout(() => { window.location.href = WARROOM_URL; }, 500);
-    });
-
-    signupForm.addEventListener('submit', async (event) => {
-      event.preventDefault();
-      const email = document.getElementById('signupEmail').value.trim();
-      const password = document.getElementById('signupPassword').value;
-      const displayName = document.getElementById('displayName').value.trim();
-      if (!email || !password) { showMessage('Email and password are required.'); return; }
-      if (password.length < 8) { showMessage('Password must be at least 8 characters.'); return; }
-      const data = await authenticate('fw-signup', { email, password, displayName, productSlug: 'war_room' }, document.getElementById('btnSignup'), 'Creating account…');
-      if (!data) return;
-      showMessage('Account created. Setting up Dynasty HQ…', 'success');
-      setTimeout(() => { window.location.href = 'onboarding.html'; }, 500);
-    });
-
-    async function startOAuth(provider, button) {
-      const db = getSbClient();
-      if (!db) { showMessage('Secure sign-in is still loading. Please try again.'); return; }
-      button.disabled = true;
-      const { error } = await db.auth.signInWithOAuth({ provider, options: { redirectTo: window.location.origin + window.location.pathname } });
-      if (error) { showMessage(error.message || 'Unable to start secure sign-in.'); button.disabled = false; }
     }
 
-    document.getElementById('btnGoogle').addEventListener('click', (event) => startOAuth('google', event.currentTarget));
-    document.getElementById('btnApple').addEventListener('click', (event) => startOAuth('apple', event.currentTarget));
-    document.getElementById('tabSignin').addEventListener('click', () => switchMode('signin'));
-    document.getElementById('tabSignup').addEventListener('click', () => switchMode('signup'));
-    document.getElementById('btnReset').addEventListener('click', async (event) => {
-      const email = document.getElementById('identifier').value.trim();
-      if (!email) { showMessage('Enter your email first, then request a reset link.'); return; }
-      if (!email.includes('@')) { showMessage('Password reset links are available for email accounts.'); return; }
-      const button = event.currentTarget;
-      button.disabled = true;
-      button.textContent = 'Sending reset link…';
-      try {
-        await fetch(`${FW_API_BASE}/fw-request-password-reset`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'apikey': FW_ANON_KEY, 'Authorization': `Bearer ${FW_ANON_KEY}` },
-          body: JSON.stringify({ email }),
-        });
-        showMessage('If that email exists, a reset link is on the way.', 'success');
-      } catch { showMessage('If that email exists, a reset link is on the way.', 'success'); }
-      finally { button.disabled = false; button.textContent = 'Forgot password?'; }
-    });
+    loginForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
 
-    (async function restoreSession() {
-      try {
-        const db = getSbClient();
-        if (db) {
-          const { data } = await db.auth.getSession();
-          if (data?.session) {
-            const user = data.session.user;
-            localStorage.setItem(SESSION_KEY, JSON.stringify({
-              token: data.session.access_token,
-              user: { email: user.email, displayName: user.user_metadata?.full_name || user.user_metadata?.name || user.email },
-            }));
-            window.location.href = destination();
+        const username = document.getElementById('username').value.trim();
+        const password = document.getElementById('password').value;
+
+        if (!username || !password) {
+            showError('Please enter both username and password');
             return;
-          }
         }
-        const session = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
-        if (session?.token && session?.user) {
-          window.location.href = destination();
-          return;
+
+        const loginBtn = document.querySelector('.login-btn');
+        const existingLocal = localStorage.getItem(AUTH_KEY);
+
+        if (existingLocal) {
+            // Returning user — verify locally, then refresh session token in background
+            try {
+                const auth = JSON.parse(existingLocal);
+                const inputHash = await hashPassword(password);
+                if (auth.username === username && auth.passwordHash === inputHash) {
+                    const session = await window.OD.acquireSessionToken(username, password);
+                    if (session?.token) {
+                        storeSession(session, username);
+                        window.location.href = 'index.html';
+                    } else {
+                        showError('This legacy login now requires a password-backed gifted account. Use email sign-in for Dynasty HQ accounts.');
+                    }
+                } else {
+                    showError('Incorrect username or password');
+                }
+            } catch {
+                showError('Authentication error. Please try again.');
+            }
+            return;
         }
-        const legacySession = JSON.parse(localStorage.getItem(LEGACY_SESSION_KEY) || 'null');
-        const legacyAuth = JSON.parse(localStorage.getItem(LEGACY_AUTH_KEY) || 'null');
-        if (legacySession?.token && legacyAuth?.username) window.location.href = WARROOM_URL;
-      } catch {}
-    })();
-  </script>
+
+        // No local auth — authenticate via get-session-token Edge Function.
+        // Handles password-backed gifted/legacy users only.
+        loginBtn.textContent = 'Verifying...';
+        loginBtn.disabled = true;
+        try {
+            const session = await window.OD.acquireSessionToken(username, password);
+            if (session?.token) {
+                const passwordHash = await hashPassword(password);
+                localStorage.setItem(AUTH_KEY, JSON.stringify({
+                    username,
+                    passwordHash,
+                    isGifted: session.isGifted || false,
+                    createdAt: new Date().toISOString()
+                }));
+                storeSession(session, username);
+                localStorage.setItem('od_locked_username_v2', username);
+                window.location.href = 'index.html';
+                return;
+            }
+        } catch {}
+
+        showError('This legacy login now requires a password-backed gifted account. Use email sign-in for Dynasty HQ accounts.');
+        loginBtn.textContent = 'Access Dynasty HQ';
+        loginBtn.disabled = false;
+    });
+</script>
+
+<footer style="text-align:center;padding:16px;font-size:12px;color:#666;border-top:1px solid #1a1a1a;margin-top:32px;">&copy; 2026 C2 Football LLC. All rights reserved.</footer>
 </body>
 </html>

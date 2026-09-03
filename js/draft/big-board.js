@@ -12,10 +12,26 @@
 (function() {
     const { FONT_UI, FONT_DISPL, FONT_MONO, panelCard, dhqColor, tierColor, bpBucket } = window.DraftCC.styles;
 
+    // Content signature of the user-owned parts of a Big Board snapshot. Mirrors
+    // the helper in draft-room.js so the live room can tell a genuine edit from the
+    // Draft tab apart from the echo of its own write to the shared store.
+    function boardUserSig(b) {
+        if (!b) return '';
+        try {
+            return JSON.stringify({
+                my: b.myOrder || b.my || [],
+                tags: b.tags || {},
+                notes: b.notes || {},
+                drafted: (b.drafted || []).slice().sort(),
+                lane: b.activeLane || b.boardMode || 'dhq',
+            });
+        } catch (e) { return ''; }
+    }
+
     const LANE_LABELS = {
         dhq: { label: 'DHQ Board', short: 'DHQ', sub: 'canonical value' },
         ai:  { label: 'AI Recommended', short: 'AI', sub: 'GM strategy' },
-        my:  { label: 'My Board', short: 'MY', sub: 'front-office prep' },
+        my:  { label: 'My Draft Board', short: 'MY DRAFT BOARD', sub: 'front-office prep' },
     };
 
     const TAG_META = {
@@ -98,7 +114,7 @@
         };
     }
 
-    function BigBoardPanel({ state, dispatch, isUserTurn, showPickAdvisory }) {
+    function BigBoardPanel({ state, dispatch, isUserTurn }) {
         const boardContext = state.draftContext?.boardContext || null;
         const lanes = boardContext?.lanes || {};
         const defaultLane = boardContext?.activeLane || 'dhq';
@@ -107,35 +123,6 @@
         // order for free; here we hide the lane UI + SEED so free never sees a
         // board framed as an AI recommendation.
         const pro = typeof window.wrIsPro !== 'function' || window.wrIsPro();
-
-        // Real market ADP (MFL public export, joined via FantasyCalc's id bridge —
-        // js/shared/adp-market.js) is a "market says / DHQ says" companion column,
-        // display-only. Scoped to redraft + chopped ONLY — MFL has no real keeper/
-        // dynasty ADP data today. state.variant/draftContext never carry a distinct
-        // 'chopped' draft type (detectDraftVariant has no chopped branch, it falls
-        // through to the startup/rookie fallback), so chopped is detected the same
-        // way draft-room.js's redraft market-mode check does: off the live League
-        // Skin singleton, not off the draft state.
-        const adpSkinType = window.App?.LeagueSkin?.getCurrent?.()?.type;
-        const adpEligible = state.variant === 'redraft'
-            || state.draftContext?.draftType === 'redraft'
-            || state.draftContext?.leagueFormat?.draftType === 'redraft'
-            || adpSkinType === 'redraft'
-            || adpSkinType === 'chopped';
-        const adpFor = React.useCallback(p => (
-            adpEligible && typeof window.App?.getRedraftAdp === 'function'
-                ? window.App.getRedraftAdp(idOf(p))
-                : null
-        ), [adpEligible]);
-        // adp-market.js fetches once and caches — force a re-render when it lands
-        // after this panel's first paint (mirrors wr:ros-market-loaded consumers).
-        const [, bumpAdpTick] = React.useState(0);
-        React.useEffect(() => {
-            if (!adpEligible) return undefined;
-            const onAdpLoaded = () => bumpAdpTick(t => t + 1);
-            window.addEventListener('wr:adp-loaded', onAdpLoaded);
-            return () => window.removeEventListener('wr:adp-loaded', onAdpLoaded);
-        }, [adpEligible]);
 
         // Phone/touch tier (mobile plan Phase 2 item 13): HTML5 drag is inert on
         // iOS/touch, and this exact panel is what MobileFeed mounts on phones —
@@ -173,6 +160,94 @@
             }
         }, [boardContext?.activeLane]);
 
+        // Re-sync from the shared board store on mount (owner report 2026-08-18:
+        // the Draft tab's feeder and this room showed different orders). A saved
+        // room carries a BAKED boardContext from when it was created; edits made
+        // on the feeder while the room was closed never reached it — the
+        // wr:bigboard-write live link only works while both are mounted. On
+        // mount, adopt the stored board through the same absorb path when its
+        // user signature differs from what this room is showing.
+        React.useEffect(() => {
+            try {
+                const ctxFns = window.DraftCC && window.DraftCC.context;
+                if (!ctxFns || typeof ctxFns.loadStoredBoard !== 'function' || !state.leagueId) return;
+                const stored = ctxFns.loadStoredBoard(state.leagueId, state.variant || 'startup');
+                if (!stored) return;
+                const sig = boardUserSig({
+                    myOrder: stored.myOrder || [], tags: stored.tags || {}, notes: stored.notes || {},
+                    drafted: stored.drafted || [], activeLane: stored.activeLane,
+                });
+                const shownSig = boardUserSig({
+                    myOrder: boardContext?.lanes?.my?.order || [], tags: boardContext?.tags || {},
+                    notes: boardContext?.notes || {}, drafted: boardContext?.drafted || [],
+                    activeLane: boardContext?.activeLane,
+                });
+                if (!sig || sig === shownSig) return;
+                if (!(stored.myOrder && stored.myOrder.length) && !Object.keys(stored.tags || {}).length && !Object.keys(stored.notes || {}).length) return;
+                dispatch({
+                    type: 'UPDATE_BOARD_CONTEXT',
+                    patch: {
+                        myOrder: stored.myOrder, tags: stored.tags, notes: stored.notes,
+                        tiers: stored.tiers, drafted: stored.drafted, activeLane: stored.activeLane,
+                    },
+                });
+            } catch (e) { if (window.wrLog) window.wrLog('bigBoard.mountResync', e); }
+        }, [state.leagueId, state.variant]);
+
+        // Track the signature of the board we're currently showing so the listener
+        // below can tell a real edit from the Draft tab apart from the echo of our
+        // own writes to the shared store.
+        const liveBoardSigRef = React.useRef('');
+        React.useEffect(() => {
+            liveBoardSigRef.current = boardUserSig({
+                myOrder: boardContext?.lanes?.my?.order || [],
+                tags: boardContext?.tags || {},
+                notes: boardContext?.notes || {},
+                drafted: boardContext?.drafted || [],
+                activeLane: boardContext?.activeLane,
+            });
+        }, [boardContext]);
+
+        // Absorb Big Board edits made on the Draft tab (or another tab) into the live
+        // draft room. Both views persist to the same key; this dispatch folds an
+        // incoming snapshot into the live board context so a reorder/tag/note on one
+        // side flows to the other. This path never writes storage, so it can't loop.
+        React.useEffect(() => {
+            const keys = window.App?.WR_KEYS;
+            const typedKey = keys?.BIGBOARD_DRAFT ? keys.BIGBOARD_DRAFT(state.leagueId, state.variant || 'startup') : null;
+            const legacyKey = keys?.BIGBOARD ? keys.BIGBOARD(state.leagueId) : null;
+            const absorb = (value) => {
+                if (!value || boardUserSig(value) === liveBoardSigRef.current) return; // our own echo / no change
+                liveBoardSigRef.current = boardUserSig(value);
+                dispatch({
+                    type: 'UPDATE_BOARD_CONTEXT',
+                    patch: {
+                        myOrder: value.myOrder,
+                        tags: value.tags,
+                        notes: value.notes,
+                        tiers: value.tiers,
+                        drafted: value.drafted,
+                        activeLane: value.activeLane,
+                    },
+                });
+            };
+            const onBoardWrite = (e) => {
+                const d = e?.detail;
+                if (!d || (d.key !== typedKey && d.key !== legacyKey)) return;
+                absorb(d.value);
+            };
+            const onStorage = (e) => {
+                if (!e || (e.key !== typedKey && e.key !== legacyKey) || e.newValue == null) return;
+                try { absorb(JSON.parse(e.newValue)); } catch (err) { /* ignore malformed */ }
+            };
+            window.addEventListener('wr:bigboard-write', onBoardWrite);
+            window.addEventListener('storage', onStorage);
+            return () => {
+                window.removeEventListener('wr:bigboard-write', onBoardWrite);
+                window.removeEventListener('storage', onStorage);
+            };
+        }, [state.leagueId, state.variant, dispatch]);
+
         // Re-read viewport bucket on resize so the iPad/narrow row cap stays accurate.
         React.useEffect(() => {
             const onResize = () => setBucket(bpBucket());
@@ -187,6 +262,19 @@
         // For free, treat the Pro-only 'ai' lane as unknown — a persisted
         // activeLane:'ai' must clamp to 'dhq', never auto-open the optimizer lane.
         const activeLane = ((pro || boardLane !== 'ai') && (boardLane === 'my' || lanes[boardLane])) ? boardLane : 'dhq';
+        // Real market ADP (mirrors the Draft tab feeder): redraft drafts only —
+        // no real dynasty/rookie ADP source exists. adp-market.js caches ~18h
+        // and fires wr:adp-loaded when the map lands after first paint.
+        const showAdpCol = state.variant === 'redraft' || state.draftContext?.draftType === 'redraft' || state.draftContext?.leagueFormat?.draftType === 'redraft';
+        const [, bumpAdpTick] = React.useState(0);
+        React.useEffect(() => {
+            if (!showAdpCol) return undefined;
+            try { window.App?.fetchRedraftAdp?.(); } catch (e) { /* column dashes */ }
+            const onAdp = () => bumpAdpTick(t => t + 1);
+            window.addEventListener('wr:adp-loaded', onAdp);
+            return () => window.removeEventListener('wr:adp-loaded', onAdp);
+        }, [showAdpCol]);
+        const adpOf = (pl) => { const g = window.App?.getRedraftAdp?.(String(idOf(pl))); return g && typeof g.adp === 'number' ? g.adp : null; };
         const activeLaneData = lanes[activeLane] || lanes.dhq || { order: [] };
         const activeRanks = React.useMemo(() => rankMap(activeLaneData.order || []), [activeLaneData]);
         const dhqRanks = React.useMemo(() => rankMap(lanes.dhq?.order || []), [lanes.dhq]);
@@ -198,27 +286,6 @@
             K: 'var(--k-bb8fce, #bb8fce)', DEF: 'var(--k-85929e, #85929e)', DL: 'var(--k-e67e22, #e67e22)', LB: 'var(--k-f0a500, #f0a500)', DB: 'var(--k-5dade2, #5dade2)',
         };
         const posLabel = window.App?.posLabel || (pos => pos === 'DEF' ? 'D/ST' : pos);
-        // Compact filter-chip style for the desktop position row — sized to
-        // match this app's other dense instrument-panel filter rows (e.g. the
-        // .wr-module-nav toolbar in index.html: small mono/uppercase label,
-        // tight padding, 1px border) rather than a full 44px touch target,
-        // since this row lives in the desktop command-center rail, not a
-        // phone sheet (that uses its own phChipBtn, sized for touch).
-        const posChipBtn = (active, accent) => ({
-            padding: '4px 9px',
-            lineHeight: 1.3,
-            fontSize: 'var(--text-micro, 0.6875rem)',
-            fontWeight: 700,
-            letterSpacing: '0.03em',
-            textTransform: 'uppercase',
-            fontFamily: FONT_UI,
-            borderRadius: 'var(--card-radius-xs, 5px)',
-            border: '1px solid ' + (active ? (accent ? accent + '66' : 'var(--acc-line3, rgba(212,175,55,0.4))') : 'var(--ov-5, rgba(255,255,255,0.08))'),
-            background: active ? (accent ? accent + '22' : 'var(--acc-fill3, rgba(212,175,55,0.15))') : 'transparent',
-            color: active ? (accent || 'var(--gold)') : 'var(--silver)',
-            cursor: 'pointer',
-            whiteSpace: 'nowrap',
-        });
 
         const entryFor = React.useCallback((player) => {
             const pid = idOf(player);
@@ -317,97 +384,98 @@
                 if (sortKey === 'age') return dir * ((ageOf(a) || 99) - (ageOf(b) || 99));
                 if (sortKey === 'team') { const x = nflTeamOf(a) || '', y = nflTeamOf(b) || ''; if (!x !== !y) return x ? -1 : 1; return dir * x.localeCompare(y); }
                 if (sortKey === 'college') { const x = collegeOf(a) || '', y = collegeOf(b) || ''; if (!x !== !y) return x ? -1 : 1; return dir * x.localeCompare(y); }
-                // Lower ADP = earlier/more-valued pick — players with no market entry
-                // sort last regardless of direction, same as an empty-string tiebreak.
-                if (sortKey === 'adp') { const x = adpFor(a)?.adp ?? Infinity, y = adpFor(b)?.adp ?? Infinity; return dir * (x - y); }
+                if (sortKey === 'adp') { const x = adpOf(a) ?? 9999, y = adpOf(b) ?? 9999; return dir * (x - y); }
+                if (sortKey === 'rank') return dir * (((a._board && a._board.dhqRank) || 9999) - (((b._board && b._board.dhqRank) || 9999)));
                 return dir * ((b.dhq || 0) - (a.dhq || 0));
             });
-            return sorted.slice(0, 100);
-        }, [decoratedPool, posFilter, search, sortKey, sortDir, hideDrafted, adpFor]);
+            return sorted.slice(0, 300); // mirror the Draft tab feeder depth
+        }, [decoratedPool, posFilter, search, sortKey, sortDir, hideDrafted]);
 
-        // Pick advisory — deterministic (zero AI cost), same Recommended/Safe/
-        // Upside selection MockDecisionDeck already uses for the sim board
-        // (command-center.js), applied to the live pool. Replaces the old
-        // "💬 Ask Alex" chat handoff (chat is retired).
-        const pickAdvisory = React.useMemo(() => {
-            const pool = state.pool || [];
-            const best = pool[0] || null;
-            const safe = pool.find(p => Number(p.tier ?? p.csv?.tier ?? 99) <= 2 && p !== best) || pool[1] || best;
-            const upside = pool.find(p => (p.fit?.score || 0) >= 55 && p !== best && p !== safe) || pool[2] || best;
-            return { best, safe, upside };
-        }, [state.pool]);
-        const pickAdvisoryKey = 'bb-take:' + [pickAdvisory.best, pickAdvisory.safe, pickAdvisory.upside].map(p => p?.pid || p?.name || '').join(',');
-        // Live draft pool moves fast (another manager can pick while this is in
-        // flight) — track the current board identity in a ref so a resolved
-        // response can be dropped if it's no longer describing what's on screen.
-        const pickAdvisoryKeyRef = React.useRef(pickAdvisoryKey);
-        pickAdvisoryKeyRef.current = pickAdvisoryKey;
-        const [alexTake, setAlexTake] = React.useState(null); // null | {loading} | {text}
-        const getAlexTake = async () => {
-            if (typeof window.AlexVoice?.enhance !== 'function' || typeof window.wrIsPro === 'function' && !window.wrIsPro()) return;
-            setAlexTake({ loading: true });
-            const { best, safe, upside } = pickAdvisory;
-            if (!best) { setAlexTake(null); return; }
-            const cacheKey = pickAdvisoryKey;
-            const context = JSON.stringify({
-                recommended: best && { name: best.name, pos: best.pos, dhq: best.dhq },
-                safe: safe && { name: safe.name, pos: safe.pos, dhq: safe.dhq },
-                upside: upside && { name: upside.name, pos: upside.pos, dhq: upside.dhq },
-            });
-            const text = await window.AlexVoice.enhance({
-                type: 'strategy-analysis',
-                message: 'In 1-2 sentences, give your gut take on this pick decision — lean toward the recommended name unless the upside swing is clearly worth it here.',
-                context,
-                fallback: null,
-                cacheKey,
-            });
-            // Board moved on while this was in flight — drop the stale response
-            // rather than showing commentary about players no longer recommended.
-            if (pickAdvisoryKeyRef.current !== cacheKey) return;
-            setAlexTake(text ? { text } : null);
+        // ── ROUND BREAKERS + YOUR-PICK MARKERS (owner feature 2026-08-17) ──
+        // Slice the board into league-specific rounds (leagueSize per round,
+        // capped at the draft's round count) and mark exactly where the user's
+        // picks land — traded-pick aware when a real pickOrder exists, snake
+        // math otherwise. Rank-driven, so hidden rows (hide-drafted) can't
+        // shift the boundaries. Only shown on the pure board view: any sort,
+        // filter or search makes index-based rounds a lie.
+        const roundSize = Math.max(0, Number(state.leagueSize) || 0);
+        const totalRounds = Math.max(0, Number(state.rounds) || 0);
+        const showBreakers = roundSize >= 4 && sortKey === 'board' && !posFilter && !search;
+        const userPickRanks = React.useMemo(() => {
+            const out = new Set();
+            if (!roundSize) return out;
+            const order = Array.isArray(state.pickOrder) && state.pickOrder.length ? state.pickOrder : null;
+            if (order) {
+                order.forEach((slot, i) => { if (Number(slot) === Number(state.userSlot)) out.add(i + 1); });
+            } else {
+                const slot = Math.min(roundSize, Math.max(1, Number(state.userSlot) || 1));
+                const rounds = totalRounds || Math.ceil(300 / roundSize);
+                for (let r = 1; r <= rounds; r++) {
+                    const inRound = state.draftType === 'linear' ? slot : (r % 2 === 1 ? slot : roundSize + 1 - slot);
+                    out.add((r - 1) * roundSize + inRound);
+                }
+            }
+            return out;
+        }, [roundSize, totalRounds, state.pickOrder, state.userSlot, state.draftType]);
+        const pickLabel = (overall) => {
+            const r = Math.floor((overall - 1) / roundSize) + 1;
+            return r + '.' + String(((overall - 1) % roundSize) + 1).padStart(2, '0');
         };
-        // Also clear an already-displayed take once the board moves past it —
-        // otherwise stale commentary sits under the new Recommended/Safe/Upside
-        // cards until the user happens to notice and re-click.
-        React.useEffect(() => { setAlexTake(null); }, [pickAdvisoryKey]);
+        // Everything crossed between the previous visible row's board rank and
+        // this row's: round headers, the user's exact pick line, the end rule.
+        const boardMarkers = (prevRank, rank) => {
+            if (!showBreakers || rank <= prevRank || rank - prevRank > 400) return null;
+            const out = [];
+            const lastDraftedRank = totalRounds ? totalRounds * roundSize : Infinity;
+            for (let n = prevRank + 1; n <= rank; n++) {
+                if (n > lastDraftedRank) {
+                    if (n === lastDraftedRank + 1) out.push(
+                        <div key={'bbend' + n} style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '10px 0 6px', color: 'var(--silver)', opacity: 0.55, fontSize: '0.62rem', letterSpacing: '0.14em', fontFamily: FONT_MONO }}>
+                            <span style={{ flex: 1, height: '1px', background: 'var(--acc-line1, rgba(212,175,55,0.25))' }} />
+                            <span>END OF DRAFT · {totalRounds} ROUNDS</span>
+                            <span style={{ flex: 1, height: '1px', background: 'var(--acc-line1, rgba(212,175,55,0.25))' }} />
+                        </div>
+                    );
+                    continue;
+                }
+                const round = Math.floor((n - 1) / roundSize) + 1;
+                if ((n - 1) % roundSize === 0) {
+                    let mine = null;
+                    for (let k = (round - 1) * roundSize + 1; k <= round * roundSize; k++) { if (userPickRanks.has(k)) { mine = k; break; } }
+                    out.push(
+                        <div key={'bbrd' + n} style={{ display: 'flex', alignItems: 'baseline', gap: '10px', margin: round === 1 ? '2px 0 8px' : '14px 0 8px', borderBottom: '1px solid var(--gold)', paddingBottom: '5px' }}>
+                            <span style={{ color: 'var(--gold)', fontFamily: FONT_MONO, fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.16em' }}>ROUND {round}</span>
+                            {mine && <span style={{ marginLeft: 'auto', color: 'var(--silver)', fontFamily: FONT_MONO, fontSize: '0.62rem', letterSpacing: '0.1em' }}>YOU PICK {pickLabel(mine)} · #{mine}</span>}
+                        </div>
+                    );
+                }
+            }
+            return out.length ? out : null;
+        };
+
+        // Ask Alex about the board: opens recon chat pre-loaded with the
+        // top of the active lane (crossover, owner ask 2026-07-13).
+        const askAlexBoard = () => {
+            const top = available.filter(p => !p._drafted).slice(0, 3).map(p => p.name + (p.pos ? ' (' + normEdPos(p.pos) + ')' : '')).join(', ');
+            const msg = "I'm in a live draft" + (top ? ' — top of my board right now is ' + top : '') + '. Who should I target with my next pick and why, and is there a value falling that I should pivot to instead?';
+            try { window.dispatchEvent(new CustomEvent('wr:ask-alex', { detail: { message: msg } })); } catch (e) { /* chat seam unavailable */ }
+        };
 
         const availablePositions = React.useMemo(() => {
             const set = new Set();
-            (state.pool || []).slice(0, 120).forEach(p => { if (p.pos) set.add(normEdPos(p.pos)); });
-            // League-derived positions are unioned in so a chip can't silently
-            // vanish just because the loaded pool SAMPLE (first 120 rows)
-            // doesn't happen to contain that position — e.g. a SUPER_FLEX/IDP
-            // league whose active pool is a rookie-only mock draft with zero
-            // IDP prospects in the first 120 rows still needs DL/LB/DB chips
-            // (owner bug report 2026-08-16). Reads the league's real roster
-            // slots directly (state.draftContext.leagueFormat.rosterSlots, the
-            // same field js/draft/context.js's buildLeagueFormat populates from
-            // roster_positions) rather than `window.App.getLeaguePositions` —
-            // that function is referenced defensively all over this codebase
-            // (mock-draft.js, free-agency.js, league-map.js, draft/state.js,
-            // draft/live-analytics.js, draft-room.js) but is never actually
-            // DEFINED anywhere; every one of those call sites has silently been
-            // falling through to its local fallback list this whole time. Not
-            // fixing that app-wide gap here — out of scope for this bug — just
-            // not adding an 8th no-op call to it.
-            const FLEX_SLOT_TOKENS = new Set(['FLEX', 'SUPER_FLEX', 'REC_FLEX', 'WRRB_FLEX', 'WR_RB_FLEX', 'IDP_FLEX', 'BN', 'BENCH', 'IR', 'TAXI']);
-            (state.draftContext?.leagueFormat?.rosterSlots || []).forEach(slot => {
-                const token = String(slot || '').toUpperCase();
-                if (!token || FLEX_SLOT_TOKENS.has(token)) return;
-                set.add(normEdPos(token));
-            });
+            (state.pool || []).forEach(p => { if (p.pos) set.add(normEdPos(p.pos)); });
+            // League-declared positions always get a chip (K / D-ST when the
+            // league rosters them), even when a stale saved pool predates the
+            // K/DEF position floor in buildPool.
+            (typeof window.getLeaguePositions === 'function' ? window.getLeaguePositions() : []).forEach(pos => set.add(pos));
             const priority = { QB: 1, RB: 2, WR: 3, TE: 4, DL: 5, LB: 6, DB: 7, K: 8 };
             const base = Array.from(set).sort((a, b) => (priority[a] || 99) - (priority[b] || 99));
             // League-derived flex groups (FLEX/SFLEX/IDP FLEX…) join the chip
-            // row whenever the league actually rosters that slot type — checked
-            // against the pool+league UNION set above (not the pool sample
-            // alone), so SUPER_FLEX/IDP FLEX can't disappear just because no
-            // IDP/SF-eligible player happened to land in the pool sample (owner
-            // ask 2026-07-12; union fix 2026-08-16).
+            // row when their positions exist in this pool (owner ask 2026-07-12).
             const groups = (window.App?.getLeagueFlexGroups?.() || [])
                 .filter(g => (window.App?.FLEX_GROUP_POSITIONS?.[g] || []).some(pos => set.has(pos)));
             return [...base, ...groups];
-        }, [state.pool, state.draftContext]);
+        }, [state.pool]);
 
         const persistBoardPatch = React.useCallback((patch) => {
             // Key the board by the league draft VARIANT, never the live-sync MODE, so
@@ -575,9 +643,9 @@
         // terminal-styled buttons — 1px gold border, near-zero radius, mono
         // micro-caps — rendered as a control row under the player row.
         const moveBtnCss = {
-            flex: '1 1 0',
-            maxWidth: 132,
-            minHeight: 44,
+            flex: '0 0 auto',
+            width: 56,
+            minHeight: 30,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -602,14 +670,6 @@
         const ROWS_VISIBLE = 15;
         const rowHeight = activeLane === 'my' ? (touchReorder ? 104 : 84) : 46;
         const scrollMaxHeight = bucket === 'desktop' ? undefined : (ROWS_VISIBLE * rowHeight) + 'px';
-
-        // Desktop table grid — shared between the header row and every player
-        // row so the columns always line up. One extra 44px track for ADP,
-        // inserted right after DHQ, only when this board is redraft/chopped.
-        const boardGridTemplate = (activeLane === 'my' ? '38px' : '22px')
-            + ' minmax(0,1.3fr) 40px minmax(0,0.95fr) 30px 48px 54px'
-            + (adpEligible ? ' 44px' : '')
-            + ' 44px';
 
         const laneOptions = pro ? ['dhq', 'ai', 'my'] : ['dhq', 'my'];
 
@@ -637,19 +697,20 @@
             const MICRO = 'var(--text-micro, 0.6875rem)';
             const canPick = isUserTurn || state.overrideMode || state.mode === 'manual';
             const draftLabel = state.mode === 'live-sync' && state.overrideMode ? 'APPLY' : state.mode === 'manual' ? 'PICK' : (state.overrideMode ? 'FORCE' : 'DRAFT');
-            const phChipBtn = (on, color) => ({ padding: '9px 12px', minHeight: '44px', fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.04em', cursor: 'pointer', borderRadius: 'var(--card-radius-xs, 5px)', fontFamily: FONT_UI, border: '1px solid ' + (on ? (color || 'var(--acc-line2, rgba(212,175,55,0.4))') : 'rgba(255,255,255,0.14)'), background: on ? 'rgba(212,175,55,0.12)' : 'transparent', color: on ? (color || 'var(--gold)') : 'var(--silver)' });
+            const phChipBtn = (on, color) => ({ padding: '9px 12px', minHeight: '44px', fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.04em', cursor: 'pointer', borderRadius: '5px', fontFamily: FONT_UI, border: '1px solid ' + (on ? (color || 'var(--acc-line2, rgba(212,175,55,0.4))') : 'rgba(255,255,255,0.14)'), background: on ? 'rgba(212,175,55,0.12)' : 'transparent', color: on ? (color || 'var(--gold)') : 'var(--silver)' });
             const phDraftBtn = (p) => (
                 <button
                     type="button"
                     onClick={e => { e.stopPropagation(); onDraft(p); }}
                     title={state.overrideMode || state.mode === 'manual' ? 'Record the player for the team on the clock' : 'Make your pick'}
-                    style={{ minHeight: '44px', minWidth: '58px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '0 10px', fontSize: MICRO, fontFamily: FONT_UI, fontWeight: 800, letterSpacing: '0.05em', background: state.overrideMode ? 'var(--purple)' : 'var(--gold)', color: state.overrideMode ? 'var(--k-ffffff, #ffffff)' : 'var(--black)', border: 'none', borderRadius: 'var(--card-radius-xs, 5px)', cursor: 'pointer' }}
+                    style={{ minHeight: '44px', minWidth: '58px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '0 10px', fontSize: MICRO, fontFamily: FONT_UI, fontWeight: 800, letterSpacing: '0.05em', background: state.overrideMode ? 'var(--purple)' : 'var(--gold)', color: state.overrideMode ? 'var(--k-ffffff, #ffffff)' : 'var(--black)', border: 'none', borderRadius: '5px', cursor: 'pointer' }}
                 >{draftLabel}</button>
             );
             return (
                 <div style={{ fontFamily: FONT_UI }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '7px' }}>
                         <div style={{ fontFamily: FONT_DISPL, fontSize: '0.86rem', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.08em', textTransform: 'uppercase', flex: 1 }}>Best Available</div>
+                        {window.WR_ALEX_CHAT !== false && <button onClick={askAlexBoard} style={{ padding: '6px 10px', minHeight: '36px', border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)', borderRadius: '4px', cursor: 'pointer', fontSize: MICRO, fontFamily: FONT_UI, fontWeight: 700, letterSpacing: '0.05em', flexShrink: 0, whiteSpace: 'nowrap' }}>💬 ASK ALEX</button>}
                         <div style={{ fontSize: MICRO, color: 'var(--silver)', opacity: 0.65 }}>{state.pool.length} avail</div>
                     </div>
                     <div className="wr-seg" style={{ marginBottom: '7px' }}>
@@ -658,9 +719,9 @@
                         ))}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '7px', minHeight: 18 }}>
-                        <span style={{ flex: 1, minWidth: 0, color: 'var(--silver)', opacity: 0.62, fontSize: MICRO, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{activeLane === 'my' ? 'Hold ≡ and drag to reorder — or tap ▲ / ▼' : laneCopy}</span>
+                        <span style={{ flex: 1, minWidth: 0, color: 'var(--silver)', opacity: 0.62, fontSize: MICRO, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{activeLane === 'my' ? 'Hold ≡ and drag to reorder — syncs with the Draft tab\u2019s My Draft Board' : laneCopy}</span>
                         {pro && activeLane === 'my' && boardContext?.canSeedMyBoardFromAi && (
-                            <button onClick={onSeedMyBoardFromAi} style={{ padding: '6px 10px', minHeight: '36px', border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)', borderRadius: 'var(--card-radius-xs, 5px)', cursor: 'pointer', fontSize: MICRO, fontFamily: FONT_UI, fontWeight: 700, flexShrink: 0 }}>SEED</button>
+                            <button onClick={onSeedMyBoardFromAi} style={{ padding: '6px 10px', minHeight: '36px', border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)', borderRadius: '4px', cursor: 'pointer', fontSize: MICRO, fontFamily: FONT_UI, fontWeight: 700, flexShrink: 0 }}>SEED</button>
                         )}
                     </div>
                     <div className="wr-hscroll" style={{ display: 'flex', gap: '6px', overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch', marginBottom: '8px' }}>
@@ -675,7 +736,6 @@
                         {available.map((p, idx) => {
                             const b = p._board || {};
                             const tag = TAG_META[b.tag];
-                            const trendBadge = window.App?.classifyTrend?.(window.App?.LI?.playerMeta?.[p.pid]?.trend);
                             const rowRank = b.activeRank < 99999 ? b.activeRank : idx + 1;
                             const nflTeam = nflTeamOf(p);
                             const college = collegeOf(p);
@@ -684,42 +744,48 @@
                             // Grip drag handle beside my-lane cards (owner ask 2026-07-13);
                             // ▲/▼ under the card stays as the precision fallback.
                             const phGp = showTouchMove && window.WR && window.WR.dragReorderGrip ? window.WR.dragReorderGrip({ key: idOf(p), onDrop: onGripDrop }) : null;
+                            const prevRowP = idx > 0 ? available[idx - 1] : null;
+                            const prevRankP = !prevRowP ? 0 : (prevRowP._board && prevRowP._board.activeRank < 99999 ? prevRowP._board.activeRank : idx);
                             return (
-                                <div key={p.pid} data-reorder-key={idOf(p)} style={p._drafted ? { opacity: 0.45 } : undefined}>
+                                <React.Fragment key={p.pid}>
+                                {boardMarkers(prevRankP, rowRank)}
+                                <div data-reorder-key={idOf(p)} style={p._drafted ? { opacity: 0.45 } : undefined}>
                                     <div style={{ display: 'flex', gap: '6px', alignItems: 'stretch' }}>
                                     {phGp && (
+                                        // Slim 22px rail mirroring the Draft tab feeder (owner ask
+                                        // 2026-08-15); the coarse-pointer ::after halo keeps the
+                                        // real hit area at 44×44 regardless of painted width.
                                         <button type="button" className="wr-drag-grip" aria-label={'Drag ' + (p.name || 'player') + ' to reorder'}
                                             {...phGp}
-                                            style={{ ...phGp.style, width: '30px', minHeight: '44px', flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0, border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: 'var(--card-radius-sm, 8px)', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)', fontSize: '0.9rem', lineHeight: 1, position: 'relative' }}>≡</button>
+                                            style={{ ...phGp.style, width: '22px', minHeight: '44px', flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0, border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: '6px', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)', fontSize: '0.72rem', lineHeight: 1, position: 'relative' }}>≡</button>
                                     )}
                                     <div style={{ flex: 1, minWidth: 0 }}>
                                     {React.createElement(AssetRowC, {
                                         pos: normEdPos(p.pos),
                                         name: p.name,
                                         tag: ['#' + rowRank, nflTeam || college || null, b.tier ? 'T' + b.tier : null, p._copies > 1 && p._copiesTaken > 0 ? p._copiesTaken + '/' + p._copies + ' taken' : null].filter(Boolean).join(' · '),
-                                        slots: adpEligible && adpFor(p)
-                                            ? [{ label: 'DHQ', value: fmt(p.dhq) }, { label: 'ADP', value: adpFor(p).adp.toFixed(1) }]
-                                            : [{ label: 'DHQ', value: fmt(p.dhq) }],
+                                        // Mirrors the Draft tab feeder's bar: DHQ · ADP (market,
+                                        // seasonal only) · Rank (owner ask 2026-08-15).
+                                        slots: [
+                                            { label: 'DHQ', value: fmt(p.dhq) },
+                                            ...(showAdpCol ? [(() => { const a = adpOf(p); return { label: 'ADP', value: a && a > 0 ? a.toFixed(1) : '—', tone: 'mute' }; })()] : []),
+                                            { label: 'Rank', value: b.dhqRank ? '#' + b.dhqRank : '—', tone: 'mute' },
+                                        ],
                                         verdict: (
                                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                                                {trendBadge && <span title={'Year-over-year PPG change: ' + (trendBadge.pct > 0 ? '+' : '') + trendBadge.pct + '%'} style={{ color: trendBadge.color, fontSize: MICRO, fontWeight: 800, fontFamily: FONT_UI, border: '1px solid ' + wrAlpha(trendBadge.color, '55'), background: wrAlpha(trendBadge.color, '18'), borderRadius: '3px', padding: '2px 5px', whiteSpace: 'nowrap' }}>{trendBadge.glyph}</span>}
                                                 {tag && <span style={{ color: tag.color, fontSize: MICRO, fontWeight: 800, fontFamily: FONT_UI, border: '1px solid ' + wrAlpha(tag.color, '55'), background: wrAlpha(tag.color, '18'), borderRadius: '3px', padding: '2px 5px', whiteSpace: 'nowrap' }}>{tag.label}</span>}
                                                 {p._copies > 1 && p._copiesTaken > 0 && remaining > 0 && <span style={{ color: remaining === 1 ? 'var(--k-f0a500, #f0a500)' : 'var(--k-2ecc71, #2ecc71)', fontSize: MICRO, fontWeight: 800, fontFamily: FONT_MONO, whiteSpace: 'nowrap' }}>{p._copiesTaken}/{p._copies}</span>}
                                                 {canPick && !p._drafted ? phDraftBtn(p) : null}
                                             </span>
                                         ),
                                         accent: b.tag === 'must' || b.tag === 'target' ? 'gold' : b.tag === 'avoid' ? 'risk' : undefined,
+                                        struck: !!p._drafted,
                                         onClick: () => onOpenModal(p),
                                     })}
                                     </div>
                                     </div>
-                                    {showTouchMove && (
-                                        <div style={{ display: 'flex', gap: 6, padding: '5px 2px 2px' }}>
-                                            <button type="button" aria-label={'Move ' + (p.name || 'player') + ' up'} onClick={e => { e.stopPropagation(); onMovePlayer(p, -1); }} style={moveBtnCss}>▲ Up</button>
-                                            <button type="button" aria-label={'Move ' + (p.name || 'player') + ' down'} onClick={e => { e.stopPropagation(); onMovePlayer(p, 1); }} style={moveBtnCss}>▼ Down</button>
-                                        </div>
-                                    )}
                                 </div>
+                                </React.Fragment>
                             );
                         })}
                     </div>
@@ -729,7 +795,7 @@
                         title: 'Board filters',
                         sections: [
                             { label: 'Search', node: (
-                                <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search players, teams, colleges..." style={{ width: '100%', boxSizing: 'border-box', padding: '9px 12px', minHeight: '44px', background: 'var(--ov-2, rgba(255,255,255,0.03))', border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', borderRadius: 'var(--card-radius-sm, 8px)', color: 'var(--white)', fontSize: '16px', fontFamily: FONT_UI, outline: 'none' }} />
+                                <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search players, teams, colleges..." style={{ width: '100%', boxSizing: 'border-box', padding: '9px 12px', minHeight: '44px', background: 'var(--ov-2, rgba(255,255,255,0.03))', border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', borderRadius: '6px', color: 'var(--white)', fontSize: '16px', fontFamily: FONT_UI, outline: 'none' }} />
                             ) },
                             { label: 'Position', node: (
                                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -760,36 +826,11 @@
                     <div style={{ fontFamily: FONT_DISPL, fontSize: '0.86rem', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.08em', textTransform: 'uppercase', flex: 1 }}>
                         Big Board
                     </div>
+                    {window.WR_ALEX_CHAT !== false && <button onClick={askAlexBoard} style={{ padding: '3px 8px', border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)', borderRadius: '4px', cursor: 'pointer', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: FONT_UI, fontWeight: 700, letterSpacing: '0.05em', flexShrink: 0, whiteSpace: 'nowrap' }}>💬 ASK ALEX</button>}
                     <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.65, fontFamily: FONT_UI }}>
                         {state.pool.length} avail
                     </div>
                 </div>
-
-                {/* Pick advisory — read-only (no click-to-draft; live picks are
-                    submitted on Sleeper, not here). Recommended/Safe/Upside are
-                    deterministic; "Alex's take" is an optional one-shot layer. */}
-                {showPickAdvisory && pickAdvisory.best && (
-                    <div style={{ marginBottom: '8px' }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '5px' }}>
-                            {[
-                                { key: 'rec', label: 'Recommended', tone: '#2ecc71', p: pickAdvisory.best },
-                                { key: 'safe', label: 'Safe', tone: '#3498db', p: pickAdvisory.safe },
-                                { key: 'upside', label: 'Upside', tone: '#9b8afb', p: pickAdvisory.upside },
-                            ].map(row => row.p && (
-                                <div key={row.key} style={{ minWidth: 0, padding: '4px 6px', borderRadius: 'var(--card-radius-xs, 5px)', border: '1px solid ' + row.tone + '4d', background: row.tone + '14' }}>
-                                    <div style={{ fontSize: 'var(--text-micro, 0.625rem)', fontWeight: 800, color: row.tone, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{row.label}</div>
-                                    <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--text-primary)', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.p.name}</div>
-                                    <div style={{ fontSize: 'var(--text-micro, 0.625rem)', color: 'var(--silver)', opacity: 0.7 }}>{row.p.pos || '—'} · DHQ {fmt(row.p.dhq)}</div>
-                                </div>
-                            ))}
-                        </div>
-                        {pro && (alexTake?.text
-                            ? <div style={{ marginTop: '5px', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.85, lineHeight: 1.4 }}>✦ {alexTake.text}</div>
-                            : <button onClick={getAlexTake} disabled={alexTake?.loading} style={{ marginTop: '5px', padding: '2px 7px', border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', background: 'transparent', color: 'var(--gold)', borderRadius: 'var(--card-radius-xs, 5px)', cursor: 'pointer', fontSize: 'var(--text-micro, 0.625rem)', fontFamily: FONT_UI }}>
-                                {alexTake?.loading ? 'Thinking…' : '✨ Alex’s take'}
-                              </button>)}
-                    </div>
-                )}
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(' + laneOptions.length + ', 1fr)', gap: '4px', marginBottom: '6px' }}>
                     {laneOptions.map(lane => {
@@ -798,7 +839,7 @@
                             <button key={lane} onClick={() => onLaneSelect(lane)} style={{
                                 minWidth: 0,
                                 padding: '5px 4px',
-                                borderRadius: 'var(--card-radius-xs, 5px)',
+                                borderRadius: '5px',
                                 border: '1px solid ' + (active ? 'var(--acc-line4, rgba(212,175,55,0.55))' : 'var(--ov-5, rgba(255,255,255,0.08))'),
                                 background: active ? 'var(--acc-fill3, rgba(212,175,55,0.16))' : 'var(--ov-2, rgba(255,255,255,0.025))',
                                 color: active ? 'var(--gold)' : 'var(--silver)',
@@ -821,7 +862,7 @@
                             border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))',
                             background: 'var(--acc-fill2, rgba(212,175,55,0.08))',
                             color: 'var(--gold)',
-                            borderRadius: 'var(--card-radius-xs, 5px)',
+                            borderRadius: '4px',
                             cursor: 'pointer',
                             fontSize: 'var(--text-micro, 0.6875rem)',
                             fontFamily: FONT_UI,
@@ -841,7 +882,7 @@
                         padding: '6px 8px',
                         background: 'var(--ov-2, rgba(255,255,255,0.03))',
                         border: '1px solid var(--ov-5, rgba(255,255,255,0.08))',
-                        borderRadius: 'var(--card-radius-xs, 5px)',
+                        borderRadius: '4px',
                         color: 'var(--white)',
                         fontSize: '0.72rem',
                         fontFamily: FONT_UI,
@@ -850,23 +891,65 @@
                     }}
                 />
 
-                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '4px', marginBottom: '8px' }}>
-                    <button onClick={() => setPosFilter('')} style={posChipBtn(posFilter === '')}>ALL</button>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', marginBottom: '8px' }}>
+                    <button onClick={() => setPosFilter('')} style={{
+                        padding: '2px 10px',
+                        minHeight: '40px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: 'var(--text-micro, 0.6875rem)',
+                        borderRadius: '10px',
+                        border: '1px solid ' + (posFilter === '' ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--ov-5, rgba(255,255,255,0.08))'),
+                        background: posFilter === '' ? 'var(--acc-fill3, rgba(212,175,55,0.15))' : 'transparent',
+                        color: posFilter === '' ? 'var(--gold)' : 'var(--silver)',
+                        cursor: 'pointer',
+                        fontFamily: FONT_UI,
+                    }}>ALL</button>
                     {availablePositions.map(pos => (
-                        <button key={pos} onClick={() => setPosFilter(posFilter === pos ? '' : pos)} style={posChipBtn(posFilter === pos, posColors[pos])}>{posLabel(pos)}</button>
+                        <button key={pos} onClick={() => setPosFilter(posFilter === pos ? '' : pos)} style={{
+                            padding: '2px 10px',
+                            minHeight: '40px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: 'var(--text-micro, 0.6875rem)',
+                            borderRadius: '10px',
+                            border: '1px solid ' + (posFilter === pos ? (posColors[pos] || 'var(--k-666666, #666666)') + '66' : 'var(--ov-5, rgba(255,255,255,0.08))'),
+                            background: posFilter === pos ? (posColors[pos] || 'var(--k-666666, #666666)') + '22' : 'transparent',
+                            color: posFilter === pos ? (posColors[pos] || 'var(--silver)') : 'var(--silver)',
+                            cursor: 'pointer',
+                            fontFamily: FONT_UI,
+                            fontWeight: 600,
+                        }}>{posLabel(pos)}</button>
                     ))}
-                    <button onClick={toggleHideDrafted} title="Hide players who have already been drafted" style={{ ...posChipBtn(hideDrafted), marginLeft: 'auto' }}>{hideDrafted ? '✓ Hide drafted' : 'Hide drafted'}</button>
+                    <button onClick={toggleHideDrafted} title="Hide players who have already been drafted" style={{
+                        padding: '2px 10px',
+                        minHeight: '40px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: 'var(--text-micro, 0.6875rem)',
+                        borderRadius: '10px',
+                        border: '1px solid ' + (hideDrafted ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--ov-5, rgba(255,255,255,0.08))'),
+                        background: hideDrafted ? 'var(--acc-fill3, rgba(212,175,55,0.15))' : 'transparent',
+                        color: hideDrafted ? 'var(--gold)' : 'var(--silver)',
+                        cursor: 'pointer',
+                        fontFamily: FONT_UI,
+                        fontWeight: 600,
+                        marginLeft: 'auto',
+                    }}>{hideDrafted ? '✓ Hide drafted' : 'Hide drafted'}</button>
                 </div>
 
                 {activeLane === 'my' && (
                     <div style={{ padding: '4px 2px 7px', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', opacity: 0.72, fontFamily: FONT_UI, display: 'flex', alignItems: 'center', gap: 5 }}>
-                        <span style={{ fontWeight: 900 }}>{'↕'}</span> {touchReorder ? 'Hold ≡ and drag to reorder — or tap ▲ / ▼' : 'Hold ≡ (or drag a row) to reorder your board'}
+                        <span style={{ fontWeight: 900 }}>{'↕'}</span> {'Hold ≡ and drag to reorder your board'}
                     </div>
                 )}
 
                 <div style={{
                     display: 'grid',
-                    gridTemplateColumns: boardGridTemplate,
+                    gridTemplateColumns: (activeLane === 'my' ? '38px' : '22px') + ' minmax(0,1.3fr) 44px 34px 48px 42px' + (showAdpCol ? ' 46px' : '') + ' 44px',
                     gap: '5px',
                     alignItems: 'center',
                     padding: '0 3px 4px 5px',
@@ -876,11 +959,10 @@
                     {colHeader('board', '#', 'right')}
                     {colHeader('name', 'Player', 'left')}
                     {colHeader('team', 'Team', 'left')}
-                    {colHeader('college', 'College', 'left')}
                     {colHeader('pos', 'Pos', 'center')}
                     {colHeader('dhq', 'DHQ', 'right')}
-                    <span title="This season's most decision-relevant stat for the player's position — targets/gm, snap%, CMP%, tackles, etc." style={{ fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: FONT_UI, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.03em', color: 'var(--silver)', opacity: 0.62, textAlign: 'right' }}>Usage</span>
-                    {adpEligible && colHeader('adp', 'ADP', 'right')}
+                    {colHeader('rank', 'Rank', 'right')}
+                    {showAdpCol && colHeader('adp', 'ADP', 'right')}
                     {(isUserTurn || state.overrideMode || state.mode === 'manual') && <span />}
                 </div>
 
@@ -893,7 +975,6 @@
                     {available.map((p, idx) => {
                         const b = p._board || {};
                         const tag = TAG_META[b.tag];
-                        const trendBadge = window.App?.classifyTrend?.(window.App?.LI?.playerMeta?.[p.pid]?.trend);
                         const col = dhqColor(p.dhq);
                         const tCol = tierColor(b.tier);
                         const rowRank = b.activeRank < 99999 ? b.activeRank : idx + 1;
@@ -901,8 +982,11 @@
                         const nflTeam = nflTeamOf(p);
                         const college = collegeOf(p);
                         const showTouchMove = touchReorder && activeLane === 'my' && !p._drafted;
+                        const prevRowD = idx > 0 ? available[idx - 1] : null;
+                        const prevRankD = !prevRowD ? 0 : (prevRowD._board && prevRowD._board.activeRank < 99999 ? prevRowD._board.activeRank : idx);
                         return (
                             <React.Fragment key={p.pid}>
+                            {boardMarkers(prevRankD, rowRank)}
                             <div
                                 data-reorder-key={idOf(p)}
                                 onClick={() => onOpenModal(p)}
@@ -927,11 +1011,11 @@
                                 }}
                                 style={{
                                     display: 'grid',
-                                    gridTemplateColumns: boardGridTemplate,
+                                    gridTemplateColumns: (activeLane === 'my' ? '38px' : '22px') + ' minmax(0,1.3fr) 44px 34px 48px 42px' + (showAdpCol ? ' 46px' : '') + ' 44px',
                                     gap: '5px',
                                     alignItems: 'center',
                                     padding: '3px 3px 3px 0',
-                                    borderBottom: showTouchMove ? 'none' : '1px solid var(--ov-3, rgba(255,255,255,0.035))',
+                                    borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.035))',
                                     borderLeft: b.tier ? '2px solid ' + tCol : '2px solid transparent',
                                     paddingLeft: '5px',
                                     cursor: activeLane === 'my' && !p._drafted ? 'grab' : 'pointer',
@@ -951,7 +1035,7 @@
                                             {gp && (
                                                 <button type="button" className="wr-drag-grip" title="Hold and drag to reorder" aria-label={'Drag ' + (p.name || 'player') + ' to reorder'}
                                                     {...gp}
-                                                    style={{ ...gp.style, width: '15px', height: '22px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0, border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: 'var(--card-radius-xs, 5px)', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)', fontSize: '0.7rem', lineHeight: 1, flexShrink: 0, position: 'relative' }}>≡</button>
+                                                    style={{ ...gp.style, width: '15px', height: '22px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0, border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: '4px', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)', fontSize: '0.7rem', lineHeight: 1, flexShrink: 0, position: 'relative' }}>≡</button>
                                             )}
                                             <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: rowRank <= 12 ? 'var(--gold)' : 'var(--ov-8, rgba(255,255,255,0.34))', fontFamily: FONT_MONO }}>{rowRank}</span>
                                         </span>
@@ -976,34 +1060,12 @@
                                     {tag && (
                                         <span style={{ flexShrink: 0, color: tag.color, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, border: '1px solid ' + wrAlpha(tag.color, '55'), background: wrAlpha(tag.color, '18'), borderRadius: '3px', padding: '0 4px' }}>{tag.label}</span>
                                     )}
-                                    {trendBadge && (
-                                        <span title={'Year-over-year PPG change: ' + (trendBadge.pct > 0 ? '+' : '') + trendBadge.pct + '%'} style={{ flexShrink: 0, color: trendBadge.color, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, border: '1px solid ' + wrAlpha(trendBadge.color, '55'), background: wrAlpha(trendBadge.color, '18'), borderRadius: '3px', padding: '0 4px' }}>{trendBadge.glyph}</span>
-                                    )}
                                 </div>
                                 <span title={nflTeam} style={{ color: 'var(--silver)', opacity: 0.78, fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: FONT_MONO, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{nflTeam || '—'}</span>
-                                <span title={college} style={{ color: 'var(--silver)', opacity: 0.7, fontSize: 'var(--text-micro, 0.6875rem)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{college || '—'}</span>
                                 <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, padding: '1px 5px', borderRadius: '3px', background: wrAlpha(posColor, '22'), color: posColor, textAlign: 'center', fontFamily: FONT_UI }}>{normEdPos(p.pos)}</span>
                                 <span style={{ color: col, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, fontFamily: FONT_MONO, textAlign: 'right' }}>{fmt(p.dhq)}</span>
-                                {(() => {
-                                    // Position-specific usage read (no plumbing change — statsData
-                                    // is already global at window.S.statsData once a league loads).
-                                    // Blank for rookies/prospects pre-draft; they have no NFL stat
-                                    // line yet, which is the honest answer, not a bug.
-                                    const SC = window.App?.StatCatalog;
-                                    const stat = SC ? SC.getTopStat(normEdPos(p.pos)) : null;
-                                    const raw = stat && window.S?.statsData?.[p.pid];
-                                    const v = raw ? SC.computeStat(stat.key, raw, { perGame: true }) : null;
-                                    return (
-                                        <span title={stat ? stat.label : undefined} style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: v != null ? 'var(--silver)' : 'var(--ov-8, rgba(255,255,255,0.28))', fontFamily: FONT_MONO, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                                            {v != null ? <React.Fragment>{SC.formatStat(v, stat.format)} <span style={{ opacity: 0.6, fontSize: '0.6rem' }}>{stat.short}</span></React.Fragment> : '—'}
-                                        </span>
-                                    );
-                                })()}
-                                {adpEligible && (
-                                    <span style={{ color: 'var(--k-3498db, #3498db)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 800, fontFamily: FONT_MONO, textAlign: 'right' }}>
-                                        {adpFor(p) ? adpFor(p).adp.toFixed(1) : ''}
-                                    </span>
-                                )}
+                                <span style={{ color: 'var(--silver)', opacity: 0.85, fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: FONT_MONO, textAlign: 'right' }}>{b.dhqRank ? '#' + b.dhqRank : '—'}</span>
+                                {showAdpCol && <span style={{ color: 'var(--silver)', opacity: 0.85, fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: FONT_MONO, textAlign: 'right' }}>{(() => { const av = adpOf(p); return av != null ? av.toFixed(1) : '—'; })()}</span>}
                                 {(isUserTurn || state.overrideMode || state.mode === 'manual') && (
                                     <button
                                         onClick={e => { e.stopPropagation(); onDraft(p); }}
@@ -1028,27 +1090,6 @@
                                     >{state.mode === 'live-sync' && state.overrideMode ? 'APPLY' : state.mode === 'manual' ? 'PICK' : (state.overrideMode ? 'FORCE' : 'DRAFT')}</button>
                                 )}
                             </div>
-                            {showTouchMove && (
-                                <div style={{
-                                    display: 'flex',
-                                    gap: 6,
-                                    padding: '4px 4px 8px 27px',
-                                    borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.035))',
-                                }}>
-                                    <button
-                                        type="button"
-                                        aria-label={'Move ' + (p.name || 'player') + ' up'}
-                                        onClick={e => { e.stopPropagation(); onMovePlayer(p, -1); }}
-                                        style={moveBtnCss}
-                                    >▲ Up</button>
-                                    <button
-                                        type="button"
-                                        aria-label={'Move ' + (p.name || 'player') + ' down'}
-                                        onClick={e => { e.stopPropagation(); onMovePlayer(p, 1); }}
-                                        style={moveBtnCss}
-                                    >▼ Down</button>
-                                </div>
-                            )}
                             </React.Fragment>
                         );
                     })}

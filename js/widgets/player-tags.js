@@ -53,7 +53,7 @@
             onKeyDown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick && onClick(e); } },
             style: {
                 display: 'flex', alignItems: 'center', gap: '6px',
-                padding: '4px 6px', borderRadius: 'var(--card-radius-xs, 5px)',
+                padding: '4px 6px', borderRadius: '4px',
                 cursor: 'pointer',
                 background: 'var(--ov-1, rgba(255,255,255,0.02))',
                 fontSize: '0.7rem',
@@ -88,7 +88,7 @@
             onKeyDown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick && onClick(e); } },
             style: {
                 display: 'flex', alignItems: 'center', gap: '8px',
-                padding: '6px 8px', borderRadius: 'var(--card-radius-sm, 8px)', minHeight: '44px',
+                padding: '6px 8px', borderRadius: '6px', minHeight: '44px',
                 cursor: 'pointer',
                 background: 'var(--ov-1, rgba(255,255,255,0.02))',
                 border: '1px solid var(--ov-4, rgba(255,255,255,0.06))',
@@ -122,7 +122,7 @@
         const base = {
             background: 'var(--off-black)',
             border: '1px solid var(--acc-fill2, rgba(212,175,55,0.12))',
-            borderRadius: 'var(--card-radius, 10px)', padding: 'var(--card-pad, 12px 14px)',
+            borderRadius: '10px', padding: 'var(--card-pad, 12px 14px)',
             display: 'flex', flexDirection: 'column', gap: '6px',
             height: '100%', minHeight: 0, overflow: 'hidden',
         };
@@ -149,7 +149,7 @@
                     style: {
                         padding: '2px 6px', fontSize: 'var(--text-micro, 0.6875rem)',
                         background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)',
-                        border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: 'var(--card-radius-xs, 5px)',
+                        border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '4px',
                         cursor: 'pointer', fontFamily: 'var(--font-body)', letterSpacing: '0.05em',
                     },
                 }, 'TAG'),
@@ -218,7 +218,7 @@
             return React.createElement('div', { style: base },
                 header({ large: true }),
                 // Summary chip strip — total DHQ + position breakdown
-                rows.length > 0 && React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', padding: '6px 8px', background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.06))', borderRadius: 'var(--card-radius-sm, 8px)', flexShrink: 0 } },
+                rows.length > 0 && React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', padding: '6px 8px', background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.06))', borderRadius: '6px', flexShrink: 0 } },
                     React.createElement('span', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 } }, 'Total'),
                     React.createElement('span', { style: { fontSize: '0.78rem', fontWeight: 700, color: tone, fontFamily: 'JetBrains Mono, monospace' } }, totalDhq >= 1000 ? (totalDhq / 1000).toFixed(1) + 'k' : totalDhq),
                     React.createElement('span', { style: { color: 'var(--ov-6, rgba(255,255,255,0.15))', margin: '0 4px' } }, '·'),

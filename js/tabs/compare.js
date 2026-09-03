@@ -16,6 +16,11 @@
 // compact per-opponent `meetings` result keeps its own localStorage cache.
 window._wrCompareRawCache = window._wrCompareRawCache || {};
 
+// Weekly-projection memo for the Full Breakdown player cells, keyed
+// league|season|week|pid — same shape as the All Players ledger's memo, so a
+// 4-team field (100+ cells) projects each player once per week, not per render.
+const _cmpProjMemo = {};
+
 function CompareTab({
     currentLeague,
     leagueSkin,
@@ -37,6 +42,62 @@ function CompareTab({
     // Action row + the field-verdict Read gate on this predicate (mirrors
     // reconai compare-scout.js, which filters its Verdict row for free).
     const isPro = typeof window.wrIsPro === 'function' ? window.wrIsPro() : true;
+    // Weekly projections land after first paint — re-render the field cells
+    // from dashes when they do (same listener the All Players ledger uses).
+    const [, forceProjRerender] = React.useState(0);
+    React.useEffect(() => {
+        const h = () => forceProjRerender(n => n + 1);
+        window.addEventListener('wr:weekly-points-loaded', h);
+        return () => window.removeEventListener('wr:weekly-points-loaded', h);
+    }, []);
+    // ── Historical View (owner ask 2026-08-27): when the league time machine
+    // sits on a past season, the Full Roster grid shows THAT season's rosters.
+    // Sleeper keeps each year as a linked league — walk previous_league_id to
+    // the matching season and pull its rosters, reusing the H2H chain cache
+    // when it has already walked. Player values stay today's DHQ (there is no
+    // historical value engine); stats are already that season's because the
+    // time machine swaps statsData. The weekly-projection chip hides in past
+    // seasons — there is nothing to project.
+    const _tmSeason = parseInt(window.S?.season, 10) || 0;
+    const _curLeagueSeason = parseInt(currentLeague?.season, 10) || new Date().getFullYear();
+    const histSeason = _tmSeason && _tmSeason < _curLeagueSeason ? String(_tmSeason) : null;
+    const [histRosters, setHistRosters] = React.useState(null);
+    React.useEffect(() => {
+        if (!histSeason || !leagueId) { setHistRosters(null); return; }
+        let alive = true;
+        (async () => {
+            try {
+                const base = 'https://api.sleeper.app/v1';
+                const get = async (url) => { try { const r = await fetch(url); return r.ok ? await r.json() : null; } catch { return null; } };
+                const cachedChain = window._wrCompareRawCache[leagueId];
+                let entry = Array.isArray(cachedChain?.seasons) ? cachedChain.seasons.find(s => String(s.season) === histSeason) : null;
+                if (!entry) {
+                    let lid = String(leagueId), hops = 0, foundId = null;
+                    const seen = new Set();
+                    while (lid && lid !== '0' && !seen.has(lid) && hops < 12) {
+                        seen.add(lid);
+                        const info = await get(base + '/league/' + lid);
+                        if (!info) break;
+                        if (String(info.season) === histSeason) { foundId = lid; break; }
+                        lid = info.previous_league_id ? String(info.previous_league_id) : '';
+                        hops += 1;
+                    }
+                    if (foundId) {
+                        const rosters = await get(base + '/league/' + foundId + '/rosters');
+                        if (Array.isArray(rosters) && rosters.length) entry = { season: histSeason, rosters };
+                    }
+                }
+                if (!alive) return;
+                const byOwner = {};
+                (entry?.rosters || []).forEach(r => { if (r && r.owner_id) byOwner[String(r.owner_id)] = r; });
+                setHistRosters({ season: histSeason, byOwner: entry ? byOwner : null });
+            } catch (e) {
+                if (window.wrLog) window.wrLog('compare.histRosters', e);
+                if (alive) setHistRosters({ season: histSeason, byOwner: null });
+            }
+        })();
+        return () => { alive = false; };
+    }, [histSeason, leagueId]);
     // Redraft → build ROS values so roster-strength comparisons reflect
     // rest-of-season production (no-op → DHQ for dynasty/keeper).
     React.useMemo(() => {
@@ -529,6 +590,27 @@ function CompareTab({
         : dhq > 0 ? { label: 'Depth', color: 'var(--silver)' }
         : { label: '—', color: 'var(--silver)' };
 
+    // Roster-slot tag (owner ask 2026-08-27): where a player sits on his team —
+    // starter, bench, taxi, or IR — shown as a small chip beside the name so a
+    // roster comparison doubles as a trade-fit read. Slots come straight from
+    // the Sleeper roster arrays (starters / taxi / reserve; bench = the rest).
+    const slotOf = (roster, pid) => {
+        if (!roster) return null;
+        const sid = String(pid);
+        if ((roster.reserve || []).some(x => String(x) === sid)) return 'IR';
+        if ((roster.taxi || []).some(x => String(x) === sid)) return 'TX';
+        if ((roster.starters || []).some(x => String(x) === sid && sid !== '0')) return 'ST';
+        return 'BN';
+    };
+    const slotChip = (slot) => {
+        if (!slot) return null;
+        const cfg = slot === 'ST' ? { color: 'var(--good)', title: 'Starter' }
+            : slot === 'IR' ? { color: 'var(--bad)', title: 'Injured Reserve' }
+            : slot === 'TX' ? { color: 'var(--k-3498db, #3498db)', title: 'Taxi squad' }
+            : { color: 'var(--silver)', title: 'Bench' };
+        return <span title={cfg.title} style={{ flexShrink: 0, fontSize: '0.55rem', fontWeight: 850, letterSpacing: '0.04em', color: cfg.color, border: '1px solid currentColor', borderRadius: '4px', padding: '0 3px', opacity: 0.85, lineHeight: 1.5 }}>{slot}</span>;
+    };
+
     const statsRefForField = statsData || {};
     const stats2025RefForField = stats2025Data || {};
     const derivedStatsRefForField = window.S?.playerStats || {};
@@ -545,9 +627,33 @@ function CompareTab({
         if (prevGP > 0 && prevPts != null) return +(prevPts / prevGP).toFixed(1);
         return derived.seasonAvg || derived.prevAvg || 0;
     };
+    const projCtxForField = (() => {
+        const WP = window.App && window.App.WeeklyProj;
+        const wk = WP && WP.currentWeek ? WP.currentWeek() : (window.S?.currentWeek || 1);
+        const season = (window.S?.nflState && window.S.nflState.season) || window.S?.season || '';
+        return { wk, prefix: leagueId + '|' + season + '|' + wk + '|' };
+    })();
+    const projForField = (pid) => {
+        const WP = window.App && window.App.WeeklyProj;
+        if (!WP || !WP.projectPlayer) return null;
+        const k = projCtxForField.prefix + pid;
+        if (k in _cmpProjMemo) return _cmpProjMemo[k];
+        let v = null;
+        try {
+            const prj = WP.projectPlayer(pid, { playersData, statsData, priorData: {}, scoring: scoringForField, week: projCtxForField.wk });
+            const med = prj && prj.points && prj.points.median;
+            v = (med != null && isFinite(med)) ? +(+med).toFixed(1) : null;
+        } catch (e) { v = null; }
+        _cmpProjMemo[k] = v;
+        return v;
+    };
     const enrichFieldPlayer = (pid) => {
         const p = playersData?.[pid] || playersData?.[String(pid)];
         if (!p) return null;
+        const st = statsRefForField[pid] || statsRefForField[String(pid)] || {};
+        const gp = Number(st.gp || 0);
+        const pts = gp > 0 && typeof window.App?.calcRawPts === 'function'
+            ? Math.round(window.App.calcRawPts(st, scoringForField)) : null;
         const pos = normPos(p.position);
         const curve = typeof window.App?.getAgeCurve === 'function'
             ? window.App.getAgeCurve(pos)
@@ -562,6 +668,9 @@ function CompareTab({
             age,
             team: p.team || 'FA',
             yrsExp: p.years_exp || 0,
+            gp,
+            pts,
+            proj: histSeason ? null : projForField(pid),
             ppg: calcFieldPPG(pid),
             dhq: scores[pid] || scores[String(pid)] || 0,
             peakYrs: age ? Math.max(0, peakEnd - age) : 0,
@@ -575,7 +684,11 @@ function CompareTab({
     const teamProfile = (teamOption, isMine) => {
         const roster = isMine ? myRoster : teamOption?.roster;
         if (!roster) return null;
-        const players = (roster.players || []).map(enrichFieldPlayer).filter(Boolean);
+        const players = (roster.players || []).map(pid => {
+            const e = enrichFieldPlayer(pid);
+            if (e) e.slot = slotOf(roster, pid);
+            return e;
+        }).filter(Boolean);
         const posTotals = {};
         const posTop = {};
         allPositions.forEach(pos => {
@@ -625,7 +738,7 @@ function CompareTab({
         fontFamily: 'var(--font-body)',
         background: 'var(--ov-3, rgba(255,255,255,0.04))',
         border: '1px solid var(--acc-line2, rgba(212,175,55,0.32))',
-        borderRadius: 'var(--card-radius-sm, 8px)',
+        borderRadius: '6px',
         color: 'var(--white)',
         minHeight: '44px',
     };
@@ -633,7 +746,7 @@ function CompareTab({
         padding: '8px 10px',
         background: active ? 'var(--acc-fill3, rgba(212,175,55,0.16))' : 'var(--ov-3, rgba(255,255,255,0.035))',
         border: '1px solid ' + (active ? 'var(--acc-line3, rgba(212,175,55,0.46))' : 'var(--ov-5, rgba(255,255,255,0.08))'),
-        borderRadius: 'var(--card-radius-sm, 8px)',
+        borderRadius: '6px',
         color: active ? 'var(--gold)' : 'var(--silver)',
         textAlign: 'left',
         cursor: 'pointer',
@@ -641,9 +754,20 @@ function CompareTab({
         minHeight: '44px',
     });
 
+    const renderLanding = () => (
+        <div style={{ ...panelStyle, padding: '28px', color: 'var(--silver)' }}>
+            <div style={{ fontFamily: 'var(--font-title)', fontSize: 'var(--text-title)', color: 'var(--white)', fontWeight: 700, marginBottom: '6px' }}>
+                Choose a matchup lens
+            </div>
+            <div style={{ fontSize: '0.86rem', lineHeight: 1.5, maxWidth: '620px' }}>
+                Compare is strongest when it answers a specific question: who can beat you now, who is closest long term, and where the roster edge actually lives.
+            </div>
+        </div>
+    );
+
     const scopeButtonStyle = (active) => ({
         padding: '8px 12px',
-        borderRadius: 'var(--card-radius-sm, 8px)',
+        borderRadius: '6px',
         border: '1px solid ' + (active ? 'var(--acc-line4, rgba(212,175,55,0.55))' : 'var(--ov-5, rgba(255,255,255,0.09))'),
         background: active ? 'var(--acc-fill3, rgba(212,175,55,0.16))' : 'var(--ov-3, rgba(255,255,255,0.035))',
         color: active ? 'var(--gold)' : 'var(--silver)',
@@ -655,7 +779,7 @@ function CompareTab({
     });
     const smallButtonStyle = (active) => ({
         padding: '6px 9px',
-        borderRadius: 'var(--card-radius-sm, 8px)',
+        borderRadius: '6px',
         border: '1px solid ' + (active ? 'var(--acc-line3, rgba(212,175,55,0.48))' : 'var(--ov-5, rgba(255,255,255,0.08))'),
         background: active ? 'var(--acc-fill3, rgba(212,175,55,0.14))' : 'var(--ov-2, rgba(255,255,255,0.03))',
         color: active ? 'var(--gold)' : 'var(--silver)',
@@ -720,7 +844,7 @@ function CompareTab({
                                 <button key={t.rosterId} onClick={() => toggleManualTeam(t.rosterId)} style={{
                                     padding: '8px 9px',
                                     minHeight: isPhone ? '44px' : undefined,
-                                    borderRadius: 'var(--card-radius-sm, 8px)',
+                                    borderRadius: '6px',
                                     border: '1px solid ' + (manualActive ? 'var(--acc-line3, rgba(212,175,55,0.46))' : 'var(--ov-4, rgba(255,255,255,0.07))'),
                                     background: manualActive ? 'var(--acc-fill2, rgba(212,175,55,0.12))' : active ? 'var(--ov-4, rgba(255,255,255,0.055))' : 'var(--ov-2, rgba(255,255,255,0.025))',
                                     color: manualActive ? 'var(--gold)' : 'var(--silver)',
@@ -831,7 +955,7 @@ function CompareTab({
         const fieldReadColor = focusProfile.isMine ? fieldTier.color : (focusProfile.total >= fieldAvg ? 'var(--good)' : 'var(--bad)');
 
         const renderTeamChip = (profile) => (
-            <div key={profile.rosterId} style={{ padding: '9px 10px', background: profile.isMine ? 'var(--acc-fill2, rgba(212,175,55,0.12))' : 'var(--ov-2, rgba(255,255,255,0.03))', border: '1px solid ' + (profile.isMine ? 'var(--acc-line2, rgba(212,175,55,0.35))' : 'var(--ov-4, rgba(255,255,255,0.07))'), borderRadius: 'var(--card-radius-sm, 8px)' }}>
+            <div key={profile.rosterId} style={{ padding: '9px 10px', background: profile.isMine ? 'var(--acc-fill2, rgba(212,175,55,0.12))' : 'var(--ov-2, rgba(255,255,255,0.03))', border: '1px solid ' + (profile.isMine ? 'var(--acc-line2, rgba(212,175,55,0.35))' : 'var(--ov-4, rgba(255,255,255,0.07))'), borderRadius: '7px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'baseline' }}>
                     <div style={{ minWidth: 0 }}>
                         <div style={{ color: profile.isMine ? 'var(--gold)' : 'var(--white)', fontWeight: 850, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{profile.name}</div>
@@ -851,7 +975,7 @@ function CompareTab({
                     <div style={{
                         minHeight: '46px',
                         padding: '8px',
-                        borderRadius: 'var(--card-radius-sm, 8px)',
+                        borderRadius: '6px',
                         border: '1px solid var(--ov-3, rgba(255,255,255,0.04))',
                         background: 'var(--ov-1, rgba(255,255,255,0.018))',
                         color: 'var(--ov-8, rgba(255,255,255,0.28))',
@@ -874,7 +998,7 @@ function CompareTab({
                     style={{
                     minHeight: '46px',
                     padding: '8px',
-                    borderRadius: 'var(--card-radius-sm, 8px)',
+                    borderRadius: '6px',
                     border: '1px solid ' + (isRowBest ? 'rgba(46,204,113,0.28)' : isMine ? 'var(--acc-fill2, rgba(212,175,55,0.12))' : 'var(--ov-4, rgba(255,255,255,0.055))'),
                     background: isRowBest ? 'rgba(46,204,113,0.07)' : isMine ? 'var(--acc-fill1, rgba(212,175,55,0.045))' : 'var(--ov-1, rgba(255,255,255,0.024))',
                     cursor: 'pointer',
@@ -883,9 +1007,18 @@ function CompareTab({
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center', minWidth: 0 }}>
                         {!isPhone && <img src={'https://sleepercdn.com/content/nfl/players/thumb/'+player.pid+'.jpg'} onError={e=>e.target.style.display='none'} style={{ width:'24px',height:'24px',borderRadius:'50%',objectFit:'cover', flexShrink: 0 }} />}
                         <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ color: 'var(--white)', fontSize: '0.76rem', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{isPhone ? ((player.p?.first_name ? player.p.first_name[0] + '. ' : '') + (player.p?.last_name || player.p?.full_name || '?')) : (player.p?.full_name || '?')}</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                                <span style={{ color: 'var(--white)', fontSize: '0.76rem', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{isPhone ? ((player.p?.first_name ? player.p.first_name[0] + '. ' : '') + (player.p?.last_name || player.p?.full_name || '?')) : (player.p?.full_name || '?')}</span>
+                                {slotChip(player.slot)}
+                            </div>
+                            {/* Owner ruling 2026-08-26: the line under each name in the
+                                side-by-side field shows team · years in league · games
+                                played, then season points · PPG · weekly projection. */}
                             <div style={{ fontSize: 'var(--text-micro)', color: 'var(--silver)', opacity: 0.66, marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                {player.team} {player.age != null ? '· ' + player.age + 'yo' : ''}{player.ppg > 0 ? ' · ' + player.ppg + ' PPG' : ''} · {player.peakYrs > 0 ? player.peakYrs + 'yr peak' : player.valueYrs + 'yr value'}
+                                {player.team} · {player.yrsExp}y · {player.gp > 0 ? player.gp + ' GP' : '0 GP'}
+                            </div>
+                            <div style={{ fontSize: 'var(--text-micro)', color: 'var(--silver)', opacity: 0.66, marginTop: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {(player.pts != null ? player.pts : '—') + ' pts · ' + (player.ppg > 0 ? player.ppg : '—') + ' ppg' + (histSeason ? '' : ' · ' + (player.proj != null ? player.proj : '—') + ' proj')}
                             </div>
                         </div>
                         <div style={{ ...mono, color: dhqCol, fontSize: '0.72rem', fontWeight: 850, flexShrink: 0 }}>{player.dhq > 0 ? player.dhq.toLocaleString() : '-'}</div>
@@ -917,7 +1050,7 @@ function CompareTab({
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '8px', marginBottom: '12px' }}>
                         {profiles.map(profile => (
-                            <div key={'capital-' + profile.rosterId} style={{ padding: '10px', borderRadius: 'var(--card-radius-sm, 8px)', background: profile.isMine ? 'var(--acc-fill2, rgba(212,175,55,0.08))' : 'var(--ov-2, rgba(255,255,255,0.025))', border: '1px solid ' + (profile.isMine ? 'var(--acc-line1, rgba(212,175,55,0.26))' : 'var(--ov-4, rgba(255,255,255,0.06))') }}>
+                            <div key={'capital-' + profile.rosterId} style={{ padding: '10px', borderRadius: '7px', background: profile.isMine ? 'var(--acc-fill2, rgba(212,175,55,0.08))' : 'var(--ov-2, rgba(255,255,255,0.025))', border: '1px solid ' + (profile.isMine ? 'var(--acc-line1, rgba(212,175,55,0.26))' : 'var(--ov-4, rgba(255,255,255,0.06))') }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'baseline', marginBottom: '7px' }}>
                                     <div style={{ color: profile.isMine ? 'var(--gold)' : 'var(--white)', fontWeight: 850, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{profile.name}</div>
                                     <div style={{ ...mono, color: profile.isMine ? 'var(--gold)' : 'var(--silver)', fontSize: '0.72rem', fontWeight: 850 }}>{profile.totalAssets.toLocaleString()}</div>
@@ -1074,7 +1207,7 @@ function CompareTab({
                         .wr-kpi-strip instead of a stacked grid. */}
                     <div className={isPhone ? 'wr-kpi-strip' : undefined} style={isPhone ? undefined : { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '9px' }}>
                         {fieldCards.map(card => (
-                            <div key={card.label} style={{ padding: '10px', background: 'rgba(0,0,0,0.24)', border: '1px solid var(--ov-4, rgba(255,255,255,0.07))', borderRadius: 'var(--card-radius-sm, 8px)', ...(isPhone ? { width: '156px' } : null) }}>
+                            <div key={card.label} style={{ padding: '10px', background: 'rgba(0,0,0,0.24)', border: '1px solid var(--ov-4, rgba(255,255,255,0.07))', borderRadius: '7px', ...(isPhone ? { width: '156px' } : null) }}>
                                 <div style={labelStyle}>{card.label}</div>
                                 <div style={{ ...mono, fontSize: '1rem', color: card.color, fontWeight: 850, marginTop: '5px' }}>{card.value}</div>
                                 <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.66, marginTop: '2px' }}>{card.sub}</div>
@@ -1103,7 +1236,7 @@ function CompareTab({
                                 const roomsLost = allPositions.filter(pos => (profile.posTotals[pos] || 0) < (focusProfile.posTotals[pos] || 0)).length;
                                 const diff = profile.totalAssets - focusProfile.totalAssets;
                                 return (
-                                    <div key={profile.rosterId} style={{ display: 'grid', gridTemplateColumns: rankGridCols, gap: '8px', alignItems: 'center', padding: '8px 9px', borderRadius: 'var(--card-radius-sm, 8px)', background: profile.isMine ? 'var(--acc-fill2, rgba(212,175,55,0.11))' : 'var(--ov-2, rgba(255,255,255,0.025))', border: '1px solid ' + (profile.isMine ? 'var(--acc-line2, rgba(212,175,55,0.35))' : 'var(--ov-4, rgba(255,255,255,0.055))'), fontSize: '0.72rem' }}>
+                                    <div key={profile.rosterId} style={{ display: 'grid', gridTemplateColumns: rankGridCols, gap: '8px', alignItems: 'center', padding: '8px 9px', borderRadius: '7px', background: profile.isMine ? 'var(--acc-fill2, rgba(212,175,55,0.11))' : 'var(--ov-2, rgba(255,255,255,0.025))', border: '1px solid ' + (profile.isMine ? 'var(--acc-line2, rgba(212,175,55,0.35))' : 'var(--ov-4, rgba(255,255,255,0.055))'), fontSize: '0.72rem' }}>
                                         <div style={{ ...mono, color: profile.isMine ? 'var(--gold)' : 'var(--silver)', fontWeight: 850 }}>#{idx + 1}</div>
                                         <div style={{ minWidth: 0 }}>
                                             <div style={{ color: profile.isMine ? 'var(--gold)' : 'var(--white)', fontWeight: 850, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{profile.name}</div>
@@ -1151,12 +1284,12 @@ function CompareTab({
                             return (
                             <React.Fragment>
                                 <div className="wr-hscroll" style={{ display: 'flex', gap: '6px', overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: '6px' }}>
-                                    {allPositions.map(pos => { const on = pos === activePos, c = posColors[pos] || 'var(--silver)'; return <button key={pos} onClick={() => setHeatPos(pos)} style={{ flex: 'none', minHeight: '40px', padding: '7px 13px', borderRadius: 'var(--card-radius-sm, 8px)', ...mono, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', cursor: 'pointer', whiteSpace: 'nowrap', color: on ? c : 'var(--silver)', background: on ? 'rgba(255,255,255,0.06)' : 'transparent', border: '1px solid ' + (on ? c : 'var(--ov-6, rgba(255,255,255,0.12))') }}>{posLabel(pos)}</button>; })}
+                                    {allPositions.map(pos => { const on = pos === activePos, c = posColors[pos] || 'var(--silver)'; return <button key={pos} onClick={() => setHeatPos(pos)} style={{ flex: 'none', minHeight: '40px', padding: '7px 13px', borderRadius: '8px', ...mono, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', cursor: 'pointer', whiteSpace: 'nowrap', color: on ? c : 'var(--silver)', background: on ? 'rgba(255,255,255,0.06)' : 'transparent', border: '1px solid ' + (on ? c : 'var(--ov-6, rgba(255,255,255,0.12))') }}>{posLabel(pos)}</button>; })}
                                 </div>
                                 <div style={{ fontSize: '0.76rem', color: 'var(--silver)', margin: '2px 2px 8px', lineHeight: 1.4 }}>Every team's <b style={{ color: posColors[activePos] || 'var(--white)' }}>{posLabel(activePos)}</b> value{myRank > 0 ? <React.Fragment> — you rank <b style={{ color: 'var(--gold)' }}>#{myRank} of {ranked.length}</b></React.Fragment> : ''}.</div>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                     {ranked.map((p, i) => { const val = p.posTotals[activePos] || 0, isLead = i === 0; const barC = p.isMine ? 'var(--gold)' : isLead ? 'var(--good)' : 'var(--k-7c6bf8, #7c6bf8)'; return (
-                                        <div key={p.rosterId} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', borderRadius: 'var(--card-radius-sm, 8px)', background: p.isMine ? 'var(--acc-fill2, rgba(212,175,55,0.1))' : 'var(--ov-2, rgba(255,255,255,0.025))', border: '1px solid ' + (p.isMine ? 'rgba(212,175,55,0.4)' : 'var(--ov-4, rgba(255,255,255,0.06))') }}>
+                                        <div key={p.rosterId} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', borderRadius: '8px', background: p.isMine ? 'var(--acc-fill2, rgba(212,175,55,0.1))' : 'var(--ov-2, rgba(255,255,255,0.025))', border: '1px solid ' + (p.isMine ? 'rgba(212,175,55,0.4)' : 'var(--ov-4, rgba(255,255,255,0.06))') }}>
                                             <span style={{ ...mono, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: p.isMine ? 'var(--gold)' : 'var(--text-muted, #8B8B96)', minWidth: '20px' }}>{i + 1}</span>
                                             <span style={{ flex: 1, minWidth: 0, fontSize: '0.85rem', fontWeight: 600, color: p.isMine ? 'var(--gold)' : 'var(--white)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
                                             {isLead ? <span style={{ ...mono, fontSize: '0.56rem', fontWeight: 800, color: 'var(--good)', letterSpacing: '0.06em' }}>TOP</span> : null}
@@ -1175,13 +1308,13 @@ function CompareTab({
                                 const teamFill = profile.isMine ? 'var(--acc-fill2, rgba(212,175,55,0.11))' : 'var(--ov-2, rgba(255,255,255,0.025))';
                                 return (
                                 <React.Fragment key={'hm-' + profile.rosterId}>
-                                    <div style={{ padding: '7px 6px', borderRadius: 'var(--card-radius-xs, 5px)', background: teamFill, color: profile.isMine ? 'var(--gold)' : 'var(--white)', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{profile.name}</div>
+                                    <div style={{ padding: '7px 6px', borderRadius: '5px', background: teamFill, color: profile.isMine ? 'var(--gold)' : 'var(--white)', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{profile.name}</div>
                                     {allPositions.map(pos => {
                                         const val = profile.posTotals[pos] || 0;
                                         const isBest = bestByPos[pos] === profile.rosterId;
                                         const isMine = profile.isMine;
                                         return (
-                                            <div key={profile.rosterId + '-' + pos} title={profile.name + ' ' + pos + ': ' + val.toLocaleString()} style={{ padding: '6px 5px', borderRadius: 'var(--card-radius-xs, 5px)', background: isBest ? 'rgba(46,204,113,0.14)' : isMine ? 'var(--acc-fill2, rgba(212,175,55,0.09))' : 'var(--ov-2, rgba(255,255,255,0.025))', border: '1px solid ' + (isBest ? 'rgba(46,204,113,0.22)' : 'var(--ov-3, rgba(255,255,255,0.04))'), textAlign: 'center' }}>
+                                            <div key={profile.rosterId + '-' + pos} title={profile.name + ' ' + pos + ': ' + val.toLocaleString()} style={{ padding: '6px 5px', borderRadius: '5px', background: isBest ? 'rgba(46,204,113,0.14)' : isMine ? 'var(--acc-fill2, rgba(212,175,55,0.09))' : 'var(--ov-2, rgba(255,255,255,0.025))', border: '1px solid ' + (isBest ? 'rgba(46,204,113,0.22)' : 'var(--ov-3, rgba(255,255,255,0.04))'), textAlign: 'center' }}>
                                                 <div style={{ ...mono, fontSize: 'var(--text-micro, 0.6875rem)', color: isBest ? 'var(--good)' : isMine ? 'var(--gold)' : 'var(--silver)', fontWeight: 800 }}>{Math.round(val / 1000)}k</div>
                                                 <div style={{ height: '3px', background: 'var(--ov-4, rgba(255,255,255,0.06))', borderRadius: '2px', marginTop: '4px', overflow: 'hidden' }}><div style={{ width: (val / maxByPos[pos] * 100) + '%', height: '100%', background: isBest ? 'var(--good)' : isMine ? 'var(--gold)' : 'var(--k-7c6bf8, #7c6bf8)' }}></div></div>
                                             </div>
@@ -1202,7 +1335,7 @@ function CompareTab({
                         <div style={{ fontFamily: 'var(--font-title)', fontSize: 'var(--text-title)', fontWeight: 850, color: 'var(--white)', letterSpacing: 0, marginBottom: '10px' }}>Division Boards</div>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
                             {Object.entries(divisionProfiles).sort(([a], [b]) => Number(a) - Number(b)).map(([key, list]) => (
-                                <div key={key} style={{ padding: '10px', borderRadius: 'var(--card-radius-sm, 8px)', background: 'var(--ov-2, rgba(255,255,255,0.025))', border: '1px solid var(--ov-4, rgba(255,255,255,0.06))' }}>
+                                <div key={key} style={{ padding: '10px', borderRadius: '7px', background: 'var(--ov-2, rgba(255,255,255,0.025))', border: '1px solid var(--ov-4, rgba(255,255,255,0.06))' }}>
                                     <div style={{ color: 'var(--gold)', fontWeight: 850, marginBottom: '8px' }}>{getDivisionName(key)}</div>
                                     {[...list].sort((a, b) => b.total - a.total).map((p, idx) => (
                                         <div key={p.rosterId} style={{ display: 'grid', gridTemplateColumns: '24px 1fr auto', gap: '7px', alignItems: 'center', padding: '5px 0', borderTop: idx ? '1px solid var(--ov-3, rgba(255,255,255,0.045))' : 'none' }}>
@@ -1252,7 +1385,7 @@ function CompareTab({
         }
         const atMax = comparePlayerIds.length >= 4;
         return (
-            <div style={{ position: 'relative', minWidth: '230px', flex: '1 1 250px', maxWidth: '440px' }}>
+            <div style={{ position: 'relative', minWidth: '230px', flex: '1 1 340px', maxWidth: '640px' }}>
                 <input
                     ref={playerSearchRef}
                     value={playerQuery}
@@ -1262,7 +1395,7 @@ function CompareTab({
                     style={{ ...selectStyle, width: '100%', opacity: atMax ? 0.5 : 1 }}
                 />
                 {results.length ? (
-                    <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 40, background: 'var(--black, #0b0b0d)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.32))', borderRadius: 'var(--card-radius-sm, 8px)', overflow: 'hidden', boxShadow: '0 14px 34px rgba(0,0,0,0.55)' }}>
+                    <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 40, background: 'var(--black, #0b0b0d)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.32))', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 14px 34px rgba(0,0,0,0.55)' }}>
                         {results.map(r => (
                             <button key={r.pid} onClick={() => addComparePlayer(r.pid)} style={{ display: 'flex', width: '100%', alignItems: 'center', gap: '9px', padding: '8px 10px', minHeight: isPhone ? '44px' : undefined, background: 'transparent', border: 'none', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.04))', cursor: 'pointer', textAlign: 'left' }}>
                                 <img src={'https://sleepercdn.com/content/nfl/players/thumb/' + r.pid + '.jpg'} onError={e => e.target.style.display = 'none'} style={{ width: '26px', height: '26px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
@@ -1347,7 +1480,7 @@ function CompareTab({
             const isLeader = multi && leader && String(leader.pid) === String(pl.pid);
             return (
                 <div key={'cmp-' + pl.pid} style={{ ...panelStyle, padding: 0, overflow: 'hidden', position: 'relative', border: isLeader ? '1px solid var(--acc-line3, rgba(212,175,55,0.46))' : panelStyle.border }}>
-                    <button className="cmp-remove-x" title="Remove from compare" onClick={() => removeComparePlayer(pl.pid)} style={{ position: 'absolute', top: '8px', right: '8px', zIndex: 2, width: '26px', height: '26px', borderRadius: 'var(--card-radius-sm, 8px)', border: '1px solid var(--ov-5, rgba(255,255,255,0.09))', background: 'rgba(0,0,0,0.42)', color: 'var(--silver)', cursor: 'pointer', fontSize: '0.95rem', lineHeight: 1 }}>×</button>
+                    <button className="cmp-remove-x" title="Remove from compare" onClick={() => removeComparePlayer(pl.pid)} style={{ position: 'absolute', top: '8px', right: '8px', zIndex: 2, width: '26px', height: '26px', borderRadius: '6px', border: '1px solid var(--ov-5, rgba(255,255,255,0.09))', background: 'rgba(0,0,0,0.42)', color: 'var(--silver)', cursor: 'pointer', fontSize: '0.95rem', lineHeight: 1 }}>×</button>
                     <div
                         role="button"
                         tabIndex={0}
@@ -1361,7 +1494,7 @@ function CompareTab({
                             <div style={{ flex: 1, minWidth: 0 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
                                     <div style={{ fontFamily: 'var(--font-title)', color: 'var(--white)', fontWeight: 850, fontSize: '0.98rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pl.name}</div>
-                                    {isLeader ? <span style={{ ...mono, fontSize: '0.56rem', fontWeight: 850, color: 'var(--gold)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.35))', borderRadius: 'var(--card-radius-xs, 5px)', padding: '1px 5px', letterSpacing: '0.04em', flexShrink: 0 }}>DHQ LEAD</span> : null}
+                                    {isLeader ? <span style={{ ...mono, fontSize: '0.56rem', fontWeight: 850, color: 'var(--gold)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.35))', borderRadius: '4px', padding: '1px 5px', letterSpacing: '0.04em', flexShrink: 0 }}>DHQ LEAD</span> : null}
                                 </div>
                                 <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.72, marginTop: '3px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                     <span style={{ color: posColors[pl.pos] || 'var(--silver)', fontWeight: 800 }}>{posLabel(pl.pos)}</span> · {pl.team}{pl.age ? ' · ' + pl.age + 'yo' : ''}{pl.yrsExp != null ? ' · ' + pl.yrsExp + 'y exp' : ''}
@@ -1387,7 +1520,7 @@ function CompareTab({
                         {isPro ? (
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', paddingTop: '9px', marginTop: '3px', borderTop: '1px solid var(--ov-3, rgba(255,255,255,0.04))' }}>
                             <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.66, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Action</span>
-                            <span style={{ ...mono, fontWeight: 850, fontSize: '0.72rem', color: pl.recCol, border: '1px solid ' + pl.recCol, borderRadius: 'var(--card-radius-xs, 5px)', padding: '2px 7px' }}>{pl.rec}</span>
+                            <span style={{ ...mono, fontWeight: 850, fontSize: '0.72rem', color: pl.recCol, border: '1px solid ' + pl.recCol, borderRadius: '4px', padding: '2px 7px' }}>{pl.rec}</span>
                         </div>
                         ) : null}
                         {pl.ctx ? <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.6, marginTop: '8px', lineHeight: 1.4 }}>{pl.ctx}</div> : null}
@@ -1412,7 +1545,7 @@ function CompareTab({
         const phoneRemoveX = (pid) => (
             <button className="cmp-remove-x" title="Remove from compare"
                 onClick={(e) => { e.stopPropagation(); removeComparePlayer(pid); }}
-                style={{ position: 'relative', width: '26px', height: '26px', borderRadius: 'var(--card-radius-sm, 8px)', border: '1px solid var(--ov-5, rgba(255,255,255,0.09))', background: 'rgba(0,0,0,0.42)', color: 'var(--silver)', cursor: 'pointer', fontSize: '0.95rem', lineHeight: 1, flexShrink: 0, padding: 0 }}>×</button>
+                style={{ position: 'relative', width: '26px', height: '26px', borderRadius: '6px', border: '1px solid var(--ov-5, rgba(255,255,255,0.09))', background: 'rgba(0,0,0,0.42)', color: 'var(--silver)', cursor: 'pointer', fontSize: '0.95rem', lineHeight: 1, flexShrink: 0, padding: 0 }}>×</button>
         );
         const renderPhoneFieldRows = () => (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '12px' }}>
@@ -1431,7 +1564,7 @@ function CompareTab({
                             tag={[pl.team, pl.age ? pl.age + 'yo' : null, pl.posRank ? posLabel(pl.pos) + ' #' + pl.posRank : null, pl.tier.label].filter(Boolean).join(' · ')}
                             slots={[{ label: valueShortLabel, value: pl.dhq > 0 ? pl.dhq.toLocaleString() : '—', tone: isLeader ? 'gold' : undefined }]}
                             verdict={<React.Fragment>
-                                {isLeader ? <span style={{ fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', fontSize: '0.56rem', fontWeight: 700, color: 'var(--gold)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.35))', borderRadius: 'var(--card-radius-xs, 5px)', padding: '2px 5px', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>LEAD</span> : null}
+                                {isLeader ? <span style={{ fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', fontSize: '0.56rem', fontWeight: 700, color: 'var(--gold)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.35))', borderRadius: '4px', padding: '2px 5px', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>LEAD</span> : null}
                                 {phoneRemoveX(pl.pid)}
                             </React.Fragment>}
                             accent={isLeader ? 'gold' : undefined}
@@ -1482,7 +1615,10 @@ function CompareTab({
             // and pin the metric-label column sticky-left. Desktop/tablet: unchanged.
             const gt = isPhone
                 ? 'minmax(84px, 0.62fr) repeat(' + N + ', minmax(110px, 1fr))'
-                : 'minmax(94px, 0.62fr) repeat(' + N + ', minmax(0, 1fr))';
+                // Desktop/tablet: a matching spacer column on the RIGHT balances the
+                // left metric-label column, so the players sit centered instead of
+                // shifted right. (Phone scrolls, so it keeps the label-only layout.)
+                : 'minmax(94px, 0.62fr) repeat(' + N + ', minmax(0, 1fr)) minmax(94px, 0.62fr)';
             // Explicit px floor so every row spans the full scroll width (row
             // borders stay continuous mid-scroll): 84px label + N*(110px + 10px gap).
             const rowMinW = isPhone ? (84 + N * 120) + 'px' : undefined;
@@ -1572,12 +1708,12 @@ function CompareTab({
                 const k = leads[pl.pid] || 0;
                 return (
                     <div key={'hero-' + pl.pid} style={{ position: 'relative', textAlign: 'center', padding: '2px 2px 0', minWidth: 0 }}>
-                        <button className="cmp-remove-x" title="Remove from compare" onClick={() => removeComparePlayer(pl.pid)} style={{ position: 'absolute', top: 0, right: 0, width: '22px', height: '22px', borderRadius: 'var(--card-radius-sm, 8px)', border: '1px solid var(--ov-5, rgba(255,255,255,0.09))', background: 'rgba(0,0,0,0.42)', color: 'var(--silver)', cursor: 'pointer', fontSize: '0.8rem', lineHeight: 1, zIndex: 2 }}>×</button>
+                        <button className="cmp-remove-x" title="Remove from compare" onClick={() => removeComparePlayer(pl.pid)} style={{ position: 'absolute', top: 0, right: 0, width: '22px', height: '22px', borderRadius: '6px', border: '1px solid var(--ov-5, rgba(255,255,255,0.09))', background: 'rgba(0,0,0,0.42)', color: 'var(--silver)', cursor: 'pointer', fontSize: '0.8rem', lineHeight: 1, zIndex: 2 }}>×</button>
                         <div role="button" tabIndex={0} title="Open full player card" onClick={() => openPlayerCard(pl.pid)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openPlayerCard(pl.pid); } }} style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
                             <img src={'https://sleepercdn.com/content/nfl/players/thumb/' + pl.pid + '.jpg'} onError={e => e.target.style.display = 'none'} style={{ width: '46px', height: '46px', borderRadius: '50%', objectFit: 'cover', border: '2px solid ' + (isLead ? 'var(--gold)' : (posColors[pl.pos] || 'var(--silver)')) }} />
                             <div style={{ display: 'flex', alignItems: 'center', gap: '5px', maxWidth: '100%' }}>
                                 <span style={{ fontFamily: 'var(--font-title)', color: 'var(--white)', fontWeight: 850, fontSize: '0.92rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pl.name}</span>
-                                {isLead ? <span style={{ ...mono, fontSize: '0.5rem', fontWeight: 850, color: 'var(--gold)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.35))', borderRadius: 'var(--card-radius-xs, 5px)', padding: '1px 4px', flexShrink: 0 }}>LEAD</span> : null}
+                                {isLead ? <span style={{ ...mono, fontSize: '0.5rem', fontWeight: 850, color: 'var(--gold)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.35))', borderRadius: '4px', padding: '1px 4px', flexShrink: 0 }}>LEAD</span> : null}
                             </div>
                             <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.72, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}><span style={{ color: posColors[pl.pos] || 'var(--silver)', fontWeight: 800 }}>{posLabel(pl.pos)}</span> · {pl.team}{pl.age ? ' · ' + pl.age + 'yo' : ''}</div>
                             <div style={{ ...mono, fontSize: '1.45rem', fontWeight: 850, color: dhqCol, lineHeight: 1.05 }}>{pl.dhq > 0 ? pl.dhq.toLocaleString() : '—'}</div>
@@ -1599,7 +1735,7 @@ function CompareTab({
                             <span style={{ ...labelStyle, color: pl.phase.color, opacity: 1 }}>{pl.phase.label}</span>
                             <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.7 }}>{pl.peakYrs > 0 ? pl.peakYrs + 'yr peak left' : pl.valueYrs > 0 ? pl.valueYrs + 'yr value left' : 'past window'}</span>
                         </div>
-                        <div style={{ display: 'flex', height: '14px', borderRadius: 'var(--card-radius-xs, 5px)', overflow: 'hidden', gap: '1px' }}>
+                        <div style={{ display: 'flex', height: '14px', borderRadius: '4px', overflow: 'hidden', gap: '1px' }}>
                             {Array.from({ length: 17 }, (_, i) => {
                                 const aa = i + 20;
                                 const col = aa < cv.lo - 3 ? 'rgba(96,165,250,0.3)' : aa < cv.lo ? 'rgba(46,204,113,0.45)' : (aa >= cv.lo && aa <= cv.peakHi) ? 'rgba(46,204,113,0.75)' : aa <= cv.declineHi ? 'var(--acc-line3, rgba(212,175,55,0.45))' : 'rgba(231,76,60,0.35)';
@@ -1674,7 +1810,7 @@ function CompareTab({
                             {list.map(heroCol)}
                         </div>
                         {totalVal > 0 ? (
-                            <div style={{ display: 'flex', height: '8px', borderRadius: 'var(--card-radius-xs, 5px)', overflow: 'hidden', marginTop: '14px', background: 'var(--ov-4, rgba(255,255,255,0.06))', gap: '1px' }}>
+                            <div style={{ display: 'flex', height: '8px', borderRadius: '4px', overflow: 'hidden', marginTop: '14px', background: 'var(--ov-4, rgba(255,255,255,0.06))', gap: '1px' }}>
                                 {list.map(pl => {
                                     const isLead = (pl.dhq || 0) === fieldMaxDhq;
                                     return <div key={'bar-' + pl.pid} title={pl.name + ' ' + Math.round((pl.dhq || 0) / totalVal * 100) + '% of field ' + valueShortLabel} style={{ width: ((pl.dhq || 0) / totalVal * 100) + '%', background: isLead ? 'var(--gold)' : 'var(--k-3498db, #3498db)', opacity: isLead ? 1 : 0.5 }}></div>;
@@ -1815,7 +1951,7 @@ function CompareTab({
             }
         `}</style>
         <div className="wr-module-strip">
-          <div className="wr-module-actions">
+          <div className="wr-module-actions" style={compareScope === 'players' ? { flex: '1 1 100%', justifyContent: 'space-between' } : undefined}>
             {renderScopeControls()}
             {compareScope === 'duel' ? (
                 <select className="wr-module-select" value={compareTeamId || ''} onChange={e => setCompareTeamId(e.target.value || null)} style={selectStyle}>
@@ -1838,9 +1974,11 @@ function CompareTab({
 
         {compareScope === 'players' ? renderPlayerCompare() : compareScope === 'duel' ? (
         <React.Fragment>
+        {!compareTeamId && renderLanding()}
+
         {compareTeamId && (() => {
             const theirRoster = (currentLeague.rosters || []).find(r => sameId(r.roster_id, compareTeamId));
-            if (!theirRoster) return null;
+            if (!theirRoster) return renderLanding();
 
             const theirName = getOwnerName(theirRoster, 'Opponent');
             const myPlayers = myRoster.players || [];
@@ -1897,6 +2035,14 @@ function CompareTab({
                 const [, pHi] = curve.peak || [24, 29];
                 const declineHi = curve.decline?.[1] || 32;
                 const age = p.age || null;
+                // gp/pts come from statsData, which the time machine swaps to the
+                // viewed season — so the stat line is that year's in Historical
+                // View and this year's otherwise (owner report 2026-08-27: this
+                // enrich lacked them entirely; the roster grid showed 0 GP / —).
+                const st = statsRef[pid] || statsRef[String(pid)] || {};
+                const gp = Number(st.gp || 0);
+                const pts = gp > 0 && typeof window.App?.calcRawPts === 'function'
+                    ? Math.round(window.App.calcRawPts(st, scoring)) : null;
                 return {
                     pid,
                     p,
@@ -1905,14 +2051,17 @@ function CompareTab({
                     age,
                     team: p.team || 'FA',
                     yrsExp: p.years_exp || 0,
+                    gp,
+                    pts,
+                    proj: histSeason ? null : projForField(pid),
                     peakYrs: age ? Math.max(0, pHi - age) : 0,
                     valueYrs: age ? Math.max(0, declineHi - age) : 0,
                     ppg: calcPlayerPPG(pid),
                 };
             };
 
-            const enrichedMine = myPlayers.map(enrich).filter(Boolean);
-            const enrichedTheirs = theirPlayers.map(enrich).filter(Boolean);
+            const enrichedMine = myPlayers.map(pid => { const e = enrich(pid); if (e) e.slot = slotOf(myRoster, pid); return e; }).filter(Boolean);
+            const enrichedTheirs = theirPlayers.map(pid => { const e = enrich(pid); if (e) e.slot = slotOf(theirRoster, pid); return e; }).filter(Boolean);
             const positionSummaries = allPositions.map(pos => {
                 const myAtPos = enrichedMine.filter(r => r.pos === pos).sort((a, b) => b.dhq - a.dhq);
                 const theirAtPos = enrichedTheirs.filter(r => r.pos === pos).sort((a, b) => b.dhq - a.dhq);
@@ -1930,6 +2079,26 @@ function CompareTab({
                     count: Math.max(myAtPos.length, theirAtPos.length),
                 };
             }).filter(p => p.count > 0);
+
+            // Historical View: ONLY the roster grid swaps to that season's
+            // owner-matched rosters — every other duel panel (matchup read,
+            // edges, picks) stays on today's rosters and values, which the
+            // Historical banner already frames as current-day.
+            const histReady = histSeason && histRosters && histRosters.season === histSeason && histRosters.byOwner;
+            const histMineRoster = histReady ? histRosters.byOwner[String(myRoster?.owner_id)] : null;
+            const histTheirsRoster = histReady ? histRosters.byOwner[String(theirRoster?.owner_id)] : null;
+            const histGridActive = !!(histMineRoster || histTheirsRoster);
+            const gridSummaries = histGridActive ? (() => {
+                const em = ((histMineRoster && histMineRoster.players) || []).map(pid => { const e = enrich(pid); if (e) e.slot = slotOf(histMineRoster, pid); return e; }).filter(Boolean);
+                const et = ((histTheirsRoster && histTheirsRoster.players) || []).map(pid => { const e = enrich(pid); if (e) e.slot = slotOf(histTheirsRoster, pid); return e; }).filter(Boolean);
+                return allPositions.map(pos => {
+                    const myAtPos = em.filter(r => r.pos === pos).sort((a, b) => b.dhq - a.dhq);
+                    const theirAtPos = et.filter(r => r.pos === pos).sort((a, b) => b.dhq - a.dhq);
+                    const myPosDHQ = myAtPos.reduce((s, x) => s + x.dhq, 0);
+                    const theirPosDHQ = theirAtPos.reduce((s, x) => s + x.dhq, 0);
+                    return { pos, myAtPos, theirAtPos, myPosDHQ, theirPosDHQ, diff: myPosDHQ - theirPosDHQ, topMine: myAtPos[0], topTheirs: theirAtPos[0], count: Math.max(myAtPos.length, theirAtPos.length) };
+                }).filter(p => p.count > 0);
+            })() : positionSummaries;
 
             const youLead = positionSummaries.filter(p => p.diff > 0).length;
             const theyLead = positionSummaries.filter(p => p.diff < 0).length;
@@ -2028,13 +2197,19 @@ function CompareTab({
                         <div style={{ flex: 1, minWidth: 0 }}>
                             {/* Phone: "F. Last" + 3 meta chips — five chips wrapped to a
                                 second line in a half-width cell (owner ask 2026-07-12). */}
-                            <div style={{ color: 'var(--white)', fontSize: '0.78rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{isPhone ? ((r.p?.first_name ? r.p.first_name[0] + '. ' : '') + (r.p?.last_name || r.p?.full_name || '?')) : (r.p?.full_name || '?')}</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                                <span style={{ color: 'var(--white)', fontSize: '0.78rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{isPhone ? ((r.p?.first_name ? r.p.first_name[0] + '. ' : '') + (r.p?.last_name || r.p?.full_name || '?')) : (r.p?.full_name || '?')}</span>
+                                {slotChip(r.slot)}
+                            </div>
                             <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.68, marginTop: '1px', display: 'flex', gap: '6px', flexWrap: 'wrap', ...(isPhone ? { whiteSpace: 'nowrap', overflow: 'hidden', flexWrap: 'nowrap' } : null) }}>
+                                {/* Owner ruling 2026-08-26: team · years · GP · season pts ·
+                                    PPG · weekly proj (phone keeps 3 chips per 2026-07-12). */}
                                 <span>{r.team}</span>
-                                {r.age != null ? <span>{r.age}yo</span> : null}
-                                {r.ppg > 0 ? <span>{r.ppg} PPG</span> : null}
-                                {!isPhone && <span>{r.yrsExp}y exp</span>}
-                                {!isPhone && <span>{r.peakYrs > 0 ? r.peakYrs + 'yr peak' : r.valueYrs + 'yr value'}</span>}
+                                {!isPhone && <span>{r.yrsExp}y</span>}
+                                {!isPhone && <span>{r.gp > 0 ? r.gp : 0} GP</span>}
+                                {!isPhone && <span>{(r.pts != null ? r.pts : '—') + ' pts'}</span>}
+                                <span>{(r.ppg > 0 ? r.ppg : '—') + ' ppg'}</span>
+                                {!histSeason && <span>{(r.proj != null ? r.proj : '—') + ' proj'}</span>}
                             </div>
                         </div>
                         <span style={{ ...mono, fontWeight: 700, fontSize: '0.76rem', color: dhqCol, flexShrink: 0 }}>{r.dhq > 0 ? r.dhq.toLocaleString() : '-'}</span>
@@ -2091,7 +2266,7 @@ function CompareTab({
                             <span style={{ ...labelStyle, alignSelf: 'center' }}>Roster Share</span>
                             <span style={{ ...mono, color: theirColor, fontWeight: 800 }}>{theirTotal.toLocaleString()} <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.6 }}>{valueShortLabel}</span></span>
                         </div>
-                        <div style={{ display: 'flex', height: '12px', borderRadius: 'var(--card-radius-sm, 8px)', overflow: 'hidden', background: 'var(--ov-4, rgba(255,255,255,0.055))' }}>
+                        <div style={{ display: 'flex', height: '12px', borderRadius: '6px', overflow: 'hidden', background: 'var(--ov-4, rgba(255,255,255,0.055))' }}>
                             <div style={{ width: myDhqPct + '%', background: 'linear-gradient(90deg, var(--gold), var(--acc-line4, rgba(212,175,55,0.78)))', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: '6px', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--k-0a0a0a, #0a0a0a)', fontWeight: 800 }}>
                                 {myDhqPct >= 12 ? Math.round(myDhqPct) + '%' : ''}
                             </div>
@@ -2105,7 +2280,7 @@ function CompareTab({
                         snapping .wr-kpi-strip instead of a stacked grid. */}
                     <div className={isPhone ? 'wr-kpi-strip' : undefined} style={isPhone ? undefined : { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '9px' }}>
                         {statCards.map(card => (
-                            <div key={card.label} style={{ padding: '10px', background: 'rgba(0,0,0,0.28)', border: '1px solid var(--ov-4, rgba(255,255,255,0.07))', borderRadius: 'var(--card-radius-sm, 8px)', ...(isPhone ? { width: '156px' } : null) }}>
+                            <div key={card.label} style={{ padding: '10px', background: 'rgba(0,0,0,0.28)', border: '1px solid var(--ov-4, rgba(255,255,255,0.07))', borderRadius: '7px', ...(isPhone ? { width: '156px' } : null) }}>
                                 <div style={labelStyle}>{card.label}</div>
                                 <div style={{ ...mono, fontSize: '1rem', fontWeight: 800, color: card.color, marginTop: '5px' }}>{card.value}</div>
                                 <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.64, marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{card.sub}</div>
@@ -2132,7 +2307,7 @@ function CompareTab({
                                 const minePct = summary.myPosDHQ / total * 100;
                                 const edgeColor = summary.diff > 0 ? 'var(--good)' : summary.diff < 0 ? 'var(--bad)' : 'var(--silver)';
                                 return (
-                                    <div key={summary.pos} style={{ padding: isPhone ? '8px' : '10px', background: 'var(--ov-2, rgba(255,255,255,0.025))', border: '1px solid var(--ov-4, rgba(255,255,255,0.06))', borderRadius: 'var(--card-radius-sm, 8px)' }}>
+                                    <div key={summary.pos} style={{ padding: isPhone ? '8px' : '10px', background: 'var(--ov-2, rgba(255,255,255,0.025))', border: '1px solid var(--ov-4, rgba(255,255,255,0.06))', borderRadius: '7px' }}>
                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '7px' }}>
                                             <span style={{ fontWeight: 900, color: posColors[summary.pos] || 'var(--gold)' }}>{posLabel(summary.pos)}</span>
                                             <span style={{ ...mono, color: edgeColor, fontWeight: 800, fontSize: '0.78rem' }}>{summary.diff > 0 ? '+' : ''}{summary.diff.toLocaleString()}</span>
@@ -2169,7 +2344,7 @@ function CompareTab({
                                         ['Last', lastMeeting ? lastMeeting.season + ' W' + lastMeeting.week : '-'],
                                         ['Streak', streak],
                                     ].map(([label, value]) => (
-                                        <div key={label} style={{ padding: '8px', background: 'var(--ov-2, rgba(255,255,255,0.03))', borderRadius: 'var(--card-radius-sm, 8px)' }}>
+                                        <div key={label} style={{ padding: '8px', background: 'var(--ov-2, rgba(255,255,255,0.03))', borderRadius: '6px' }}>
                                             <div style={labelStyle}>{label}</div>
                                             <div style={{ ...mono, fontWeight: 800, color: 'var(--white)', fontSize: '0.82rem', marginTop: '4px' }}>{value}</div>
                                         </div>
@@ -2177,7 +2352,7 @@ function CompareTab({
                                 </div>
                                 <div style={{ display: 'grid', gap: '6px' }}>
                                     {meetings.slice(0, 6).map(m => (
-                                        <div key={m.season + '-' + m.week + '-' + m.matchupId} style={{ display: 'grid', gridTemplateColumns: '60px 1fr auto', alignItems: 'center', gap: '8px', padding: '7px 8px', background: 'var(--ov-2, rgba(255,255,255,0.025))', borderRadius: 'var(--card-radius-sm, 8px)', fontSize: '0.74rem' }}>
+                                        <div key={m.season + '-' + m.week + '-' + m.matchupId} style={{ display: 'grid', gridTemplateColumns: '60px 1fr auto', alignItems: 'center', gap: '8px', padding: '7px 8px', background: 'var(--ov-2, rgba(255,255,255,0.025))', borderRadius: '6px', fontSize: '0.74rem' }}>
                                             <div style={{ ...mono, color: 'var(--silver)', opacity: 0.72 }}>{m.season} W{m.week}</div>
                                             <div style={{ color: m.result === 'W' ? 'var(--good)' : m.result === 'L' ? 'var(--bad)' : 'var(--silver)', fontWeight: 800 }}>{m.result} {m.myPoints.toFixed(2)}-{m.theirPoints.toFixed(2)}</div>
                                             <div style={{ ...mono, color: m.margin >= 0 ? 'var(--good)' : 'var(--bad)' }}>{m.margin > 0 ? '+' : ''}{m.margin.toFixed(2)}</div>
@@ -2233,7 +2408,7 @@ function CompareTab({
                             { name: myName, pickCapital: myPickCapital, faab: myFaab, assetTotal: myAssetTotal, mine: true },
                             { name: theirName, pickCapital: theirPickCapital, faab: theirFaab, assetTotal: theirAssetTotal, mine: false },
                         ].map(side => (
-                            <div key={side.name} style={{ padding: '10px', borderRadius: 'var(--card-radius-sm, 8px)', background: side.mine ? 'var(--acc-fill2, rgba(212,175,55,0.08))' : 'rgba(124,107,248,0.055)', border: '1px solid ' + (side.mine ? 'var(--acc-line1, rgba(212,175,55,0.24))' : 'rgba(124,107,248,0.18)') }}>
+                            <div key={side.name} style={{ padding: '10px', borderRadius: '7px', background: side.mine ? 'var(--acc-fill2, rgba(212,175,55,0.08))' : 'rgba(124,107,248,0.055)', border: '1px solid ' + (side.mine ? 'var(--acc-line1, rgba(212,175,55,0.24))' : 'rgba(124,107,248,0.18)') }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'baseline', marginBottom: '8px' }}>
                                     <div style={{ color: side.mine ? myColor : theirColor, fontWeight: 850, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{side.name}</div>
                                     <div style={{ ...mono, color: 'var(--white)', fontSize: '0.76rem', fontWeight: 850 }}>{side.assetTotal.toLocaleString()}</div>
@@ -2266,10 +2441,12 @@ function CompareTab({
 
                 <div style={{ marginTop: '16px' }}>
                     <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '12px', marginBottom: '10px' }}>
-                        <div style={{ fontFamily: 'var(--font-body)', fontSize: '0.72rem', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Full Roster by Position</div>
+                        <div style={{ fontFamily: 'var(--font-body)', fontSize: '0.72rem', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                            Full Roster by Position{histSeason ? (histGridActive ? ' — ' + histSeason + ' rosters' : ' — ' + histSeason + ' rosters unavailable, showing current') : ''}
+                        </div>
                         <div style={{ fontSize: '0.7rem', color: 'var(--silver)', opacity: 0.62 }}>Click any player to open the player card.</div>
                     </div>
-                    {positionSummaries.map(summary => {
+                    {gridSummaries.map(summary => {
                         const maxLen = Math.max(summary.myAtPos.length, summary.theirAtPos.length);
                         const total = Math.max(1, summary.myPosDHQ + summary.theirPosDHQ);
                         const myPosPct = summary.myPosDHQ / total * 100;
@@ -2280,7 +2457,7 @@ function CompareTab({
                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px', gap: '10px' }}>
                                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px' }}>
                                             <span style={{ fontFamily: 'var(--font-body)', fontSize: '0.75rem', fontWeight: 900, color: isTargetRoom ? 'var(--gold)' : posColors[summary.pos] || 'var(--silver)' }}>{posLabel(summary.pos)}</span>
-                                            {isTargetRoom ? <span title="Target room from your GM Strategy — win this matchup here" style={{ ...mono, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 850, color: 'var(--gold)', padding: '1px 6px', borderRadius: 'var(--card-radius-xs, 5px)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.35))', background: 'var(--acc-fill1, rgba(212,175,55,0.06))', letterSpacing: '0.04em' }}>TARGET</span> : null}
+                                            {isTargetRoom ? <span title="Target room from your GM Strategy — win this matchup here" style={{ ...mono, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 850, color: 'var(--gold)', padding: '1px 6px', borderRadius: '4px', border: '1px solid var(--acc-line2, rgba(212,175,55,0.35))', background: 'var(--acc-fill1, rgba(212,175,55,0.06))', letterSpacing: '0.04em' }}>TARGET</span> : null}
                                         </span>
                                         <div style={{ display: 'flex', gap: '12px', fontSize: '0.72rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                                             <span style={{ color: isTargetRoom ? 'var(--gold)' : summary.myPosDHQ >= summary.theirPosDHQ ? 'var(--good)' : 'var(--silver)', fontWeight: isTargetRoom ? 800 : 400 }}>You: {summary.myPosDHQ.toLocaleString()}</span>
@@ -2374,7 +2551,7 @@ function CompareTab({
                         style={{ ...selectStyle, width: '100%', fontSize: '16px', opacity: phoneAtMax ? 0.5 : 1 }} />
                     {/* Position-group filter */}
                     <div className="wr-hscroll" style={{ display: 'flex', gap: '5px', overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: '2px' }}>
-                        {['ALL', ...allPositions].map(pos => { const on = searchPos === pos, c = pos === 'ALL' ? 'var(--gold)' : (posColors[pos] || 'var(--silver)'); return <button key={pos} onClick={() => setSearchPos(pos)} disabled={phoneAtMax} style={{ flex: 'none', minHeight: '38px', padding: '6px 11px', borderRadius: 'var(--card-radius-sm, 8px)', ...mono, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, letterSpacing: '0.03em', textTransform: 'uppercase', cursor: 'pointer', whiteSpace: 'nowrap', color: on ? c : 'var(--silver)', background: on ? 'rgba(255,255,255,0.06)' : 'transparent', border: '1px solid ' + (on ? c : 'var(--ov-6, rgba(255,255,255,0.12))') }}>{pos === 'ALL' ? 'All pos' : posLabel(pos)}</button>; })}
+                        {['ALL', ...allPositions].map(pos => { const on = searchPos === pos, c = pos === 'ALL' ? 'var(--gold)' : (posColors[pos] || 'var(--silver)'); return <button key={pos} onClick={() => setSearchPos(pos)} disabled={phoneAtMax} style={{ flex: 'none', minHeight: '38px', padding: '6px 11px', borderRadius: '7px', ...mono, fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, letterSpacing: '0.03em', textTransform: 'uppercase', cursor: 'pointer', whiteSpace: 'nowrap', color: on ? c : 'var(--silver)', background: on ? 'rgba(255,255,255,0.06)' : 'transparent', border: '1px solid ' + (on ? c : 'var(--ov-6, rgba(255,255,255,0.12))') }}>{pos === 'ALL' ? 'All pos' : posLabel(pos)}</button>; })}
                     </div>
                     {/* Owned-by-team filter */}
                     <select value={searchTeam} onChange={e => setSearchTeam(e.target.value)} disabled={phoneAtMax} style={{ ...selectStyle, width: '100%', fontSize: '16px' }}>

@@ -16,17 +16,10 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
 
     const getWarRoomStorage = () => window.App?.WrStorage || window.WrStorage || null;
     const getWarRoomKeys = () => window.App?.WR_KEYS || window.WR_KEYS || null;
-    // Routed through GmMode.effects (leagueId-aware resolveStrategy) rather
-    // than a raw window.GMStrategy.getStrategy(leagueId) call — that call
-    // silently ignores leagueId at the storage layer and always returns a
-    // truthy object (even the untouched default), which made the per-league
-    // WrStorage fallback in readSavedStrategy below permanently dead code:
-    // this editor could load (and then re-save, permanentizing) a strategy
-    // that was actually set for a completely different league.
     const readSharedStrategy = () => {
         try {
-            const fx = window.WR?.GmMode?.effects?.(leagueId);
-            return (fx && fx.hasStrategy) ? fx.strategy : null;
+            if (!localStorage.getItem('dhq_gm_strategy_v1')) return null;
+            return window.GMStrategy?.getStrategy?.(leagueId) || null;
         } catch (_) {
             return null;
         }
@@ -85,9 +78,6 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
             sellRules: saved.sellRules || [],
             untouchable: saved.untouchable || saved.untouchables || [],
             faFilters: normalizeFaFilters(saved.faFilters),
-            // League FAAB minimum bid override. 0/unset = fall back to the
-            // imported platform value everywhere this reads.
-            faabMinBid: Math.max(0, Number(saved.faabMinBid) || 0),
         };
     };
 
@@ -131,17 +121,6 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
 
     // ── Helpers ───────────────────────────────────────────────────────────────
     const set = (key, val) => setDraft(d => ({ ...d, [key]: val }));
-
-    // Draft Archetype options — sourced from draft-gameplan.js (single source
-    // of truth for the 8 keys/labels/blurbs; also shown on the War Room's
-    // Draft Gameplan card), not a hardcoded duplicate list here.
-    const archetypeOptions = React.useMemo(() => {
-        if (!window.App?.DraftGameplan?.archetypes) return [];
-        const rp = currentLeague?.roster_positions || [];
-        const slots = window.App.DraftGameplan.parseSlots ? window.App.DraftGameplan.parseSlots(rp) : {};
-        const superflex = (slots.sf > 0 || slots.qb >= 2);
-        return window.App.DraftGameplan.archetypes({ superflex });
-    }, [currentLeague]);
 
     const toggleArr = (key, val) => setDraft(d => {
         const arr = d[key] || [];
@@ -332,9 +311,8 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
     const currentAggression = AGGRESSION.find(a => a.value === draft.aggression);
 
     // ── Recommended mode — derived from the user's own team assessment ─────────
-    // window.WR.GmMode.recommendMode is the single implementation (also used by
-    // Analytics' "Suggested Mode" fallback) so the two surfaces never disagree.
-    // Advisory only — never auto-applies.
+    // Maps the roster's competitive tier (health-score based) to a franchise mode
+    // so the picker can flag the on-paper-right call. Advisory only — never auto-applies.
     // Pro-only (gate-map row 17): the "★ Recommended for your roster" hint is a
     // derived recommendation (tier read); the rest of the editor is build/set
     // and stays free. Clean absence for free — teamRec null hides chip + line.
@@ -344,8 +322,13 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
             const rid = myRoster?.roster_id;
             const a = (rid != null && window.assessTeamFromGlobal) ? window.assessTeamFromGlobal(rid) : null;
             if (!a) return null;
-            const mode = window.WR?.GmMode?.recommendMode ? window.WR.GmMode.recommendMode(a) : 'compete';
-            return { mode, tierLabel: a.tier ? String(a.tier) : null, health: Number(a.healthScore) || 0 };
+            const tier = String(a.tier || '').toLowerCase();
+            const health = Number(a.healthScore) || 0;
+            let mode;
+            if (tier.includes('rebuild') || (health && health < 70)) mode = 'rebuild';
+            else if (tier.includes('elite') || tier.includes('contend') || health >= 82) mode = 'win_now';
+            else mode = 'compete';
+            return { mode, tierLabel: a.tier ? String(a.tier) : null, health };
         } catch (_) { return null; }
     }, [myRoster, playersData]);
     const recommendedMode = teamRec?.mode || null;
@@ -358,39 +341,6 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
     const tagXStyle = _phone ? { ...styles.tagX, minWidth: 44, minHeight: 44 } : styles.tagX;
     const dropdownItemStyle = _phone ? { ...styles.dropdownItem, minHeight: 44 } : styles.dropdownItem;
     const _dirty = _phone ? JSON.stringify(draft) !== savedSnap : false;
-
-    // ── Roster Cutdown Day — independent of the GM Strategy blob above: it's
-    // a league fact, not a preference, so it saves immediately
-    // (window.App.RosterCutdown) rather than riding the Save Strategy
-    // button/dirty flag. The "league's rule" checkbox just tags who set it
-    // (setBy 'commissioner' vs 'owner') for display — there's no cross-owner
-    // sync in this app (see js/shared/roster-cutdown.js), so either framing
-    // is recorded on this device only.
-    const [cutdownRule, setCutdownRuleState] = React.useState(() => window.App?.RosterCutdown?.getRule?.(leagueId) || null);
-    const [cutdownDraft, setCutdownDraft] = React.useState(() => {
-        const r = window.App?.RosterCutdown?.getRule?.(leagueId);
-        return { activeSlots: r?.activeSlots || '', taxiSlots: r?.taxiSlots || '', effectiveDate: r?.effectiveDate || '' };
-    });
-    const [cutdownIsRule, setCutdownIsRule] = React.useState(() => window.App?.RosterCutdown?.getRule?.(leagueId)?.setBy === 'commissioner');
-    const [cutdownSaved, setCutdownSaved] = React.useState(false);
-    React.useEffect(() => {
-        const r = window.App?.RosterCutdown?.getRule?.(leagueId) || null;
-        setCutdownRuleState(r);
-        setCutdownDraft({ activeSlots: r?.activeSlots || '', taxiSlots: r?.taxiSlots || '', effectiveDate: r?.effectiveDate || '' });
-        setCutdownIsRule(r?.setBy === 'commissioner');
-    }, [leagueId]);
-    const cutdownStatus = window.App?.RosterCutdown?.status?.(cutdownRule, Date.now()) || null;
-    function saveCutdownRule() {
-        if (typeof window.App?.RosterCutdown?.setRule !== 'function') return;
-        const rec = window.App.RosterCutdown.setRule(leagueId, cutdownDraft, cutdownIsRule ? 'commissioner' : 'owner');
-        if (rec) { setCutdownRuleState(rec); setCutdownSaved(true); setTimeout(() => setCutdownSaved(false), 2000); }
-    }
-    function clearCutdownRule() {
-        if (typeof window.App?.RosterCutdown?.clearRule !== 'function') return;
-        window.App.RosterCutdown.clearRule(leagueId);
-        setCutdownRuleState(null);
-        setCutdownDraft({ activeSlots: '', taxiSlots: '', effectiveDate: '' });
-    }
 
     return (
         <div style={{ padding: _phone ? '20px 0 150px' : '20px 0 60px', width: '100%', maxWidth: 'none', margin: 0 }}>
@@ -495,80 +445,6 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
                     fullWidth
                 />
             </div>}
-
-            {/* ── FAAB / Waivers ── */}
-            <div style={styles.card}>
-                <SectionHeader title="FAAB / Waivers" sub="Your league's minimum waiver bid. Set this when your platform doesn't report it (or reports it wrong) — FAAB Command and Alex's 'offer the minimum' calls pull this number instead." />
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                    <span style={{ color: 'var(--gold)', fontFamily: 'var(--font-mono, monospace)', fontSize: '1.1rem', fontWeight: 700 }}>$</span>
-                    <input
-                        type="number" min="0" step="1"
-                        value={draft.faabMinBid || ''}
-                        onChange={e => set('faabMinBid', Math.max(0, Math.round(Number(e.target.value) || 0)))}
-                        placeholder={String(currentLeague?.settings?.waiver_budget_min ?? 0)}
-                        aria-label="Minimum FAAB bid"
-                        style={{ ...inputStyle, maxWidth: 120 }}
-                    />
-                    <span style={{ fontSize: 'var(--text-label)', color: 'var(--ov-8, rgba(255,255,255,0.45))', fontFamily: 'var(--font-body)' }}>
-                        {draft.faabMinBid > 0
-                            ? 'Overriding the imported league setting.'
-                            : `Unset — using the imported league setting${currentLeague?.settings?.waiver_budget_min ? ` ($${currentLeague.settings.waiver_budget_min})` : ' (currently $0 — likely not reported by your platform)'}.`}
-                    </span>
-                </div>
-            </div>
-
-            {/* ── Roster Cutdown Day ── */}
-            <div style={styles.card}>
-                <SectionHeader title="Roster Cutdown Day" sub="If your league shrinks its roster limits on a set date — an NFL-style cutdown to a smaller active roster + taxi squad — record it here so the Calendar counts it down and My Roster warns you once you're over the new limit." />
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, cursor: 'pointer', fontSize: 'var(--text-label)', color: 'var(--ov-9, rgba(255,255,255,0.75))', fontFamily: 'var(--font-body)' }}>
-                    <input type="checkbox" checked={cutdownIsRule} onChange={e => setCutdownIsRule(e.target.checked)}
-                        style={_phone ? { width: 20, height: 20 } : undefined} />
-                    This is the league's rule, not just my own note (shows as set by the commissioner if anyone else on this device checks it)
-                </label>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end' }}>
-                    <div>
-                        <div style={styles.subLabel}>Active Roster Size</div>
-                        <input
-                            type="number" min="1" step="1"
-                            value={cutdownDraft.activeSlots}
-                            onChange={e => setCutdownDraft(d => ({ ...d, activeSlots: e.target.value }))}
-                            placeholder="42" aria-label="Active roster size after cutdown"
-                            style={{ ...inputStyle, maxWidth: 100 }}
-                        />
-                    </div>
-                    <div>
-                        <div style={styles.subLabel}>Taxi Squad Size</div>
-                        <input
-                            type="number" min="0" step="1"
-                            value={cutdownDraft.taxiSlots}
-                            onChange={e => setCutdownDraft(d => ({ ...d, taxiSlots: e.target.value }))}
-                            placeholder="10" aria-label="Taxi squad size after cutdown"
-                            style={{ ...inputStyle, maxWidth: 100 }}
-                        />
-                    </div>
-                    <div>
-                        <div style={styles.subLabel}>Effective Date</div>
-                        <input
-                            type="date"
-                            value={cutdownDraft.effectiveDate}
-                            onChange={e => setCutdownDraft(d => ({ ...d, effectiveDate: e.target.value }))}
-                            aria-label="Cutdown effective date"
-                            style={{ ...inputStyle, maxWidth: 170 }}
-                        />
-                    </div>
-                    <button onClick={saveCutdownRule} style={{ ...styles.saveBtn(false), ...(_phone ? { minHeight: 44 } : null) }}>{cutdownSaved ? 'Saved ✓' : 'Save'}</button>
-                    {cutdownRule && <button onClick={clearCutdownRule} style={{ ...addBtnStyle, background: 'transparent', color: 'var(--ov-8, rgba(255,255,255,0.5))', borderColor: 'var(--ov-6, rgba(255,255,255,0.12))' }}>Clear</button>}
-                </div>
-                {cutdownRule && cutdownStatus && (
-                    <div style={{ marginTop: 12, fontSize: 'var(--text-label)', color: 'var(--ov-9, rgba(255,255,255,0.7))', fontFamily: 'var(--font-body)', lineHeight: 1.5 }}>
-                        <span style={{ color: cutdownStatus.isPast ? 'var(--bad)' : cutdownStatus.isNear ? 'var(--warn)' : 'var(--gold)', fontWeight: 700 }}>
-                            {cutdownStatus.isPast ? 'Cutdown day has passed' : `${cutdownStatus.daysUntil} day${cutdownStatus.daysUntil === 1 ? '' : 's'} until cutdown`}
-                        </span>
-                        {' — ' + cutdownRule.activeSlots + ' active / ' + cutdownRule.taxiSlots + ' taxi (' + (cutdownRule.activeSlots + cutdownRule.taxiSlots) + ' total)'}
-                        {cutdownRule.setBy === 'commissioner' ? ' · marked as the league rule.' : ' · personal note.'}
-                    </div>
-                )}
-            </div>
 
             {/* ── Free Agency Filters ── */}
             <div style={styles.card}>
@@ -717,33 +593,6 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
                             }}>
                                 <div style={{ fontFamily: 'var(--font-title)', fontSize: 'var(--text-body)', fontWeight: 700, color: active ? 'var(--gold)' : 'var(--ov-9, rgba(255,255,255,0.8))' }}>{ds.label}</div>
                                 <div style={{ fontSize: 'var(--text-micro)', color: 'var(--ov-8, rgba(255,255,255,0.4))', marginTop: 2, fontFamily: 'var(--font-body)', lineHeight: 1.3 }}>{ds.desc}</div>
-                            </button>
-                        );
-                    })}
-                </div>
-            </div>}
-
-            {/* ── Draft Archetype (Custom only) — which POSITIONS to lean
-                 toward (RB Heavy/Zero-RB/etc.), distinct from Draft Style
-                 above (pick-CAPITAL philosophy). Feeds the Big Board's AI
-                 lane + Mock/Live Draft recommendation scoring. ── */}
-            {isCustom && archetypeOptions.length > 0 && <div style={styles.card}>
-                <SectionHeader title="Draft Archetype" />
-                <div style={{ display: 'grid', gridTemplateColumns: _phone ? '1fr' : 'repeat(auto-fill, minmax(160px, 1fr))', gap: 8 }}>
-                    {archetypeOptions.map(arch => {
-                        const active = (draft.draftArchetype || 'balanced') === arch.key;
-                        return (
-                            <button key={arch.key} onClick={() => set('draftArchetype', arch.key)} style={{
-                                padding: '11px 13px',
-                                border: active ? '1px solid var(--gold)' : '1px solid var(--ov-6, rgba(255,255,255,0.1))',
-                                borderRadius: 8,
-                                background: active ? 'var(--acc-fill2, rgba(212,175,55,0.12))' : 'var(--ov-2, rgba(255,255,255,0.03))',
-                                cursor: 'pointer',
-                                textAlign: 'left',
-                                transition: 'all 0.15s',
-                            }}>
-                                <div style={{ fontFamily: 'var(--font-title)', fontSize: 'var(--text-body)', fontWeight: 700, color: active ? 'var(--gold)' : 'var(--ov-9, rgba(255,255,255,0.8))' }}>{arch.label}</div>
-                                <div style={{ fontSize: 'var(--text-micro)', color: 'var(--ov-8, rgba(255,255,255,0.4))', marginTop: 2, fontFamily: 'var(--font-body)', lineHeight: 1.3 }}>{arch.blurb}</div>
                             </button>
                         );
                     })}

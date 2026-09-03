@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: ["main"]
+    branches: ["claude/ios-website-architecture-review-s4d2ur"]
   workflow_dispatch:
 
 permissions:
@@ -24,21 +24,20 @@ jobs:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
-      # reconai-shared/ is gitignored, so the bundled browser modules must be
-      # regenerated from the canonical dhq-shared source at deploy time — otherwise
-      # the Pages artifact ships a stale (or missing) copy of supabase-client.js
-      # and the other shared modules. dhq-shared is the neutral shared-engine repo
-      # that both War Room and ReconAI vendor; War Room no longer reads ReconAI.
-      - name: Checkout dhq-shared (canonical shared engine)
-        uses: actions/checkout@v4
+      # reconai-shared/ is gitignored, so the vendored browser modules must be
+      # regenerated from the canonical engine (skjjcruz/DHQ-Shared) at deploy
+      # time — otherwise the Pages artifact ships a stale (or missing) copy of
+      # supabase-client.js and the other shared modules.
+      - name: Checkout DHQ-Shared (canonical engine)
+        uses: actions/checkout@v6
         with:
-          repository: C2-Football/dhq-shared
-          path: shared-src
+          repository: skjjcruz/DHQ-Shared
+          path: dhq-shared-src
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 20
           cache: npm
@@ -46,12 +45,13 @@ jobs:
       - name: Install dependencies
         run: npm ci --omit=dev
 
-      - name: Sync shared engine modules
-        run: SHARED_SOURCE="$GITHUB_WORKSPACE/shared-src" npm run sync:shared
+      - name: Sync shared modules from DHQ-Shared
+        run: DHQ_SHARED_SOURCE="$GITHUB_WORKSPACE/dhq-shared-src" npm run sync:shared
 
-      # Precompile every type="text/babel" entry (index + free-agency + draft-warroom
-      # + trade-calculator) to plain JS so production no longer downloads ~3.1MB of
-      # @babel/standalone or runs the in-browser JSX transform on cold load.
+      # Precompile every type="text/babel" entry (index + free-agency +
+      # draft-warroom + trade-calculator) to plain JS so production never
+      # downloads ~3.1MB of @babel/standalone or runs the in-browser JSX
+      # transform on cold load.
       - name: Precompile JSX for production (drop in-browser Babel)
         run: node scripts/build-deploy.cjs
 
@@ -59,26 +59,35 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p pages-artifact
-          cp -R \
-            index.html landing.html onboarding.html login.html reset-password.html gift.html \
-            free-agency.html draft-warroom.html trade-calculator.html draft-war-room team-comps \
-            js css content reconai-shared icons *.js *.json *.webmanifest *.css *.png *.ico *.svg \
-            pages-artifact/ 2>/dev/null || true
-          # Overlay the precompiled entries + plain-JS modules on top of the raw
-          # sources, replacing the JSX files and the index.html that loaded Babel.
+          # Every path below is verified to exist — a missing one fails the
+          # build instead of silently shipping a broken artifact.
+          for p in \
+            index.html landing.html landing-editor.html login.html upgrade.html \
+            connect-sleeper.html draft-warroom.html free-agency.html trade-calculator.html \
+            gift.html ai-setup.html reset-password.html admin.html our-vision.html \
+            img \
+            charts.js college-stats.js draft-history.js themes.js \
+            manifest.json icon-192.png icon-512.png .nojekyll robots.txt \
+            js content legal vendor reconai-shared draft-war-room team-comps
+          do
+            [ -e "$p" ] || { echo "Missing artifact path: $p" >&2; exit 1; }
+            cp -R "$p" pages-artifact/
+          done
+          # Overlay the precompiled entries + plain-JS modules on top of the
+          # raw sources, replacing the JSX modules and the entry HTML files
+          # that loaded Babel.
           cp -R dist-deploy/. pages-artifact/
-          rm -rf pages-artifact/**/.git pages-artifact/**/node_modules pages-artifact/**/supabase pages-artifact/**/tests
 
       - name: Setup Pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
         with:
           enablement: true
 
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: "pages-artifact"
 
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

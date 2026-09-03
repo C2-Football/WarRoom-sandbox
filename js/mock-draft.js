@@ -59,12 +59,7 @@ const MDS_POOL = [
 /* ── Pool builder ──────────────────────────────────────────── */
 function mdsBuildPool(playersData) {
     const normPos = window.App?.normPos || (p => p);
-    // Redraft league → mock drafts price on ROS values (same currency as the
-    // real board); dynasty keeps window.dynastyValue → playerScores.
-    try { window.App?.PlayerValue?.ensureRosFromState?.(); } catch (e) { /* not hydrated */ }
-    const mdsRedraft = !!window.App?.PlayerValue?.isRedraftActive?.();
     const getDHQ = pid => {
-        if (mdsRedraft) return Number(window.App.PlayerValue.getValue(pid) || 0);
         if (typeof window.dynastyValue === 'function') {
             const v = window.dynastyValue(pid);
             if (v > 0) return v;
@@ -399,7 +394,7 @@ function MockDraftSimulator({ playersData, myRoster, currentLeague, draftRounds:
 
                 <button
                     onClick={startDraft}
-                    style={{ width: '100%', padding: '12px', background: 'var(--gold)', color: 'var(--black)', border: 'none', borderRadius: 'var(--card-radius-sm, 8px)', fontFamily: 'Rajdhani, sans-serif', fontSize: '1.1rem', fontWeight: 700, cursor: 'pointer', letterSpacing: '0.06em' }}
+                    style={{ width: '100%', padding: '12px', background: 'var(--gold)', color: 'var(--black)', border: 'none', borderRadius: '8px', fontFamily: 'Rajdhani, sans-serif', fontSize: '1.1rem', fontWeight: 700, cursor: 'pointer', letterSpacing: '0.06em' }}
                     onMouseEnter={e => e.target.style.opacity = '0.85'}
                     onMouseLeave={e => e.target.style.opacity = '1'}
                 >
@@ -428,13 +423,13 @@ function MockDraftSimulator({ playersData, myRoster, currentLeague, draftRounds:
                     <div style={{ fontSize: '0.7rem', color: 'var(--silver)', flexShrink: 0 }}>{ds.currentIdx}/{totalPicks}</div>
                     <button
                         onClick={() => { clearTimeout(timerRef.current); setPhase('setup'); setDs(null); }}
-                        style={{ padding: '3px 9px', minHeight: '44px', background: 'transparent', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: 'var(--card-radius-xs, 5px)', color: 'var(--silver)', cursor: 'pointer', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: font, flexShrink: 0 }}
+                        style={{ padding: '3px 9px', minHeight: '44px', background: 'transparent', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: '5px', color: 'var(--silver)', cursor: 'pointer', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: font, flexShrink: 0 }}
                     >Exit</button>
                 </div>
 
                 {/* Status banner */}
                 {isUserTurn ? (
-                    <div style={{ padding: '10px 14px', background: 'linear-gradient(90deg,var(--acc-fill3, rgba(212,175,55,0.15)),var(--acc-fill1, rgba(212,175,55,0.04)))', border: '1px solid var(--acc-line2, rgba(212,175,55,0.35))', borderRadius: 'var(--card-radius-sm, 8px)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div style={{ padding: '10px 14px', background: 'linear-gradient(90deg,var(--acc-fill3, rgba(212,175,55,0.15)),var(--acc-fill1, rgba(212,175,55,0.04)))', border: '1px solid var(--acc-line2, rgba(212,175,55,0.35))', borderRadius: '8px', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '10px' }}>
                         <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--good)', display: 'inline-block', flexShrink: 0, animation: 'pulse 1.5s infinite' }} />
                         <div>
                             <div style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>ON THE CLOCK</div>
@@ -451,7 +446,7 @@ function MockDraftSimulator({ playersData, myRoster, currentLeague, draftRounds:
                 )}
 
                 {/* Draft board grid */}
-                <div style={{ overflowX: 'auto', overflowY: 'clip', marginBottom: '14px', borderRadius: 'var(--card-radius-sm, 8px)', border: '1px solid var(--acc-fill2, rgba(212,175,55,0.12))' }}>
+                <div style={{ overflowX: 'auto', overflowY: 'clip', marginBottom: '14px', borderRadius: '8px', border: '1px solid var(--acc-fill2, rgba(212,175,55,0.12))' }}>
                     <table style={{ borderCollapse: 'collapse', fontSize: 'var(--text-micro, 0.6875rem)', minWidth: `${leagueSize * 76 + 30}px`, width: '100%', tableLayout: 'fixed' }}>
                         <thead>
                             <tr style={{ background: 'var(--acc-fill1, rgba(212,175,55,0.07))' }}>
@@ -501,7 +496,7 @@ function MockDraftSimulator({ playersData, myRoster, currentLeague, draftRounds:
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px', flexWrap: 'wrap' }}>
                             <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', marginRight: 4 }}>Best Available</div>
                             {(typeof getLeaguePositions === 'function' ? getLeaguePositions({ withBlank: true }) : ['','QB','RB','WR','TE','K','DEF']).map(pos => (
-                                <button key={pos} onClick={() => setPosFilter(pos)} style={{ padding: '2px 9px', minHeight: '44px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: font, borderRadius: 'var(--card-radius, 10px)', cursor: 'pointer', border: '1px solid ' + (posFilter === pos ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--ov-5, rgba(255,255,255,0.08))'), background: posFilter === pos ? 'var(--acc-fill2, rgba(212,175,55,0.12))' : 'transparent', color: posFilter === pos ? 'var(--gold)' : 'var(--silver)' }}>
+                                <button key={pos} onClick={() => setPosFilter(pos)} style={{ padding: '2px 9px', minHeight: '44px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: font, borderRadius: '10px', cursor: 'pointer', border: '1px solid ' + (posFilter === pos ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--ov-5, rgba(255,255,255,0.08))'), background: posFilter === pos ? 'var(--acc-fill2, rgba(212,175,55,0.12))' : 'transparent', color: posFilter === pos ? 'var(--gold)' : 'var(--silver)' }}>
                                     {pos ? (window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos)) : 'ALL'}
                                 </button>
                             ))}
@@ -509,7 +504,7 @@ function MockDraftSimulator({ playersData, myRoster, currentLeague, draftRounds:
                         <input
                             value={search} onChange={e => setSearch(e.target.value)}
                             placeholder="Search players…"
-                            style={{ width: '100%', boxSizing: 'border-box', padding: '7px 10px', background: 'var(--ov-2, rgba(255,255,255,0.03))', border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', borderRadius: 'var(--card-radius-sm, 8px)', color: 'var(--white)', fontSize: '0.76rem', fontFamily: font, outline: 'none', marginBottom: '8px' }}
+                            style={{ width: '100%', boxSizing: 'border-box', padding: '7px 10px', background: 'var(--ov-2, rgba(255,255,255,0.03))', border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', borderRadius: '6px', color: 'var(--white)', fontSize: '0.76rem', fontFamily: font, outline: 'none', marginBottom: '8px' }}
                         />
                         <div style={{ maxHeight: 300, overflowY: 'auto' }}>
                             {available.slice(0, 40).map((p, i) => (
@@ -530,7 +525,7 @@ function MockDraftSimulator({ playersData, myRoster, currentLeague, draftRounds:
                                     </span>
                                     <button
                                         onClick={() => handleUserPick(p.pid)}
-                                        style={{ padding: '4px 11px', minHeight: '44px', background: 'var(--gold)', color: 'var(--black)', border: 'none', borderRadius: 'var(--card-radius-xs, 5px)', cursor: 'pointer', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: font, fontWeight: 700, flexShrink: 0 }}
+                                        style={{ padding: '4px 11px', minHeight: '44px', background: 'var(--gold)', color: 'var(--black)', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: font, fontWeight: 700, flexShrink: 0 }}
                                         onMouseEnter={e => e.target.style.opacity = '0.8'}
                                         onMouseLeave={e => e.target.style.opacity = '1'}
                                     >DRAFT</button>
@@ -549,7 +544,7 @@ function MockDraftSimulator({ playersData, myRoster, currentLeague, draftRounds:
                         <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>Your Picks</div>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                             {myPicks.map((p, i) => (
-                                <span key={i} style={{ padding: '3px 10px', background: 'var(--acc-fill1, rgba(212,175,55,0.07))', border: '1px solid var(--acc-fill3, rgba(212,175,55,0.18))', borderRadius: 'var(--card-radius-lg, 14px)', fontSize: '0.7rem', color: 'var(--white)' }}>
+                                <span key={i} style={{ padding: '3px 10px', background: 'var(--acc-fill1, rgba(212,175,55,0.07))', border: '1px solid var(--acc-fill3, rgba(212,175,55,0.18))', borderRadius: '12px', fontSize: '0.7rem', color: 'var(--white)' }}>
                                     R{p.round} {p.name.split(' ').slice(-1)[0]}&nbsp;
                                     <span style={{ color: window.App?.POS_COLORS?.[p.pos] || 'var(--k-d4af37, #d4af37)' }}>{p.pos}</span>
                                 </span>
@@ -577,7 +572,7 @@ function MockDraftSimulator({ playersData, myRoster, currentLeague, draftRounds:
         return (
             <div style={{ fontFamily: font }}>
                 {/* Grade hero */}
-                <div style={{ textAlign: 'center', padding: '20px 16px', background: 'var(--acc-fill1, rgba(212,175,55,0.05))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: 'var(--card-radius, 10px)', marginBottom: '14px' }}>
+                <div style={{ textAlign: 'center', padding: '20px 16px', background: 'var(--acc-fill1, rgba(212,175,55,0.05))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '10px', marginBottom: '14px' }}>
                     <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '0.76rem', color: 'var(--gold)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '4px' }}>{mdsPro ? 'Draft Grade' : 'Draft Grade — Scout Pro'}</div>
                     <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '4.5rem', fontWeight: 700, color: gradeColor, lineHeight: 1, marginBottom: '6px' }}>{mdsPro ? grade.letter : '🔒'}</div>
                     <div style={{ fontSize: '0.78rem', color: 'var(--silver)', marginBottom: '12px' }}>
@@ -588,7 +583,7 @@ function MockDraftSimulator({ playersData, myRoster, currentLeague, draftRounds:
                         {Object.entries(posCounts).map(([pos, ct]) => {
                             const c = window.App?.POS_COLORS?.[pos] || 'var(--k-d4af37, #d4af37)';
                             return (
-                                <span key={pos} style={{ padding: '3px 10px', background: wrAlpha(c, '18'), border: '1px solid ' + wrAlpha(c, '44'), borderRadius: 'var(--card-radius, 10px)', fontSize: '0.72rem', fontWeight: 700, color: c }}>
+                                <span key={pos} style={{ padding: '3px 10px', background: wrAlpha(c, '18'), border: '1px solid ' + wrAlpha(c, '44'), borderRadius: '10px', fontSize: '0.72rem', fontWeight: 700, color: c }}>
                                     {(window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos))} ×{ct}
                                 </span>
                             );
@@ -597,7 +592,7 @@ function MockDraftSimulator({ playersData, myRoster, currentLeague, draftRounds:
                 </div>
 
                 {/* Picks table */}
-                <div style={{ border: '1px solid var(--acc-fill3, rgba(212,175,55,0.15))', borderRadius: 'var(--card-radius-sm, 8px)', overflow: 'hidden', marginBottom: '14px' }}>
+                <div style={{ border: '1px solid var(--acc-fill3, rgba(212,175,55,0.15))', borderRadius: '8px', overflow: 'hidden', marginBottom: '14px' }}>
                     <div style={{ padding: '7px 12px', background: 'var(--acc-fill1, rgba(212,175,55,0.06))', borderBottom: '1px solid var(--acc-fill2, rgba(212,175,55,0.12))', fontSize: '0.7rem', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                         Your Picks
                     </div>
@@ -625,13 +620,13 @@ function MockDraftSimulator({ playersData, myRoster, currentLeague, draftRounds:
                 <div style={{ display: 'flex', gap: '8px' }}>
                     <button
                         onClick={startDraft}
-                        style={{ flex: 1, padding: '11px', background: 'var(--gold)', color: 'var(--black)', border: 'none', borderRadius: 'var(--card-radius-sm, 8px)', fontFamily: 'Rajdhani, sans-serif', fontSize: '0.95rem', fontWeight: 700, cursor: 'pointer', letterSpacing: '0.04em' }}
+                        style={{ flex: 1, padding: '11px', background: 'var(--gold)', color: 'var(--black)', border: 'none', borderRadius: '7px', fontFamily: 'Rajdhani, sans-serif', fontSize: '0.95rem', fontWeight: 700, cursor: 'pointer', letterSpacing: '0.04em' }}
                         onMouseEnter={e => e.target.style.opacity = '0.85'}
                         onMouseLeave={e => e.target.style.opacity = '1'}
                     >DRAFT AGAIN</button>
                     <button
                         onClick={() => { setPhase('setup'); setDs(null); }}
-                        style={{ padding: '11px 16px', background: 'transparent', color: 'var(--silver)', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: 'var(--card-radius-sm, 8px)', fontFamily: font, fontSize: '0.78rem', cursor: 'pointer' }}
+                        style={{ padding: '11px 16px', background: 'transparent', color: 'var(--silver)', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: '7px', fontFamily: font, fontSize: '0.78rem', cursor: 'pointer' }}
                     >New Config</button>
                 </div>
             </div>

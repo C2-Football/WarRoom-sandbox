@@ -25,15 +25,6 @@
         depthChart: { label: 'NFL Depth Chart Position',shortLabel: 'Depth',  width: '50px', group: 'scout'   },
         injury:     { label: 'Injury Status',           shortLabel: 'Inj',    width: '46px', sortKey: 'injury',  group: 'stats' },
         faab:       { label: 'Suggested FAAB Bid',      shortLabel: 'FAAB',   width: '60px', group: 'stats'   },
-        // Usage stats — beyond PPG, and POSITION-SPECIFIC: each row pulls its
-        // own position's top 2 signature stats (window.App.StatCatalog.
-        // getSignatureStats — targets/snap%/RZ for a WR, CMP%/YPA for a QB,
-        // tackles/sacks for IDP, etc.) rather than one fixed column that reads
-        // '—' for every position it doesn't apply to. Label is generic here
-        // since it varies per row; the cell itself carries the stat's short
-        // label inline (e.g. "62% SNP") so it reads correctly on a mixed list.
-        sig1:       { label: 'Position Stat 1 (varies by position — see cell)', shortLabel: 'Usage 1', width: '58px', sortKey: 'sig1', group: 'stats' },
-        sig2:       { label: 'Position Stat 2 (varies by position — see cell)', shortLabel: 'Usage 2', width: '58px', sortKey: 'sig2', group: 'stats' },
         // Draft-capital + profile columns. Rookies use the rookie-data prospect
         // record (window.App.RookieFields); vets fall back to the static NFL
         // draft dataset (faDraftCap below). Consensus rank/tier stay rookie-only.
@@ -60,7 +51,6 @@
         scout:   ['pos','age','college','height','weight','depthChart'],
         bidding: ['pos','team','dhq','ppg','faab','injury'],
         rookie:  ['pos','college','rkSlot','rkTeam','rkRank','rkTier','rkProfile','dhq'],
-        usage:   ['pos','team','age','sig1','sig2','ppg'],
         full:    Object.keys(FA_COLUMNS),
     };
     const ROOKIE_DRAFT_LOCK_STATUSES = new Set(['pre_draft', 'drafting']);
@@ -258,6 +248,7 @@
         const spent = myRoster?.settings?.waiver_budget_used || 0;
         const remaining = Math.max(0, budget - spent);
         const hasFAAB = budget > 0;
+        const faabMinBid = currentLeague?.settings?.waiver_bid_min ?? currentLeague?.settings?.waiver_budget_min ?? 0; // Sleeper's real field is waiver_bid_min (owner league floors at $13)
         const teamTier = assess?.tier || '';
         const teamWindow = assess?.window || '';
         // GM Strategy outranks the roster grade for FA posture: a committed plan
@@ -265,9 +256,6 @@
         // strategy-less users. The rebuild age gate follows the GM timeline
         // (shorter window = looser youth filter); 25 is the legacy default.
         const gmEff = window.WR?.GmMode?.effects?.(currentLeague?.id || currentLeague?.league_id) || {};
-        // GM Strategy's minimum-bid override wins over the imported platform
-        // setting (some leagues/platforms don't expose it reliably).
-        const faabMinBid = gmEff.faabMinBid || (currentLeague?.settings?.waiver_budget_min ?? 0);
         const isRebuilding = gmEff.hasStrategy ? gmEff.mode === 'rebuild' : (teamTier === 'REBUILDING' || teamWindow === 'REBUILDING');
         const isContending = gmEff.hasStrategy ? gmEff.mode === 'win_now' : (teamTier === 'ELITE' || teamTier === 'CONTENDER' || teamWindow === 'CONTENDING');
         const faAgeGate = gmEff.hasStrategy ? ({ '1_year': 29, '2_3_years': 27, 'dynasty_long': 25 }[gmEff.timeline] || 25) : 25;
@@ -585,107 +573,13 @@
     window.App.buildUdfaCrazeBoard = buildUdfaCrazeBoard;
     window.App.observeUdfaCrazeFlip = observeUdfaCrazeFlip;
     window.App.blendFaabWithHistory = blendFaabWithHistory;
-    window.App.getFreeAgencyBriefTarget = function getFreeAgencyBriefTarget(args) {
-        return buildFreeAgencyActionBoard(args).priorityAdds[0] || null;
-    };
 
-    // ── Waiver Take cache (24h, mirrors alex-insights.js's AI_CACHE_TTL_MS) ──
-    const WAIVER_TAKE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-    function waiverTakeCacheKey(currentLeague) {
-        const user = window.OD?.getCurrentUsername?.() || window.S?.user?.username || window.S?.user?.display_name || 'anon';
-        const leagueId = currentLeague?.league_id || currentLeague?.id || 'default';
-        return 'wr_waiver_take:' + user + ':' + leagueId;
-    }
-    function loadCachedWaiverTake(currentLeague) {
-        try {
-            const raw = JSON.parse(localStorage.getItem(waiverTakeCacheKey(currentLeague)) || 'null');
-            if (!raw || !raw.ts || Date.now() - raw.ts > WAIVER_TAKE_CACHE_TTL_MS) return { recommendations: [], ts: 0 };
-            return raw;
-        } catch (_) { return { recommendations: [], ts: 0 }; }
-    }
-    function saveCachedWaiverTake(currentLeague, recommendations) {
-        try { localStorage.setItem(waiverTakeCacheKey(currentLeague), JSON.stringify({ recommendations, ts: Date.now() })); } catch (_) {}
-    }
-    function clearCachedWaiverTake(currentLeague) {
-        try { localStorage.removeItem(waiverTakeCacheKey(currentLeague)); } catch (_) {}
-    }
-    // Defensive brace-matched JSON object extraction — the model is instructed
-    // to return raw JSON, but strips fences here in case it doesn't comply.
-    function extractWaiverTakeJson(reply) {
-        if (!reply || typeof reply !== 'string') return null;
-        let clean = reply.replace(/```(?:json)?\s*/gi, '').replace(/```\s*/g, '');
-        const first = clean.indexOf('{');
-        const last = clean.lastIndexOf('}');
-        if (first < 0 || last <= first) return null;
-        try {
-            const parsed = JSON.parse(clean.slice(first, last + 1));
-            return Array.isArray(parsed?.recommendations) ? parsed.recommendations : null;
-        } catch (_) { return null; }
-    }
-    async function generateWaiverTake(priorityAdds, currentLeague) {
-        if (typeof window.dhqAI !== 'function') return { error: 'AI not loaded' };
-        const gmBlock = window.WR?.GmMode?.promptBlock?.(currentLeague?.league_id || currentLeague?.id) || '';
-        const context = JSON.stringify({
-            gmStrategy: gmBlock || undefined,
-            // The board is pre-ranked/pre-filtered by the deterministic engine —
-            // this IS the "available list" waiver-agent's prompt is told never
-            // to stray from, so it can react/reorder but can't invent a player.
-            candidates: priorityAdds.slice(0, 6).map(x => ({
-                name: x.name, position: x.pos, dynastyValue: x.dhq,
-                fit: x.fit?.label, window: x.windowLabel,
-                faab_low: x.faab?.lo ?? null, faab_high: x.faab?.hi ?? null,
-            })),
-        });
-        try {
-            const reply = await window.dhqAI('waiver-agent', null, context);
-            const recommendations = extractWaiverTakeJson(reply);
-            if (!recommendations) return { error: 'Alex’s answer didn’t parse — try again' };
-            return { recommendations };
-        } catch (e) {
-            return { error: e?.message || 'AI call failed' };
-        }
-    }
-
-    // Shared player headshot — sleepercdn photo with an initials fallback,
-    // sized per call site. Same URL pattern as the market table's row photo
-    // (fa-mkt-row, further down) so a broken image reads identically.
-    function PlayerAvatar({ pid, p, size }) {
-        const s = size || 30;
-        const initials = ((p?.first_name || '?')[0] + (p?.last_name || '?')[0]).toUpperCase();
-        return (
-            <span className="fa-hq-avatar" style={{ width: s, height: s }}>
-                <img src={'https://sleepercdn.com/content/nfl/players/' + pid + '.jpg'} alt=""
-                    onError={e => { e.target.style.display = 'none'; if (e.target.nextSibling) e.target.nextSibling.style.display = 'flex'; }} />
-                <em>{initials}</em>
-            </span>
-        );
-    }
-
-    // Mini trend sparkline for a waiver-board row — real recent weekly points
-    // (window.S.weeklyPlayerPoints), not a decorative shape. Renders nothing
-    // without at least 2 logged games, so it never implies data that isn't there.
-    function FaTrendSpark({ pid, color }) {
-        const wpp = window.S?.weeklyPlayerPoints || {};
-        const weeks = Object.keys(wpp).map(Number).sort((a, b) => a - b);
-        const series = [];
-        for (const w of weeks) { const v = wpp[w]?.[pid]; if (v != null) series.push(v); }
-        const pts = series.slice(-4);
-        if (pts.length < 2) return null;
-        const min = Math.min(...pts), max = Math.max(...pts), range = (max - min) || 1;
-        const w = 38, h = 16, step = w / (pts.length - 1);
-        const path = pts.map((v, i) => (i * step) + ',' + (h - ((v - min) / range) * h)).join(' ');
-        return (
-            <svg width={w} height={h} viewBox={'0 0 ' + w + ' ' + h} className="fa-hq-spark" aria-hidden="true">
-                <polyline points={path} fill="none" stroke={color || 'var(--silver)'} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-        );
-    }
-
-    // ── FAAB Command (redraft add-ons batch) ─────────────────────────
-    // League-aware bid plan for a waiver target: what THIS league pays, who
-    // else needs the player, and the smallest bid that clears them. All
-    // deterministic (App.Faab) off the league's own transaction log — winning
-    // AND losing bids (WrTxns.getFailedWaivers). Pro-only, FAAB leagues only.
+    // ── FaabCommandCard — league-aware bid plan (lab port 2026-08-16) ──
+    // Deterministic: the league's own bid history (winning AND losing
+    // claims via WrTxns.getFailedWaivers) is the model. Engine:
+    // js/shared/faab-engine.js (App.Faab). The ChopOdds horizon read is
+    // optional-chained — no chopped modules exist here, so the engine's
+    // documented no-op path applies and the cap stays at SPEND_CAP.
     function FaabCommandCard({ league, myRoster, playersData, targets }) {
         const [pick, setPick] = useState(0);
         const [plan, setPlan] = useState(null);   // null | {loading} | {a} | {err}
@@ -724,7 +618,7 @@
         }, [lid, target?.pid]);
         if (!target || (plan && plan.err)) return null;
         if (plan && plan.loading) {
-            return <div style={{ padding: '10px 12px', marginBottom: '10px', border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', borderRadius: 'var(--card-radius-sm, 8px)', fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', fontFamily: 'var(--font-mono)' }}>Reading this league’s bid history…</div>;
+            return <div style={{ padding: '10px 12px', marginBottom: '10px', border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', borderRadius: '8px', fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', fontFamily: 'var(--font-mono)' }}>Reading this league’s bid history…</div>;
         }
         const a = plan && plan.a;
         if (!a) return null;    // pre-effect, non-FAAB league, or engine absent
@@ -801,6 +695,10 @@
         );
     }
 
+    window.App.getFreeAgencyBriefTarget = function getFreeAgencyBriefTarget(args) {
+        return buildFreeAgencyActionBoard(args).priorityAdds[0] || null;
+    };
+
     function FreeAgencyTab({ playersData, statsData, prevStatsData, myRoster, currentLeague, leagueSkin, sleeperUserId, timeRecomputeTs, viewMode, briefDraftInfo }) {
         const resolvedLeagueSkin = leagueSkin || window.App?.LeagueSkin?.getCurrent?.() || null;
         const skinFeatures = resolvedLeagueSkin?.features || {};
@@ -809,7 +707,6 @@
         // HQ, priority adds, FAAB bids, fit/window reads, UDFA craze) are Pro;
         // the raw Market Explorer + filters stay free. Fail-open.
         const isPro = typeof window.wrIsPro === 'function' ? window.wrIsPro() : true;
-        const InsightCard = window.WR.InsightCard;
         // ══ PHONE (<768) — iPhone program Phase 1 (FA) ═══════════════════
         // Hooks are called HERE, unconditionally at the top of the component
         // (this file has conditional returns further down — roster blocker +
@@ -842,19 +739,33 @@
         const [faSort, setFaSort] = useState({ key: 'dhq', dir: -1 });
         const [faSelectedPid, setFaSelectedPid] = useState(null);
         const [faSearch, setFaSearch] = useState('');
-        // ── Waiver Take (one-shot AI card, no chat) ──────────────────────
-        // Ask once → structured take on the already-ranked Priority Moves list.
-        // Reuses the orphaned 'waiver-agent' DHQ_PROMPTS type — the deterministic
-        // board (priorityAdds, below) already IS the "available list" it's
-        // instructed never to stray from, so this can't invent players.
-        const [waiverTake, setWaiverTake] = useState(() => loadCachedWaiverTake(currentLeague));
-        const [waiverTakeLoading, setWaiverTakeLoading] = useState(false);
-        const [waiverTakeError, setWaiverTakeError] = useState(null);
-        const [waiverTakeFeedback, setWaiverTakeFeedback] = useState({});
-        useEffect(() => {
-            setWaiverTake(loadCachedWaiverTake(currentLeague));
-            setWaiverTakeError(null);
-        }, [currentLeague?.league_id, currentLeague?.id]);
+        // ── Min-points filter (owner ruling 2026-08-28: pared from the five-
+        // criteria prototype to the one window he kept, then tucked inline
+        // into the View toolbar row — no separate Filters panel). Stacks with
+        // the text search and POS chips; season chips pick which year's points.
+        const [faAdv, setFaAdv] = useState({ minPrevPts: '' });
+        // Season default is AUTO — the current season once it has real stats,
+        // last season until then (in August a this-year default would filter
+        // out the entire league at 0 GP).
+        const faSeasonYear = Number(currentLeague?.season) || new Date().getFullYear();
+        const faAutoPtsYear = useMemo(() => {
+            const st = statsData || {};
+            for (const k in st) { if ((st[k]?.gp || 0) > 0) return faSeasonYear; }
+            return faSeasonYear - 1;
+        }, [statsData, faSeasonYear]);
+        const faPtsYearActive = faAutoPtsYear;
+        const faAdvCount = String(faAdv.minPrevPts).trim() !== '' ? 1 : 0;
+        const faAdvPass = (x) => {
+            if (!faAdvCount) return true;
+            const minPts = parseFloat(faAdv.minPrevPts);
+            if (isFinite(minPts)) {
+                const src = faPtsYearActive === faSeasonYear ? (statsData || {}) : (prevStatsData || {});
+                const st = src[x.pid] || {};
+                const pts = st.gp > 0 && typeof calcRawPts === 'function' ? calcRawPts(st) : 0;
+                if (!(pts >= minPts)) return false;
+            }
+            return true;
+        };
         const [visibleFaCols, setVisibleFaCols] = useState(() => {
             const stored = window.App?.WrStorage?.get?.('wr_fa_cols');
             const valid = Array.isArray(stored) ? stored.filter(k => FA_COLUMNS[k]) : [];
@@ -885,12 +796,6 @@
             window.addEventListener('wr:weekly-points-loaded', h);
             return () => window.removeEventListener('wr:weekly-points-loaded', h);
         }, []);
-        // sig1/sig2 headers: when the position filter is a single concrete
-        // position, name the columns after that position's actual signature
-        // stats (e.g. "TGT/G" / "SNP%" for WR) instead of the generic
-        // placeholder — mixed/flex views keep the generic label since no
-        // single stat pair applies to every row shown.
-        const faSigStats = window.App?.StatCatalog?.getSignatureStats?.(faFilter) || [];
         const faColumns = useMemo(() => ({
             ...FA_COLUMNS,
             dhq: {
@@ -903,9 +808,7 @@
                 label: skinFeatures.showAgeCurve === false ? 'Value Window' : FA_COLUMNS.peakYr.label,
                 shortLabel: skinFeatures.showAgeCurve === false ? 'Window' : FA_COLUMNS.peakYr.shortLabel,
             },
-            sig1: faSigStats[0] ? { ...FA_COLUMNS.sig1, label: faSigStats[0].label, shortLabel: faSigStats[0].short } : FA_COLUMNS.sig1,
-            sig2: faSigStats[1] ? { ...FA_COLUMNS.sig2, label: faSigStats[1].label, shortLabel: faSigStats[1].short } : FA_COLUMNS.sig2,
-        }), [valueLabel, valueShortLabel, skinFeatures.showAgeCurve, faSigStats]);
+        }), [valueLabel, valueShortLabel, skinFeatures.showAgeCurve]);
 
         useEffect(() => { try { window.App?.WrStorage?.set?.('wr_fa_cols', visibleFaCols); } catch {} }, [visibleFaCols]);
         // Resurrect-proofing: saved views / older persisted prefs can still
@@ -1144,6 +1047,7 @@
                     if (rookieCollegeFilter && rookieCollegeOf(x) !== rookieCollegeFilter) return false;
                     if (rookieSlotFilter && !rookieSlotMatch(x, rookieSlotFilter)) return false;
                 }
+                if (!faAdvPass(x)) return false;
                 if (!q) return true;
                 const name = (x.p.full_name || ((x.p.first_name || '') + ' ' + (x.p.last_name || '')).trim()).toLowerCase();
                 const team = (x.p.team || 'FA').toLowerCase();
@@ -1181,15 +1085,6 @@
                 }
                 if (k === 'exp') return dir * ((a.p.years_exp || 0) - (b.p.years_exp || 0));
                 if (k === 'injury') return dir * ((a.p.injury_status || '').localeCompare(b.p.injury_status || ''));
-                if (k === 'sig1' || k === 'sig2') {
-                    const idx = k === 'sig1' ? 0 : 1;
-                    const SC = window.App?.StatCatalog;
-                    const va = SC ? SC.getSignatureStats(normPos(a.p.position))[idx] : null;
-                    const vb = SC ? SC.getSignatureStats(normPos(b.p.position))[idx] : null;
-                    const na = va ? (SC.computeStat(va.key, statsData[a.pid] || {}, { perGame: true }) || 0) : 0;
-                    const nb = vb ? (SC.computeStat(vb.key, statsData[b.pid] || {}, { perGame: true }) || 0) : 0;
-                    return dir * (na - nb);
-                }
                 if (k === 'rkSlot' || k === 'rkRank' || k === 'rkTier' || k === 'rkTeam') {
                     const ra = prospectFor(a.p); const rb = prospectFor(b.p);
                     if (k === 'rkTeam') return dir * ((ra?.nflTeam || faDraftCap(a.pid)?.team || '').localeCompare(rb?.nflTeam || faDraftCap(b.pid)?.team || ''));
@@ -1210,7 +1105,7 @@
                 }
                 return 0;
             }).slice(0, 50);
-        }, [availablePlayers, faFilter, faSearch, faSort, statsData, rookieOnly, isRookiePlayer, rookieTeamFilter, rookieCollegeFilter, rookieSlotFilter, rookieTeamOf, rookieCollegeOf, rookieSlotMatch, prospectFor]);
+        }, [availablePlayers, faFilter, faSearch, faSort, statsData, prevStatsData, faAdv, faPtsYearActive, rookieOnly, isRookiePlayer, rookieTeamFilter, rookieCollegeFilter, rookieSlotFilter, rookieTeamOf, rookieCollegeOf, rookieSlotMatch, prospectFor]);
 
         const faHeaderStyle = { fontSize: '0.78rem', fontWeight: 700, color: 'var(--gold)', fontFamily: 'var(--font-body)', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap', cursor: 'pointer', userSelect: 'none' };
 
@@ -1232,9 +1127,7 @@
         const spent = myRoster?.settings?.waiver_budget_used || 0;
         const remaining = Math.max(0, budget - spent);
         const hasFAAB = budget > 0;
-        // GM Strategy's minimum-bid override wins over the imported platform
-        // setting (some leagues/platforms don't expose it reliably).
-        const faabMinBid = gmEff.faabMinBid || (currentLeague?.settings?.waiver_budget_min ?? 0);
+        const faabMinBid = currentLeague?.settings?.waiver_bid_min ?? currentLeague?.settings?.waiver_budget_min ?? 0; // Sleeper's real field is waiver_bid_min (owner league floors at $13)
 
         // ── League format detection (for scarcity multipliers) ──
         const rosterPositions = currentLeague?.roster_positions || [];
@@ -1473,6 +1366,9 @@
                     badge: fit.short,
                 })
                 : null;
+            // name: was missing here — unlike the buildFreeAgencyActionBoard
+            // sibling — and FAAB Command's target-picker buttons read x.name
+            // directly (lab fix 02a4369: they rendered blank without it).
             return { ...x, name: playerName(x.p, x.pid), pos, ppg, faab, fit, fitScore: fit.score, peakYrs: win.peakYrs, valueYrs: win.valueYrs, windowLabel: win.label, windowShort: win.short, windowColor: win.color, formatReasons, playerContext, intelligence, why };
         }
 
@@ -1571,56 +1467,51 @@
             }
             return out.sort((a, b) => b.dhq - a.dhq).slice(0, 4);
         })();
-
-        const doGenerateWaiverTake = async () => {
-            if (!isPro) {
-                if (window.showProLaunchPage) window.showProLaunchPage();
-                else if (window.showUpgradePrompt) window.showUpgradePrompt('briefing_reasoning');
-                return;
-            }
-            setWaiverTakeLoading(true); setWaiverTakeError(null);
-            const r = await generateWaiverTake(priorityAdds, currentLeague);
-            setWaiverTakeLoading(false);
-            if (r.error) { setWaiverTakeError(r.error); return; }
-            setWaiverTake({ recommendations: r.recommendations, ts: Date.now() });
-            saveCachedWaiverTake(currentLeague, r.recommendations);
+        // Transaction Ticker (owner ask 2026-08-28): a direct lift of the
+        // home-tab widget — the rows render through the shared
+        // window.WrTxnTickerList (js/widgets/txn-ticker.js), fed by the same
+        // per-week transaction buckets. The home-tab ticker stays as-is.
+        const tickerTxns = (() => {
+            const txnMap = window.S?.transactions || {};
+            const out = [];
+            Object.values(txnMap).forEach(wk => (wk || []).forEach(t => {
+                if (!t || !t.type || t.status === 'failed' || t._fromDHQ) return;
+                out.push(t);
+            }));
+            return out.sort((a, b) => (b.status_updated || b.created || 0) - (a.status_updated || a.created || 0)).slice(0, 8);
+        })();
+        const tickerOwnerName = (rid) => {
+            const r = (currentLeague.rosters || []).find(x => x.roster_id === rid);
+            const u = r ? (currentLeague.users || []).find(x => x.user_id === r.owner_id) : null;
+            return u?.display_name || u?.username || ('Team ' + rid);
         };
-        const doClearWaiverTake = () => { clearCachedWaiverTake(currentLeague); setWaiverTake({ recommendations: [], ts: 0 }); };
-        const sendWaiverTakeFeedback = (rec, action) => {
-            setWaiverTakeFeedback(prev => ({ ...prev, [rec.name]: action }));
-            // 'fa_targets' is the pre-existing feedback surface allowlisted
-            // server-side for waiver/FA recs — no edge-function change needed.
-            window.WR?.AIFeedback?.send?.({
-                leagueId: currentLeague?.league_id || currentLeague?.id,
-                surface: 'fa_targets',
-                recId: 'waiver-take:' + rec.name,
-                action,
-                subject: { name: rec.name, position: rec.position },
-            });
+        const tickerPlayerName = (pid) => {
+            const p = playersData[pid];
+            return p ? playerName(p, pid) : 'Player #' + pid;
         };
-        const waiverTakeCacheAgeMin = waiverTake?.ts ? Math.round((Date.now() - waiverTake.ts) / 60000) : null;
+        const positionThreats = Array.from(new Set([...(assess?.needs || []).map(n => n.pos), ...actionBoardPlayers.slice(0, 6).map(x => x.pos)]))
+            .slice(0, 6)
+            .map(pos => {
+                const top = faabMarketRows.find(r => !r.isMe && rosterNeedsPosition(r.roster, pos));
+                return { pos, top };
+            })
+            .filter(x => x.top);
 
         function renderCandidateRow(x, i, isPrimary) {
             const dhqCol = x.dhq >= 4000 ? 'var(--k-3498db, #3498db)' : x.dhq >= 2000 ? 'var(--silver)' : 'var(--ov-8, rgba(255,255,255,0.45))';
             return (
                 <button key={x.pid} className={'fa-hq-candidate' + (isPrimary ? ' is-primary' : '')} title="Open player card" onClick={() => openFaPlayer(x.pid)}>
                     <span className="fa-hq-rank">{i + 1}</span>
-                    <PlayerAvatar pid={x.pid} p={x.p} size={30} />
                     <span className="fa-hq-player-main">
-                        <strong>{playerName(x.p)} <em className="fa-hq-cand-pos" style={{ color: posColors[x.pos] || 'var(--silver)' }}>{x.pos}</em></strong>
-                        <span className="fa-hq-cand-badge" style={{ color: x.fit.color, borderColor: x.fit.color }}>{x.fit.label}</span>
+                        <strong>{playerName(x.p)}</strong>
+                        <em>{x.p.team || 'FA'} · {x.pos} · {x.windowLabel}</em>
                     </span>
-                    <span className="fa-hq-cand-window">
-                        <FaTrendSpark pid={x.pid} color={x.windowColor} />
-                        <i>{x.p.team || 'FA'} · {x.windowLabel}</i>
-                    </span>
+                    <span className="fa-hq-player-fit" style={{ color: x.fit.color }}>{x.fit.short}</span>
                     <span className="fa-hq-player-value">
                         <strong style={{ color: dhqCol }}>{x.dhq ? x.dhq.toLocaleString() : '—'}</strong>
+                        <em>{x.faab ? '$' + x.faab.lo + '-' + x.faab.hi : 'No bid'}</em>
                     </span>
-                    <span className="fa-hq-cand-bid">
-                        <b>{x.faab ? '$' + x.faab.lo + '-' + x.faab.hi : 'No bid'}</b>
-                        <em style={{ color: x.fit.color }}>{x.fit.short}</em>
-                    </span>
+                    <span className="fa-hq-why">{x.why}</span>
                 </button>
             );
         }
@@ -1631,13 +1522,6 @@
             const swapRows = upgradePairs.slice(0, compact ? 3 : 4);
             const freshRows = recentDrops.slice(0, compact ? 2 : 3);
             const faabColor = remaining > budget * 0.5 ? 'var(--k-2ecc71, #2ecc71)' : remaining > budget * 0.25 ? 'var(--k-f0a500, #f0a500)' : 'var(--k-e74c3c, #e74c3c)';
-            // In-reach count: of the top 20 ranked, roster-relevant targets (dhq
-            // >= 500, the same relevance floor faabSuggest() uses), how many have
-            // a suggested bid your remaining FAAB can actually cover. Scoped to
-            // the ranked board, not the whole ~300-player wire, so the number
-            // means "targets", not "every rostered-or-not name available".
-            const rankedTargets = actionBoardPlayers.filter(x => x.dhq >= 500).slice(0, 20);
-            const inRangeCount = rankedTargets.filter(x => !x.faab || x.faab.hi <= remaining).length;
             return (
                 <section className={'fa-hq-shell' + (compact ? ' is-compact' : '')}>
                     <div className="fa-hq-grid">
@@ -1652,58 +1536,6 @@
                                 <FaabCommandCard league={currentLeague} myRoster={myRoster} playersData={playersData}
                                     targets={topAdds.slice(0, 3).map(x => ({ pid: x.pid, name: x.name, pos: x.pos, dhq: x.dhq }))} />
                             )}
-                            {/* Waiver Take — one-shot AI card, ask once, no chat.
-                                Alex reacts to the deterministic board above, never
-                                picks players outside it. */}
-                            {isPro && (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '2px 0 10px', flexWrap: 'wrap' }}>
-                                    <button
-                                        onClick={doGenerateWaiverTake}
-                                        disabled={waiverTakeLoading}
-                                        style={{
-                                            display: 'inline-flex', alignItems: 'center', gap: '6px', minHeight: '32px',
-                                            padding: '5px 10px', borderRadius: 'var(--card-radius-sm, 8px)', fontSize: 'var(--text-label, 0.75rem)', fontWeight: 600,
-                                            fontFamily: 'var(--font-body)',
-                                            background: waiverTakeLoading ? 'rgba(124,107,248,0.08)' : 'rgba(124,107,248,0.12)',
-                                            border: '1px solid rgba(124,107,248,0.35)', color: 'var(--purple)',
-                                            cursor: waiverTakeLoading ? 'wait' : 'pointer', opacity: waiverTakeLoading ? 0.7 : 1,
-                                        }}
-                                    >✨ {waiverTakeLoading ? 'Thinking…' : (waiverTake.recommendations.length ? 'Regenerate Alex’s take' : 'Ask Alex')}</button>
-                                    {waiverTake.recommendations.length > 0 && (
-                                        <button onClick={doClearWaiverTake} style={{ minHeight: '32px', padding: '5px 8px', borderRadius: 'var(--card-radius-sm, 8px)', fontSize: 'var(--text-label, 0.75rem)', fontFamily: 'var(--font-body)', background: 'transparent', border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', color: 'var(--silver)', cursor: 'pointer' }}>Clear</button>
-                                    )}
-                                    {waiverTake.recommendations.length > 0 && waiverTakeCacheAgeMin != null && (
-                                        <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.5, fontFamily: 'var(--font-mono)' }}>
-                                            {waiverTakeCacheAgeMin < 1 ? 'just now' : waiverTakeCacheAgeMin < 60 ? waiverTakeCacheAgeMin + 'm ago' : Math.floor(waiverTakeCacheAgeMin / 60) + 'h ago'}
-                                        </span>
-                                    )}
-                                </div>
-                            )}
-                            {waiverTakeError && (
-                                <div style={{ padding: '8px 10px', marginBottom: '10px', background: 'rgba(231,76,60,0.08)', border: '1px solid rgba(231,76,60,0.3)', borderRadius: 'var(--card-radius-sm, 8px)', fontSize: 'var(--text-label, 0.75rem)', color: 'var(--bad)' }}>
-                                    Alex couldn't generate a take: {waiverTakeError}
-                                </div>
-                            )}
-                            {waiverTake.recommendations.length > 0 && (
-                                <div className="fa-hq-stack" style={{ marginBottom: '10px' }}>
-                                    {waiverTake.recommendations.slice(0, 3).map((rec, i) => (
-                                        <InsightCard
-                                            key={rec.name}
-                                            compact
-                                            severity={i === 0 ? 'opportunity' : 'pattern'}
-                                            title={rec.name + (rec.position ? ' · ' + rec.position : '')}
-                                            body={rec.reason}
-                                            ctaLabel={rec.faab_low != null ? 'Bid $' + rec.faab_low + '-' + rec.faab_high + ' FAAB' : (rec.copyText ? 'Copy Sleeper message' : null)}
-                                            ctaOnClick={() => { if (rec.copyText) { try { navigator.clipboard.writeText(rec.copyText); } catch (_) {} } }}
-                                            feedback={{
-                                                given: waiverTakeFeedback[rec.name] || null,
-                                                onUp: () => sendWaiverTakeFeedback(rec, 'up'),
-                                                onDown: () => sendWaiverTakeFeedback(rec, 'down'),
-                                            }}
-                                        />
-                                    ))}
-                                </div>
-                            )}
                             {/* Add targets | swaps ride side by side when the panel is
                                 wide (owner ask 2026-07-12 — stacked full-width cards
                                 left half the panel empty); auto-stacks below ~640px. */}
@@ -1713,12 +1545,8 @@
                             <div className="fa-hq-stack">
                                 {topAdds.length ? topAdds.map((x, i) => (
                                     <button key={x.pid} className="fa-hq-mini-card" title="Open player card" onClick={() => openFaPlayer(x.pid)}>
-                                        <PlayerAvatar pid={x.pid} p={x.p} size={28} />
-                                        <span className="fa-hq-mini-body">
-                                            <strong>{playerName(x.p)} <span style={{ color: posColors[x.pos] || 'var(--silver)' }}>{x.pos}</span></strong>
-                                            <em>{x.fit.label} · {x.dhq.toLocaleString()} {valueShortLabel}{x.faab ? ' · $' + x.faab.lo + '-' + x.faab.hi : ''}</em>
-                                        </span>
-                                        <span className="fa-hq-mini-plus" aria-hidden="true">+</span>
+                                        <strong>{playerName(x.p)} <span style={{ color: posColors[x.pos] || 'var(--silver)' }}>{x.pos}</span></strong>
+                                        <em>{x.fit.label} · {x.dhq.toLocaleString()} {valueShortLabel}{x.faab ? ' · $' + x.faab.lo + '-' + x.faab.hi : ''}</em>
                                     </button>
                                 )) : <div className="fa-hq-empty">No priority adds match your current roster needs.</div>}
                             </div>
@@ -1741,8 +1569,8 @@
                             <div className="fa-hq-stack">
                                 {swapRows.length ? swapRows.map(pair => (
                                     <button key={pair.drop.pid + '-' + pair.add.pid} className="fa-hq-swap" title="Open player card" onClick={() => openFaPlayer(pair.add.pid)}>
-                                        <span className="fa-hq-swap-side is-drop"><b>Drop</b>{pair.drop.name}<em>{pair.drop.dhq.toLocaleString()}</em></span>
-                                        <span className="fa-hq-swap-side is-add"><b>Add</b>{playerName(pair.add.p)}<em>+{pair.gain.toLocaleString()}</em></span>
+                                        <span><b>Drop</b>{pair.drop.name}<em>{pair.drop.dhq.toLocaleString()}</em></span>
+                                        <span><b>Add</b>{playerName(pair.add.p)}<em>+{pair.gain.toLocaleString()}</em></span>
                                     </button>
                                 )) : <div className="fa-hq-empty">No obvious add/drop upgrade found from the current wire.</div>}
                             </div>
@@ -1753,11 +1581,8 @@
                             <div className="fa-hq-stack">
                                 {freshRows.length ? freshRows.map(d => (
                                     <button key={d.pid} className="fa-hq-mini-card is-alert" title="Open player card" onClick={() => openFaPlayer(d.pid)}>
-                                        <PlayerAvatar pid={d.pid} p={playersData[d.pid]} size={28} />
-                                        <span className="fa-hq-mini-body">
-                                            <strong>{d.name} <span style={{ color: posColors[d.pos] || 'var(--silver)' }}>{d.pos}</span></strong>
-                                            <em>Dropped W{d.week} · {d.dhq.toLocaleString()} {valueShortLabel}</em>
-                                        </span>
+                                        <strong>{d.name} <span>{d.pos}</span></strong>
+                                        <em>Dropped W{d.week} · {d.dhq.toLocaleString()} {valueShortLabel}</em>
                                     </button>
                                 )) : <div className="fa-hq-empty">No startable recent drops are sitting on the wire.</div>}
                             </div>
@@ -1768,19 +1593,16 @@
                                 <span>Ranked Waiver Board</span>
                                 <em>bid range, fit, window, and reason</em>
                             </div>
-                            <div className="fa-hq-board-head">
-                                <span>Rank</span><span /><span>Player</span><span>Window</span><span>Score</span><span>Bid Range</span>
-                            </div>
                             <div className="fa-hq-board-list">
                                 {boardRows.map((x, i) => renderCandidateRow(x, i, i === 0))}
                             </div>
-                            <div className="fa-hq-board-foot">
-                                <span>Rankings run off your league's own scoring and roster settings.</span>
-                                <button type="button" onClick={() => { try { document.querySelector('.fa-market-shell')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {} }}>View Full Board →</button>
-                            </div>
                         </main>
 
-                        <aside className="fa-hq-panel">
+                        {/* Right column: Market Leverage and the Transaction Ticker are
+                            two separate boxes (owner ruling 2026-08-28). The wrapper stays
+                            an <aside> so the ≤1280px full-width rule still targets it. */}
+                        <aside style={{ display: 'flex', flexDirection: 'column', gap: '12px', minWidth: 0 }}>
+                        <div className="fa-hq-panel">
                             <div className="fa-hq-panel-head">
                                 <span>Market Leverage</span>
                                 <em>{canOutbidRows.length ? canOutbidRows.length + ' teams can outbid you' : 'You control most bids'}</em>
@@ -1793,13 +1615,6 @@
                                 <span> of ${budget} · #{myFaabRank || '—'} FAAB</span>
                                 <i style={{ width: budget > 0 ? Math.max(3, Math.round((remaining / budget) * 100)) + '%' : '0%', background: faabColor }} />
                             </div>}
-                            {hasFAAB && (
-                                <div className="fa-hq-leverage-caption">
-                                    {inRangeCount > 0
-                                        ? "You're in range to compete for " + inRangeCount + ' of your top ' + rankedTargets.length + ' targets.'
-                                        : 'FAAB is tight right now — check the ladder above before you bid.'}
-                                </div>
-                            )}
                             <div className="fa-hq-chipline">
                                 {(canOutbidRows.length ? canOutbidRows : faabMarketRows.filter(r => !r.isMe).slice(0, 4)).map(r => (
                                     <span key={r.rosterId}>{r.name} ${r.remaining}</span>
@@ -1807,34 +1622,35 @@
                             </div>
 
                             <div className="fa-hq-subhead">Roster Gap Matrix</div>
-                            {rosterGapRows.length ? <table className="fa-hq-gap-table">
-                                <thead>
-                                    <tr><th>Pos</th><th>Starter</th><th>Depth</th><th>Gap</th><th>Top Upgrade</th><th>Score</th></tr>
-                                </thead>
-                                <tbody>
-                                    {rosterGapRows.map(row => {
-                                        const gap = row.data.status === 'deficit' ? { label: 'High', color: 'var(--bad)' }
-                                            : row.data.status === 'thin' ? { label: 'Medium', color: 'var(--warn)' }
-                                            : { label: 'Low', color: 'var(--good)' };
-                                        return (
-                                            <tr key={row.pos}>
-                                                <td style={{ color: posColors[row.pos] || row.color }}>{window.App?.posLabel?.(row.pos) || (row.pos === 'DEF' ? 'D/ST' : row.pos)}</td>
-                                                <td className="mono">{row.data.nflStarters != null ? row.data.nflStarters : Math.min(row.data.actual || 0, row.data.minQuality || row.data.startingReq || 0)}/{row.data.minQuality || row.data.startingReq || 0}</td>
-                                                <td><span className="fa-hq-gap-badge" style={{ color: row.color, borderColor: row.color }} title={row.label}>{row.grade}</span></td>
-                                                <td style={{ color: gap.color, fontWeight: 700 }}>{gap.label}</td>
-                                                <td className={row.bestWire ? '' : 'mu'}>{row.bestWire ? playerName(row.bestWire.p) : '—'}</td>
-                                                <td className={row.bestWire ? '' : 'mu'} style={row.bestWire ? { color: 'var(--good)', fontWeight: 700 } : null}>{row.bestWire ? '+' + row.bestWire.dhq.toLocaleString() : '—'}</td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table> : <div className="fa-hq-empty">Roster assessment isn't available for this team yet.</div>}
-                            <div className="fa-hq-gap-key">
-                                <span>Gap Key</span>
-                                <span><i style={{ background: 'var(--bad)' }} />High Need</span>
-                                <span><i style={{ background: 'var(--warn)' }} />Medium Need</span>
-                                <span><i style={{ background: 'var(--good)' }} />Low Need</span>
+                            <div className="fa-hq-gap-matrix">
+                                {rosterGapRows.map(row => {
+                                    const threat = positionThreats.find(t => t.pos === row.pos)?.top || null;
+                                    return (
+                                        <div key={row.pos} style={{ background: row.bg }}>
+                                            <span style={{ color: posColors[row.pos] || row.color }}>{window.App?.posLabel?.(row.pos) || (row.pos === 'DEF' ? 'D/ST' : row.pos)}</span>
+                                            <strong className="fa-gap-badge" style={{ color: row.color, borderColor: row.color }} title={row.label}>{row.grade}</strong>
+                                            <em>{row.data.nflStarters || Math.min(row.data.actual || 0, row.data.minQuality || row.data.startingReq || 0)}/{row.data.minQuality || row.data.startingReq || 0}</em>
+                                            <i>{row.bestWire ? playerName(row.bestWire.p) : '—'}</i>
+                                            {threat ? <b title={threat.name + ' also needs ' + row.pos + ' — $' + threat.remaining + ' FAAB left'}>${threat.remaining}</b> : null}
+                                        </div>
+                                    );
+                                })}
                             </div>
+                        </div>
+
+                        {tickerTxns.length && typeof window.WrTxnTickerList === 'function' ? (
+                            <div className="fa-hq-panel">
+                                <div className="fa-hq-panel-head">
+                                    <span>Transaction Ticker</span>
+                                    <em>latest adds and drops</em>
+                                </div>
+                                {React.createElement(window.WrTxnTickerList, {
+                                    transactions: tickerTxns.slice(0, compact ? 3 : 5),
+                                    getOwnerName: tickerOwnerName,
+                                    getPlayerName: tickerPlayerName,
+                                })}
+                            </div>
+                        ) : null}
                         </aside>
                     </div>
                 </section>
@@ -1893,7 +1709,7 @@
             };
             const posName = pos => window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos);
             return (
-                <section style={{ margin: '0 0 14px', borderRadius: 'var(--card-radius-lg, 14px)', overflow: 'hidden', border: '1px solid var(--acc-line4, rgba(212,175,55,0.55))', background: 'linear-gradient(135deg, rgba(212,175,55,0.10), transparent 70%)' }}>
+                <section style={{ margin: '0 0 14px', borderRadius: '12px', overflow: 'hidden', border: '1px solid var(--acc-line4, rgba(212,175,55,0.55))', background: 'linear-gradient(135deg, rgba(212,175,55,0.10), transparent 70%)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))' }}>
                         <span style={{ fontFamily: "var(--font-display, Rajdhani, sans-serif)", fontWeight: 800, letterSpacing: '0.08em', color: 'var(--gold)', fontSize: '0.95rem' }}>⚡ UDFA CRAZE — LIVE</span>
                         <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)' }}>Waivers process in <strong style={{ color: 'var(--white)' }}>{fmtCountdown(crazeState.windowEnd)}</strong> · <strong style={{ color: 'var(--white)' }}>{total}</strong> available across {groups.length} group{groups.length === 1 ? '' : 's'}</span>
@@ -1906,7 +1722,7 @@
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: '8px' }}>
                             {groups.map(g => (
                                 <button key={g.pos} type="button" onClick={() => drill(g.pos)} title={'View all ' + g.count + ' ' + posName(g.pos) + ' UDFAs'}
-                                    style={{ textAlign: 'left', padding: '10px 12px', borderRadius: 'var(--card-radius-sm, 8px)', background: 'var(--ov-2, rgba(255,255,255,0.03))', border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', cursor: 'pointer' }}>
+                                    style={{ textAlign: 'left', padding: '10px 12px', borderRadius: '8px', background: 'var(--ov-2, rgba(255,255,255,0.03))', border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', cursor: 'pointer' }}>
                                     <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
                                         <span style={{ fontFamily: "var(--font-display, Rajdhani, sans-serif)", fontWeight: 800, color: 'var(--gold)', letterSpacing: '0.04em', fontSize: '0.9rem' }}>{posName(g.pos)}</span>
                                         <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)' }}>{g.count} avail</span>
@@ -1920,7 +1736,7 @@
                                 </button>
                             ))}
                         </div>
-                        <button type="button" onClick={() => drill('')} style={{ marginTop: '12px', padding: '7px 12px', borderRadius: 'var(--card-radius-sm, 8px)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.24))', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)', fontFamily: "var(--font-ui, 'DM Sans', sans-serif)", fontWeight: 800, fontSize: 'var(--text-micro, 0.6875rem)', cursor: 'pointer' }}>
+                        <button type="button" onClick={() => drill('')} style={{ marginTop: '12px', padding: '7px 12px', borderRadius: '6px', border: '1px solid var(--acc-line1, rgba(212,175,55,0.24))', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', color: 'var(--gold)', fontFamily: "var(--font-ui, 'DM Sans', sans-serif)", fontWeight: 800, fontSize: 'var(--text-micro, 0.6875rem)', cursor: 'pointer' }}>
                             See all {total} UDFAs in the pool →
                         </button>
                     </div>
@@ -2022,7 +1838,7 @@
                     case 'yrsExp': return { label: short, value: p.years_exp != null ? p.years_exp : '—', tone: 'mute' };
                     case 'height': return { label: short, value: p.height ? Math.floor(p.height / 12) + "'" + (p.height % 12) + '"' : '—', tone: 'mute' };
                     case 'weight': return { label: short, value: p.weight || '—', tone: 'mute' };
-                    case 'depthChart': return { label: short, value: p.depth_chart_order != null ? x.pos + (p.depth_chart_order + 1) : '—', tone: 'mute' };
+                    case 'depthChart': return { label: short, value: p.depth_chart_order >= 1 ? x.pos + p.depth_chart_order : '—', tone: 'mute' };
                     case 'injury': return { label: short, value: p.injury_status || '—', tone: p.injury_status ? 'bad' : 'mute' };
                     case 'rkSlot': case 'rkTeam': case 'rkRank': case 'rkTier': {
                         const rf = window.App?.RookieFields?.fields?.(prospectFor(p)) || null;
@@ -2054,6 +1870,7 @@
                 _faHeroEl = React.createElement(window.WR.HeroCard, {
                     kicker: 'Top add',
                     headline: playerName(_heroPro.p, _heroPro.pid).toUpperCase() + (heroFaab ? ' — BID $' + heroFaab.lo + '–' + heroFaab.hi : ''),
+                    facts: _heroPro.why + faabBits,
                     cta: heroFaab ? 'SET BID' : 'OPEN PLAYER CARD',
                     onCta: () => openFaPlayer(_heroPro.pid),
                 });
@@ -2061,6 +1878,7 @@
                 _faHeroEl = React.createElement(window.WR.HeroCard, {
                     kicker: 'Top add',
                     headline: playerName(_heroFree.p, _heroFree.pid).toUpperCase(),
+                    facts: (_heroFree.p.team || 'FA') + ' · ' + _heroFree.pos + ' · ' + (_heroFree.dhq > 0 ? _heroFree.dhq.toLocaleString() + ' ' + valueShortLabel : '—') + ' · ' + availablePlayers.length + ' on the wire',
                     ctaGhost: 'Open player card',
                     onCtaGhost: () => openFaPlayer(_heroFree.pid),
                 });
@@ -2080,15 +1898,15 @@
                     {React.createElement(window.WR.FilterPill, { label: 'View', value: faActivePresetKey, onClick: () => _faTogglePanel('view') })}
                 </div>
             );
-            const _faSheetSelect = (active) => ({ width: '100%', minHeight: '44px', padding: '8px 10px', fontSize: '16px', fontFamily: 'var(--font-body)', background: 'var(--ov-3, rgba(255,255,255,0.04))', color: active ? 'var(--gold)' : 'var(--silver)', border: '1px solid ' + (active ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--ov-6, rgba(255,255,255,0.1))'), borderRadius: 'var(--card-radius-sm, 8px)' });
-            const _faChipBtn = (active) => ({ padding: '7px 12px', minHeight: '44px', fontSize: '0.78rem', fontFamily: 'var(--font-body)', background: active ? 'var(--acc-fill2, rgba(212,175,55,0.1))' : 'transparent', color: active ? 'var(--gold)' : 'var(--silver)', border: '1px solid ' + (active ? 'var(--acc-line2, rgba(212,175,55,0.35))' : 'var(--ov-6, rgba(255,255,255,0.1))'), borderRadius: 'var(--card-radius-sm, 8px)', cursor: 'pointer', fontWeight: active ? 700 : 400 });
+            const _faSheetSelect = (active) => ({ width: '100%', minHeight: '44px', padding: '8px 10px', fontSize: '16px', fontFamily: 'var(--font-body)', background: 'var(--ov-3, rgba(255,255,255,0.04))', color: active ? 'var(--gold)' : 'var(--silver)', border: '1px solid ' + (active ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--ov-6, rgba(255,255,255,0.1))'), borderRadius: '6px' });
+            const _faChipBtn = (active) => ({ padding: '7px 12px', minHeight: '44px', fontSize: '0.78rem', fontFamily: 'var(--font-body)', background: active ? 'var(--acc-fill2, rgba(212,175,55,0.1))' : 'transparent', color: active ? 'var(--gold)' : 'var(--silver)', border: '1px solid ' + (active ? 'var(--acc-line2, rgba(212,175,55,0.35))' : 'var(--ov-6, rgba(255,255,255,0.1))'), borderRadius: '6px', cursor: 'pointer', fontWeight: active ? 700 : 400 });
             // ── Inline Filters / Sort / View choosers (owner ask: same as the
             // Trade Center — each pill opens its own panel directly under the pill
             // row, no modal sheet). Panels bundle related controls and stay open
             // until you re-tap the pill or open another; the column customizer is
             // still a drill-down sheet (opened from the View panel).
             const _faPanelWrap = (body) => (
-                <div style={{ background: 'var(--black, #121217)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.22))', borderRadius: 'var(--card-radius-sm, 8px)', padding: '10px 11px', display: 'flex', flexDirection: 'column', gap: '9px' }}>{body}</div>
+                <div style={{ background: 'var(--black, #121217)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.22))', borderRadius: '8px', padding: '10px 11px', display: 'flex', flexDirection: 'column', gap: '9px' }}>{body}</div>
             );
             const _faPanelLbl = (t) => <div style={{ fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: 'var(--silver)', opacity: 0.6, letterSpacing: '0.1em', textTransform: 'uppercase' }}>{t}</div>;
             let _faPanelEl = null;
@@ -2222,17 +2040,17 @@
                             {shownFaCols.map((key, i) => {
                                 const col = faColumns[key]; if (!col) return null;
                                 return (
-                                    <div key={key} style={{ display: 'grid', gridTemplateColumns: '18px minmax(0, 1fr) 44px 44px 44px', gap: '3px', alignItems: 'center', minHeight: '44px', padding: '0 2px 0 8px', borderRadius: 'var(--card-radius-sm, 8px)', background: 'var(--acc-fill2, rgba(212,175,55,0.075))', border: '1px solid var(--acc-fill3, rgba(212,175,55,0.14))' }}>
+                                    <div key={key} style={{ display: 'grid', gridTemplateColumns: '18px minmax(0, 1fr) 44px 44px 44px', gap: '3px', alignItems: 'center', minHeight: '44px', padding: '0 2px 0 8px', borderRadius: '7px', background: 'var(--acc-fill2, rgba(212,175,55,0.075))', border: '1px solid var(--acc-fill3, rgba(212,175,55,0.14))' }}>
                                         <span style={{ color: 'var(--silver)', opacity: 0.55, fontSize: 'var(--text-micro, 0.6875rem)', textAlign: 'right' }}>{i + 1}</span>
                                         <span title={col.label} style={{ color: 'var(--white, #f5f5f5)', fontSize: '0.78rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{col.shortLabel || col.label}</span>
-                                        <button disabled={i === 0} onClick={() => _faColMove(key, -1)} title="Move up" style={{ minWidth: '44px', minHeight: '44px', borderRadius: 'var(--card-radius-xs, 5px)', border: '1px solid var(--ov-5, rgba(255,255,255,0.09))', background: i === 0 ? 'var(--ov-2, rgba(255,255,255,0.025))' : 'var(--ov-4, rgba(255,255,255,0.06))', color: i === 0 ? 'var(--ov-7, rgba(255,255,255,0.24))' : 'var(--silver)', cursor: i === 0 ? 'default' : 'pointer' }}>{'▲'}</button>
-                                        <button disabled={i === shownFaCols.length - 1} onClick={() => _faColMove(key, 1)} title="Move down" style={{ minWidth: '44px', minHeight: '44px', borderRadius: 'var(--card-radius-xs, 5px)', border: '1px solid var(--ov-5, rgba(255,255,255,0.09))', background: i === shownFaCols.length - 1 ? 'var(--ov-2, rgba(255,255,255,0.025))' : 'var(--ov-4, rgba(255,255,255,0.06))', color: i === shownFaCols.length - 1 ? 'var(--ov-7, rgba(255,255,255,0.24))' : 'var(--silver)', cursor: i === shownFaCols.length - 1 ? 'default' : 'pointer' }}>{'▼'}</button>
-                                        <button onClick={() => _faColRemove(key)} title="Remove" style={{ minWidth: '44px', minHeight: '44px', borderRadius: 'var(--card-radius-xs, 5px)', border: '1px solid rgba(231,76,60,0.22)', background: 'rgba(231,76,60,0.08)', color: 'var(--bad)', cursor: 'pointer' }}>{'×'}</button>
+                                        <button disabled={i === 0} onClick={() => _faColMove(key, -1)} title="Move up" style={{ minWidth: '44px', minHeight: '44px', borderRadius: '5px', border: '1px solid var(--ov-5, rgba(255,255,255,0.09))', background: i === 0 ? 'var(--ov-2, rgba(255,255,255,0.025))' : 'var(--ov-4, rgba(255,255,255,0.06))', color: i === 0 ? 'var(--ov-7, rgba(255,255,255,0.24))' : 'var(--silver)', cursor: i === 0 ? 'default' : 'pointer' }}>{'▲'}</button>
+                                        <button disabled={i === shownFaCols.length - 1} onClick={() => _faColMove(key, 1)} title="Move down" style={{ minWidth: '44px', minHeight: '44px', borderRadius: '5px', border: '1px solid var(--ov-5, rgba(255,255,255,0.09))', background: i === shownFaCols.length - 1 ? 'var(--ov-2, rgba(255,255,255,0.025))' : 'var(--ov-4, rgba(255,255,255,0.06))', color: i === shownFaCols.length - 1 ? 'var(--ov-7, rgba(255,255,255,0.24))' : 'var(--silver)', cursor: i === shownFaCols.length - 1 ? 'default' : 'pointer' }}>{'▼'}</button>
+                                        <button onClick={() => _faColRemove(key)} title="Remove" style={{ minWidth: '44px', minHeight: '44px', borderRadius: '5px', border: '1px solid rgba(231,76,60,0.22)', background: 'rgba(231,76,60,0.08)', color: 'var(--bad)', cursor: 'pointer' }}>{'×'}</button>
                                     </div>
                                 );
                             })}
                             {!shownFaCols.length && (
-                                <div style={{ padding: '12px', borderRadius: 'var(--card-radius-sm, 8px)', border: '1px dashed var(--ov-6, rgba(255,255,255,0.12))', color: 'var(--silver)', opacity: 0.62, fontSize: '0.74rem' }}>Only the player column is visible.</div>
+                                <div style={{ padding: '12px', borderRadius: '8px', border: '1px dashed var(--ov-6, rgba(255,255,255,0.12))', color: 'var(--silver)', opacity: 0.62, fontSize: '0.74rem' }}>Only the player column is visible.</div>
                             )}
                         </div>
                     ) },
@@ -2246,7 +2064,7 @@
                                     <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 800, marginBottom: '6px' }}>{group}</div>
                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                                         {cols.map(([key, col]) => (
-                                            <button key={key} onClick={() => _faColAdd(key)} title={'Add ' + col.label} style={{ minHeight: '44px', padding: '7px 12px', fontSize: '0.74rem', fontFamily: 'var(--font-body)', background: 'var(--ov-1, rgba(255,255,255,0.018))', color: 'var(--silver)', border: '1px solid var(--ov-5, rgba(255,255,255,0.09))', borderRadius: 'var(--card-radius-sm, 8px)', cursor: 'pointer', whiteSpace: 'nowrap' }}>+ {col.shortLabel || col.label}</button>
+                                            <button key={key} onClick={() => _faColAdd(key)} title={'Add ' + col.label} style={{ minHeight: '44px', padding: '7px 12px', fontSize: '0.74rem', fontFamily: 'var(--font-body)', background: 'var(--ov-1, rgba(255,255,255,0.018))', color: 'var(--silver)', border: '1px solid var(--ov-5, rgba(255,255,255,0.09))', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}>+ {col.shortLabel || col.label}</button>
                                         ))}
                                     </div>
                                 </div>
@@ -2270,12 +2088,11 @@
             const _faPhoneMkt = sortedPlayers.slice(0, 25);
             const _faMktRows = _faPhoneMkt.map(x => {
                 const bits = [x.p.team || 'FA'];
-                if (x.p.age) bits.push(String(x.p.age));
+                if (x.p.age) bits.push('Age ' + x.p.age);
                 if (x.p.injury_status) bits.push(x.p.injury_status);
                 return React.createElement(window.WR.AssetRow, {
                     key: x.pid,
                     pos: x.pos,
-                    pid: x.pid,
                     name: playerName(x.p, x.pid),
                     tag: bits.join(' · '),
                     slots: _faSlotKeys.map(k => _faSlotFor(k, x)),
@@ -2290,12 +2107,11 @@
                 });
             });
             const _faMktRowNodes = _faMktRows.length ? _faMktRows : [
-                <div key="fa-mkt-empty" style={{ padding: '14px', border: '1px dashed var(--ov-6, rgba(255,255,255,0.12))', borderRadius: 'var(--card-radius, 10px)', color: 'var(--silver)', opacity: 0.7, fontSize: '0.78rem' }}>No available players match this view.</div>
+                <div key="fa-mkt-empty" style={{ padding: '14px', border: '1px dashed var(--ov-6, rgba(255,255,255,0.12))', borderRadius: '9px', color: 'var(--silver)', opacity: 0.7, fontSize: '0.78rem' }}>No available players match this view.</div>
             ];
             const _faStreamRows = streaming.slice(0, 5).map(o => React.createElement(window.WR.AssetRow, {
                 key: 'stream-' + o.fa.pid,
                 pos: o.pos,
-                pid: o.fa.pid,
                 name: (playersData[o.fa.pid] || {}).full_name || o.fa.pid,
                 tag: 'over ' + o.worstName + ' (' + o.worstProj.toFixed(1) + ')',
                 slots: [{ label: 'WK', value: o.fa.proj.toFixed(1) }, { label: 'EDGE', value: '+' + o.delta.toFixed(1), tone: 'good' }],
@@ -2305,7 +2121,6 @@
             const _faDropRows = isPro ? recentDrops.map(d => React.createElement(window.WR.AssetRow, {
                 key: 'drop-' + d.pid,
                 pos: d.pos,
-                pid: d.pid,
                 name: d.name,
                 tag: 'Dropped W' + d.week + ' · back on the wire',
                 slots: [{ label: 'VAL', value: d.dhq.toLocaleString() }],
@@ -2322,6 +2137,12 @@
                     <div className="fa-page wr-fade-in">
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                             {_faHeroEl}
+                            {/* FAAB Command on phone (owner ask 2026-08-16) — same
+                                card, right under the hero; Pro-gated like desktop. */}
+                            {isPro && priorityAdds.length > 0 && (
+                                <FaabCommandCard league={currentLeague} myRoster={myRoster} playersData={playersData}
+                                    targets={priorityAdds.slice(0, 3).map(x => ({ pid: x.pid, name: x.name, pos: x.pos, dhq: x.dhq }))} />
+                            )}
                             {!isPro && renderActionHqTeaser()}
                             {renderCrazePanel()}
                             {_faPillsEl}
@@ -2393,7 +2214,7 @@
 
                 {/* Rookie/UDFA drill-down — same filter pieces as the Draft Room big board */}
                 {rookieOnly && (() => {
-                    const rkSelectStyle = (active) => ({ padding: '3px 6px', minHeight: '44px', fontSize: '0.7rem', fontFamily: 'var(--font-mono)', background: 'var(--ov-3, rgba(255,255,255,0.04))', color: active ? 'var(--gold)' : 'var(--silver)', border: '1px solid ' + (active ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--ov-6, rgba(255,255,255,0.1))'), borderRadius: 'var(--card-radius-sm, 8px)', cursor: 'pointer', outline: 'none', maxWidth: '170px' });
+                    const rkSelectStyle = (active) => ({ padding: '3px 6px', minHeight: '44px', fontSize: '0.7rem', fontFamily: 'var(--font-mono)', background: 'var(--ov-3, rgba(255,255,255,0.04))', color: active ? 'var(--gold)' : 'var(--silver)', border: '1px solid ' + (active ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--ov-6, rgba(255,255,255,0.1))'), borderRadius: '6px', cursor: 'pointer', outline: 'none', maxWidth: '170px' });
                     return (
                         <div className="fa-market-toolbar wr-module-toolbar">
                             <span className="wr-module-toolbar-label">Team</span>
@@ -2413,7 +2234,7 @@
                                 ))}
                             </div>
                             {(rookieTeamFilter || rookieCollegeFilter || rookieSlotFilter) && (
-                                <button type="button" onClick={() => { setRookieTeamFilter(''); setRookieCollegeFilter(''); setRookieSlotFilter(''); }} style={{ marginLeft: 'auto', padding: '3px 10px', minHeight: '44px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', background: 'transparent', color: 'var(--silver)', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: 'var(--card-radius, 10px)', cursor: 'pointer' }}>Clear</button>
+                                <button type="button" onClick={() => { setRookieTeamFilter(''); setRookieCollegeFilter(''); setRookieSlotFilter(''); }} style={{ marginLeft: 'auto', padding: '3px 10px', minHeight: '44px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', background: 'transparent', color: 'var(--silver)', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: '10px', cursor: 'pointer' }}>Clear</button>
                             )}
                         </div>
                     );
@@ -2436,6 +2257,17 @@
                     ))}
                     </div>
 
+                    <span className="wr-module-toolbar-label">Min pts</span>
+                    <input
+                        type="number" inputMode="numeric" value={faAdv.minPrevPts} placeholder="e.g. 100"
+                        title={'Only show players with at least this many ' + faPtsYearActive + ' points'}
+                        onChange={e => { const v = e.target.value; setFaAdv({ minPrevPts: v }); }}
+                        style={{ width: '84px', padding: '3px 8px', minHeight: '44px', boxSizing: 'border-box', background: 'var(--ov-3, rgba(255,255,255,0.04))', border: '1px solid ' + (faAdvCount ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--ov-6, rgba(255,255,255,0.1))'), borderRadius: 'var(--card-radius-sm, 8px)', color: 'var(--white)', fontSize: '0.75rem', fontFamily: 'var(--font-mono)', outline: 'none' }}
+                    />
+                    {faAdvCount ? (
+                        <button type="button" onClick={() => setFaAdv({ minPrevPts: '' })} title="Clear the min points filter" style={{ padding: '3px 8px', minHeight: '44px', fontSize: 'var(--text-micro, 0.6875rem)', fontFamily: 'var(--font-body)', background: 'transparent', color: 'var(--silver)', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: 'var(--card-radius-sm, 8px)', cursor: 'pointer' }}>✕</button>
+                    ) : null}
+
                     {window.WR?.SavedViews?.SavedViewBar && (
                         <div style={{ marginLeft: 'auto' }}>
                             {React.createElement(window.WR.SavedViews.SavedViewBar, {
@@ -2454,7 +2286,7 @@
                 </div>
 
                 {showFaColPicker && (
-                    <div style={{ background: 'var(--black)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: 'var(--card-radius-sm, 8px)', padding: '12px', marginBottom: '8px' }}>
+                    <div style={{ background: 'var(--black)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '8px', padding: '12px', marginBottom: '8px' }}>
                         {/* Active columns — reorderable */}
                         <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px', fontWeight: 700 }}>Active order (click ◀ ▶ to reorder)</div>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '12px' }}>
@@ -2464,7 +2296,7 @@
                                 const moveRight = () => { setFaColPreset('custom'); setVisibleFaCols(prev => { if (i === prev.length - 1) return prev; const next = [...prev]; [next[i + 1], next[i]] = [next[i], next[i + 1]]; return next; }); };
                                 const remove = () => { setFaColPreset('custom'); setVisibleFaCols(prev => prev.filter(c => c !== key)); };
                                 return (
-                                    <span key={key} style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', padding: '2px 4px 2px 8px', borderRadius: 'var(--card-radius-xs, 5px)', fontSize: 'var(--text-label, 0.75rem)', background: 'var(--acc-fill2, rgba(212,175,55,0.12))', border: '1px solid var(--acc-line2, rgba(212,175,55,0.35))', color: 'var(--gold)' }}>
+                                    <span key={key} style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', padding: '2px 4px 2px 8px', borderRadius: '4px', fontSize: 'var(--text-label, 0.75rem)', background: 'var(--acc-fill2, rgba(212,175,55,0.12))', border: '1px solid var(--acc-line2, rgba(212,175,55,0.35))', color: 'var(--gold)' }}>
                                         <span style={{ marginRight: '4px' }}>{col.shortLabel}</span>
                                         {/* .fa-colpick-btn: 44px touch bump at ≤767 (index.html phone CSS); 32px glyph-pad elsewhere */}
                                         <button className="fa-colpick-btn" onClick={moveLeft} disabled={i === 0} title="Move left" style={{ padding: '0 3px', minWidth: '32px', minHeight: '32px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', color: i === 0 ? 'var(--acc-line1, rgba(212,175,55,0.25))' : 'var(--gold)', cursor: i === 0 ? 'default' : 'pointer', fontSize: 'var(--text-label, 0.75rem)' }}>◀</button>
@@ -2483,7 +2315,7 @@
                                 return (
                                     <label key={key} style={{
                                         display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 8px',
-                                        borderRadius: 'var(--card-radius-xs, 5px)', cursor: 'pointer', fontSize: 'var(--text-body, 1rem)',
+                                        borderRadius: '4px', cursor: 'pointer', fontSize: 'var(--text-body, 1rem)',
                                         background: active ? 'var(--acc-fill2, rgba(212,175,55,0.1))' : 'transparent',
                                         color: active ? 'var(--gold)' : 'var(--silver)'
                                     }}>
@@ -2502,7 +2334,7 @@
 
                 {/* Streaming upgrades — a free agent out-projects your weakest starter at a position this week */}
                 {streaming.length ? (
-                    <div style={{ margin: '0 0 10px', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', background: 'var(--acc-fill1, rgba(212,175,55,0.06))', borderRadius: 'var(--card-radius-sm, 8px)', padding: '10px 12px' }}>
+                    <div style={{ margin: '0 0 10px', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', background: 'var(--acc-fill1, rgba(212,175,55,0.06))', borderRadius: '8px', padding: '10px 12px' }}>
                         <div style={{ fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.04em', marginBottom: '6px' }}>⚡ STREAMING UPGRADES THIS WEEK</div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                             {streaming.slice(0, 5).map((o, i) => (
@@ -2524,7 +2356,7 @@
                     const shownFaCols = faTierCols(visibleFaCols);
                     const gridTemplate = '32px minmax(150px, 1fr) ' + shownFaCols.map(k => (faColumns[k]?.width || '44px')).join(' ');
                     const tableMinWidth = 32 + 150 + 24 + shownFaCols.reduce((s, k) => s + (parseInt(faColumns[k]?.width || '44', 10) || 44) + 4, 0);
-                    return <div style={{ background: 'var(--black)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: 'var(--card-radius, 10px)', overflowX: 'auto' }}>
+                    return <div style={{ background: 'var(--black)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '10px', overflowX: 'auto' }}>
                         {/* Header */}
                         <div className="fa-mkt-head" style={{ display: 'grid', gridTemplateColumns: gridTemplate, gap: '4px', padding: '8px 12px', minWidth: tableMinWidth + 'px', background: 'var(--acc-fill1, rgba(212,175,55,0.06))', borderBottom: '2px solid var(--acc-line1, rgba(212,175,55,0.2))' }}>
                             <span style={faHeaderStyle}></span>
@@ -2580,20 +2412,10 @@
                                         case 'college':    return <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.college || '\u2014'}</span>;
                                         case 'height':     return <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)' }}>{p.height ? Math.floor(p.height/12) + "'" + (p.height%12) + '"' : '\u2014'}</span>;
                                         case 'weight':     return <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)' }}>{p.weight || '\u2014'}</span>;
-                                        case 'depthChart': return <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: p.depth_chart_order != null ? 'var(--silver)' : 'var(--ov-8, rgba(255,255,255,0.3))' }}>{p.depth_chart_order != null ? pos + (p.depth_chart_order + 1) : '\u2014'}</span>;
+                                        // depth_chart_order is 1-based on Sleeper (1 = the starter).
+                                        case 'depthChart': return <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: p.depth_chart_order != null ? 'var(--silver)' : 'var(--ov-8, rgba(255,255,255,0.3))' }}>{p.depth_chart_order >= 1 ? pos + p.depth_chart_order : '\u2014'}</span>;
                                         case 'injury':     return <span style={{ fontSize: 'var(--text-label, 0.75rem)', fontWeight: 600, color: p.injury_status ? 'var(--bad)' : 'var(--ov-8, rgba(255,255,255,0.3))' }}>{p.injury_status || '—'}</span>;
                                         case 'faab':       return <span style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--gold)', fontWeight: 700 }}>{faab ? '$' + faab.lo + '-' + faab.hi : '\u2014'}</span>;
-                                        case 'sig1':
-                                        case 'sig2': {
-                                            const SC = window.App?.StatCatalog;
-                                            if (!SC) return rkDash;
-                                            const idx = k === 'sig1' ? 0 : 1;
-                                            const stat = SC.getSignatureStats(pos)[idx];
-                                            if (!stat) return rkDash;
-                                            const v = SC.computeStat(stat.key, statsData[pid] || {}, { perGame: true });
-                                            if (v == null) return rkDash;
-                                            return <span title={stat.label} style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)' }}>{SC.formatStat(v, stat.format)} <span style={{ opacity: 0.55, fontSize: '0.62rem' }}>{stat.short}</span></span>;
-                                        }
                                         case 'rkSlot': {
                                             // Prospect slot wins; vets show R<rd> #<overall> / UDFA from the static dataset.
                                             const dp = faDraftCap(pid);
@@ -2617,7 +2439,7 @@
                                 return <div key={pid} role="button" tabIndex={0} title="Open player card" onClick={() => {
                                     openFaPlayer(pid);
                                 }} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openFaPlayer(pid); } }} className={'fa-mkt-row' + (faSelectedPid === pid ? ' is-sel' : '')} style={{ display: 'grid', gridTemplateColumns: gridTemplate, background: faSelectedPid === pid ? 'var(--acc-fill2, rgba(212,175,55,0.08))' : 'transparent', gap: '4px', padding: '7px 12px', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.04))', cursor: 'pointer', alignItems: 'center', transition: 'background 0.1s' }} onMouseEnter={e => e.currentTarget.style.background = 'var(--acc-fill1, rgba(212,175,55,0.05))'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                                    <div className={'wr-ring wr-ring-' + pos} style={{ width: '26px', height: '26px', borderRadius: '50%', overflow: 'hidden', background: 'var(--acc-fill3, rgba(212,175,55,0.15))', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                    <div style={{ width: '26px', height: '26px', borderRadius: '50%', overflow: 'hidden', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                                         <img src={'https://sleepercdn.com/content/nfl/players/' + pid + '.jpg'} alt="" style={{ width: '26px', height: '26px', borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))' }} onError={e => { e.target.style.display='none'; const s=document.createElement('span'); s.style.cssText='font-size:var(--text-label, 0.75rem);font-weight:700;color:var(--gold)'; s.textContent=((p.first_name||'?')[0]+(p.last_name||'?')[0]).toUpperCase(); e.target.after(s); }} />
                                     </div>
                                     <div style={{ overflow: 'hidden' }}>
@@ -2642,7 +2464,7 @@
 
                     {/* Photo + Name */}
                     <div style={{ display: 'flex', gap: '14px', alignItems: 'center', marginBottom: '16px' }}>
-                        <div style={{ width: '64px', height: '64px', borderRadius: 'var(--card-radius-lg, 14px)', overflow: 'hidden', background: 'var(--acc-fill2, rgba(212,175,55,0.1))', border: '2px solid var(--acc-line2, rgba(212,175,55,0.3))', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <div style={{ width: '64px', height: '64px', borderRadius: '12px', overflow: 'hidden', background: 'var(--acc-fill2, rgba(212,175,55,0.1))', border: '2px solid var(--acc-line2, rgba(212,175,55,0.3))', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                             <img src={'https://sleepercdn.com/content/nfl/players/' + faSelectedPid + '.jpg'} style={{ width: '64px', height: '64px', objectFit: 'cover' }} onError={e => { e.target.style.display='none'; const s=document.createElement('span'); s.style.cssText='font-size:20px;font-weight:700;color:var(--gold)'; s.textContent=selInitials; e.target.after(s); }} />
                         </div>
                         <div>
@@ -2657,14 +2479,14 @@
                             { val: selDhq > 0 ? selDhq.toLocaleString() : '\u2014', label: valueKpiLabel, col: selDhq >= 7000 ? 'var(--good)' : selDhq >= 4000 ? 'var(--k-3498db, #3498db)' : selDhq >= 2000 ? 'var(--silver)' : 'var(--silver)' },
                             { val: selPpg || '\u2014', label: 'PPG', col: selPpg >= 10 ? 'var(--good)' : selPpg >= 5 ? 'var(--silver)' : 'var(--silver)' },
 	                            { val: selPeakYrs > 0 ? selPeakYrs + 'yr' : selValueYrs + 'yr', label: selPeakYrs > 0 ? 'PEAK LEFT' : 'VALUE LEFT', col: selPeakYrs >= 4 ? 'var(--good)' : selPeakYrs >= 1 ? 'var(--gold)' : selValueYrs >= 1 ? 'var(--warn)' : 'var(--bad)' },
-                        ].map((s, i) => <div key={i} style={{ textAlign: 'center', background: 'var(--ov-2, rgba(255,255,255,0.03))', borderRadius: 'var(--card-radius-sm, 8px)', padding: '10px 6px', border: '1px solid var(--ov-4, rgba(255,255,255,0.06))' }}>
+                        ].map((s, i) => <div key={i} style={{ textAlign: 'center', background: 'var(--ov-2, rgba(255,255,255,0.03))', borderRadius: '8px', padding: '10px 6px', border: '1px solid var(--ov-4, rgba(255,255,255,0.06))' }}>
                             <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '1.3rem', fontWeight: 600, color: s.col }}>{s.val}</div>
                             <div style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{s.label}</div>
                         </div>)}
                     </div>
 
                     {/* FAAB Recommendation */}
-                    {selFaab && <div style={{ background: 'var(--acc-fill1, rgba(212,175,55,0.06))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: 'var(--card-radius, 10px)', padding: '14px', marginBottom: '16px' }}>
+                    {selFaab && <div style={{ background: 'var(--acc-fill1, rgba(212,175,55,0.06))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: '10px', padding: '14px', marginBottom: '16px' }}>
                         <div style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-body, 1rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>FAAB Recommendation</div>
                         <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '1.8rem', fontWeight: 600, color: 'var(--gold)' }}>{'$' + selFaab.lo + ' \u2013 $' + selFaab.hi}</div>
                         <div style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', marginTop: '4px' }}>Suggested: <strong style={{ color: 'var(--white)' }}>{'$' + selFaab.sug}</strong> of ${remaining} remaining</div>
@@ -2679,7 +2501,7 @@
                     {isPro && assess && (() => {
                         const need = assess.needs?.find(n => n.pos === selPos);
                         const strength = assess.strengths?.includes(selPos);
-                        return <div style={{ background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.06))', borderRadius: 'var(--card-radius, 10px)', padding: '14px', marginBottom: '16px' }}>
+                        return <div style={{ background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.06))', borderRadius: '10px', padding: '14px', marginBottom: '16px' }}>
                             <div style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>ROSTER FIT</div>
                             {need && <div style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--k-2ecc71, #2ecc71)', fontWeight: 600, marginBottom: '4px' }}>Fills {selPos} {need.urgency}</div>}
                             {strength && <div style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', opacity: 0.7, marginBottom: '4px' }}>You already have {selPos} surplus — stash only</div>}
@@ -2698,34 +2520,12 @@
                                 selStats.pass_yd ? ['Pass Yds', Math.round(selStats.pass_yd).toLocaleString()] : selStats.rush_yd ? ['Rush Yds', Math.round(selStats.rush_yd).toLocaleString()] : selStats.rec ? ['Receptions', selStats.rec] : null,
                                 selStats.pass_td ? ['Pass TD', selStats.pass_td] : selStats.rush_td ? ['Rush TD', selStats.rush_td] : selStats.rec_td ? ['Rec TD', selStats.rec_td] : null,
                                 selStats.rec_yd ? ['Rec Yds', Math.round(selStats.rec_yd).toLocaleString()] : null,
-                            ].filter(Boolean).map(([label, val], i) => <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 8px', background: 'var(--ov-1, rgba(255,255,255,0.02))', borderRadius: 'var(--card-radius-xs, 5px)' }}>
+                            ].filter(Boolean).map(([label, val], i) => <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 8px', background: 'var(--ov-1, rgba(255,255,255,0.02))', borderRadius: '4px' }}>
                                 <span style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', opacity: 0.6 }}>{label}</span>
                                 <span style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--white)', fontWeight: 600 }}>{val}</span>
                             </div>)}
                         </div>
                     </div>}
-
-                    {/* Usage — beyond fantasy points. Position-scoped rows from
-                        window.App.StatCatalog, shown per-game where a per-game
-                        read (targets, RZ touches) is more comparable than a
-                        season total. */}
-                    {selStats.gp > 0 && window.App?.StatCatalog && (() => {
-                        const SC = window.App.StatCatalog;
-                        const rows = SC.getStatsForPosition(selPos)
-                            .filter(s => ['volume', 'efficiency', 'redzone', 'snaps'].includes(s.group) && !['passAtt','passCmp','rushAtt','targets','recYd','passYd','rushYd','recTd','passTd','rushTd','ints','fumLost'].includes(s.key))
-                            .map(s => ({ s, v: SC.computeStat(s.key, selStats) }))
-                            .filter(r => r.v != null);
-                        if (!rows.length) return null;
-                        return <div style={{ marginBottom: '16px' }}>
-                            <div style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>USAGE</div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                                {rows.map(({ s, v }) => <div key={s.key} title={s.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 8px', background: 'var(--ov-1, rgba(255,255,255,0.02))', borderRadius: 'var(--card-radius-xs, 5px)' }}>
-                                    <span style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', opacity: 0.6 }}>{s.short}</span>
-                                    <span style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--white)', fontWeight: 600 }}>{SC.formatStat(v, s.format)}</span>
-                                </div>)}
-                            </div>
-                        </div>;
-                    })()}
 
                     {/* Physical */}
                     {(selPlayer.height || selPlayer.weight) && <div style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', opacity: 0.6, marginBottom: '16px' }}>
@@ -2733,7 +2533,7 @@
                     </div>}
 
                     {/* Action */}
-                    <button onClick={() => openFaPlayer(faSelectedPid)} style={{ width: '100%', padding: '10px', background: 'var(--gold)', color: 'var(--black)', border: 'none', borderRadius: 'var(--card-radius-sm, 8px)', fontFamily: 'Rajdhani, sans-serif', fontSize: '1rem', letterSpacing: '0.06em', cursor: 'pointer' }}>FULL PLAYER CARD</button>
+                    <button onClick={() => openFaPlayer(faSelectedPid)} style={{ width: '100%', padding: '10px', background: 'var(--gold)', color: 'var(--black)', border: 'none', borderRadius: '8px', fontFamily: 'Rajdhani, sans-serif', fontSize: '1rem', letterSpacing: '0.06em', cursor: 'pointer' }}>FULL PLAYER CARD</button>
                 </div>}
             </div>
         );

@@ -262,7 +262,7 @@ function TrophyRoomTab({ currentLeague, leagueSkin, playersData, myRoster, sleep
         return React.createElement('div', { id: 'trophy-champ-card', style: { ...cardStyle, marginBottom: 0 } },
                 React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '6px' } },
                     React.createElement('div', { style: { ...headerStyle, flex: 1, marginBottom: 0 } }, 'CHAMPIONSHIP TIMELINE'),
-                    React.createElement('button', { onClick: () => exportAsImage('trophy-champ-card', (currentLeague?.name || 'league') + '-championships'), style: { background: 'none', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: 'var(--card-radius-sm, 8px)', color: 'var(--gold)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, padding: '3px 8px', minHeight: '44px', cursor: 'pointer', fontFamily: 'inherit' } }, '\uD83D\uDCF7 Image'),
+                    React.createElement('button', { onClick: () => exportAsImage('trophy-champ-card', (currentLeague?.name || 'league') + '-championships'), style: { background: 'none', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: '6px', color: 'var(--gold)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, padding: '3px 8px', minHeight: '44px', cursor: 'pointer', fontFamily: 'inherit' } }, '\uD83D\uDCF7 Image'),
                     React.createElement('button', { onClick: () => {
                         const text = seasons.map(s => {
                             const c = championships[s];
@@ -274,7 +274,7 @@ function TrophyRoomTab({ currentLeague, leagueSkin, playersData, myRoster, sleep
                             const btn = document.getElementById('share-champ-btn');
                             if (btn) { btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = 'Copy', 1500); }
                         });
-                    }, id: 'share-champ-btn', style: { background: 'none', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: 'var(--card-radius-sm, 8px)', color: 'var(--gold)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, padding: '3px 8px', minHeight: '44px', cursor: 'pointer', fontFamily: 'inherit' } }, 'Copy'),
+                    }, id: 'share-champ-btn', style: { background: 'none', border: '1px solid var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: '6px', color: 'var(--gold)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, padding: '3px 8px', minHeight: '44px', cursor: 'pointer', fontFamily: 'inherit' } }, 'Copy'),
                 ),
                 React.createElement('div', { style: { marginTop: '10px' } }),
                 seasons.length === 0
@@ -294,7 +294,7 @@ function TrophyRoomTab({ currentLeague, leagueSkin, playersData, myRoster, sleep
                             const onClick = () => {
                                 if (c.champion != null) { setSelectedOwner(c.champion); setView('personal'); }
                             };
-                            return React.createElement('div', { key: season, style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', background: 'var(--acc-fill1, rgba(212,175,55,0.06))', borderRadius: 'var(--card-radius-sm, 8px)', cursor: c.champion != null ? 'pointer' : 'default' }, onClick },
+                            return React.createElement('div', { key: season, style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', background: 'var(--acc-fill1, rgba(212,175,55,0.06))', borderRadius: '8px', cursor: c.champion != null ? 'pointer' : 'default' }, onClick },
                                 React.createElement('span', { style: { fontSize: '1.2rem' } }, '\uD83C\uDFC6'),
                                 React.createElement('div', { style: { flex: 1 } },
                                     React.createElement('div', { style: { fontSize: '0.85rem', fontWeight: 700, color: 'var(--gold)' } }, season + ' Champion'),
@@ -374,7 +374,7 @@ function TrophyRoomTab({ currentLeague, leagueSkin, playersData, myRoster, sleep
                         style: {
                             display: 'grid', gridTemplateColumns: cols, gap: '8px',
                             alignItems: 'center', padding: '6px 8px',
-                            borderRadius: 'var(--card-radius-xs, 5px)', cursor: o.isFormer ? 'default' : 'pointer',
+                            borderRadius: '4px', cursor: o.isFormer ? 'default' : 'pointer',
                             background: isMe ? 'var(--acc-fill2, rgba(212,175,55,0.08))' : 'var(--ov-1, rgba(255,255,255,0.01))',
                             borderLeft: isMe ? '2px solid var(--gold)' : '2px solid transparent',
                             fontFamily: 'var(--font-body)',
@@ -418,11 +418,11 @@ function TrophyRoomTab({ currentLeague, leagueSkin, playersData, myRoster, sleep
     function _leaderCard(title, list, valueFn, displayFn) {
         const sorted = [...list].sort((a, b) => valueFn(b) - valueFn(a));
         const leader = sorted[0];
-        if (!leader || valueFn(leader) <= 0) return React.createElement('div', { key: title, style: { padding: '8px', background: 'var(--ov-2, rgba(255,255,255,0.03))', borderRadius: 'var(--card-radius-sm, 8px)' } },
+        if (!leader || valueFn(leader) <= 0) return React.createElement('div', { key: title, style: { padding: '8px', background: 'var(--ov-2, rgba(255,255,255,0.03))', borderRadius: '8px' } },
             React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.04em' } }, title),
             React.createElement('div', { style: { fontSize: '0.72rem', color: 'var(--silver)', marginTop: '4px' } }, '\u2014'),
         );
-        return React.createElement('div', { key: title, style: { padding: '8px', background: 'var(--acc-fill1, rgba(212,175,55,0.06))', borderRadius: 'var(--card-radius-sm, 8px)', cursor: 'pointer' }, onClick: () => { setSelectedOwner(leader.rosterId); setView('personal'); } },
+        return React.createElement('div', { key: title, style: { padding: '8px', background: 'var(--acc-fill1, rgba(212,175,55,0.06))', borderRadius: '8px', cursor: 'pointer' }, onClick: () => { setSelectedOwner(leader.rosterId); setView('personal'); } },
             React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.04em' } }, title),
             React.createElement('div', { style: { fontSize: '1rem', fontWeight: 700, color: 'var(--white)', fontFamily: 'JetBrains Mono, monospace' } }, displayFn(leader)),
             React.createElement('div', { style: { fontSize: '0.72rem', color: 'var(--silver)', marginTop: '2px' } }, leader.ownerName),
@@ -483,7 +483,7 @@ function TrophyRoomTab({ currentLeague, leagueSkin, playersData, myRoster, sleep
             wonAwards.length > 0 && React.createElement('div', { style: cardStyle },
                 React.createElement('div', { style: headerStyle }, 'CUSTOM AWARDS'),
                 React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
-                    wonAwards.map((a, i) => React.createElement('div', { key: i, style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 8px', background: 'var(--acc-fill1, rgba(212,175,55,0.06))', borderRadius: 'var(--card-radius-sm, 8px)' } },
+                    wonAwards.map((a, i) => React.createElement('div', { key: i, style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 8px', background: 'var(--acc-fill1, rgba(212,175,55,0.06))', borderRadius: '6px' } },
                         React.createElement('span', { style: { fontSize: '0.95rem' } }, '\uD83C\uDFC5'),
                         React.createElement('div', { style: { flex: 1, minWidth: 0 } },
                             React.createElement('div', { style: { fontSize: '0.8rem', fontWeight: 700, color: 'var(--white)' } }, a.name),
@@ -532,7 +532,7 @@ function TrophyRoomTab({ currentLeague, leagueSkin, playersData, myRoster, sleep
                         o.seasonHistory.filter(s => {
                             const curYear = String(currentLeague?.season || new Date().getFullYear());
                             return s.season !== curYear || s.finish === 'Champion' || s.finish === 'Runner-Up';
-                        }).map(s => React.createElement('div', { key: s.season, style: { display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 6px', borderRadius: 'var(--card-radius-xs, 5px)', background: s.finish === 'Champion' ? 'var(--acc-fill2, rgba(212,175,55,0.1))' : 'transparent' } },
+                        }).map(s => React.createElement('div', { key: s.season, style: { display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 6px', borderRadius: '4px', background: s.finish === 'Champion' ? 'var(--acc-fill2, rgba(212,175,55,0.1))' : 'transparent' } },
                             React.createElement('span', { style: { fontSize: '0.75rem', minWidth: '16px' } }, finishIcon(s.finish)),
                             React.createElement('span', { style: { fontSize: '0.72rem', fontWeight: 600, color: 'var(--white)', minWidth: '32px' } }, s.season),
                             React.createElement('span', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: s.finish === 'Champion' ? 'var(--gold)' : 'var(--silver)', flex: 1 } }, formatSeasonLine(s)),
@@ -601,7 +601,7 @@ function TrophyRoomTab({ currentLeague, leagueSkin, playersData, myRoster, sleep
                     padding: '8px 10px',
                     background: isEarned ? wrAlpha(tc, '14') : 'var(--ov-1, rgba(255,255,255,0.02))',
                     border: '1px solid ' + (isEarned ? wrAlpha(tc, '55') : 'var(--ov-4, rgba(255,255,255,0.06))'),
-                    borderRadius: 'var(--card-radius-sm, 8px)',
+                    borderRadius: '8px',
                     opacity: isEarned ? 1 : 0.55,
                 },
             },
@@ -663,21 +663,21 @@ function TrophyRoomTab({ currentLeague, leagueSkin, playersData, myRoster, sleep
                             React.createElement('div', { style: { fontSize: '0.84rem', fontWeight: 700, color: 'var(--white)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, h.name),
                             React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', marginTop: '2px' } }, h.category + ' · ' + h.year + (h.note ? ' · ' + h.note : ''))
                         ),
-                        React.createElement('button', { onClick: () => removeHof(h.id), style: { background: 'none', border: '1px solid rgba(231,76,60,0.3)', color: 'var(--k-e74c3c, #e74c3c)', borderRadius: 'var(--card-radius-xs, 5px)', padding: '2px 8px', minHeight: '44px', fontSize: 'var(--text-micro, 0.6875rem)', cursor: 'pointer', fontFamily: 'inherit' } }, 'Remove')
+                        React.createElement('button', { onClick: () => removeHof(h.id), style: { background: 'none', border: '1px solid rgba(231,76,60,0.3)', color: 'var(--k-e74c3c, #e74c3c)', borderRadius: '4px', padding: '2px 8px', minHeight: '44px', fontSize: 'var(--text-micro, 0.6875rem)', cursor: 'pointer', fontFamily: 'inherit' } }, 'Remove')
                     ))
                 ),
             // Add form (scope-aware)
             React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '6px' } },
-                React.createElement('input', { value: hofDraft.scope === scope ? hofDraft.name : '', onChange: e => setHofDraft({ ...hofDraft, scope, name: e.target.value }), placeholder: scope === 'team' ? 'Player or moment name' : 'Player, team, or moment', style: { padding: '6px 8px', minHeight: '44px', background: 'var(--ov-3, rgba(255,255,255,0.04))', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: 'var(--card-radius-xs, 5px)', color: 'var(--white)', fontSize: '0.76rem', fontFamily: 'inherit' } }),
-                React.createElement('input', { value: hofDraft.scope === scope ? hofDraft.category : '', onChange: e => setHofDraft({ ...hofDraft, scope, category: e.target.value }), placeholder: 'Category (e.g., QB, Draft Steal)', style: { padding: '6px 8px', minHeight: '44px', background: 'var(--ov-3, rgba(255,255,255,0.04))', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: 'var(--card-radius-xs, 5px)', color: 'var(--white)', fontSize: '0.76rem', fontFamily: 'inherit' } }),
-                React.createElement('input', { type: 'number', value: hofDraft.scope === scope ? hofDraft.year : '', onChange: e => setHofDraft({ ...hofDraft, scope, year: e.target.value }), placeholder: 'Year', style: { padding: '6px 8px', minHeight: '44px', background: 'var(--ov-3, rgba(255,255,255,0.04))', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: 'var(--card-radius-xs, 5px)', color: 'var(--white)', fontSize: '0.76rem', fontFamily: 'inherit' } }),
-                React.createElement('button', { onClick: () => addHof(scope), disabled: hofDraft.scope !== scope || !hofDraft.name.trim(), style: { padding: '6px 12px', minHeight: '44px', background: (hofDraft.scope === scope && hofDraft.name.trim()) ? 'var(--gold)' : 'var(--acc-line1, rgba(212,175,55,0.2))', color: (hofDraft.scope === scope && hofDraft.name.trim()) ? 'var(--black)' : 'var(--silver)', border: 'none', borderRadius: 'var(--card-radius-xs, 5px)', fontSize: '0.72rem', fontWeight: 700, cursor: (hofDraft.scope === scope && hofDraft.name.trim()) ? 'pointer' : 'not-allowed', fontFamily: 'inherit' } }, 'Induct')
+                React.createElement('input', { value: hofDraft.scope === scope ? hofDraft.name : '', onChange: e => setHofDraft({ ...hofDraft, scope, name: e.target.value }), placeholder: scope === 'team' ? 'Player or moment name' : 'Player, team, or moment', style: { padding: '6px 8px', minHeight: '44px', background: 'var(--ov-3, rgba(255,255,255,0.04))', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: '4px', color: 'var(--white)', fontSize: '0.76rem', fontFamily: 'inherit' } }),
+                React.createElement('input', { value: hofDraft.scope === scope ? hofDraft.category : '', onChange: e => setHofDraft({ ...hofDraft, scope, category: e.target.value }), placeholder: 'Category (e.g., QB, Draft Steal)', style: { padding: '6px 8px', minHeight: '44px', background: 'var(--ov-3, rgba(255,255,255,0.04))', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: '4px', color: 'var(--white)', fontSize: '0.76rem', fontFamily: 'inherit' } }),
+                React.createElement('input', { type: 'number', value: hofDraft.scope === scope ? hofDraft.year : '', onChange: e => setHofDraft({ ...hofDraft, scope, year: e.target.value }), placeholder: 'Year', style: { padding: '6px 8px', minHeight: '44px', background: 'var(--ov-3, rgba(255,255,255,0.04))', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: '4px', color: 'var(--white)', fontSize: '0.76rem', fontFamily: 'inherit' } }),
+                React.createElement('button', { onClick: () => addHof(scope), disabled: hofDraft.scope !== scope || !hofDraft.name.trim(), style: { padding: '6px 12px', minHeight: '44px', background: (hofDraft.scope === scope && hofDraft.name.trim()) ? 'var(--gold)' : 'var(--acc-line1, rgba(212,175,55,0.2))', color: (hofDraft.scope === scope && hofDraft.name.trim()) ? 'var(--black)' : 'var(--silver)', border: 'none', borderRadius: '4px', fontSize: '0.72rem', fontWeight: 700, cursor: (hofDraft.scope === scope && hofDraft.name.trim()) ? 'pointer' : 'not-allowed', fontFamily: 'inherit' } }, 'Induct')
             )
         );
     }
 
     function _statBox(label, value, sub) {
-        return React.createElement('div', { style: { padding: '10px', background: 'var(--acc-fill1, rgba(212,175,55,0.06))', borderRadius: 'var(--card-radius-sm, 8px)', textAlign: 'center' } },
+        return React.createElement('div', { style: { padding: '10px', background: 'var(--acc-fill1, rgba(212,175,55,0.06))', borderRadius: '8px', textAlign: 'center' } },
             React.createElement('div', { style: { fontSize: '1.1rem', fontWeight: 700, color: 'var(--white)', fontFamily: 'JetBrains Mono, monospace' } }, value || '\u2014'),
             React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', marginTop: '2px', textTransform: 'uppercase', letterSpacing: '0.04em' } }, label),
             sub && React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', marginTop: '2px' } }, sub),
@@ -774,7 +774,7 @@ ${importText.substring(0, 8000)}`;
                     'Upload a file or paste your league\'s historical data. Alex will parse the structure and map it into your Trophy Room.'),
                 // File upload
                 React.createElement('div', { style: { display: 'flex', gap: '8px', marginBottom: '10px' } },
-                    React.createElement('label', { style: { flex: 1, padding: '10px', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', border: '1px dashed var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: 'var(--card-radius-sm, 8px)', textAlign: 'center', cursor: 'pointer', fontSize: '0.78rem', color: 'var(--gold)', fontWeight: 600 } },
+                    React.createElement('label', { style: { flex: 1, padding: '10px', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', border: '1px dashed var(--acc-line2, rgba(212,175,55,0.3))', borderRadius: '8px', textAlign: 'center', cursor: 'pointer', fontSize: '0.78rem', color: 'var(--gold)', fontWeight: 600 } },
                         '\uD83D\uDCC1 Upload CSV, Excel, PDF, or Image',
                         React.createElement('input', { type: 'file', accept: '.csv,.tsv,.txt,.xlsx,.xls,.pdf,.png,.jpg,.jpeg,.gif,.webp', onChange: handleFileUpload, style: { display: 'none' } }),
                     ),
@@ -783,12 +783,12 @@ ${importText.substring(0, 8000)}`;
                 React.createElement('textarea', {
                     value: importText, onChange: e => setImportText(e.target.value),
                     placeholder: 'Paste your spreadsheet data here...\n\nExample:\nTEAM  FROM  TO  W  L  CHMP  2ND\nSkjjcruz  2021  47  22  2  1\n...',
-                    style: { width: '100%', minHeight: '200px', padding: '12px', background: 'var(--ov-3, rgba(255,255,255,0.04))', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: 'var(--card-radius-sm, 8px)', color: 'var(--white)', fontSize: '0.78rem', fontFamily: 'JetBrains Mono, monospace', resize: 'vertical', boxSizing: 'border-box' }
+                    style: { width: '100%', minHeight: '200px', padding: '12px', background: 'var(--ov-3, rgba(255,255,255,0.04))', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: '8px', color: 'var(--white)', fontSize: '0.78rem', fontFamily: 'JetBrains Mono, monospace', resize: 'vertical', boxSizing: 'border-box' }
                 }),
                 React.createElement('button', {
                     // Free: button stays live but opens the Pro upsell (parseChronicles gates).
                     onClick: parseChronicles, disabled: importStatus === 'parsing' || (isPro && !importText.trim()),
-                    style: { width: '100%', marginTop: '10px', padding: '10px', background: importStatus === 'parsing' ? 'var(--silver)' : 'var(--gold)', color: 'var(--black)', border: 'none', borderRadius: 'var(--card-radius-sm, 8px)', fontSize: '0.85rem', fontWeight: 700, cursor: importStatus === 'parsing' ? 'wait' : 'pointer', fontFamily: 'inherit' }
+                    style: { width: '100%', marginTop: '10px', padding: '10px', background: importStatus === 'parsing' ? 'var(--silver)' : 'var(--gold)', color: 'var(--black)', border: 'none', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 700, cursor: importStatus === 'parsing' ? 'wait' : 'pointer', fontFamily: 'inherit' }
                 }, !isPro ? '\ud83d\udd12 Import with Alex \u2014 Pro' : importStatus === 'parsing' ? 'Alex is parsing...' : importStatus === 'done' ? 'Imported!' : importStatus === 'error' ? 'Error \u2014 Try Again' : 'Import with Alex'),
             ),
         );
@@ -886,7 +886,7 @@ ${importText.substring(0, 8000)}`;
             ),
 
             // Re-import button
-            React.createElement('button', { onClick: () => setView('import'), style: { marginTop: '12px', width: '100%', padding: '8px', background: 'none', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: 'var(--card-radius-sm, 8px)', color: 'var(--silver)', fontSize: '0.72rem', cursor: 'pointer', fontFamily: 'inherit' } }, 'Re-import Chronicles'),
+            React.createElement('button', { onClick: () => setView('import'), style: { marginTop: '12px', width: '100%', padding: '8px', background: 'none', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: '8px', color: 'var(--silver)', fontSize: '0.72rem', cursor: 'pointer', fontFamily: 'inherit' } }, 'Re-import Chronicles'),
         );
     }
 
@@ -995,7 +995,7 @@ ${importText.substring(0, 8000)}`;
                         const posCol = POS_COLORS[meta.pos] || 'var(--k-8d887e, #8d887e)';
                         return React.createElement('div', {
                             key: p.pid, onClick: () => { if (typeof window.openPlayerModal === 'function') window.openPlayerModal(p.pid); },
-                            style: { padding: '10px 12px', background: 'var(--acc-fill1, rgba(212,175,55,0.06))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: 'var(--card-radius-sm, 8px)', cursor: 'pointer' },
+                            style: { padding: '10px 12px', background: 'var(--acc-fill1, rgba(212,175,55,0.06))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: '8px', cursor: 'pointer' },
                         },
                             React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' } },
                                 React.createElement('span', { style: { fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: posCol, padding: '2px 6px', borderRadius: '3px', background: wrAlpha(posCol, '22') } }, meta.pos),
@@ -1031,9 +1031,9 @@ ${importText.substring(0, 8000)}`;
                         const posCol = POS_COLORS[p.pos] || 'var(--k-8d887e, #8d887e)';
                         return React.createElement('div', {
                             key: slot, onClick: () => { if (typeof window.openPlayerModal === 'function') window.openPlayerModal(p.pid); },
-                            style: { padding: '8px 10px', background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid ' + wrAlpha(posCol, '44'), borderRadius: 'var(--card-radius-sm, 8px)', cursor: 'pointer' },
+                            style: { padding: '8px 10px', background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid ' + wrAlpha(posCol, '44'), borderRadius: '6px', cursor: 'pointer' },
                         },
-                            React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: posCol, textTransform: 'uppercase', letterSpacing: '0.08em' } }, _posLabelOf(slot)),
+                            React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: posCol, textTransform: 'uppercase', letterSpacing: '0.08em' } }, slot),
                             React.createElement('div', { style: { fontSize: '0.85rem', fontWeight: 700, color: 'var(--white)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: '3px' } }, p.name),
                             React.createElement('div', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.75, marginTop: '1px' } }, p.season + ' · ' + (p.ownerName || '').slice(0, 14)),
                             React.createElement('div', { style: { fontSize: '0.92rem', fontWeight: 700, color: 'var(--gold)', fontFamily: 'JetBrains Mono, monospace', marginTop: '4px' } }, p.points.toFixed(1) + ' pts'),
@@ -1071,7 +1071,7 @@ ${importText.substring(0, 8000)}`;
                             const avg = (p.totalPoints / p.appearances).toFixed(1);
                             return React.createElement('div', {
                                 key: p.pid, onClick: () => { if (typeof window.openPlayerModal === 'function') window.openPlayerModal(p.pid); },
-                                style: { display: 'grid', gridTemplateColumns: '40px 1fr 60px 70px 60px 1fr', gap: '8px', padding: '5px 8px', fontSize: '0.74rem', alignItems: 'center', cursor: 'pointer', background: p.appearances >= 2 ? 'var(--acc-fill1, rgba(212,175,55,0.04))' : 'var(--ov-1, rgba(255,255,255,0.01))', borderRadius: 'var(--card-radius-xs, 5px)' },
+                                style: { display: 'grid', gridTemplateColumns: '40px 1fr 60px 70px 60px 1fr', gap: '8px', padding: '5px 8px', fontSize: '0.74rem', alignItems: 'center', cursor: 'pointer', background: p.appearances >= 2 ? 'var(--acc-fill1, rgba(212,175,55,0.04))' : 'var(--ov-1, rgba(255,255,255,0.01))', borderRadius: '4px' },
                             },
                                 React.createElement('span', { style: { fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, color: posCol, padding: '2px 5px', borderRadius: '3px', background: wrAlpha(posCol, '22'), textAlign: 'center' } }, meta.pos),
                                 React.createElement('span', { style: { color: 'var(--white)', fontWeight: p.appearances >= 2 ? 700 : 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, meta.name + (p.appearances >= 2 ? ' 🎓' : '')),
@@ -1172,7 +1172,7 @@ Make it feel like a real sports story. Give it a compelling headline. End with a
             view === 'league' && React.createElement('button', {
                 key: 'recap-btn',
                 onClick: generateSeasonRecap, disabled: recapStatus === 'generating',
-                style: { width: '100%', marginBottom: 'var(--space-md, 12px)', padding: '6px 12px', minHeight: '44px', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: 'var(--card-radius-sm, 8px)', color: 'var(--gold)', fontSize: '0.7rem', fontWeight: 700, cursor: recapStatus === 'generating' ? 'wait' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
+                style: { width: '100%', marginBottom: 'var(--space-md, 12px)', padding: '6px 12px', minHeight: '44px', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: '6px', color: 'var(--gold)', fontSize: '0.7rem', fontWeight: 700, cursor: recapStatus === 'generating' ? 'wait' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
             }, !isPro ? '🔒 Season Recap — Pro' : recapStatus === 'generating' ? 'Alex is writing…' : '✨ Season Recap'),
         );
     }
@@ -1186,7 +1186,7 @@ Make it feel like a real sports story. Give it a compelling headline. End with a
         const ghostBtnStyle = {
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
             minHeight: '44px', padding: '8px 14px', margin: '8px 4px 0',
-            borderRadius: 'var(--card-radius-sm, 8px)', cursor: 'pointer',
+            borderRadius: '6px', cursor: 'pointer',
             background: 'transparent', color: 'var(--gold)', border: '1px solid rgba(212,175,55,0.5)',
             fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)',
             fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700,
@@ -1335,7 +1335,7 @@ Make it feel like a real sports story. Give it a compelling headline. End with a
     // ══════════════════════════════════════════════════════════════
     const tabBtn = (label, tabKey, clickOverride) => React.createElement('button', {
         onClick: clickOverride || (() => setView(tabKey)),
-        style: { padding: '6px 12px', minHeight: '44px', fontSize: '0.72rem', fontWeight: 700, borderRadius: 'var(--card-radius-sm, 8px)', border: '1px solid ' + (view === tabKey ? 'var(--gold)' : 'var(--ov-6, rgba(255,255,255,0.1))'), background: view === tabKey ? 'var(--gold)' : 'transparent', color: view === tabKey ? 'var(--black)' : 'var(--silver)', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }
+        style: { padding: '6px 12px', minHeight: '44px', fontSize: '0.72rem', fontWeight: 700, borderRadius: '6px', border: '1px solid ' + (view === tabKey ? 'var(--gold)' : 'var(--ov-6, rgba(255,255,255,0.1))'), background: view === tabKey ? 'var(--gold)' : 'transparent', color: view === tabKey ? 'var(--black)' : 'var(--silver)', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }
     }, label);
 
     return React.createElement('div', { style: { padding: '0' } },
@@ -1351,18 +1351,18 @@ Make it feel like a real sports story. Give it a compelling headline. End with a
             view === 'league' && React.createElement('button', {
                 key: 'recap-btn',
                 onClick: generateSeasonRecap, disabled: recapStatus === 'generating',
-                style: { marginLeft: 'auto', padding: '6px 12px', minHeight: '44px', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: 'var(--card-radius-sm, 8px)', color: 'var(--gold)', fontSize: '0.7rem', fontWeight: 700, cursor: recapStatus === 'generating' ? 'wait' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
+                style: { marginLeft: 'auto', padding: '6px 12px', minHeight: '44px', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: '6px', color: 'var(--gold)', fontSize: '0.7rem', fontWeight: 700, cursor: recapStatus === 'generating' ? 'wait' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
             }, !isPro ? '🔒 Season Recap — Pro' : recapStatus === 'generating' ? 'Alex is writing…' : '✨ Season Recap'),
         ),
 
         // Season Recap result card (only shown after generation). Long-form
         // starts collapsed past ~12 lines (268px ≈ 12 × 1.7-line-height) with
         // a "Full read" expand — the de-busying long-form rule.
-        view === 'league' && recapStatus === 'done' && recapText && React.createElement('div', { style: { ...cardStyle, whiteSpace: 'pre-wrap' } },
+        view === 'league' && recapStatus === 'done' && recapText && React.createElement('div', { style: { ...cardStyle } },
             React.createElement('div', { style: headerStyle }, 'SEASON RECAP'),
             (window.WR && window.WR.ClampedRead)
-                ? React.createElement(window.WR.ClampedRead, { text: recapText, maxHeight: 268, style: { fontSize: '0.82rem', color: 'var(--silver)', lineHeight: 1.7 }, fadeColor: 'var(--black, #000)' })
-                : React.createElement('div', { style: { fontSize: '0.82rem', color: 'var(--silver)', lineHeight: 1.7 } }, recapText),
+                ? React.createElement(window.WR.ClampedRead, { html: (window.WR.formatAI ? window.WR.formatAI(recapText) : recapText), maxHeight: 268, style: { fontSize: '0.82rem', color: 'var(--silver)', lineHeight: 1.5 }, fadeColor: 'var(--black, #000)' })
+                : React.createElement('div', { style: { fontSize: '0.82rem', color: 'var(--silver)', lineHeight: 1.5 }, dangerouslySetInnerHTML: { __html: (window.WR && window.WR.formatAI) ? window.WR.formatAI(recapText) : recapText } }),
         ),
 
         view === 'league' ? renderLeagueView()

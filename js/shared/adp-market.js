@@ -63,7 +63,7 @@
         }
     }
 
-    function _cacheKey(year) { return 'wr_adp_market_' + year; }
+    function _cacheKey(year) { return 'wr_adp_market_v2_' + year; } // v2: map now includes K/DEF
 
     function _readCache(year) {
         try {
@@ -71,7 +71,8 @@
             if (!raw) return null;
             const cached = JSON.parse(raw);
             if (Date.now() - (cached._ts || 0) >= CACHE_TTL_MS) return null;
-            return cached.map || null;
+            if (!cached.map || !Object.keys(cached.map).length) return null; // never serve a cached empty map
+            return cached.map;
         } catch (e) {
             return null;
         }
@@ -106,29 +107,20 @@
         return bridge;
     }
 
-    // MFL blocks cross-origin browser requests outright (no CORS headers —
-    // confirmed live: 'Access-Control-Allow-Origin' pinned to MFL's own
-    // www*.myfantasyleague.com host). Route through the same Supabase Edge
-    // Function relay the rest of the app's MFL support already uses
-    // (dhq-shared/mfl-api.js's _mflGet/_getProxyUrl) rather than a direct
-    // fetch — mirrored here instead of imported so this module stays
-    // self-contained (it doesn't otherwise depend on mfl-api.js).
-    function _mflProxyUrl() {
-        const config = root.App?.CONFIG || root.OD?.CONFIG || {};
-        if (config.endpoints?.mflProxy) return config.endpoints.mflProxy;
-        if (config.functionsBase) return config.functionsBase + '/mfl-proxy';
-        const base = root.OD?.SUPABASE_URL || root.App?.SUPABASE_URL;
-        return base ? base + '/functions/v1/mfl-proxy' : null;
-    }
-
     async function _fetchMflAdp(year) {
         const url = 'https://api.myfantasyleague.com/' + year + '/export?TYPE=adp&JSON=1';
-        const proxyUrl = _mflProxyUrl();
-        const anonKey = root.App?.CONFIG?.supabaseAnon || root.OD?.CONFIG?.supabaseAnon || root.OD?.SUPABASE_ANON || root.App?.SUPABASE_ANON;
-        const token = root.OD?.getSessionToken?.() || null;
-        let data;
-        if (proxyUrl && anonKey) {
-            const r = await fetch(proxyUrl, {
+        // MFL pins its CORS header to its own www hosts (live-checked
+        // 2026-08-15), so a direct browser fetch from our origin dies
+        // silently. Route through the same mfl-proxy Edge Function the MFL
+        // league importer uses (reconai-shared/mfl-api.js), resolved at call
+        // time because this module loads before the supabase client. Direct
+        // fetch stays as the fallback for same-origin/dev contexts.
+        let data = null;
+        const proxyBase = root.OD?.SUPABASE_URL || root.App?.SUPABASE_URL || null;
+        const anonKey = root.OD?.SUPABASE_ANON || root.App?.SUPABASE_ANON || null;
+        if (proxyBase && anonKey) {
+            const token = root.OD?.getSessionToken?.() || null;
+            const r = await fetch(proxyBase + '/functions/v1/mfl-proxy', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -137,12 +129,9 @@
                 },
                 body: JSON.stringify({ url }),
             });
-            if (!r.ok) return [];
+            if (!r || !r.ok) return [];
             data = await r.json();
         } else {
-            // Fallback for contexts with no Supabase config (e.g. same-origin
-            // test harnesses) — a real browser hitting MFL directly still
-            // fails on CORS, same as before this fix, just without a proxy.
             const r = await fetch(url);
             if (!r || !r.ok) return [];
             data = await r.json();
@@ -152,8 +141,73 @@
         return rows ? [rows] : [];
     }
 
+    async function _fetchMflDirectory(year) {
+        // MFL's player directory (id -> "Last, First"/position/team) — the
+        // K/DEF join needs it because FantasyCalc's bridge is offense-only,
+        // so kickers and defenses could never resolve a sleeperId through it
+        // (owner report 2026-08-15: the K column showed camp legs).
+        const url = 'https://api.myfantasyleague.com/' + year + '/export?TYPE=players&JSON=1';
+        let data = null;
+        const proxyBase = root.OD?.SUPABASE_URL || root.App?.SUPABASE_URL || null;
+        const anonKey = root.OD?.SUPABASE_ANON || root.App?.SUPABASE_ANON || null;
+        if (proxyBase && anonKey) {
+            const token = root.OD?.getSessionToken?.() || null;
+            const r = await fetch(proxyBase + '/functions/v1/mfl-proxy', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (token || anonKey), 'apikey': anonKey },
+                body: JSON.stringify({ url }),
+            });
+            if (!r || !r.ok) return {};
+            data = await r.json();
+        } else {
+            const r = await fetch(url);
+            if (!r || !r.ok) return {};
+            data = await r.json();
+        }
+        const rows = data && data.players && data.players.player;
+        const arr = Array.isArray(rows) ? rows : (rows ? [rows] : []);
+        const byId = {};
+        arr.forEach(row => { if (row && row.id) byId[String(row.id)] = row; });
+        return byId;
+    }
+
+    const MFL_TEAM_FIX = { NEP: 'NE', GBP: 'GB', KCC: 'KC', NOS: 'NO', SFO: 'SF', TBB: 'TB', LVR: 'LV', JAC: 'JAX' };
+    function _normName(x) { return String(x || '').toLowerCase().replace(/[^a-z]/g, ''); }
+    // Join K/DEF ADP rows to Sleeper ids by name+team / team. Needs the
+    // Sleeper player DB (window.S.players), which loads after this module —
+    // callers retry until it lands. Returns true once the join ran.
+    function _enrichKD(map, adpRows, dirById) {
+        const src = root.S && root.S.players;
+        if (!src || !Object.keys(src).length) return false;
+        const kIndex = {};
+        Object.keys(src).forEach(sid => {
+            const d = src[sid] || {};
+            if (d.position === 'K') kIndex[_normName(d.last_name) + _normName(d.first_name) + '|' + (d.team || '')] = sid;
+        });
+        (adpRows || []).forEach(row => {
+            const m = dirById[String(row && row.id)];
+            if (!m) return;
+            const pos = m.position;
+            if (pos !== 'PK' && pos !== 'Def' && pos !== 'TMDF') return;
+            if (Number(row.draftsSelectedIn) < 3) return; // single-draft flukes
+            const team = MFL_TEAM_FIX[m.team] || m.team || '';
+            let sid = null;
+            if (pos === 'PK') {
+                const parts = String(m.name || '').split(', ');
+                sid = kIndex[_normName(parts[0]) + _normName(parts[1]) + '|' + team] || null;
+            } else if (src[team] && src[team].position === 'DEF') {
+                sid = team; // Sleeper keys team defenses by team code
+            }
+            const adpVal = Number(row.averagePick);
+            if (sid && adpVal > 0 && !map[sid]) {
+                map[sid] = { adp: adpVal, rank: Number(row.rank) || null, draftsSelectedIn: Number(row.draftsSelectedIn) || null };
+            }
+        });
+        return true;
+    }
+
     async function _buildAdpMap(year) {
-        const [bridge, adpRows] = await Promise.all([_buildMflToSleeperBridge(), _fetchMflAdp(year)]);
+        const [bridge, adpRows, dirById] = await Promise.all([_buildMflToSleeperBridge(), _fetchMflAdp(year), _fetchMflDirectory(year)]);
         const map = {};
         adpRows.forEach(row => {
             const mflId = row && row.id;
@@ -167,7 +221,29 @@
                 draftsSelectedIn: Number(row.draftsSelectedIn) || null,
             };
         });
+        // K/DEF join — immediately when the Sleeper DB is up, else retried by
+        // the caller via _retryEnrichKD once it loads.
+        if (!_enrichKD(map, adpRows, dirById)) {
+            _pendingKD = { adpRows, dirById };
+        }
         return map;
+    }
+
+    let _pendingKD = null;
+    let _kdTimer = null;
+    function _retryEnrichKD(year) {
+        if (!_pendingKD || _kdTimer) return;
+        let tries = 0;
+        _kdTimer = setInterval(() => {
+            tries += 1;
+            if (!_pendingKD || tries > 20) { clearInterval(_kdTimer); _kdTimer = null; return; }
+            if (_map && _enrichKD(_map, _pendingKD.adpRows, _pendingKD.dirById)) {
+                _pendingKD = null;
+                clearInterval(_kdTimer); _kdTimer = null;
+                _writeCache(year, _map);
+                try { root.dispatchEvent(new CustomEvent('wr:adp-loaded', { detail: { year, cached: false, kd: true } })); } catch (e) { /* headless */ }
+            }
+        }, 3000);
     }
 
     async function fetchRedraftAdp() {
@@ -187,10 +263,17 @@
         _year = year;
         _fetching = _buildAdpMap(year)
             .then(map => {
+                // An empty map is a transient failure, not an answer — leave
+                // _map unset so the next fetchRedraftAdp call retries instead
+                // of pinning dashes for the whole session (the module loads
+                // before the supabase client, so the eager warm-up can miss
+                // the proxy and come back empty).
+                if (!map || !Object.keys(map).length) return _map || {};
                 _map = map;
                 _year = year;
                 _writeCache(year, map);
                 try { root.dispatchEvent(new CustomEvent('wr:adp-loaded', { detail: { year, cached: false } })); } catch (e) { /* headless */ }
+                _retryEnrichKD(year);
                 return map;
             })
             .catch(() => {

@@ -186,6 +186,42 @@
         return 'var(--loss-red)';
     }
 
+    // ── Psych-tax visibility preference (Owner Settings → League room widgets) ──
+    // Reads/writes the SAME dhq_owner_club_v1 club object app.js owns, but through a
+    // tiny local helper — this file must not depend on app.js internals or load order.
+    // Merge-write like app.js's saveOwnerClub (read object, spread patch, write back)
+    // so no other club field is ever clobbered. Default ON when the key/flag is absent.
+    // Sync: 'dhq:owner-club-changed' (same tab — the Owner Settings toggle and the
+    // ✕ here both fire it) + the native 'storage' event (change made in another tab).
+    const TC_OWNER_CLUB_KEY = 'dhq_owner_club_v1';
+    function tcReadOwnerClub() {
+        try {
+            const raw = JSON.parse(localStorage.getItem(TC_OWNER_CLUB_KEY) || 'null');
+            return raw && typeof raw === 'object' ? raw : {};
+        } catch (e) { return {}; }
+    }
+    function tcShowPsychTaxPref() { return tcReadOwnerClub().showPsychTax !== false; }
+    function tcSetShowPsychTaxPref(on) {
+        try { localStorage.setItem(TC_OWNER_CLUB_KEY, JSON.stringify({ ...tcReadOwnerClub(), showPsychTax: !!on })); } catch (e) { /* non-fatal */ }
+        try { window.dispatchEvent(new CustomEvent('dhq:owner-club-changed')); } catch (e) { /* non-fatal */ }
+    }
+    function useTcShowPsychTax() {
+        const [show, setShow] = React.useState(tcShowPsychTaxPref);
+        React.useEffect(() => {
+            const sync = () => setShow(tcShowPsychTaxPref());
+            const onStorage = (e) => { if (!e.key || e.key === TC_OWNER_CLUB_KEY) sync(); };
+            window.addEventListener('dhq:owner-club-changed', sync);
+            window.addEventListener('storage', onStorage);
+            return () => {
+                window.removeEventListener('dhq:owner-club-changed', sync);
+                window.removeEventListener('storage', onStorage);
+            };
+        }, []);
+        const hide = React.useCallback(() => { tcSetShowPsychTaxPref(false); setShow(false); }, []);
+        const reveal = React.useCallback(() => { tcSetShowPsychTaxPref(true); setShow(true); }, []);
+        return [show, hide, reveal];
+    }
+
     // ── TcVerdictPanel — extracted from the retired analyzer surface (Step-1 refactor) ──
     // Pure presentational: takes already-computed deal-evaluation values and renders the verdict
     // headline, impact grid, posture/DNA chips, 8-factor psych-tax table, and likelihood bar.
@@ -197,13 +233,14 @@
     // (wrIsPro() only — never canAccess).
     function TcVerdictPanel({ verdictColor, diffDisplay, grade, totalA, totalB, rosterImpactLabel, starterValueDelta, pickCapitalDelta, pickQuantityDelta, faabDelta, FAAB_RATE, likelihoodColor, likelihood, netTaxTotal, manualBehaviorFit, otherOwnerId, theirPosture, otherDnaKey, otherDna, manualBehaviorProfile, psychTaxes, grudgeTax, gmFloor, gmModeLabel, gmViability, gmWarnings }) {
         const _pro = typeof window.wrIsPro === 'function' ? window.wrIsPro() : true;
-        // Post-review: the 8-factor psych-tax table + approach line live behind a
-        // collapsed-by-default 'Why? ▾' toggle (owner-approved wireframe) so the rail
-        // Verdict card stays short enough to keep the DNA-mini card above the fold.
-        const [whyOpen, setWhyOpen] = React.useState(false);
+        // Owner ruling (restored): the 8-factor psych-tax table + approach line render
+        // ALWAYS-VISIBLE at the bottom of the panel — the old collapsed 'Why? ▾'
+        // toggle made them effectively invisible. Off-switch: the ✕ on the breakdown
+        // header or Owner Settings → League room widgets (showPsychTax, club store).
+        const [showPsychTax, hidePsychTax, revealPsychTax] = useTcShowPsychTax();
         return (
             <div className="tc-ta-verdict tc-ta-sticky-summary" id="wr-export-trade">
-                <div className="tc-section-hdr" style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>TRADE ANALYSIS<button onClick={() => window.wrExport?.capture(document.getElementById('wr-export-trade'), 'trade-analysis')} style={{ background:'none', border:'1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius:'var(--card-radius-xs, 5px)', padding:'2px 8px', color:'var(--gold)', fontSize:'var(--text-micro, 0.6875rem)', cursor:'pointer', fontFamily: 'var(--font-body)', minHeight:'44px', display:'inline-flex', alignItems:'center', justifyContent:'center' }}>Snapshot</button></div>
+                <div className="tc-section-hdr" style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>TRADE ANALYSIS<button onClick={() => window.wrExport?.capture(document.getElementById('wr-export-trade'), 'trade-analysis')} style={{ background:'none', border:'1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius:'4px', padding:'2px 8px', color:'var(--gold)', fontSize:'var(--text-micro, 0.6875rem)', cursor:'pointer', fontFamily: 'var(--font-body)', minHeight:'44px', display:'inline-flex', alignItems:'center', justifyContent:'center' }}>Snapshot</button></div>
                 <div style={{ display:'flex', alignItems:'baseline', gap:'0.6rem', flexWrap:'wrap' }}>
                     <span className="tc-verdict-diff" style={{ color: verdictColor }}>{grade?.grade || '--'}</span>
                     <span style={{ fontFamily:'var(--font-title)', fontSize:'1.1rem', color: verdictColor }}>{(grade?.label || '').toUpperCase()}</span>
@@ -251,13 +288,26 @@
                 {!_pro && typeof window.WrGatedMoreRow === 'function' && (
                     React.createElement(window.WrGatedMoreRow, { title: 'Acceptance odds & trade psychology', sub: 'Accept %, the 8-factor psych-tax breakdown, and posture, DNA, and behavior reads are Pro.', feature: 'trade-psychology' })
                 )}
-                {_pro && <div>
-                    <button type="button" className="tc-dhq-detail-toggle" onClick={() => setWhyOpen(v => !v)}>
-                        {whyOpen ? 'Hide why ▴' : 'Why? ▾'}
+                {_pro && !showPsychTax && (
+                    <button type="button" onClick={revealPsychTax}
+                        title="Show the Owner DNA tax table for this trade"
+                        style={{ alignSelf:'flex-start', display:'inline-flex', alignItems:'center', gap:'0.4rem', background:'var(--acc-fill3, rgba(212,175,55,0.08))', border:'1px solid var(--acc-line2, rgba(212,175,55,0.35))', borderRadius:'8px', cursor:'pointer', padding:'0.4rem 0.8rem', fontSize:'0.72rem', fontWeight:700, color:'var(--gold, #d4af37)', textTransform:'uppercase', letterSpacing:'0.06em', transition:'all .14s' }}
+                        onMouseEnter={e => { e.currentTarget.style.background = 'var(--acc-fill2, rgba(212,175,55,0.16))'; e.currentTarget.style.boxShadow = '0 0 12px rgba(212,175,55,0.18)'; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'var(--acc-fill3, rgba(212,175,55,0.08))'; e.currentTarget.style.boxShadow = 'none'; }}>
+                        🧠 Show trade psychology ▸
                     </button>
-                    {whyOpen && <div style={{ marginTop:'0.45rem', display:'flex', flexDirection:'column', gap:'0.5rem' }}>
+                )}
+                {_pro && showPsychTax && <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem' }}>
                     <div>
-                    <div style={{ fontSize:'0.72rem', color:'var(--silver)', opacity:0.65, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:'0.35rem' }}>Psychological Tax Breakdown {React.createElement(Tip, null, 'Each owner\'s DNA type creates percentage-point acceptance modifiers beyond pure value. Taxes reduce likelihood, bonuses increase it. Factors: endowment effect, panic premium, status tax, loss aversion, rebuilding discount, need fulfillment, window alignment, and posture.')}</div>
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:'0.5rem', marginBottom:'0.35rem' }}>
+                        <span style={{ fontSize:'0.72rem', color:'var(--silver)', opacity:0.65, textTransform:'uppercase', letterSpacing:'0.06em' }}>Psychological Tax Breakdown {React.createElement(Tip, null, 'Each owner\'s DNA type creates percentage-point acceptance modifiers beyond pure value. Taxes reduce likelihood, bonuses increase it. Factors: endowment effect, panic premium, status tax, loss aversion, rebuilding discount, need fulfillment, window alignment, and posture.')}</span>
+                        <button type="button" onClick={hidePsychTax}
+                            title="Hide psychological tax — bring it back with the gold Show Trade Psychology button, or in Owner Settings"
+                            aria-label="Hide the psychological tax breakdown"
+                            style={{ width:'22px', height:'22px', borderRadius:'6px', border:'1px solid transparent', background:'none', color:'var(--silver)', opacity:0.4, cursor:'pointer', fontSize:'0.8rem', lineHeight:1, padding:0, flexShrink:0, transition:'all .14s' }}
+                            onMouseEnter={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.borderColor = 'var(--acc-line2, rgba(212,175,55,0.3))'; }}
+                            onMouseLeave={e => { e.currentTarget.style.opacity = '0.4'; e.currentTarget.style.borderColor = 'transparent'; }}>✕</button>
+                    </div>
                     <div className="tc-tax-table">
                         {psychTaxes.map((t,i) => (
                             <div key={i} className={`tc-tax-table-row ${t.type === 'BONUS' ? 'tc-bonus' : 'tc-tax'}`}>
@@ -282,7 +332,7 @@
                         )}
                         <div className="tc-tax-table-row tc-total">
                             <span className="tc-tax-name">NET MODIFIER</span>
-                            <span className="tc-tax-desc">Folded into effective surplus</span>
+                            <span className="tc-tax-desc">Applied to verdict score & acceptance likelihood</span>
                             <span className="tc-tax-val" style={{ color: netTaxTotal > 0 ? 'var(--win-green)' : netTaxTotal < 0 ? 'var(--loss-red)' : 'var(--silver)' }}>{netTaxTotal > 0 ? '+' : ''}{netTaxTotal}%</span>
                         </div>
                     </div>
@@ -290,7 +340,6 @@
                     {otherDnaKey !== 'NONE' && otherDna.strategy && (
                         <div style={{ fontSize:'0.76rem', color:otherDna.color, fontStyle:'italic', background:`${otherDna.color}0d`, border:`1px solid ${otherDna.color}25`, borderRadius:5, padding:'0.4rem 0.6rem' }}>Approach: {otherDna.strategy}</div>
                     )}
-                    </div>}
                 </div>}
                 {_pro && <div>
                     <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.3rem' }}>
@@ -308,7 +357,7 @@
                             {gmViability && (() => {
                                 const vColor = gmViability === 'Playable' ? 'var(--win-green)' : gmViability === 'Negotiable' ? 'var(--warn)' : 'var(--loss-red)';
                                 const vBg = gmViability === 'Playable' ? 'rgba(46,204,113,0.12)' : gmViability === 'Negotiable' ? 'rgba(230,176,40,0.12)' : 'rgba(231,76,60,0.12)';
-                                return <span style={{ fontSize:'0.68rem', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.05em', padding:'2px 8px', borderRadius:'var(--card-radius-xs, 5px)', color:vColor, border:`1px solid ${vColor}`, background:vBg }}>{gmViability}</span>;
+                                return <span style={{ fontSize:'0.68rem', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.05em', padding:'2px 8px', borderRadius:'4px', color:vColor, border:`1px solid ${vColor}`, background:vBg }}>{gmViability}</span>;
                             })()}
                             <span style={{ fontSize:'0.7rem', color:'var(--silver)', opacity:0.72 }}>
                                 {gmModeLabel ? `${gmModeLabel} lens` : 'GM lens'} · your bar to act {typeof gmFloor === 'number' ? `${gmFloor}%` : '—'}
@@ -494,7 +543,7 @@
                                                         <div key={r.id} className={`tc-ta-roster-item${added?' tc-added':''}`} onClick={() => !added && addPlayer(side, r.id)}>
                                                             <span className="tc-ta-pos-dot" style={{ background: posColor(r.pos) }} />
                                                             <span style={{ flex:1, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.name}</span>
-                                                            <span className="tc-ta-player-meta">{r.team}{r.usage ? ' · ' + r.usage : ''}</span>
+                                                            <span className="tc-ta-player-meta">{r.team}</span>
                                                             <span className="tc-ta-player-val">{r.value > 0 ? r.value.toLocaleString() : '--'}</span>
                                                         </div>
                                                     );
@@ -550,7 +599,7 @@
                 );
     }
 
-    function TradeCalcTab({ playersData, statsData, myRoster, standings, currentLeague, leagueSkin, sleeperUserId, timeRecomputeTs, viewMode, initialSubTab, onSubTabConsumed, seedOwnerId, seedPid }) {
+    function TradeCalcTab({ playersData, statsData, myRoster, standings, currentLeague, leagueSkin, sleeperUserId, timeRecomputeTs, viewMode, initialSubTab, onSubTabConsumed }) {
         // ── Constants ──
         const resolvedLeagueSkin = leagueSkin || window.App?.LeagueSkin?.getCurrent?.() || null;
         // Redraft → build rest-of-season values so deal pricing uses ROS instead
@@ -615,9 +664,15 @@
             return c[pos] || 'var(--silver)';
         }
         function avatarUrl(id) { return id ? `https://sleepercdn.com/avatars/thumbs/${id}` : null; }
-        const leagueProfile = typeof window.App?.Intelligence?.buildLeagueProfile === 'function'
-            ? window.App.Intelligence.buildLeagueProfile({ league: currentLeague, rosters: currentLeague?.rosters || [], platform: currentLeague?._platform })
-            : null;
+        // Memoized: buildLeagueProfile returns a fresh object, and this value feeds
+        // teamContextByRosterId → finderDataEpoch. Computing it inline every render
+        // churned the epoch on every render, which cancelled-and-restarted the
+        // league scan effect before a single partner could be scanned (stuck 0/N).
+        const leagueProfile = useMemo(() => (
+            typeof window.App?.Intelligence?.buildLeagueProfile === 'function'
+                ? window.App.Intelligence.buildLeagueProfile({ league: currentLeague, rosters: currentLeague?.rosters || [], platform: currentLeague?._platform })
+                : null
+        ), [currentLeague, currentLeague?.rosters, currentLeague?._platform, timeRecomputeTs]);
         const leagueFormatBadges = leagueProfile && typeof window.App?.Intelligence?.buildFormatBadges === 'function'
             ? window.App.Intelligence.buildFormatBadges(leagueProfile)
             : [];
@@ -660,39 +715,15 @@
             return Math.round(ppgs[Math.floor(ppgs.length / 2)] * 1.05);
         }
 
-        function calcNflStarterSet() {
-            const scoring = currentLeague.scoring_settings;
-            const byPos = {};
-            for (const [id, p] of Object.entries(playersData)) {
-                const pos = normPos(p.position);
-                if (!pos || !(pos in NFL_STARTER_POOL)) continue;
-                if (!p.team) continue;
-                if (!byPos[pos]) byPos[pos] = [];
-                const score = calcSeasonPts(id, scoring);
-                if (score > 0) byPos[pos].push({ id, score });
-            }
-            const result = {};
-            for (const [pos, players] of Object.entries(byPos)) {
-                const poolSize = NFL_STARTER_POOL[pos];
-                result[pos] = new Set(players.sort((a,b) => b.score - a.score).slice(0, poolSize).map(p => p.id));
-            }
-            return result;
-        }
+        // calcNflStarterSet retired with the local assessor (2026-09-02) —
+        // the shared engine builds its own starter pool with the ESPN door.
 
         function getPlayerValue(pid) {
-            const PV = window.App?.PlayerValue;
-            if (PV?.getValue) {
-                const v = PV.getValue(pid, { skin: resolvedLeagueSkin });
+            if (window.App?.PlayerValue?.getValue) {
+                const v = window.App.PlayerValue.getValue(pid, { skin: resolvedLeagueSkin });
                 if (v > 0) {
-                    const isRos = resolvedLeagueSkin?.type === 'redraft' && PV.rosState && PV.rosState();
+                    const isRos = resolvedLeagueSkin?.type === 'redraft' && window.App.PlayerValue.rosState && window.App.PlayerValue.rosState();
                     return { value: v, source: isRos ? 'ros' : 'dhq' };
-                }
-                // Redraft with the ROS map built: 0 MEANS 0 (no projected
-                // role). Falling through to dynasty DHQ here is exactly the
-                // leak the zero-pin exists to prevent — a rookie stash must
-                // not price at dynasty value in a redraft trade.
-                if (resolvedLeagueSkin?.type === 'redraft' && PV.isRedraftActive?.()) {
-                    return { value: 0, source: 'ros' };
                 }
             }
             const dhqScore = window.App?.LI?.playerScores?.[pid];
@@ -700,6 +731,44 @@
             return { value: 0, source: 'none' };
         }
         const getPickValue = window.App.PlayerValue.getPickValue;
+
+        // ── Trade liquidity — the market-reality layer (owner ruling, Jul 20) ──
+        // DHQ scores measure LINEUP value; the trade market pays for scarcity.
+        // IDP and K production is streamable, so mid-tier IDP/K trades far below
+        // its points value — only the elite tier (the Parsons/Garrett class)
+        // holds full price. The FINDER matches packages and prices acceptance on
+        // liquidity-adjusted ("market") totals; every displayed number stays raw
+        // DHQ, and the manual builder is untouched (the user controls both sides).
+        const LOW_LIQUIDITY_POS = ['DL', 'LB', 'DB'];
+        const idpRankByPid = useMemo(() => {
+            const scores = window.App?.LI?.playerScores || {};
+            const byPos = { DL: [], LB: [], DB: [] };
+            Object.keys(scores).forEach(pid => {
+                const p = playersData[pid];
+                if (!p) return;
+                const pos = normPos(p.position) || p.position;
+                if (byPos[pos]) byPos[pos].push([String(pid), scores[pid] || 0]);
+            });
+            const rank = new Map();
+            Object.values(byPos).forEach(list => {
+                list.sort((a, b) => b[1] - a[1]);
+                list.forEach(([pid], i) => rank.set(pid, i + 1));
+            });
+            return rank;
+        }, [playersData, timeRecomputeTs]);
+        function tradeLiquidity(asset) {
+            if (!asset || asset.type === 'pick') return 1; // draft capital is fully liquid
+            const pos = asset.pos;
+            if (pos === 'K') return 0.3;
+            if (pos === 'DEF') return 0.35;
+            if (!LOW_LIQUIDITY_POS.includes(pos)) return 1;
+            const rank = idpRankByPid.get(String(asset.pid)) || 999;
+            if (rank <= 5) return 0.95;  // Parsons/Garrett tier — trades near face value
+            if (rank <= 20) return 0.6;  // solid IDP starter
+            return 0.45;                 // streamable depth
+        }
+        function assetMarketValue(asset) { return Math.round((asset?.value || 0) * tradeLiquidity(asset)); }
+        function isLowLiquidAsset(asset) { return asset && asset.type !== 'pick' && tradeLiquidity(asset) < 0.9; }
 
         function formatReasonsForAssets(players = []) {
             if (!leagueProfile || typeof window.App?.Intelligence?.buildPlayerFormatReasons !== 'function') return [];
@@ -747,15 +816,20 @@
             return rosterHits >= userHits ? 'roster' : 'user';
         }
 
-        function buildPicksByOwner(rosters, tradedPicks, leagueSeason, draftRounds, pickHorizon) {
+        // The tradeable pick window: the next PICK_HORIZON draft seasons. Once a
+        // season's rookie draft is complete those picks are spent, so the window
+        // rolls forward by a year (e.g. after the 2026 draft: 2027/2028/2029, not
+        // 2026/2027/2028) — this is what pulls the just-drafted year off the
+        // trade calculator.
+        function pickWindowYears(leagueSeason, skipCurrentSeason) {
+            const start = Number(leagueSeason) + (skipCurrentSeason ? 1 : 0);
+            return Array.from({ length: PICK_HORIZON }, (_, i) => start + i);
+        }
+
+        function buildPicksByOwner(rosters, tradedPicks, leagueSeason, draftRounds, skipCurrentSeason) {
             // League-specific round count (falls back to the constant only if unknown).
             const rounds = Math.max(1, Number(draftRounds) || DRAFT_ROUNDS);
-            // Redraft/chopped rebuild the whole roster every cycle — there is no
-            // multi-year future-pick asset to trade, only this year's board. Callers
-            // pass 1 for those formats (showFuturePicks === false); everyone else
-            // keeps the full PICK_HORIZON.
-            const horizon = Math.max(1, Number(pickHorizon) || PICK_HORIZON);
-            const PICK_YEARS_INT = Array.from({ length: horizon }, (_, i) => leagueSeason + i);
+            const PICK_YEARS_INT = pickWindowYears(leagueSeason, skipCurrentSeason);
             const mode = detectPickIdMode(rosters, tradedPicks);
             const rosterById = {};
             for (const r of rosters) rosterById[String(r.roster_id)] = r;
@@ -789,126 +863,24 @@
             return picksByOwner;
         }
 
-        function assessTeamLocal(roster, nflStarterSet, ownerPicks) {
-            // Try shared assessor first
+        // ── One brain (owner ruling 2026-09-02) ─────────────────────────
+        // The Trade Room reads the SAME shared assessment as every other
+        // surface — needs, strengths, tier, panic, window all come from
+        // DHQ-Shared/team-assess.js. The 120-line local duplicate (static
+        // one-size bars, points-based quality, tier-from-weekly-points, the
+        // old adequacy strengths rule) is retired: it only ever fired in
+        // half-loaded windows and fed the finder advice that contradicted
+        // the dashboard. When the shared pass isn't ready yet we return
+        // null and the tab's existing loading states cover the gap. The
+        // IDP/K market-liquidity discounts are NOT part of this and are
+        // deliberately unchanged (owner ruling: the market genuinely pays
+        // less for IDP/K, even in IDP-heavy leagues).
+        function assessTeamLocal(roster) {
             if (window.assessTeamFromGlobal) {
                 const result = window.assessTeamFromGlobal(roster.roster_id);
                 if (result) return result;
             }
-            const scoring = currentLeague.scoring_settings;
-            const rosterPos = currentLeague.roster_positions || [];
-            const users = currentLeague.users || [];
-            const user = users.find(u => u.user_id === roster.owner_id);
-            const teamName = user?.metadata?.team_name || user?.display_name || `Team ${roster.roster_id}`;
-            const ownerName = user?.display_name || `Owner ${roster.roster_id}`;
-            const avatar = user?.avatar || null;
-            const wins = roster.settings?.wins || 0;
-            const losses = roster.settings?.losses || 0;
-            const ties = roster.settings?.ties || 0;
-            const pf = Number(roster.settings?.fpts || 0) + Number(roster.settings?.fpts_decimal || 0) / 100;
-            const waiverBudget = Number(currentLeague.settings?.waiver_budget || 1000);
-            const waiverUsed = Number(roster.settings?.waiver_budget_used || 0);
-            const faabRemaining = Math.max(0, waiverBudget - waiverUsed);
-
-            const posGroups = {};
-            for (const id of (roster.players || [])) {
-                const np = normPos(playersData[id]?.position); if (!np) continue;
-                if (!posGroups[np]) posGroups[np] = [];
-                posGroups[np].push(id);
-            }
-
-            const posAssessment = {};
-            for (const [pos, ideal] of Object.entries(IDEAL_ROSTER)) {
-                const playerIds = posGroups[pos] || [];
-                const startingReq = MIN_STARTER_QUALITY[pos] ?? LINEUP_STARTERS[pos] ?? 1;
-                const ptTarget = POS_PT_TARGETS[pos] || 8;
-                const withPPG = playerIds.map(id => ({ id, ppg: calcPPG(id, scoring) })).sort((a,b) => b.ppg - a.ppg);
-                const projectedPts = withPPG.slice(0, startingReq).reduce((s, p) => s + p.ppg, 0);
-                const posStarters = nflStarterSet[pos] || new Set();
-                const nflStarterIds = playerIds.filter(id => posStarters.has(id));
-                const nflStarters = nflStarterIds.length;
-                const actual = playerIds.length;
-                const diff = actual - ideal;
-                const minQuality = MIN_STARTER_QUALITY[pos] || startingReq;
-
-                let status;
-                if (nflStarters === 0) status = 'deficit';
-                else if (nflStarters < minQuality) status = 'thin';
-                else if (actual >= ideal) status = 'surplus';
-                else status = 'ok';
-                if ((status === 'ok' || status === 'surplus') && actual < ideal) status = 'thin';
-
-                const sortedIds = [...playerIds].map(id => ({ id, score: calcSeasonPts(id, scoring) })).sort((a,b) => b.score - a.score).map(p => p.id);
-                posAssessment[pos] = { actual, ideal, diff, nflStarters, nflStarterIds, sortedIds, startingReq, minQuality, ptTarget, projectedPts, status };
-            }
-
-            const leagueSeason = parseInt(currentLeague.season || new Date().getFullYear());
-            const pickYears = Array.from({ length: PICK_HORIZON }, (_, i) => String(leagueSeason + i));
-            // League-specific rounds (not the hardcoded constant) so pick-capital
-            // status reflects this league's actual draft size.
-            const aRounds = Math.max(1, Number(tcDraftRounds) || DRAFT_ROUNDS);
-            const aIdeal = aRounds * PICK_HORIZON;
-            const pickCountByRound = {}; const pickCountByYear = {}; const pickCountByYearRound = {};
-            for (let r = 1; r <= aRounds; r++) pickCountByRound[r] = 0;
-            for (const year of pickYears) { pickCountByYear[year] = 0; pickCountByYearRound[year] = {}; for (let r = 1; r <= aRounds; r++) pickCountByYearRound[year][r] = 0; }
-            for (const { year, round } of (ownerPicks || [])) {
-                const y = String(year); if (!pickYears.includes(y)) continue;
-                if (round < 1 || round > aRounds) continue;
-                pickCountByRound[round]++; pickCountByYear[y]++; pickCountByYearRound[y][round]++;
-            }
-            const totalPicks = Object.values(pickCountByRound).reduce((a, b) => a + b, 0);
-            let picksStatus;
-            if (totalPicks === 0) picksStatus = 'deficit';
-            else if (totalPicks < aIdeal) picksStatus = 'thin';
-            else if (totalPicks === aIdeal) picksStatus = 'ok';
-            else picksStatus = 'surplus';
-            const picksAssessment = { pickCountByRound, pickCountByYear, pickCountByYearRound, totalPicks, draftRounds: aRounds, idealTotal: aIdeal, pickYears, status: picksStatus };
-
-            const weeklyPts = calcOptimalLineup(roster.players || [], roster.reserve || [], roster.taxi || [], scoring, rosterPos);
-            const scoringScore = Math.min(60, (weeklyPts / WEEKLY_TARGET) * 60);
-            let coverageScore = 0;
-            const hasValueData = Object.keys(nflStarterSet).length > 0;
-            for (const [pos, data] of Object.entries(posAssessment)) {
-                const ratio = hasValueData ? Math.min(1, data.nflStarters / (data.minQuality || data.startingReq || 1)) : Math.min(1, data.actual / data.ideal);
-                coverageScore += ratio * ((POS_WEIGHTS[pos]||0) / TOTAL_WEIGHT) * 40;
-            }
-            const projBonus = weeklyPts > WEEKLY_TARGET + 10 ? 3 : weeklyPts >= WEEKLY_TARGET ? 1 : 0;
-            const healthScore = Math.min(100, Math.round(scoringScore + coverageScore + projBonus));
-
-            let tier, tierColor, tierBg;
-            if (weeklyPts > 0) {
-                if (weeklyPts > WEEKLY_TARGET + 10) { tier='ELITE'; tierColor='var(--gold)'; tierBg='var(--acc-fill3, rgba(212,175,55,0.15))'; }
-                else if (weeklyPts >= WEEKLY_TARGET - 15) { tier='CONTENDER'; tierColor='var(--good)'; tierBg='rgba(46,204,113,0.12)'; }
-                else if (weeklyPts >= WEEKLY_TARGET * 0.85) { tier='CROSSROADS'; tierColor='var(--warn)'; tierBg='rgba(240,165,0,0.12)'; }
-                else { tier='REBUILDING'; tierColor='var(--bad)'; tierBg='rgba(231,76,60,0.12)'; }
-            } else {
-                if (coverageScore >= 36) { tier='CONTENDER'; tierColor='var(--good)'; tierBg='rgba(46,204,113,0.12)'; }
-                else if (coverageScore >= 26) { tier='CROSSROADS'; tierColor='var(--warn)'; tierBg='rgba(240,165,0,0.12)'; }
-                else { tier='REBUILDING'; tierColor='var(--bad)'; tierBg='rgba(231,76,60,0.12)'; }
-            }
-
-            let panic = 0;
-            if (weeklyPts > 0 && weeklyPts < WEEKLY_TARGET * 0.85) panic += 2;
-            else if (weeklyPts > 0 && weeklyPts < WEEKLY_TARGET) panic += 1;
-            const criticals = Object.values(posAssessment).filter(p => p.status === 'deficit').length;
-            if (criticals >= 3) panic += 2; else if (criticals >= 1) panic += 1;
-            const played = wins + losses + ties;
-            if (played > 0 && losses / played > 0.6) panic += 1;
-            panic = Math.min(5, panic);
-
-            let tradeWindow;
-            if (tier === 'ELITE' || (tier === 'CONTENDER' && panic <= 1)) tradeWindow = 'CONTENDING';
-            else if (tier === 'REBUILDING') tradeWindow = 'REBUILDING';
-            else tradeWindow = 'TRANSITIONING';
-
-            const needs = Object.entries(posAssessment).filter(([,v]) => v.status === 'deficit' || v.status === 'thin')
-                .sort((a,b) => { const aGap = a[1].nflStarters - a[1].startingReq; const bGap = b[1].nflStarters - b[1].startingReq; return aGap !== bGap ? aGap - bGap : a[1].diff - b[1].diff; })
-                .map(([pos,v]) => ({ pos, urgency: v.status }));
-            const strengths = Object.entries(posAssessment).filter(([,v]) => v.status === 'surplus').map(([pos]) => pos);
-
-            return { rosterId:roster.roster_id, ownerId:roster.owner_id, teamName, ownerName, avatar, wins, losses, ties, pf,
-                     posGroups, posAssessment, picksAssessment, weeklyPts, healthScore, tier, tierColor, tierBg, panic, window: tradeWindow, needs, strengths,
-                     faabRemaining, waiverBudget };
+            return null;
         }
 
         const calcComplementarity = window.App?.TradeEngine?.calcComplementarity || function(mine, theirs) { if (!mine || !theirs) return 0; let score = 0; for (const n of mine.needs) { const t = theirs.posAssessment[n.pos]; if (t?.status === 'surplus') score += n.urgency === 'deficit' ? 25 : 12; else if (t?.status === 'ok' && n.urgency === 'deficit') score += 6; } for (const n of theirs.needs) { const m = mine.posAssessment[n.pos]; if (m?.status === 'surplus') score += n.urgency === 'deficit' ? 25 : 12; else if (m?.status === 'ok' && n.urgency === 'deficit') score += 6; } if (mine.window !== theirs.window) score += 15; return Math.min(100, score); };
@@ -1029,7 +1001,6 @@
         const _vp = window.WR.useViewport();
         const [tcTab, _setTcTabRaw] = useState('desk');
         const [builderExpanded, setBuilderExpanded] = useState(false); // persistent builder panel open/closed
-        const [railHidden, setRailHidden] = useState(false); // Deal-intel side panel (verdict + Owner DNA) manually hidden while building (owner ask 2026-07-12)
         // ── Typed finder query (Phase 4a) — the single finder input, replacing the
         // legacy mode/focus-pid/partner trio of states ──
         // { intent: 'best'|'help'|'shop'|'picks',
@@ -1040,7 +1011,7 @@
         // The query drives the generator through deriveFinderMode (legacy modes
         // fillNeed/sellSurplus/shop/acquire/picks); pick-kind focuses route through the
         // dedicated pick paths in generateDealsForPartner (receivePicks/givePicks).
-        const [finderQuery, setFinderQuery] = useState({ intent: 'help', focus: null, partnerFilter: null });
+        const [finderQuery, setFinderQuery] = useState({ intent: 'best', focus: null, partnerFilter: null });
         const setTcTab = useCallback((v) => {
             if (v === 'finder') {
                 setFinderQuery(qr => ({ ...qr, intent: 'shop' }));
@@ -1058,10 +1029,9 @@
         const [assetBrowserPos, setAssetBrowserPos] = useState('ALL');
         const [assetBrowserSort, setAssetBrowserSort] = useState('dhq');
         const [assetBrowserRookieOnly, setAssetBrowserRookieOnly] = useState(false);
-        const [phPicksScope, setPhPicksScope] = useState('owned');   // 'owned' | 'league' — picks board scope, shared phone + desktop (Intent=Picks)
-        const [partnerListOpen, setPartnerListOpen] = useState(false); // desktop finder "More ▾" full partner dropdown (owner ask 2026-07-12)
         // Phone tier (iPhone program Phase 2) — Trade Center phone-branch sheet
         // state. Declared unconditionally (hook-order safety); inert off-phone.
+        const [phPicksScope, setPhPicksScope] = useState('owned');   // 'owned' | 'league' — phone picks-board scope (Intent=Picks)
         const [phBuilderOpen, setPhBuilderOpen] = useState(false);   // WR.ActionBar → builder + verdict WR.Sheet
         const [phFinderPanel, setPhFinderPanel] = useState(null);    // inline finder-control disclosure: null|'intent'|'partner'|'pos'|'sort'
         const [phLogRowId, setPhLogRowId] = useState(null);          // Trade Log row → deal WR.Sheet
@@ -1085,12 +1055,6 @@
             setTcTab(initialSubTab);
             if (onSubTabConsumed) onSubTabConsumed();
         }, [initialSubTab]);
-        // Deep-link opens (Trade Finder button on a player card/dossier) should
-        // land with the league-wide scan already running — the on-demand "tap
-        // Scan for moves" gate below exists to stop scans firing unprompted for
-        // organic finder use, but a deep link IS the prompt. Armed once finderLoopKey
-        // comes up for this open; see the scanForKey effect further down.
-        const autoScanRequestedRef = useRef(false);
         useEffect(() => {
             const openFinder = (target) => {
                 const next = target?.detail || target || window._wrTradeFinderTarget;
@@ -1100,7 +1064,6 @@
                 // handler stays closure-safe with [] deps (setters only).
                 setFinderQuery(qr => ({ ...qr, intent: 'shop', focus: { kind: 'player', id: next.pid }, partnerFilter: null }));
                 setTcTab('desk');
-                autoScanRequestedRef.current = true;
                 window._wrTradeFinderTarget = null;
             };
             window.addEventListener('wr:open-trade-finder', openFinder);
@@ -1206,6 +1169,12 @@
         // League-specific rookie-draft round count — replaces the hardcoded DRAFT_ROUNDS
         // so EVERY league's future picks use its real round count, not a flat 7.
         const [leagueDraftRounds, setLeagueDraftRounds] = useState(null);
+        // True once every draft for the league's current season has completed —
+        // the signal that "the draft is over" and this season's picks should drop
+        // out of the trade calculator. Defaults false so picks stay tradeable
+        // until we positively confirm the draft finished (or for platforms with
+        // no draft objects, e.g. ESPN/Yahoo).
+        const [currentDraftComplete, setCurrentDraftComplete] = useState(false);
         useEffect(() => {
             if (!leagueId || !allRosters.length) return;
             let cancelled = false;
@@ -1229,6 +1198,17 @@
                     }
                     if (cancelled) return;
                     draftsList = Array.isArray(draftsList) ? draftsList : [];
+                    // ── "Draft is over" detection ──────────────────────────────
+                    // When every draft for the current season has completed, that
+                    // season's rookie picks are spent and must come off the trade
+                    // calculator. Require .length > 0 so "no drafts yet" is never
+                    // read as complete, and .every so a rookie+supplemental pair
+                    // doesn't drop the year while one is still pending (mirrors the
+                    // free-agency rookie-lock logic).
+                    const currentSeasonDrafts = draftsList.filter(d => Number(d.season) === leagueSeason);
+                    const seasonDraftDone = currentSeasonDrafts.length > 0
+                        && currentSeasonDrafts.every(d => String(d.status || '').toLowerCase() === 'complete');
+                    if (!cancelled) setCurrentDraftComplete(seasonDraftDone);
                     // ── League-specific rookie-draft round count (ALL platforms) ──
                     // Resolve from the ROOKIE draft (player_type===1) so a startup draft
                     // can't inflate it; resolveDraftRounds falls back to the league's
@@ -1366,18 +1346,11 @@
             if (window.DraftHistory?.syncDraftDNA) window.DraftHistory.syncDraftDNA(leagueId).then(map => setOwnerDraftDna(map || {})).catch(err => window.wrLog('tradecalc.syncDraftDNA', err));
         }, [leagueId]);
 
-        // Compute assessments
-        const nflStarterSet = useMemo(() => {
-            if (!Object.keys(playersData).length || !Object.keys(statsData).length) return {};
-            return calcNflStarterSet();
-        }, [playersData, statsData]);
+        // Compute assessments — shared engine only; entries are absent while
+        // the shared pass is still loading (existing loading states cover it).
 
         const tradedPicks = useMemo(() => window.S?.tradedPicks || [], [currentLeague]);
 
-        // Redraft/chopped rebuild the whole roster every cycle — no multi-year
-        // future-pick asset exists to trade, only this year's board (same rule
-        // draft-room.js's showFuturePicks already applies elsewhere).
-        const tcShowFuturePicks = resolvedLeagueSkin?.features?.showFuturePicks !== false;
         const picksByOwner = useMemo(() => {
             if (!allRosters.length) return {};
             const leagueSeason = parseInt(currentLeague.season || new Date().getFullYear());
@@ -1408,7 +1381,7 @@
                     });
                 }
                 // Future years from the authoritative future-pick ownership.
-                const future = tcShowFuturePicks ? window.S?._mflFuturePicks || null : null;
+                const future = window.S?._mflFuturePicks || null;
                 if (future) {
                     Object.entries(future).forEach(([owner, picks]) => {
                         (picks || []).forEach(p => {
@@ -1423,16 +1396,13 @@
                 }
                 return out;
             }
-            return buildPicksByOwner(allRosters, tradedPicks, leagueSeason, tcDraftRounds, tcShowFuturePicks ? PICK_HORIZON : 1);
-        }, [allRosters, tradedPicks, tcDraftRounds, tcShowFuturePicks]);
+            return buildPicksByOwner(allRosters, tradedPicks, leagueSeason, tcDraftRounds, currentDraftComplete);
+        }, [allRosters, tradedPicks, tcDraftRounds, currentDraftComplete]);
 
         const assessments = useMemo(() => {
             if (!allRosters.length || !Object.keys(playersData).length) return [];
-            return allRosters.map(r => {
-                const ownerPicks = picksByOwner[String(r.owner_id)] || [];
-                return assessTeamLocal(r, nflStarterSet, ownerPicks);
-            });
-        }, [allRosters, playersData, statsData, nflStarterSet, picksByOwner, timeRecomputeTs, leagueDraftRounds]);
+            return allRosters.map(r => assessTeamLocal(r)).filter(Boolean);
+        }, [allRosters, playersData, statsData, picksByOwner, timeRecomputeTs, leagueDraftRounds, currentDraftComplete]);
 
         const myRosterId = myRoster?.roster_id;
         const rosterState = window.App?.getRosterDataState?.({ roster: myRoster, currentLeague, rosters: allRosters, leagueSkin: resolvedLeagueSkin }) || { isUsable: true };
@@ -1741,6 +1711,41 @@
         // aggression or the floor — only tradePriority.positions survives, as an
         // additive shopping hint unioned into targetPositions. The opponent's
         // displayed acceptance % is computed elsewhere and is never touched here.
+        // QB trade composition rules (owner ruling 2026-09-02) — a
+        // finder-only gate built from the shared pure module. The manual
+        // Trade Builder is untouched and shows no warnings by design:
+        // whatever an owner hand-builds is on the owner.
+        const qbTradeRules = useMemo(() => {
+            try {
+                if (!window.WrQbTradeRules?.build) return null;
+                return window.WrQbTradeRules.build({
+                    scores: window.App?.LI?.playerScores || {},
+                    playersData,
+                    rosterPositions: currentLeague?.roster_positions || [],
+                    teams: allRosters.length || 16,
+                    isElite: pid => (typeof window.App?.isElitePlayer === 'function') ? window.App.isElitePlayer(pid) : ((window.App?.LI?.playerScores?.[pid] || 0) >= 7000),
+                    starterRole: p => window.App?.NflRoles?.starterRole?.(p) || null,
+                    normPos,
+                });
+            } catch (e) { return null; }
+        }, [playersData, currentLeague, allRosters, timeRecomputeTs]);
+
+        // Elite RB/WR/TE package rules (owner ruling 2026-09-02: "Elite
+        // Offensive Players require top dollar" — a single bare 1st is
+        // always rejected, junk IDP filler never counts as payment).
+        // Finder-only, same posture as the QB rules above.
+        const eliteSkillRules = useMemo(() => {
+            try {
+                if (!window.WrEliteSkillRules?.build) return null;
+                return window.WrEliteSkillRules.build({
+                    scores: window.App?.LI?.playerScores || {},
+                    playersData,
+                    isElite: pid => (typeof window.App?.isElitePlayer === 'function') ? window.App.isElitePlayer(pid) : ((window.App?.LI?.playerScores?.[pid] || 0) >= 7000),
+                    starterRole: p => window.App?.NflRoles?.starterRole?.(p) || null,
+                });
+            } catch (e) { return null; }
+        }, [playersData, currentLeague, allRosters, timeRecomputeTs]);
+
         function getDealHqTuning(alexSettings = {}) {
             const eff = window.WR?.GmMode?.effects?.(leagueId) || {};
             const aggression = clampNum(eff.aggression, 0.2, 0.92, 0.52);
@@ -1767,7 +1772,17 @@
         }
 
         function isUntouchableAsset(asset, tuning) {
-            return !!asset?.pid && tuning?.untouchable?.has(String(asset.pid));
+            if (!asset?.pid) return false;
+            if (tuning?.untouchable?.has(String(asset.pid))) return true;
+            // The owner's manual call travels here too (ruling 2026-09-02):
+            // a player tagged Untouchable on the roster tab must never be
+            // shopped by the finder, GM Strategy list or not.
+            try {
+                if (window._playerTags?.[String(asset.pid)] === 'untouchable') return true;
+                const mc = window.App?.manualCallFor?.(asset.pid, window.S || window.App?.S);
+                if (mc && mc.label === 'Untouchable') return true;
+            } catch (e) { /* manual stores optional */ }
+            return false;
         }
 
         function scoreDealRecommendation(deal, tuning) {
@@ -1803,6 +1818,9 @@
             const playerValue = players.reduce((s, a) => s + (a.value || 0), 0);
             const pickValue = picks.reduce((s, a) => s + (a.value || 0), 0);
             const faabValue = Math.round((faab || 0) * FAAB_RATE);
+            // market: liquidity-adjusted total (IDP/K haircut) — what the finder
+            // matches and prices acceptance on. total stays raw DHQ for display.
+            const marketPlayerValue = players.reduce((s, a) => s + assetMarketValue(a), 0);
             return {
                 playerValue,
                 pickValue,
@@ -1810,6 +1828,7 @@
                 faab: faab || 0,
                 faabValue,
                 total: playerValue + pickValue + faabValue,
+                market: marketPlayerValue + pickValue + faabValue,
             };
         }
 
@@ -1866,7 +1885,9 @@
             const receive = sideBreakdown(receivePlayers, receivePicks, receiveFaab);
             if (give.total <= 0 || receive.total <= 0) return null;
             const pieceCount = givePlayers.length + receivePlayers.length + givePicks.length + receivePicks.length;
-            const baseLikelihood = calcAcceptanceLikelihood(give.total, receive.total, dnaKey, acceptanceTaxes, myAssessment, partner, { totalPieces: pieceCount });
+            // Acceptance is priced on MARKET totals (liquidity-adjusted): a side
+            // stuffed with mid-tier IDP value doesn't buy what raw DHQ says it does.
+            const baseLikelihood = calcAcceptanceLikelihood(give.market ?? give.total, receive.market ?? receive.total, dnaKey, acceptanceTaxes, myAssessment, partner, { totalPieces: pieceCount });
             const gradeRaw = window.App?.TradeEngine?.fairnessGrade
                 ? window.App.TradeEngine.fairnessGrade(give.total, receive.total)
                 : { grade: receive.total >= give.total ? 'B+' : 'C', label: receive.total >= give.total ? 'Win' : 'Overpay', color: receive.total >= give.total ? 'var(--good)' : 'var(--bad)' };
@@ -1892,12 +1913,21 @@
             const formatReadout = formatReadoutForDeal(givePlayers, receivePlayers);
             const behaviorReadout = behaviorFit?.framing || behaviorProfile?.observedFacts?.[0]?.detail || '';
             const caution = [];
+            // Market transparency (owner ruling 2026-09-02): the IDP/K
+            // liquidity discount is intentional — but when it materially
+            // shaped this deal's matching, the card says so instead of
+            // letting a market-priced package read as a lopsided offer.
+            const _giveDisc = give.total > 0 && give.market < give.total * 0.85;
+            const _recvDisc = receive.total > 0 && receive.market < receive.total * 0.85;
+            if (_giveDisc || _recvDisc) caution.push('Priced at market — IDP/K trade discount applied');
             if (likelihood < 40) caution.push('Low acceptance odds');
             if (posture.key === 'LOCKED') caution.push('Locked roster');
             if (userGain < -Math.max(500, receive.total * 0.12)) caution.push('Meaningful overpay');
             if (!swing.includes('need') && !swing.includes('gap')) caution.push('Weak roster-fit signal');
             if (givePicks.length && receivePicks.length) caution.push('Pick timing matters');
             if (behaviorProfile?.inferences?.includes('low-liquidity')) caution.push('Low-liquidity partner');
+            const mktGap = side => side.total > 0 ? (side.total - (side.market ?? side.total)) / side.total : 0;
+            if (mktGap(give) > 0.15 || mktGap(receive) > 0.15) caution.push('IDP/K priced to market, not points');
             const whyAccept = input.whyAccept || (partner.needs?.length
                 ? `They need ${partner.needs.slice(0, 2).map(n => n.pos).join('/')} and this gives them usable assets.`
                 : `Their ${posture.label.toLowerCase()} posture keeps them open to a clean value offer.`);
@@ -1982,32 +2012,79 @@
             const give = sideBreakdown(givePlayers, givePicks, 0).total;
             const receive = sideBreakdown(receivePlayers, receivePicks, 0).total;
             const gap = receive - give;
-            const maxMyFaab = Math.max(0, Math.min(myAssessment?.faabRemaining || 0, 300));
-            const maxTheirFaab = Math.max(0, Math.min(partner?.faabRemaining || 0, 300));
-            if (gap > 100 && gap <= 600 && maxMyFaab > 0) return { giveFaab: Math.min(maxMyFaab, Math.ceil(gap / FAAB_RATE)), receiveFaab: 0 };
-            if (gap < -100 && Math.abs(gap) <= 600 && maxTheirFaab > 0) return { giveFaab: 0, receiveFaab: Math.min(maxTheirFaab, Math.ceil(Math.abs(gap) / FAAB_RATE)) };
+            // FAAB only travels as a REAL check (owner ruling 2026-09-02): the
+            // balancing amount rounds UP to a clean $25 step, and if the payer's
+            // remaining budget can't cover the whole thing the deal carries no
+            // FAAB at all — never clipped down to a token $37 sweetener.
+            const faabFor = (g, budget) => {
+                if (g <= 100 || g > 600) return 0;
+                const amt = Math.ceil(g / FAAB_RATE / 25) * 25;
+                return amt <= Math.min(budget || 0, 300) ? amt : 0;
+            };
+            const mine = faabFor(gap, myAssessment?.faabRemaining);
+            if (mine) return { giveFaab: mine, receiveFaab: 0 };
+            const theirs = faabFor(-gap, partner?.faabRemaining);
+            if (theirs) return { giveFaab: 0, receiveFaab: theirs };
             return { giveFaab: 0, receiveFaab: 0 };
         }
 
+        // Market-reality guard (owner ruling): a side whose value is mostly
+        // NON-ELITE IDP/K players cannot pay for a side that is mostly offense —
+        // nobody trades a starting TE for a mid LB, or George Pickens for a
+        // rotational DL. Elite IDPs (top-5 at their position) are liquid and
+        // pass; pick-heavy and FAAB-heavy sides pass (draft capital is liquid).
+        // IDP-for-IDP and IDP-for-picks ideas remain fully allowed.
+        function crossClassUnrealistic(input) {
+            const OFFENSE = ['QB', 'RB', 'WR', 'TE'];
+            const sideRead = (players = [], picks = [], faab = 0) => {
+                const bd = sideBreakdown(players, picks, faab);
+                if (bd.total <= 0) return { lowShare: 0, offShare: 0 };
+                const lowVal = players.reduce((s, a) => s + (isLowLiquidAsset(a) ? (a.value || 0) : 0), 0);
+                const offVal = players.reduce((s, a) => s + (OFFENSE.includes(a.pos) ? (a.value || 0) : 0), 0);
+                return { lowShare: lowVal / bd.total, offShare: offVal / bd.total };
+            };
+            const give = sideRead(input.givePlayers, input.givePicks, input.giveFaab);
+            const receive = sideRead(input.receivePlayers, input.receivePicks, input.receiveFaab);
+            return (give.lowShare >= 0.5 && receive.offShare >= 0.5)
+                || (receive.lowShare >= 0.5 && give.offShare >= 0.5);
+        }
+
         function addCandidate(candidates, partner, input) {
+            if (crossClassUnrealistic(input)) return;
+            // Startable-QB packages must satisfy the owner's composition
+            // rules (1sts / QB swaps / elite pieces / multi-starter bundles).
+            if (qbTradeRules && qbTradeRules.violates(input)) return;
+            // Elite RB/WR/TE need top-dollar packages — same posture, own module.
+            if (eliteSkillRules && eliteSkillRules.violates(input)) return;
             const deal = buildDeal(partner, input);
             if (!deal) return;
+            // _core — the deal's IDEA identity (owner ruling: the board kept
+            // showing the same trade over and over with only the payment
+            // shuffled — "Oluokun → Hines-Allen" three times with R6/R7/FAAB
+            // variants, Kyler Murray offered three ways). The idea a user reads
+            // is WHO the deal lands (per partner): rows keyed on the receive-side
+            // player set; sell-for-picks rows keyed on the give-side player set;
+            // pure pick swaps keyed on the pick sets. Only the best-ranked
+            // package per idea survives — alternates live in Load in Builder.
+            const core = JSON.stringify([
+                deal.partnerOwnerId,
+                deal.receivePlayers.length ? ['get', deal.receivePlayers.map(p => String(p.pid)).sort()]
+                    : deal.givePlayers.length ? ['sell', deal.givePlayers.map(p => String(p.pid)).sort()]
+                        : ['picks', deal.givePicks.map(p => p.id).sort(), deal.receivePicks.map(p => p.id).sort()],
+            ]);
             const sig = JSON.stringify([
                 deal.partnerOwnerId,
                 deal.givePlayers.map(p => p.pid).sort(),
                 deal.receivePlayers.map(p => p.pid).sort(),
-                // Key picks by DISPLAYED identity (label+value), not p.id — two same-round
-                // future picks (own + acquired) render identically, so id-distinct deals
-                // were duplicate cards (owner ask 2026-07-12).
-                deal.givePicks.map(p => `${p.label || p.id}|${p.value || 0}`).sort(),
-                deal.receivePicks.map(p => `${p.label || p.id}|${p.value || 0}`).sort(),
+                deal.givePicks.map(p => p.id).sort(),
+                deal.receivePicks.map(p => p.id).sort(),
                 deal.giveFaab,
                 deal.receiveFaab,
             ]);
             if (candidates.some(d => d._sig === sig)) return;
             let hash = 0;
             for (let i = 0; i < sig.length; i++) hash = ((hash << 5) - hash + sig.charCodeAt(i)) | 0;
-            candidates.push({ ...deal, id: `deal_${Math.abs(hash).toString(36)}`, _sig: sig });
+            candidates.push({ ...deal, id: `deal_${Math.abs(hash).toString(36)}`, _sig: sig, _core: core });
         }
 
         // ── Finder-query resolution seam (Phase 4a) ──
@@ -2117,6 +2194,9 @@
                 }).slice(0, 12);
             const balanceFaab = (...args) => priFaab ? maybeBalanceFaab(...args) : { giveFaab: 0, receiveFaab: 0 };
 
+            // targetValue here is a MARKET value (liquidity-adjusted); combos are
+            // matched and banded on their own market totals so an IDP-stuffed
+            // package can't "afford" an offensive starter at face DHQ.
             function sideCombos(players, picks, targetValue, opts = {}) {
                 const playerPool = (players || []).filter(Boolean).slice(0, opts.playerLimit || 12);
                 const pickPool = (picks || []).filter(Boolean).slice(0, opts.pickLimit || 7);
@@ -2124,17 +2204,15 @@
                 const seen = new Set();
                 const push = (comboPlayers = [], comboPicks = []) => {
                     if (!comboPlayers.length && !comboPicks.length) return;
-                    const total = sideBreakdown(comboPlayers, comboPicks, 0).total;
-                    if (total <= 0) return;
+                    const bd = sideBreakdown(comboPlayers, comboPicks, 0);
+                    if (bd.total <= 0) return;
                     const sig = JSON.stringify([
                         comboPlayers.map(p => p.id || p.pid).sort(),
-                        // Displayed identity, same as addCandidate — duplicate same-round
-                        // picks must not eat combo slots (owner ask 2026-07-12).
-                        comboPicks.map(p => `${p.label || p.id}|${p.value || 0}`).sort(),
+                        comboPicks.map(p => p.id).sort(),
                     ]);
                     if (seen.has(sig)) return;
                     seen.add(sig);
-                    combos.push({ players: comboPlayers, picks: comboPicks, total, pieces: comboPlayers.length + comboPicks.length });
+                    combos.push({ players: comboPlayers, picks: comboPicks, total: bd.total, market: bd.market, pieces: comboPlayers.length + comboPicks.length });
                 };
                 playerPool.forEach(p => push([p], []));
                 for (let i = 0; i < Math.min(playerPool.length, 10); i++) {
@@ -2149,13 +2227,14 @@
                         for (let j = i + 1; j < Math.min(pickPool.length, 5); j++) push([], [pickPool[i], pickPool[j]]);
                     }
                 }
-                return combos.sort((a, b) => Math.abs(a.total - targetValue) - Math.abs(b.total - targetValue) || a.pieces - b.pieces || b.total - a.total);
+                return combos.sort((a, b) => Math.abs(a.market - targetValue) - Math.abs(b.market - targetValue) || a.pieces - b.pieces || b.market - a.market);
             }
 
             function addAcquireTarget(target, playerPool, pickPool, reasonPrefix = '') {
-                const packages = sideCombos(playerPool, pickPool, target.value, { allowPickOnly: true });
+                const targetMkt = assetMarketValue(target);
+                const packages = sideCombos(playerPool, pickPool, targetMkt, { allowPickOnly: true });
                 packages
-                    .filter(pkg => pkg.total >= target.value * lowRatio && pkg.total <= target.value * highRatio)
+                    .filter(pkg => pkg.market >= targetMkt * lowRatio && pkg.market <= targetMkt * highRatio)
                     .slice(0, 4)
                     .forEach(pkg => {
                         const faab = balanceFaab(partner, pkg.players, [target], pkg.picks, []);
@@ -2185,7 +2264,7 @@
             function addAcquirePickTarget(pick, playerPool, pickPool, reasonPrefix = '') {
                 const packages = sideCombos(playerPool, pickPool, pick.value, { allowPickOnly: true });
                 packages
-                    .filter(pkg => pkg.total >= pick.value * lowRatio && pkg.total <= pick.value * highRatio)
+                    .filter(pkg => pkg.market >= pick.value * lowRatio && pkg.market <= pick.value * highRatio)
                     .slice(0, 4)
                     .forEach(pkg => {
                         const faab = balanceFaab(partner, pkg.players, [], pkg.picks, [pick]);
@@ -2213,7 +2292,7 @@
                 const returnLow = 0.72 - aggression * 0.08;
                 const returnHigh = 1.04 + aggression * 0.18;
                 returns
-                    .filter(pkg => pkg.total >= pick.value * returnLow && pkg.total <= pick.value * returnHigh)
+                    .filter(pkg => pkg.market >= pick.value * returnLow && pkg.market <= pick.value * returnHigh)
                     .slice(0, 4)
                     .forEach(pkg => {
                         const faab = balanceFaab(partner, [], pkg.players, [pick], pkg.picks);
@@ -2233,11 +2312,12 @@
             }
 
             function addShopAsset(asset, returnPlayers, returnPicks, reasonPrefix = '') {
-                const returns = sideCombos(returnPlayers, returnPicks, asset.value, { allowPickOnly: true });
+                const assetMkt = assetMarketValue(asset);
+                const returns = sideCombos(returnPlayers, returnPicks, assetMkt, { allowPickOnly: true });
                 const returnLow = mode === 'picks' ? 0.50 : 0.72 - aggression * 0.08;
                 const returnHigh = 1.04 + aggression * 0.18;
                 returns
-                    .filter(pkg => pkg.total >= asset.value * returnLow && pkg.total <= asset.value * returnHigh)
+                    .filter(pkg => pkg.market >= assetMkt * returnLow && pkg.market <= assetMkt * returnHigh)
                     .filter(pkg => mode !== 'picks' || pkg.picks.length)
                     .slice(0, 4)
                     .forEach(pkg => {
@@ -2292,16 +2372,25 @@
                 }
             }
 
+            // Core-dedupe AFTER rank sorting: one row per trade idea (player core),
+            // and it's the best-ranked variant of that idea that survives.
+            const seenCore = new Set();
             const ranked = candidates
                 .map(deal => {
                     const rank = scoreDealRecommendation(deal, tuning);
                     return { ...deal, rank, recommendationScore: rank, viability: dealViability(deal, tuning) };
                 })
                 .sort((a, b) => b.rank - a.rank || b.likelihood - a.likelihood || b.fit - a.fit)
+                .filter(deal => {
+                    if (seenCore.has(deal._core)) return false;
+                    seenCore.add(deal._core);
+                    return true;
+                })
                 .slice(0, 8);
             // keepSig: the league-wide pool (Phase 4b) dedupes across modes/partners by
-            // _sig; the pooling layer strips it before deals leave the finder.
-            return opts.keepSig ? ranked : ranked.map(({ _sig, ...deal }) => deal);
+            // _sig and collapses idea-duplicates by _core; the pooling layer strips
+            // both before deals leave the finder.
+            return opts.keepSig ? ranked : ranked.map(({ _sig, _core, ...deal }) => deal);
         }
 
         // Merge-on-write (post-review lost-update fix): league-detail's Alex-chat Save
@@ -2410,7 +2499,7 @@
             return (
                 <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
                     {/* Left pane: PR-sorted owner list (phone: the whole surface until a pick) */}
-                    {showList && <div style={{ flex: phone ? '1 1 100%' : '0 0 240px', minWidth: phone ? 0 : '200px', maxHeight: phone ? 'none' : '78vh', overflowY: phone ? 'visible' : 'auto', background: 'var(--off-black)', border: '1px solid var(--acc-fill3, rgba(212,175,55,0.15))', borderRadius: 'var(--card-radius, 10px)', padding: '6px' }}>
+                    {showList && <div style={{ flex: phone ? '1 1 100%' : '0 0 240px', minWidth: phone ? 0 : '200px', maxHeight: phone ? 'none' : '78vh', overflowY: phone ? 'visible' : 'auto', background: 'var(--off-black)', border: '1px solid var(--acc-fill3, rgba(212,175,55,0.15))', borderRadius: '10px', padding: '6px' }}>
                         <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.6, letterSpacing: '0.06em', textTransform: 'uppercase', padding: '6px 8px' }}>Owners · sorted by power</div>
                         {sortedAssessments.map((a, idx) => {
                             const rid = a.rosterId;
@@ -2424,7 +2513,7 @@
                             return (
                                 <div key={rid} onClick={() => setExpandedDnaOwner(rid)} style={{
                                     display: 'flex', alignItems: 'center', gap: '8px',
-                                    padding: '7px 8px', minHeight: phone ? '44px' : undefined, borderRadius: 'var(--card-radius-sm, 8px)', cursor: 'pointer',
+                                    padding: '7px 8px', minHeight: phone ? '44px' : undefined, borderRadius: '6px', cursor: 'pointer',
                                     background: isSel ? 'var(--acc-fill2, rgba(212,175,55,0.12))' : 'transparent',
                                     border: '1px solid ' + (isSel ? 'var(--acc-line2, rgba(212,175,55,0.35))' : 'transparent'),
                                     marginBottom: '2px', transition: 'background 0.15s'
@@ -2448,7 +2537,7 @@
                     {/* Right pane: selected owner detail (phone: single pane + back) */}
                     {showDetail && <div style={{ flex: phone ? '1 1 100%' : '1 1 480px', minWidth: phone ? 0 : '320px' }}>
                         {phone && (
-                            <button type="button" onClick={() => setExpandedDnaOwner(null)} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', minHeight: '44px', marginBottom: '8px', padding: '6px 14px 6px 10px', background: 'var(--acc-fill1, rgba(212,175,55,0.06))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: 'var(--card-radius-sm, 8px)', color: 'var(--gold)', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: '0.74rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>‹ All owners</button>
+                            <button type="button" onClick={() => setExpandedDnaOwner(null)} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', minHeight: '44px', marginBottom: '8px', padding: '6px 14px 6px 10px', background: 'var(--acc-fill1, rgba(212,175,55,0.06))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: '6px', color: 'var(--gold)', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: '0.74rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>‹ All owners</button>
                         )}
                         <div style={{ fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.6, marginBottom: '10px', lineHeight: 1.5 }}>
                             Profile each owner's behavioral DNA. {React.createElement(Tip, null, 'Owner DNA classifies each league member\'s trading personality. DNA now affects acceptance through psychological tax drivers, not separate multiplier curves.')}
@@ -2456,11 +2545,11 @@
                             {React.createElement(function DnaGuideInline() {
                                 const [guideOpen, setGuideOpen] = React.useState(false);
                                 return React.createElement(React.Fragment, null,
-                                    React.createElement('button', { onClick:()=>setGuideOpen(!guideOpen), style:{fontSize:'0.7rem',color:'var(--gold)',background:'var(--acc-fill2, rgba(212,175,55,0.08))',border:'1px solid var(--acc-line1, rgba(212,175,55,0.25))',borderRadius:'var(--card-radius-xs, 5px)',padding:'2px 8px',cursor:'pointer',fontFamily: 'var(--font-body)',textTransform:'uppercase',letterSpacing:'0.05em',marginLeft:'6px',minHeight:'44px',display:'inline-flex',alignItems:'center'} }, guideOpen ? 'Hide DNA Guide' : 'Show DNA Guide'),
+                                    React.createElement('button', { onClick:()=>setGuideOpen(!guideOpen), style:{fontSize:'0.7rem',color:'var(--gold)',background:'var(--acc-fill2, rgba(212,175,55,0.08))',border:'1px solid var(--acc-line1, rgba(212,175,55,0.25))',borderRadius:'4px',padding:'2px 8px',cursor:'pointer',fontFamily: 'var(--font-body)',textTransform:'uppercase',letterSpacing:'0.05em',marginLeft:'6px',minHeight:'44px',display:'inline-flex',alignItems:'center'} }, guideOpen ? 'Hide DNA Guide' : 'Show DNA Guide'),
                                     guideOpen ? React.createElement('div', { style:{marginTop:'8px', display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))', gap:'8px'} },
                                         ...Object.entries(DNA_TYPES).filter(function(e){return e[0]!=='NONE'}).map(function(entry) {
                                             var key=entry[0], d=entry[1];
-                                            return React.createElement('div', { key:key, style:{background:wrAlpha(d.color, '08'),border:'1px solid '+wrAlpha(d.color, '44'),borderLeft:'3px solid '+d.color,borderRadius:'var(--card-radius-sm, 8px)',padding:'8px 10px'} },
+                                            return React.createElement('div', { key:key, style:{background:wrAlpha(d.color, '08'),border:'1px solid '+wrAlpha(d.color, '44'),borderLeft:'3px solid '+d.color,borderRadius:'6px',padding:'8px 10px'} },
                                                 React.createElement('div', { style:{display:'flex', alignItems:'center', gap:'6px', marginBottom:'4px'} },
                                                     React.createElement('span', { style:{fontFamily:'var(--font-title)',fontSize:'0.9rem',color:d.color,fontWeight:700,letterSpacing:'0.03em'} }, d.label)
                                                 ),
@@ -2630,7 +2719,7 @@
                         stale intent from an earlier hunt would misdirect the scan. */}
                     {!isMyTeam && (
                         <button type="button" className="tc-rail-dna-link" style={{ marginBottom: '14px' }} onClick={() => {
-                            setFinderQuery({ intent: 'help', focus: null, partnerFilter: a.ownerId });
+                            setFinderQuery({ intent: 'best', focus: null, partnerFilter: a.ownerId });
                             setShowAllDeals(false);
                             setTcTab('desk');
                         }}>Find trades with this owner ▸</button>
@@ -2643,7 +2732,7 @@
                             { label: 'PANIC', value: a.panic + '/5', color: a.panic >= 3 ? 'var(--loss-red)' : 'var(--silver)' },
                             { label: 'WINDOW', value: a.window || '—', color: a.tierColor },
                             { label: 'PF', value: a.pf > 0 ? Math.round(a.pf) : '—', color: 'var(--silver)' },
-                        ].map((k, i) => <div key={i} style={{ padding: '8px', background: 'var(--black)', border: '1px solid var(--ov-3, rgba(255,255,255,0.05))', borderRadius: 'var(--card-radius-sm, 8px)', textAlign: 'center' }}>
+                        ].map((k, i) => <div key={i} style={{ padding: '8px', background: 'var(--black)', border: '1px solid var(--ov-3, rgba(255,255,255,0.05))', borderRadius: '6px', textAlign: 'center' }}>
                             <div style={{ fontFamily: 'var(--font-title)', fontSize: '1.1rem', fontWeight: 700, color: k.color }}>{k.value}</div>
                             <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.65, textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: '2px' }}>{k.label}</div>
                         </div>)}
@@ -2683,7 +2772,7 @@
                     {/* Observed behavior: facts first, inference second */}
                     {behaviorProfile && (
                         <div style={{ marginBottom: '14px', display: 'grid', gridTemplateColumns: _vp.isPhone ? '1fr' : 'minmax(0, 1.15fr) minmax(0, 0.85fr)', gap: '10px' }}>
-                            <div style={{ border: '1px solid rgba(125,183,232,0.16)', borderRadius: 'var(--card-radius-sm, 8px)', background: 'rgba(125,183,232,0.04)', padding: '9px 10px' }}>
+                            <div style={{ border: '1px solid rgba(125,183,232,0.16)', borderRadius: '7px', background: 'rgba(125,183,232,0.04)', padding: '9px 10px' }}>
                                 <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--k-7db7e8, #7db7e8)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '6px' }}>Observed Behavior</div>
                                 <div style={{ display: 'grid', gap: '5px' }}>
                                     {behaviorFacts.slice(0, 4).map(fact => (
@@ -2694,11 +2783,11 @@
                                     {!behaviorFacts.length && <div style={{ fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.6 }}>No behavioral sample yet.</div>}
                                 </div>
                             </div>
-                            <div style={{ border: '1px solid var(--acc-fill3, rgba(212,175,55,0.16))', borderRadius: 'var(--card-radius-sm, 8px)', background: 'var(--acc-fill1, rgba(212,175,55,0.04))', padding: '9px 10px' }}>
+                            <div style={{ border: '1px solid var(--acc-fill3, rgba(212,175,55,0.16))', borderRadius: '7px', background: 'var(--acc-fill1, rgba(212,175,55,0.04))', padding: '9px 10px' }}>
                                 <div style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '6px' }}>Inference</div>
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '7px' }}>
                                     {behaviorTags.length
-                                        ? behaviorTags.slice(0, 5).map(tag => <span key={tag} style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.22))', background: 'var(--acc-fill1, rgba(212,175,55,0.07))', borderRadius: 'var(--card-radius-xs, 5px)', padding: '2px 5px' }}>{tag.replace(/-/g, ' ')}</span>)
+                                        ? behaviorTags.slice(0, 5).map(tag => <span key={tag} style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.22))', background: 'var(--acc-fill1, rgba(212,175,55,0.07))', borderRadius: '4px', padding: '2px 5px' }}>{tag.replace(/-/g, ' ')}</span>)
                                         : <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.6 }}>Sample too thin</span>}
                                 </div>
                                 <div style={{ fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.82, lineHeight: 1.42 }}>{behaviorProfile.strategy?.offerFrame}</div>
@@ -2708,7 +2797,7 @@
 
                     {/* Draft DNA (if present) */}
                     {draftDna && (
-                        <div style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 'var(--card-radius-sm, 8px)', padding: '8px 10px', marginBottom: '14px' }}>
+                        <div style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: '6px', padding: '8px 10px', marginBottom: '14px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px' }}>
                                 <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.65, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Draft DNA</span>
                                 <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--k-a5b4fc, #a5b4fc)' }}>{draftDna.label}</span>
@@ -2943,39 +3032,13 @@
         // derived mode across the whole board (Shop/Get Help/Picks league-wide).
         const finderDualBest = finderQuery.intent === 'best' && !focusR;
         const finderFocusKey = finderQuery.focus ? `${finderQuery.focus.kind}:${finderQuery.focus.id}` : null;
-        // Stable signature of the partner SET (sorted owner IDs). The scan loop
-        // keys on this, NOT on finderDataEpoch: the epoch bumps on every
-        // timeRecomputeTs heartbeat (assessments re-derive with identical
-        // content), which used to tear down and restart the idle-chunked league
-        // scan at 0 on each tick — so it never resolved ("Scanning partners
-        // 0/15…"). The set signature only changes when the actual teams in the
-        // board change; evalPartnerDeals still reads fresh data via its
-        // epoch-versioned cache whenever the scan does run.
-        const finderBoardSig = partnerBoard.map(p => p.assessment.ownerId).sort().join(',');
         const finderLoopKey = finderActive && effPartnerId == null && partnerBoard.length
-            ? JSON.stringify([finderQuery.intent, effMode, finderFocusKey, finderTuningHash, finderBoardSig])
+            ? JSON.stringify([finderQuery.intent, effMode, finderFocusKey, finderDataEpoch, finderTuningHash])
             : null;
-        // On-demand scan (owner ask): the league-wide scan runs ONLY after the
-        // user taps "Scan for moves". scanForKey holds the finderLoopKey the scan
-        // was requested for; changing any finder input (new finderLoopKey)
-        // disarms it and re-shows the button so nothing scans unprompted.
-        const [scanForKey, setScanForKey] = useState(null);
-        const scanArmed = finderLoopKey != null && scanForKey === finderLoopKey;
-        // Fires the scan for a Trade Finder deep link — the flag is set once,
-        // the moment finderLoopKey resolves for the deep-linked focus we arm it
-        // and clear the flag so later organic finder edits fall back to on-demand.
-        useEffect(() => {
-            if (autoScanRequestedRef.current && finderLoopKey != null) {
-                autoScanRequestedRef.current = false;
-                setScanForKey(finderLoopKey);
-            }
-        }, [finderLoopKey]);
         const finderActionFloor = dealActionableAcceptanceFloor(finderTuning);
         const [finderPool, setFinderPool] = useState({ key: null, deals: [], scanned: 0, total: 0, done: false });
         useEffect(() => {
-            // Only scan once armed (button tapped for the current inputs). Not
-            // armed → keep the pool empty so the UI shows the Scan button.
-            if (!scanArmed) {
+            if (!finderLoopKey) {
                 setFinderPool(p => (p.key === null ? p : { key: null, deals: [], scanned: 0, total: 0, done: false }));
                 return undefined;
             }
@@ -2997,10 +3060,9 @@
                 if (cancelled) return;
                 const item = partners[idx];
                 if (item) {
-                    // Per-partner deal gen is wrapped so one partner that throws
-                    // can't halt the whole league scan at scanned:0 (there is no
-                    // outer catch — an uncaught error here would silently stop
-                    // the idle-callback loop). Skip the bad partner, keep going.
+                    // A bad partner (malformed assessment, missing roster) must not
+                    // silently kill the whole scan — that's how it hangs at 0/N. Log
+                    // and skip; idx still advances so the league scan keeps moving.
                     try {
                         for (const mode of modes) {
                             for (const deal of evalPartnerDeals(item.assessment, mode, focusPlayerPid, focusPickR)) {
@@ -3011,7 +3073,9 @@
                                 pooled.push({ ...deal, partnerScore: item.score });
                             }
                         }
-                    } catch (e) { try { window.wrLog && window.wrLog('trade.finderScan', e); } catch (_e) {} }
+                    } catch (err) {
+                        if (window.wrLog) window.wrLog('trade.finderScan', err);
+                    }
                 }
                 idx += 1;
                 const enough = idx >= minPartners && pooled.filter(d => d.likelihood >= finderActionFloor).length >= 8;
@@ -3021,7 +3085,7 @@
             };
             schedule(step);
             return () => { cancelled = true; };
-        }, [finderLoopKey, scanArmed]);
+        }, [finderLoopKey]);
         const finderPoolOn = finderLoopKey != null;
         // Pooled ranking: per-deal recommendation score (likelihood/fit/value, GM-band
         // penalized) + a small partner-board term, grade letter then accept % as ties.
@@ -3029,15 +3093,26 @@
         const finderDeals = useMemo(() => {
             if (!finderActive) return [];
             if (finderPoolOn) {
+                // Sort first, THEN core-dedupe: dual-mode scans (fillNeed +
+                // sellSurplus) can produce the same trade idea for one partner;
+                // the best-ranked variant is the one that survives.
+                const seenCore = new Set();
                 return finderPool.deals
-                    .map(({ _sig, ...deal }) => deal)
+                    .slice()
                     .sort((a, b) => (b.rank + (b.partnerScore || 0) * 0.2) - (a.rank + (a.partnerScore || 0) * 0.2)
                         || (FINDER_GRADE_RANK[b.grade] || 0) - (FINDER_GRADE_RANK[a.grade] || 0)
                         || b.likelihood - a.likelihood)
+                    .filter(deal => {
+                        if (!deal._core) return true;
+                        if (seenCore.has(deal._core)) return false;
+                        seenCore.add(deal._core);
+                        return true;
+                    })
+                    .map(({ _sig, _core, ...deal }) => deal)
                     .slice(0, 24);
             }
             if (!selectedPartner) return [];
-            return evalPartnerDeals(selectedPartner, effMode, focusPlayerPid, focusPickR).map(({ _sig, ...deal }) => deal);
+            return evalPartnerDeals(selectedPartner, effMode, focusPlayerPid, focusPickR).map(({ _sig, _core, ...deal }) => deal);
         }, [finderActive, finderPoolOn, finderPool, selectedPartner, effMode, focusPlayerPid, focusPickR?.id, finderDataEpoch, finderTuningHash]);
         const finderActionable = finderDeals.filter(deal => deal.likelihood >= finderActionFloor);
         const finderMoonshotCount = Math.max(0, finderDeals.length - finderActionable.length);
@@ -3058,9 +3133,9 @@
             }
         }, [finderPublishKey]);
 
-        // ── Shared board→builder helpers (owner ask 2026-07-12) — hoisted from the
-        // phone branch (ex phAddToBuilder / phAddPickToBuilder / phPickUndrafted) so
-        // the desktop finder's gold "+" and picks board run the exact same recipes.
+        // ── Phone board→builder helpers (iPhone program Phase 2) — component scope
+        // so the phone workspace's gold "+" affordances and picks board run the
+        // builder's canonical add recipes.
         // Hide picks whose rookie draft has already been held: any PAST season, plus
         // the CURRENT NFL season once its draft is done — proxied by the regular
         // season / playoffs having started, since rookie drafts run pre-season.
@@ -3079,7 +3154,7 @@
         // component state) plus the owner-select seam for side B (mirrors
         // TcTradeSide's owner <select>, which keeps any already-added assets —
         // same semantics). Returns false on a dup so callers can skip success
-        // follow-ups (the desktop "+" expands the builder strip only on success).
+        // follow-ups.
         function addAssetToBuilder(row) {
             const mine = String(row.rosterId) === String(myRosterId);
             const side = mine ? 'A' : 'B';
@@ -3101,34 +3176,6 @@
             setDealHqNotice(mine ? 'Added to YOU SEND' : 'Added to YOU GET');
             return true;
         }
-        // Cross-league entry points (Empire's Trade Desk league picker, and
-        // "Propose Trade" from an Owner Rolodex card or an Arbitrage row)
-        // land here pre-armed instead of empty — seedOwnerId locks the
-        // opposing side, seedPid drops that player straight into the builder
-        // on whichever side actually rosters him in THIS league. Guarded to
-        // fire once per mount so re-renders don't re-add the same player.
-        const seededOnceRef = useRef(false);
-        useEffect(() => {
-            if (seededOnceRef.current) return;
-            if (!seedOwnerId && !seedPid) return;
-            seededOnceRef.current = true;
-            // The caller's ownerId (from Empire's cached cross-league assessments)
-            // can drift from this league's live roster.owner_id — an owner who
-            // left, or an assessment cache that predates a roster reassignment.
-            // Confirm it still resolves to a real roster here before locking it
-            // in, so a stale id doesn't silently strand the picker on "-- None --"
-            // with no explanation.
-            if (seedOwnerId) {
-                const ownerHasRoster = (currentLeague?.rosters || []).some(r => String(r.owner_id) === String(seedOwnerId));
-                if (ownerHasRoster) setTradeOwner(prev => ({ ...prev, B: seedOwnerId }));
-                else setDealHqNotice('Could not auto-select that owner — pick them from the list below.');
-            }
-            if (seedPid) {
-                const roster = (currentLeague?.rosters || []).find(r => (r.players || []).includes(seedPid));
-                if (roster) addAssetToBuilder({ rosterId: roster.roster_id, pid: seedPid, ownerId: roster.owner_id });
-            }
-            setTcTab('desk');
-        }, [seedOwnerId, seedPid, currentLeague]);
 
         function renderDealHQ() {
             if (!rosterState.isUsable) {
@@ -3162,8 +3209,9 @@
             const moonshotCount = finderMoonshotCount;
             const visibleDeals = finderVisibleDeals;
             const finderIntents = [
-                { key: 'help', label: 'Add' },
-                { key: 'shop', label: 'Sell' },
+                { key: 'best', label: 'Best Moves' },
+                { key: 'help', label: 'Get Help' },
+                { key: 'shop', label: 'Shop Target' },
                 { key: 'picks', label: 'Picks' },
             ];
             const intentLabel = (finderIntents.find(i => i.key === finderQuery.intent) || finderIntents[0]).label;
@@ -3174,7 +3222,7 @@
                 : effMode === 'sellSurplus' ? 'shopping your surplus'
                 : 'filling roster needs');
             const finderScopeLabel = finderPoolOn
-                ? (!scanArmed ? 'tap Scan to run' : finderPool.done ? 'league-wide scan' : `scanning ${finderPool.scanned}/${finderPool.total}…`)
+                ? (finderPool.done ? 'league-wide scan' : `scanning ${finderPool.scanned}/${finderPool.total}…`)
                 : selectedPartner ? `vs ${selectedPartner.ownerName}` : 'no partner scored yet';
             const assetBrowserSorts = [
                 { key:'dhq', label:'DHQ' },
@@ -3183,13 +3231,9 @@
                 { key:'points', label:'Last FP' },
                 { key:'prime', label:'Prime Years' },
             ];
-            // Intent=Picks swaps the browser to the PICKS board below — the
-            // player-table "your roster" semantics no longer apply there
-            // (owner ask 2026-07-12).
-            const finderPicksMode = effMode === 'picks';
-            const browsingMyRoster = effMode === 'shop' || effMode === 'sellSurplus';
+            const browsingMyRoster = effMode === 'shop' || effMode === 'sellSurplus' || effMode === 'picks';
             // Partner pinned + acquire-side browse → only that partner's roster
-            // (owner ask 2026-07-12, same rule as the phone board).
+            // (c73cc40); no pin keeps the full league board.
             const assetBrowserRosters = browsingMyRoster
                 ? allRosters.filter(r => String(r.roster_id) === String(myRosterId))
                 : allRosters.filter(r => String(r.roster_id) !== String(myRosterId)
@@ -3198,12 +3242,7 @@
                 const assessment = assessments.find(a => String(a.rosterId) === String(roster?.roster_id));
                 return assessment?.teamName || ownerNameForRosterId(roster?.roster_id) || `Team ${roster?.roster_id || '?'}`;
             };
-            // Default-visible board (owner ask 2026-07-12): rows always compute —
-            // the same pipeline the phone always runs — so the first 8 render
-            // without the old Browse toggle; assetBrowserOpen now only expands to
-            // the full list. Pro + roster gating unchanged (renderDealHQ only runs
-            // Pro with a usable roster). Picks mode feeds the pick board instead.
-            const assetBrowserRows = (finderPicksMode ? [] : assetBrowserRosters).flatMap(roster => assetsForRoster(roster)
+            const assetBrowserRows = (assetBrowserOpen ? assetBrowserRosters : []).flatMap(roster => assetsForRoster(roster)
                 .filter(p => !browsingMyRoster || !isUntouchableAsset(p, focusTuning))
                 .map(asset => {
                     const player = playersData[asset.pid] || {};
@@ -3219,13 +3258,14 @@
                         ownerLabel: rosterLabel(roster),
                     };
                 }));
-            // Flex-group chips (league-derived) + group-aware predicate — same
-            // vocabulary as the phone browser.
+            // Flex-group chips (league-derived) + group-aware predicate (c73cc40) —
+            // optional-chained so the browser degrades to plain positions until the
+            // window.App flex-group helpers land.
             const dtFlexGroups = (window.App?.getLeagueFlexGroups?.({ league: currentLeague }) || [])
                 .filter(g => (window.App?.FLEX_GROUP_POSITIONS?.[g] || []).some(pos => assetBrowserRows.some(row => row.pos === pos)));
             const browserPositions = ['ALL', ...Object.keys(TC_POS_ORDER).filter(pos => assetBrowserRows.some(row => row.pos === pos)), ...dtFlexGroups];
             const _dtPosMatch = window.App?.posMatchesFilter || ((pos, f) => !f || f === 'ALL' || pos === f);
-            const sortedAssetRows = assetBrowserRows
+            const visibleAssetRows = assetBrowserRows
                 .filter(row => _dtPosMatch(row.pos, assetBrowserPos))
                 .filter(row => !assetBrowserRookieOnly || !!tcRookieInfoFor(row.pid))
                 .sort((a, b) => {
@@ -3236,21 +3276,6 @@
                     return b.value - a.value;
                 })
                 .slice(0, 28);
-            const visibleAssetRows = assetBrowserOpen ? sortedAssetRows : sortedAssetRows.slice(0, 8);
-            // Desktop picks board (Intent=Picks) — the phone pipeline verbatim:
-            // Owned/League scope (shared phPicksScope state), drafted-pick
-            // exclusion (shared pickUndrafted), draft-order sort (owner ask
-            // 2026-07-12) — not value-ranked, so 2027 1st→2nd→3rd… then 2028.
-            const picksScopeMine = phPicksScope === 'owned';
-            const pickBoardRows = finderPicksMode
-                ? assessments
-                    .filter(a => picksScopeMine ? String(a.rosterId) === String(myRosterId) : String(a.rosterId) !== String(myRosterId))
-                    .flatMap(a => pickAssetsForOwner(a.ownerId).map(pk => ({ ...pk, ownerId: a.ownerId, rosterId: a.rosterId, ownerName: a.ownerName || a.teamName || ('Team ' + a.rosterId) })))
-                    .filter(pickUndrafted)
-                    .sort(comparePicksByDraftOrder)
-                : [];
-            const visiblePickRows = assetBrowserOpen ? pickBoardRows : pickBoardRows.slice(0, 8);
-            const boardRowCount = finderPicksMode ? pickBoardRows.length : sortedAssetRows.length;
 
             // ── Focus typeahead sources — players (mine AND league-wide), picks, owners ──
             // Built inline per keystroke (only when 2+ chars typed); no memo needed at
@@ -3334,14 +3359,6 @@
                 setShowAllDeals(false);
             }
 
-            function selectPickFocus(row) {
-                // Pick-board row tap = focus the finder on this pick (the phone
-                // phPickRow onClick, ported).
-                if (!row) return;
-                setFinderQuery(qr => ({ ...qr, focus: { kind: 'pick', id: row.id, label: row.label, ownerId: row.ownerId, rosterId: row.rosterId } }));
-                setShowAllDeals(false);
-            }
-
             function assetLine(asset) {
                 if (!asset) return null;
                 if (asset.type === 'pick') {
@@ -3393,30 +3410,20 @@
                     Inline overflow overrides: the panel/body CSS clamps for the old
                     fixed-height grid and would clip the typeahead dropdown. */}
                 <section className="tc-dhq-panel" style={{ overflow: 'visible' }}>
-                    <div className="tc-dhq-panel-head">
-                        <span>Trade Finder</span>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                            <em>{intentLabel} · {finderScopeLabel}</em>
-                            {/* Scan moved up from the foot of the panel (owner ask) — it's
-                                the primary action for this card and belongs where it's seen
-                                without scrolling past the whole control stack + board. */}
-                            {finderPoolOn && !scanArmed && (
-                                <button type="button" onClick={() => setScanForKey(finderLoopKey)} style={{ padding: '5px 12px', border: '1px solid var(--gold)', borderRadius: 'var(--card-radius-xs, 5px)', background: 'var(--gold)', color: 'var(--page-bg, #0A0A0F)', fontFamily: 'var(--font-mono, monospace)', fontSize: '0.72rem', fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', cursor: 'pointer', whiteSpace: 'nowrap' }}>Scan the league for moves</button>
-                            )}
-                            {renderTcTabNav()}
+                    {/* Compact header: title + intent chips share the "Trade Finder"
+                        line (chips pulled up out of the body), scanning status stays
+                        pinned far-right. Everything below rises by one row. */}
+                    <div className="tc-dhq-panel-head" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', minWidth: 0 }}>
+                            <span>Trade Finder</span>
+                            <div className="tc-dhq-modebar" role="group" aria-label="Finder intent">
+                                {finderIntents.map(i => <button key={i.key} type="button" className={finderQuery.intent === i.key ? 'is-active' : ''} onClick={() => { setFinderQuery(qr => ({ ...qr, intent: i.key })); setAssetBrowserPos('ALL'); setShowAllDeals(false); }}>{i.label}</button>)}
+                            </div>
                         </div>
+                        <em>{intentLabel} · {finderScopeLabel}</em>
                     </div>
-                    <div className="tc-dhq-panel-body" style={{ overflow: 'visible', paddingRight: 0, display: 'flex', flexDirection: 'column', gap: '7px' }}>
-                        {/* Organized control rows (owner ask 2026-07-12): INTENT seg +
-                            focus search share one line; PARTNER is a labeled row below;
-                            the GM-lens read rides as a caption just above the board. */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--silver)', opacity: 0.65, flex: 'none' }}>Intent</span>
-                        <div className="tc-dhq-modebar" role="group" aria-label="Finder intent" style={{ flex: 'none' }}>
-                            {finderIntents.map(i => <button key={i.key} type="button" className={finderQuery.intent === i.key ? 'is-active' : ''} onClick={() => { setFinderQuery(qr => ({ ...qr, intent: i.key })); setAssetBrowserPos('ALL'); setShowAllDeals(false); }}>{i.label}</button>)}
-                        </div>
-
-                        <div style={{ position: 'relative', minWidth: '240px', flex: '1 1 240px' }}>
+                    <div className="tc-dhq-panel-body" style={{ overflow: 'visible', paddingRight: 0, display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <div style={{ position: 'relative', minWidth: 0 }}>
                             <input
                                 type="text"
                                 value={finderSearch}
@@ -3434,7 +3441,7 @@
                                 role="combobox"
                                 aria-expanded={typeaheadFlat.length > 0}
                                 aria-autocomplete="list"
-                                style={{ width: '100%', minHeight: _vp.isPhone ? '44px' : '32px', border: '1px solid rgba(212,175,55,0.22)', borderRadius: 'var(--card-radius-xs, 5px)', background: 'rgba(255,255,255,0.045)', color: 'var(--white)', fontFamily: 'var(--font-body)', fontSize: '0.76rem', padding: '6px 10px' }}
+                                style={{ width: '100%', minHeight: _vp.isPhone ? '44px' : '38px', border: '1px solid rgba(212,175,55,0.22)', borderRadius: '5px', background: 'rgba(255,255,255,0.045)', color: 'var(--white)', fontFamily: 'var(--font-body)', fontSize: '0.8rem', padding: '8px 10px' }}
                             />
                             {typeaheadFlat.length > 0 && (
                                 <div role="listbox" aria-label="Focus matches" ref={node => {
@@ -3456,7 +3463,7 @@
                                     const visibleBottom = window.innerHeight - bottomGuard;
                                     const maxH = Math.max(140, Math.min(320, visibleBottom - node.getBoundingClientRect().top - 8));
                                     node.style.maxHeight = maxH + 'px';
-                                }} style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 40, marginTop: '4px', background: 'var(--off-black, #10141b)', border: '1px solid rgba(212,175,55,0.3)', borderRadius: 'var(--card-radius-sm, 8px)', maxHeight: '320px', overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', boxShadow: '0 12px 26px rgba(0,0,0,0.6)' }}>
+                                }} style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 40, marginTop: '4px', background: 'var(--off-black, #10141b)', border: '1px solid rgba(212,175,55,0.3)', borderRadius: '6px', maxHeight: '320px', overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', boxShadow: '0 12px 26px rgba(0,0,0,0.6)' }}>
                                     {typeaheadGroups.map(group => (
                                         <div key={group.label}>
                                             <div style={{ padding: '6px 10px 3px', fontSize: '0.6rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--silver)', opacity: 0.6 }}>{group.label}</div>
@@ -3473,120 +3480,38 @@
                                 </div>
                             )}
                         </div>
-                        </div>
 
                         {focusR && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', border: '1px solid rgba(212,175,55,0.35)', borderRadius: 'var(--card-radius-xs, 5px)', background: 'rgba(212,175,55,0.08)', padding: '4px 8px', fontSize: '0.74rem', color: 'var(--white)' }}>
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', border: '1px solid rgba(212,175,55,0.35)', borderRadius: '5px', background: 'rgba(212,175,55,0.08)', padding: '4px 8px', fontSize: '0.74rem', color: 'var(--white)' }}>
                                     <em style={{ fontStyle: 'normal', fontSize: '0.6rem', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold)' }}>{focusR.kind === 'pick' ? 'Pick' : focusR.kind === 'owner' ? 'Owner' : (focusR.pos || 'Player')}</em>
                                     <strong style={{ fontWeight: 600 }}>{focusR.label}</strong>
                                     {focusR.kind !== 'owner' && <span style={{ fontSize: '0.68rem', color: 'var(--silver)' }}>{String(focusR.rosterId) === String(myRosterId) ? 'yours' : (ownerNameForRosterId(focusR.rosterId) || 'league')}</span>}
-                                    {/* Phone + coarse (iPad pass): hit-padding only (negative
-                                        margin cancels the layout shift) so the chip row's
-                                        height doesn't change — plan D7 / G4. */}
-                                    <button type="button" onClick={clearFinderFocus} aria-label="Clear focus" style={{ border: 'none', background: 'transparent', color: 'var(--silver)', cursor: 'pointer', fontSize: '0.8rem', padding: (_vp.isPhone || _vp.isCoarse) ? '12px 10px' : '0 2px', margin: (_vp.isPhone || _vp.isCoarse) ? '-12px -8px' : 0, lineHeight: 1 }}>✕</button>
+                                    {/* Phone: hit-padding only (negative margin cancels the layout
+                                        shift) so the chip row's height doesn't change — plan D7. */}
+                                    <button type="button" onClick={clearFinderFocus} aria-label="Clear focus" style={{ border: 'none', background: 'transparent', color: 'var(--silver)', cursor: 'pointer', fontSize: '0.8rem', padding: _vp.isPhone ? '12px 10px' : '0 2px', margin: _vp.isPhone ? '-12px -8px' : 0, lineHeight: 1 }}>✕</button>
                                 </span>
                                 {focusR.kind === 'pick' && <span style={{ fontSize: '0.7rem', color: 'var(--silver)', opacity: 0.65 }}>{String(focusR.rosterId) === String(myRosterId) ? 'Shopping this pick league-wide for value back.' : 'Packages are built to pry this pick from its owner.'}</span>}
                             </div>
                         )}
 
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--silver)', opacity: 0.65, flex: 'none' }}>Partner</span>
-                        <div className="tc-dhq-modebar" role="group" aria-label="Partner filter" style={{ flex: '1 1 auto', minWidth: 0 }}>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.75 }}>
+                            GM lens: <strong style={{ color: 'var(--gold)', fontWeight: 700 }}>{focusTuning.modeLabel}</strong> · acceptance bar {actionFloor}% · {focusTuning.untouchable.size} untouchable{focusTuning.untouchable.size === 1 ? '' : 's'} · {modeDescriptor}
+                        </div>
+
+                        <div className="tc-dhq-modebar" role="group" aria-label="Partner filter">
                             <button type="button" className={effPartnerId == null ? 'is-active' : ''} onClick={() => setPartnerFacet(null)}>Auto</button>
                             {partnerBoard.slice(0, 6).map(item => {
                                 const a = item.assessment;
                                 const active = effPartnerId != null && String(a.ownerId) === String(effPartnerId);
                                 return <button key={a.rosterId} type="button" className={active ? 'is-active' : ''} title={`${item.score} fit · ${item.tag} · ${item.scoreReasons.slice(0, 2).join(' · ')}`} onClick={() => setPartnerFacet(active ? null : a.ownerId)}>{a.ownerName} {item.score}</button>;
                             })}
-                            {partnerBoard.length > 6 && (
-                                <button type="button" className={partnerListOpen ? 'is-active' : ''} aria-expanded={partnerListOpen} onClick={() => setPartnerListOpen(v => !v)}>{partnerListOpen ? 'Less ▴' : 'More ▾'}</button>
-                            )}
                         </div>
-                        </div>
-                        {/* Full ranked partner list (owner ask 2026-07-12) — every
-                            partner, not the capped 6-chip facet; same setPartnerFacet
-                            pin path as the chips (the phone full list, ported). */}
-                        {partnerListOpen && partnerBoard.length > 6 && (
-                            <div style={{ border: '1px solid var(--acc-line1, rgba(212,175,55,0.22))', borderRadius: 'var(--card-radius-sm, 8px)', background: 'var(--off-black, #10141b)', maxHeight: '260px', overflowY: 'auto', overscrollBehavior: 'contain' }}>
-                                {partnerBoard.map(item => {
-                                    const a = item.assessment;
-                                    const on = effPartnerId != null && String(a.ownerId) === String(effPartnerId);
-                                    return (
-                                        <button key={a.rosterId} type="button" title={`${item.score} fit · ${item.tag} · ${item.scoreReasons.slice(0, 2).join(' · ')}`}
-                                            onClick={() => { setPartnerFacet(on ? null : a.ownerId); setPartnerListOpen(false); }}
-                                            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '8px', border: 'none', borderBottom: '1px solid rgba(255,255,255,0.05)', background: on ? 'rgba(212,175,55,0.12)' : 'transparent', textAlign: 'left', padding: '7px 10px', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: '0.78rem' }}>
-                                            <strong style={{ color: on ? 'var(--gold)' : 'var(--white)', fontWeight: 600, minWidth: 0, flex: '1 1 auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.ownerName}</strong>
-                                            {item.posture && <span style={{ fontSize: '0.58rem', letterSpacing: '0.06em', textTransform: 'uppercase', color: item.posture.color, whiteSpace: 'nowrap' }}>{item.posture.label}</span>}
-                                            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--silver)' }}>{item.score}</span>
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        )}
 
-                        {/* Board is default-visible now (owner ask 2026-07-12): the first
-                            8 rows always render with the Pos/Sort controls; the old
-                            "Browse assets" toggle is just a Show all / Show less expander.
-                            The extra Add column and the div-row affordances override the
-                            index.html base grid (7-col template) — scoped inline since
-                            this port touches only trade-calc.js. */}
-                        <style>{`
-                            /* Condensed Intent/Partner control rows (owner ask) — tighter
-                               than the shared .tc-dhq-modebar default so this settings
-                               stack reads as a compact instrument strip, not stacked cards. */
-                            .tc-dhq-modebar button { padding: 4px 9px; font-size: 0.68rem; }
-                            .tc-dhq-asset-table.has-add .tc-dhq-asset-row { grid-template-columns: minmax(150px,1.5fr) 46px 72px 48px minmax(118px,1fr) 68px 58px 36px; min-width: 764px; }
-                            .tc-dhq-asset-table.is-picks .tc-dhq-asset-row { grid-template-columns: minmax(170px,1.6fr) 56px minmax(130px,1fr) 80px 36px; min-width: 520px; }
-                            div.tc-dhq-asset-row[tabindex] { cursor: pointer; }
-                            div.tc-dhq-asset-row[tabindex]:hover, div.tc-dhq-asset-row.is-active { background: rgba(212,175,55,0.07); color: var(--white); }
-                            .tc-dhq-add-btn { width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; justify-self: end; border-radius: var(--card-radius-sm, 8px); border: 1px solid var(--acc-line2, rgba(212,175,55,0.4)); background: rgba(212,175,55,0.10); color: var(--gold); font-family: var(--font-mono, monospace); font-size: 0.95rem; font-weight: 700; line-height: 1; padding: 0; cursor: pointer; }
-                            .tc-dhq-add-btn:hover { background: rgba(212,175,55,0.22); border-color: var(--gold); }
-                        `}</style>
-                        <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', flexWrap: 'wrap', fontSize: '0.68rem', color: 'var(--silver)', opacity: 0.8, lineHeight: 1.3 }}>
-                            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6rem', letterSpacing: '0.1em', textTransform: 'uppercase', opacity: 0.65 }}>GM lens</span>
-                            <strong style={{ color: 'var(--gold)', fontWeight: 700 }}>{focusTuning.modeLabel}</strong>
-                            <span>· bar {actionFloor}% · {focusTuning.untouchable.size} untouchable{focusTuning.untouchable.size === 1 ? '' : 's'} · {modeDescriptor}</span>
+                        <div>
+                            <button type="button" className="tc-dhq-detail-toggle" onClick={() => setAssetBrowserOpen(v => !v)}>{assetBrowserOpen ? 'Hide asset browser ▴' : 'Browse assets ▾'}</button>
                         </div>
-                        {finderPicksMode ? (
-                            /* Intent=Picks → a draft-pick board with an Owned/League scope
-                               toggle (the phone board, ported): Owned = your picks (→ YOU
-                               SEND), League = every other owner's picks (→ YOU GET). */
-                            <div className="tc-dhq-asset-browser">
-                                <div className="tc-dhq-browser-head">
-                                    <div>
-                                        <span>Pick capital</span>
-                                        <strong>{picksScopeMine ? 'Your picks' : 'League picks'}</strong>
-                                    </div>
-                                    <div className="tc-dhq-browser-controls" role="group" aria-label="Picks scope">
-                                        <button type="button" className={picksScopeMine ? 'is-active' : ''} onClick={() => { setPhPicksScope('owned'); setAssetBrowserOpen(false); }}>Owned</button>
-                                        <button type="button" className={!picksScopeMine ? 'is-active' : ''} onClick={() => { setPhPicksScope('league'); setAssetBrowserOpen(false); }}>League</button>
-                                        {boardRowCount > 8 && <button type="button" onClick={() => setAssetBrowserOpen(v => !v)}>{assetBrowserOpen ? 'Less ▴' : `All ${boardRowCount} ▾`}</button>}
-                                    </div>
-                                </div>
-                                <div className="tc-dhq-asset-table is-picks" role="table" aria-label="Trade Finder pick board">
-                                    <div className="tc-dhq-asset-row tc-dhq-asset-head" role="row">
-                                        <span>Pick</span>
-                                        <span>Year</span>
-                                        <span>Owner</span>
-                                        <span>Value</span>
-                                        <span>Add{_vp.isCoarse && typeof Tip === 'function' ? <Tip>The + drops the pick straight onto the live deal builder.</Tip> : null}</span>
-                                    </div>
-                                    {visiblePickRows.length ? visiblePickRows.map(row => (
-                                        <div key={`${row.rosterId}-${row.id}`} role="row" tabIndex={0}
-                                            className={`tc-dhq-asset-row${finderQuery.focus && finderQuery.focus.kind === 'pick' && String(finderQuery.focus.id) === String(row.id) ? ' is-active' : ''}`}
-                                            onClick={() => selectPickFocus(row)}
-                                            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectPickFocus(row); } }}>
-                                            <span title={row.label}>{row.label}{row.via && row.via !== row.ownerName ? <em style={{ fontStyle:'normal', opacity:0.65 }}> via {row.via}</em> : null}</span>
-                                            <span>{row.year}</span>
-                                            <span title={picksScopeMine ? 'Your pick' : row.ownerName}>{picksScopeMine ? 'Your pick' : row.ownerName}</span>
-                                            <span>{row.value.toLocaleString()}</span>
-                                            <button type="button" className="tc-dhq-add-btn" aria-label={'Add ' + row.label + ' to the builder'} title="Add to the live deal" onClick={e => { e.stopPropagation(); if (addPickRowToBuilder(row)) setBuilderExpanded(true); }}>+</button>
-                                        </div>
-                                    )) : <div className="tc-dhq-empty">No {picksScopeMine ? 'owned' : 'league'} picks to browse.</div>}
-                                </div>
-                            </div>
-                        ) : assetBrowserRows.length > 0 ? (
+                        {assetBrowserOpen && (assetBrowserRows.length > 0 ? (
                             <div className="tc-dhq-asset-browser">
                                 <div className="tc-dhq-browser-head">
                                     <div>
@@ -3605,13 +3530,9 @@
                                             </select>
                                         </label>
                                         {tcRookieFields && <button type="button" className={assetBrowserRookieOnly ? 'is-active' : ''} title="Show only rookies — college, draft slot, and tier appear under each name" onClick={() => setAssetBrowserRookieOnly(v => !v)}>Rookies</button>}
-                                        {/* Show-all lives ON the board head with the other board
-                                            controls (owner ask 2026-07-12) — it floated alone above
-                                            the board before. */}
-                                        {boardRowCount > 8 && <button type="button" onClick={() => setAssetBrowserOpen(v => !v)}>{assetBrowserOpen ? 'Less ▴' : `All ${boardRowCount} ▾`}</button>}
                                     </div>
                                 </div>
-                                <div className="tc-dhq-asset-table has-add" role="table" aria-label="Trade Finder asset browser">
+                                <div className="tc-dhq-asset-table" role="table" aria-label="Trade Finder asset browser">
                                     <div className="tc-dhq-asset-row tc-dhq-asset-head" role="row">
                                         <span>Player</span>
                                         <span>Pos</span>
@@ -3620,19 +3541,9 @@
                                         <span>Current owned team</span>
                                         <span>Last FP</span>
                                         <span>Prime</span>
-                                        {/* iPad pass: hover titles never fire on touch — one
-                                            coarse-only Tip on the header explains the + column. */}
-                                        <span>Add{_vp.isCoarse && typeof Tip === 'function' ? <Tip>The + drops the player straight onto the live deal builder.</Tip> : null}</span>
                                     </div>
                                     {visibleAssetRows.length ? visibleAssetRows.map(row => (
-                                        /* div row (not <button>) so the gold "+" can be a real
-                                           button — nested buttons are invalid HTML. Click/keys
-                                           keep the focus behavior; "+" adds to the builder
-                                           (owner ask 2026-07-12). */
-                                        <div key={`${row.rosterId}-${row.pid}`} role="row" tabIndex={0}
-                                            className={`tc-dhq-asset-row${focusPlayerPid != null && String(focusPlayerPid) === String(row.pid) ? ' is-active' : ''}`}
-                                            onClick={() => selectAssetFocus(row)}
-                                            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectAssetFocus(row); } }}>
+                                        <button key={`${row.rosterId}-${row.pid}`} type="button" role="row" className={`tc-dhq-asset-row${focusPlayerPid != null && String(focusPlayerPid) === String(row.pid) ? ' is-active' : ''}`} onClick={() => selectAssetFocus(row)}>
                                             <span title={row.name}>{row.name}{(() => {
                                                 const rf = tcRookieInfoFor(row.pid);
                                                 if (!rf) return null;
@@ -3646,20 +3557,17 @@
                                             <span title={row.ownerLabel}>{row.ownerLabel}</span>
                                             <span>{row.lastPoints ? row.lastPoints.toLocaleString() : '--'}</span>
                                             <span>{row.primeYears != null ? row.primeYears : '--'}</span>
-                                            <button type="button" className="tc-dhq-add-btn" aria-label={'Add ' + row.name + ' to the builder'} title="Add to the live deal" onClick={e => { e.stopPropagation(); if (addAssetToBuilder(row)) setBuilderExpanded(true); }}>+</button>
-                                        </div>
+                                        </button>
                                     )) : <div className="tc-dhq-empty">{assetBrowserRookieOnly ? (tcRookieIndex.size === 0 ? 'Rookie data still loading…' : 'No tradeable rookies match this filter (rookies with no trade value yet are hidden).') : 'No assets match this position filter.'}</div>}
                                 </div>
                             </div>
-                        ) : <div className="tc-dhq-empty">No tradeable assets to browse for this scope.</div>}
+                        ) : <div className="tc-dhq-empty">No tradeable assets to browse for this scope.</div>)}
 
-                        {finderPoolOn && !scanArmed
-                            ? <div className="tc-dhq-empty" style={{ textAlign: 'center', padding: '14px' }}>Runs a league-wide {intentLabel.toLowerCase()} scan across {partnerBoard.length} partners — hit <strong style={{ color: 'var(--gold)' }}>Scan the league for moves</strong> above.</div>
-                            : deals.length
-                                ? <div className="tc-dhq-package-note"><b>{actionableDeals.length ? 'Ready' : 'Moonshots only'}</b> {actionableDeals.length || 0} actionable package{actionableDeals.length === 1 ? '' : 's'}{moonshotCount ? ` · ${moonshotCount} moonshot${moonshotCount === 1 ? '' : 's'} hidden` : ''}{scanArmed && !finderPool.done ? ` · scanning ${finderPool.scanned}/${finderPool.total}` : ''}</div>
-                                : scanArmed && !finderPool.done
-                                    ? <div className="tc-dhq-package-note"><b>Scanning</b> partner {finderPool.scanned}/{finderPool.total} — rows appear as the league scan runs.</div>
-                                    : <div className="tc-dhq-empty">No package found for this intent. Try another partner chip, clear the focus, or open the builder below.</div>}
+                        {deals.length
+                            ? <div className="tc-dhq-package-note"><b>{actionableDeals.length ? 'Ready' : 'Moonshots only'}</b> {actionableDeals.length || 0} actionable package{actionableDeals.length === 1 ? '' : 's'}{moonshotCount ? ` · ${moonshotCount} moonshot${moonshotCount === 1 ? '' : 's'} hidden` : ''}{finderPoolOn && !finderPool.done ? ` · scanning ${finderPool.scanned}/${finderPool.total}` : ''}</div>
+                            : finderPoolOn && !finderPool.done
+                                ? <div className="tc-dhq-package-note"><b>Scanning</b> partner {finderPool.scanned}/{finderPool.total} — rows appear as the league scan runs.</div>
+                                : <div className="tc-dhq-empty">No package found for this intent. Try another partner chip, clear the focus, or open the builder below.</div>}
                     </div>
                 </section>
 
@@ -3682,39 +3590,6 @@
             </div>;
         }
 
-        // ── Builder-in-use test — drives the top-of-desk builder position and the
-        // conditional Deal Intel rail (owner ask 2026-07-12: the intel side panel
-        // only appears while a trade is actually being built).
-        function tcBuilderInUse() {
-            return builderExpanded || tradeIds.A.length > 0 || tradeIds.B.length > 0 || tradePickIds.A.length > 0 || tradePickIds.B.length > 0;
-        }
-
-        // ── Desk/DNA/Log tabs — relocated from the retired wr-module-strip banner
-        // into the panel-head level (owner ask 2026-07-12: tabs sit on the Trade
-        // Finder line, not their own banner row). Rendered inside the finder head
-        // on the Pro desk; the other views get a slim right-aligned bar. Also
-        // hosts the "◂ Deal intel" reopen pill when the rail is hidden mid-build.
-        function renderTcTabNav() {
-            const surfaces = [
-                { key: 'desk', label: 'Trade Desk' },
-                { key: 'dna', label: 'Owner DNA' },
-                { key: 'log', label: 'Trade Log' },
-            ];
-            return (
-                <div className="wr-module-nav" style={{ flex: 'none' }}>
-                    {tcTab === 'desk' && tcBuilderInUse() && railHidden && (
-                        <button type="button" onClick={() => setRailHidden(false)} title="Reopen the deal-intel side panel (verdict + Owner DNA)" style={{ color: 'var(--gold)' }}>◂ Deal intel</button>
-                    )}
-                    {surfaces.map(s => (
-                        <button key={s.key} className={tcTab === s.key ? 'is-active' : ''} onClick={() => setTcTab(s.key)}>
-                            {s.label}
-                            {s.key === 'log' && savedDeals.length > 0 && <span style={{ color: 'var(--silver)', fontWeight: 500, opacity: 0.8 }}>{' · ' + savedDeals.length}</span>}
-                        </button>
-                    ))}
-                </div>
-            );
-        }
-
         // ── renderContextRail — fixed two-card right rail (no morphing, no pinning) ──
         // VERDICT on top: the builder's live deal via TcVerdictPanel (grade/label/gain
         // free, likelihood/psych/DNA rows Pro inside the panel) with the Alex second
@@ -3722,57 +3597,79 @@
         // OWNER DNA below: live-deal partner → selected partner → top partner; content
         // Pro with a teaser for free. Desktop ≥1281px = sticky rail column; narrower
         // viewports stack the same two cards inline below the builder (index.html CSS).
-        function renderContextRail(_verdict, railItem) {
-            const partner = railItem?.assessment || null;
+        // ── League Teams — scrollable scout of every rival roster ──
+        // Compact need/surplus card per team, ranked best-fit-first (partnerBoard
+        // is already scored + sorted, and excludes my own team). Tap → that owner's
+        // full Owner DNA. Reuses the exact assessment data the finder runs on.
+        // Rendered in the far-right rail (≥1281px) AND inline on narrow/portrait
+        // (<1281px, where the rail is hidden) — CSS keeps exactly one visible.
+        function renderLeagueTeamsCard() {
             const _pro = typeof window.wrIsPro === 'function' ? window.wrIsPro() : true;
-            let dnaBody;
-            if (!_pro) {
-                dnaBody = React.createElement(TcProTeaser, { label: 'Owner DNA', feature: 'owner-dna', sub: 'Profile every manager\'s trading psychology — posture, behavior reads, and exactly how to approach each negotiation.' });
-            } else if (!partner) {
-                dnaBody = <div className="tc-dhq-empty">No partner in scope yet — select one on the desk.</div>;
-            } else {
-                const needsLine = (partner.needs || []).slice(0, 4).map(n => n.pos).join(' · ');
-                dnaBody = <>
-                    <div className="tc-dhq-dossier-card">
-                        <h3>{partner.ownerName}</h3>
-                        <div className="tc-dhq-chipline">
-                            <span style={{ color: railItem.posture.color }}>{railItem.posture.label}</span>
-                            {railItem.dnaKey !== 'NONE' && <span style={{ color: railItem.dna.color }}>{railItem.dna.label}</span>}
-                            <span>{railItem.compat}% fit</span>
-                        </div>
-                        <p>{needsLine ? `Needs ${needsLine}. ` : 'No urgent roster hole. '}{railItem.behaviorProfile?.strategy?.offerFrame || railItem.dna?.strategy || railItem.posture.desc}</p>
+            const POSHEX = { QB:'#e74c3c', RB:'#2ecc71', WR:'#3498db', TE:'#f0a500', K:'#9b59b6', DEF:'#85929e', DL:'#e67e22', LB:'#1abc9c', DB:'#e91e63' };
+            const leagueTargetPts = Math.max(1, ...assessments.map(a => a.weeklyPts || 0));
+            const body = !_pro
+                ? React.createElement(TcProTeaser, { label: 'League Teams', feature: 'owner-dna', sub: 'Scan every rival roster — needs, surplus, and trade fit — then open any owner\'s full DNA in a tap.' })
+                : !partnerBoard.length
+                    ? <div className="tc-dhq-empty">No rival rosters in scope yet.</div>
+                    : partnerBoard.map(item => {
+                        const a = item.assessment;
+                        const wp = a.weeklyPts || 0;
+                        const needs = (a.needs || []).slice(0, 5);
+                        const has = (a.strengths || []).slice(0, 6);
+                        const openDna = () => { setExpandedDnaOwner(a.rosterId); setTcTab('dna'); };
+                        return (
+                            // A <div role=button>, not <button>: Safari/WebKit collapses block
+                            // children inside a <button>, which mashed the card rows together.
+                            <div key={a.rosterId} role="button" tabIndex={0} className="tc-lt-card"
+                                title={'Open ' + a.ownerName + '’s Owner DNA'}
+                                onClick={openDna}
+                                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDna(); } }}>
+                                <div className="tc-lt-top">
+                                    {/* Inline sizing so a stale cached stylesheet can't render the
+                                        avatar at its full ~100px natural size. */}
+                                    <span className="tc-lt-av" style={{ width: '22px', height: '22px', borderRadius: '50%', overflow: 'hidden', flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'var(--charcoal)', border: '1px solid rgba(212,175,55,0.25)' }}>
+                                        {avatarUrl(a.avatar)
+                                            ? <img src={avatarUrl(a.avatar)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => { e.currentTarget.style.display = 'none'; }} />
+                                            : <b style={{ fontFamily: 'Rajdhani, sans-serif', fontWeight: 700, fontSize: '0.7rem', color: 'var(--gold)' }}>{(a.ownerName || '?').charAt(0).toUpperCase()}</b>}
+                                    </span>
+                                    <span className="tc-lt-nm">{a.ownerName}</span>
+                                    {a.tier && <span className="tc-lt-win" style={{ color: a.tierColor, borderColor: a.tierColor }}>{a.tier}</span>}
+                                </div>
+                                {a.teamName && a.teamName !== a.ownerName && <div className="tc-lt-team">{a.teamName}</div>}
+                                <div className="tc-lt-line">
+                                    {wp > 0 && <span className="tc-lt-p">{wp.toFixed(1)} <small>/ {leagueTargetPts.toFixed(0)} pts</small></span>}
+                                    <span className="tc-lt-fit">{item.compat}% fit</span>
+                                </div>
+                                {needs.length > 0 && <div className="tc-lt-row"><span className="tc-lt-lbl">Needs</span>{needs.map(n => <span key={n.pos} className="tc-lt-chip" style={{ color: POSHEX[n.pos] || 'var(--silver)', borderColor: (POSHEX[n.pos] || '#BDB8AD') + '66', background: (POSHEX[n.pos] || '#BDB8AD') + '18' }}>{n.pos}</span>)}</div>}
+                                {has.length > 0 && <div className="tc-lt-row"><span className="tc-lt-lbl">Has</span>{has.map(p => <span key={p} className="tc-lt-chip tc-lt-has">+{p}</span>)}</div>}
+                                {item.dnaKey && item.dnaKey !== 'NONE' && item.dna && <div className="tc-lt-arch" style={{ color: item.dna.color }}>{item.dna.label}</div>}
+                            </div>
+                        );
+                    });
+            return (
+                <div className="tc-dhq-panel tc-rail-card tc-lt-panel">
+                    <div className="tc-dhq-panel-head">
+                        <span>League Teams</span>
+                        <em>{_pro && partnerBoard.length ? partnerBoard.length + ' rivals · tap → DNA' : 'Scout the field'}</em>
                     </div>
-                    <button type="button" className="tc-rail-dna-link" onClick={() => { setExpandedDnaOwner(partner.rosterId); setTcTab('dna'); }}>Full profile ▸</button>
-                </>;
-            }
+                    <div className="tc-dhq-panel-body">
+                        <div className="tc-lt-scroll">{body}</div>
+                    </div>
+                </div>
+            );
+        }
+
+        // The far-right rail is now the League Teams scout on its own — it fills the
+        // full rail height (per owner request; the old Live Verdict + single-partner
+        // Owner DNA cards were removed). Tapping a team still opens its full Owner DNA.
+        function renderContextRail(tabButtons) {
             return (
                 <aside className="tc-context-rail">
-                    <div className="tc-dhq-panel tc-rail-card">
-                        <div className="tc-dhq-panel-head">
-                            <span>Live Verdict</span>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 'none' }}>
-                                <em>{_verdict.hasTrade ? 'Tracks the builder' : 'No live deal'}</em>
-                                <button type="button" className="tc-rail-hide" onClick={() => setRailHidden(true)} title="Hide the deal-intel panel — reopen from the tab row" style={{ background: 'transparent', border: '1px solid var(--acc-line1, rgba(212,175,55,0.22))', borderRadius: 'var(--card-radius-xs, 5px)', color: 'var(--silver)', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: '0.68rem', padding: '2px 7px', flex: 'none' }}>Hide ▸</button>
-                            </div>
-                        </div>
-                        <div className="tc-dhq-panel-body tc-dhq-dossier-body">
-                            {_verdict.hasTrade
-                                ? <>
-                                    {React.createElement(TcVerdictPanel, { ..._verdict, FAAB_RATE })}
-                                    {renderAlexVerdict()}
-                                </>
-                                : <div className="tc-dhq-empty">No live deal — load a finder row or open the builder.</div>}
-                        </div>
-                    </div>
-                    <div className="tc-dhq-panel tc-rail-card">
-                        <div className="tc-dhq-panel-head">
-                            <span>Owner DNA</span>
-                            <em>{partner ? partner.ownerName : 'No partner selected'}</em>
-                        </div>
-                        <div className="tc-dhq-panel-body tc-dhq-dossier-body">
-                            {dnaBody}
-                        </div>
-                    </div>
+                    {/* Section tabs live at the top of the rail on wide desk layouts —
+                        stacked ABOVE the League Teams card as a real flex item, so they
+                        can never float over or overlap it (owner ruling). */}
+                    {tabButtons ? <div className="tc-dhq-modebar tc-rail-tabs" role="group" aria-label="Trade Center sections">{tabButtons}</div> : null}
+                    {renderLeagueTeamsCard()}
                 </aside>
             );
         }
@@ -3785,6 +3682,30 @@
         function renderAdaptiveWorkspace() {
             const active = tcTab; // canonical: 'desk' | 'dna' | 'log'
             const _pro = typeof window.wrIsPro === 'function' ? window.wrIsPro() : true;
+            const surfaces = [
+                { key: 'desk', label: 'Trade Builder' },
+                { key: 'dna', label: 'Owner DNA' },
+                { key: 'log', label: 'Trade Log' },
+            ];
+            // One set of section-tab buttons, rendered in two homes: the in-flow
+            // row (narrow / DNA / Log) and inside the rail (wide desk). Chip
+            // classes give them the exact finder-chip look, gold when active.
+            // Owner ruling: the TRADE BUILDER chip IS the builder switch — it
+            // opens/closes the builder panel (gold while open) instead of the
+            // retired always-on strip; the finder is the desk's default view.
+            const renderTcTabButtons = () => surfaces.map(s => (
+                <button key={s.key} type="button"
+                    className={(s.key === 'desk' ? active === 'desk' && builderExpanded : active === s.key) ? 'is-active' : ''}
+                    onClick={() => {
+                        if (s.key === 'desk') {
+                            if (active === 'desk') setBuilderExpanded(v => !v);
+                            else { setTcTab('desk'); setBuilderExpanded(true); }
+                        } else setTcTab(s.key);
+                    }}>
+                    {s.label}
+                    {s.key === 'log' && savedDeals.length > 0 && <span style={{ fontWeight: 500, opacity: 0.8 }}>{' · ' + savedDeals.length}</span>}
+                </button>
+            ));
             let body;
             if (active === 'dna') {
                 body = _pro ? renderOwnerDna() : React.createElement(TcProTeaser, { label: 'Owner DNA', feature: 'owner-dna', sub: 'Profile every manager\'s trading psychology. Know who\'s a Fleecer, who\'s Desperate, and exactly how to approach each trade conversation.' });
@@ -3802,55 +3723,13 @@
             // Persistent live verdict — the in-progress deal's verdict follows the Desk.
             const _verdict = computeManualVerdict();
             const _tsDeps = buildTradeSideDeps();
-            // Builder-in-use: hoists the builder to the TOP of the desk and mounts
-            // the Deal Intel rail (owner ask 2026-07-12 — intel only while building).
-            const buildingLive = active === 'desk' && tcBuilderInUse();
-            // Context Rail: Desk-only AND build-only (owner ask 2026-07-12), user-
-            // hideable via railHidden. Sticky column ≥1281px, inline stack below the
-            // builder otherwise (index.html CSS). DNA-mini partner precedence:
-            // live-deal partner → finder query's effective partner (owner focus >
-            // league-asset focus's owner > facet) → top partner. Free never receives
-            // a ranked partner (the board pick itself is partner intel — a Pro read).
-            const railOn = buildingLive && !railHidden;
-            const railBoard = railOn && _pro ? partnerBoard : [];
-            const liveDealOwnerId = _verdict.hasTrade ? tradeOwner.B : null;
-            const railItem = (liveDealOwnerId != null && railBoard.find(p => String(p.assessment.ownerId) === String(liveDealOwnerId)))
-                || railBoard.find(p => String(p.assessment.ownerId) === String(effPartnerId))
-                || railBoard[0] || null;
-            // Builder strip — extracted so it can render at the TOP of the desk the
-            // moment a trade is being built (owner ask 2026-07-12), and at the
-            // bottom (its historical entry-point slot) when idle.
-            const builderEl = active === 'desk' && (
-                        <div style={{ margin: buildingLive ? '0 0 12px' : '12px 0 0', border: '1px solid rgba(53,208,214,0.28)', borderRadius: 'var(--card-radius-sm, 8px)', background: 'rgba(53,208,214,0.05)', overflow: 'hidden' }}>
-                            <button type="button" onClick={() => setBuilderExpanded(v => !v)} title="Build or tweak a deal without leaving this view" style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', textAlign: 'left', background: 'transparent', border: 'none', padding: '9px 13px', cursor: 'pointer' }}>
-                                <span style={{ fontFamily: 'var(--font-body)', fontSize: '0.62rem', fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#35d0d6' }}>{_verdict.hasTrade ? 'Live deal' : 'Trade builder'}</span>
-                                {_verdict.hasTrade ? (
-                                    <>
-                                        <strong style={{ fontFamily: 'var(--font-title)', fontSize: '0.95rem', color: _verdict.verdictColor }}>{_verdict.verdictText} {_verdict.diffDisplay}</strong>
-                                        <span style={{ fontSize: '0.74rem', color: 'var(--silver)' }}>gave {_verdict.totalA.toLocaleString()} / got {_verdict.totalB.toLocaleString()}</span>
-                                        {_pro && <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: '0.82rem', fontWeight: 700, color: _verdict.likelihoodColor }}>{_verdict.likelihood}% accept</span>}
-                                    </>
-                                ) : (
-                                    <span style={{ fontSize: '0.8rem', color: 'var(--silver)' }}>Build or tweak a trade without leaving this view.</span>
-                                )}
-                                <span style={{ marginLeft: _verdict.hasTrade && _pro ? '0' : 'auto', fontSize: '0.74rem', color: 'var(--gold)', fontWeight: 700 }}>{builderExpanded ? 'Collapse ▴' : (_verdict.hasTrade ? 'Edit ▾' : 'Open ▾')}</span>
-                            </button>
-                            {builderExpanded && (
-                                <div style={{ borderTop: '1px solid rgba(53,208,214,0.18)', padding: '12px', background: 'rgba(0,0,0,0.16)' }}>
-                                    <div style={{ fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.6, marginBottom: '10px', lineHeight: 1.5 }}>
-                                        Values sourced from <strong style={{ color: 'var(--gold)' }}>{skinVocabulary.valueShortLabel || 'DHQ'} Engine</strong> ({valueSourceLabel}).
-                                    </div>
-                                    {/* .tc-builder-sides: side-by-side on EVERY tier (owner ask
-                                        2026-07-12 — phone included; index.html ≤767 CSS keeps the
-                                        two columns with a tighter gap). */}
-                                    <div className="tc-builder-sides" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', alignItems: 'start' }}>
-                                        {TcTradeSide({ side: 'A', color: 'var(--k-5dade2, #5dade2)', label: 'YOU SEND', ..._tsDeps })}
-                                        {TcTradeSide({ side: 'B', color: 'var(--k-e74c3c, #e74c3c)', label: 'YOU GET', ..._tsDeps })}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-            );
+            // Context Rail: Desk-only per the approved IA — Owner DNA and Trade Log are
+            // full-width tabs. Sticky column ≥1281px, inline stack below the builder
+            // otherwise (index.html CSS). DNA-mini partner precedence: live-deal partner
+            // → finder query's effective partner (owner focus > league-asset focus's
+            // owner > facet) → top partner. Free never receives a ranked partner
+            // (the board pick itself is partner intel — a Pro read).
+            const railOn = active === 'desk';
             return (
                 <div className="tc-trade-root">
                     {/* Phone-tier touch bumps for the class-styled Trade Desk controls
@@ -3864,34 +3743,69 @@
                             .tc-trade-root .tc-ta-roster-filter,
                             .tc-trade-root .tc-dna-select { min-height: 44px; }
                             .tc-trade-root .tc-ta-roster-item { min-height: 44px; }
-                            .tc-trade-root button.tc-dhq-asset-row, .tc-trade-root div.tc-dhq-asset-row[tabindex] { min-height: 44px; }
+                            .tc-trade-root button.tc-dhq-asset-row { min-height: 44px; }
                             .tc-trade-root .tc-rail-dna-link { min-height: 44px; }
                         }
                     `}</style>
-                    {/* wr-module-strip banner retired here (owner ask 2026-07-12):
-                        the Desk/DNA/Log tabs now live at panel-head level — inside
-                        the Trade Finder head on the Pro desk (renderDealHQ), and as
-                        this slim right-aligned bar on every other view. */}
-                    {(active !== 'desk' || !_pro) && (
-                        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>{renderTcTabNav()}</div>
-                    )}
+                    {/* Section tabs — styled EXACTLY like the finder chips (same
+                        .tc-dhq-modebar classes: bordered chips, active = solid gold).
+                        On wide desk layouts the rail owns the tabs (they render inside
+                        the rail column above League Teams — no floating/overlap); this
+                        in-flow row shows everywhere else (narrow, Owner DNA, Trade Log). */}
+                    <div className={'tc-tab-row' + (railOn ? ' rail-owns-tabs' : '')}>
+                        <div className="tc-dhq-modebar" role="group" aria-label="Trade Center sections">{renderTcTabButtons()}</div>
+                    </div>
                     <div className={'tc-adaptive-canvas' + (railOn ? ' has-rail' : '')}>
                     <div className="tc-adaptive-main">
-                    {buildingLive && builderEl}
                     {active === 'desk' && tradeContext && (
-                        <div className="trade-context-banner" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.24))', borderRadius: 'var(--card-radius-sm, 8px)', padding: '10px 12px', marginBottom: '12px' }}>
+                        <div className="trade-context-banner" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.24))', borderRadius: '8px', padding: '10px 12px', marginBottom: '12px' }}>
                             <div style={{ minWidth: 0 }}>
                                 <span style={{ display: 'block', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', fontFamily: 'var(--font-body)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>Trade Context</span>
                                 <strong style={{ display: 'block', color: 'var(--white)', fontSize: '0.9rem', fontFamily: 'var(--font-title)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Opened from transaction ticker</strong>
                                 <em style={{ display: 'block', color: 'var(--silver)', fontSize: '0.74rem', fontStyle: 'normal' }}>{formatTradeContextSummary(tradeContext) || 'Use this deal as context while evaluating partner fit and packages.'}</em>
                             </div>
-                            <button type="button" onClick={clearTradeContext} style={{ background: 'transparent', border: '1px solid var(--acc-line2, rgba(212,175,55,0.32))', borderRadius: 'var(--card-radius-xs, 5px)', color: 'var(--gold)', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: '0.72rem', padding: '4px 10px', textTransform: 'uppercase' }}>Clear</button>
+                            <button type="button" onClick={clearTradeContext} style={{ background: 'transparent', border: '1px solid var(--acc-line2, rgba(212,175,55,0.32))', borderRadius: '4px', color: 'var(--gold)', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: '0.72rem', padding: '4px 10px', textTransform: 'uppercase' }}>Clear</button>
                         </div>
                     )}
+                    {/* Trade Builder — owner ruling: the always-on blue strip is gone
+                        and the Trade Finder owns the top of the desk. The builder now
+                        renders ONLY while open, toggled by the TRADE BUILDER chip
+                        (and by Load in Builder on a finder row), as a standard gold
+                        panel above the finder so it appears where you just tapped. */}
+                    {active === 'desk' && builderExpanded && (
+                        <section className="tc-dhq-panel" style={{ marginBottom: '12px' }}>
+                            <div className="tc-dhq-panel-head">
+                                <span>Trade Builder</span>
+                                <em>{_verdict.hasTrade
+                                    ? `${_verdict.verdictText} ${_verdict.diffDisplay} · gave ${_verdict.totalA.toLocaleString()} / got ${_verdict.totalB.toLocaleString()}${_pro ? ` · ${_verdict.likelihood}% accept` : ''}`
+                                    : 'Build or tweak a trade without leaving this view.'}</em>
+                                <div className="tc-dhq-actions" style={{ flex: '0 0 auto' }}>
+                                    <button type="button" onClick={() => setBuilderExpanded(false)}>Close ▴</button>
+                                </div>
+                            </div>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.6, marginBottom: '10px', lineHeight: 1.5 }}>
+                                Values sourced from <strong style={{ color: 'var(--gold)' }}>{skinVocabulary.valueShortLabel || 'DHQ'} Engine</strong> ({valueSourceLabel}).
+                            </div>
+                            {/* .tc-builder-sides: phone tier (index.html ≤767 CSS) stacks the
+                                two sides vertically (send above, get below) — the hard 1fr 1fr
+                                yields two ~165px columns at 375px, unusable for the owner
+                                select + roster picker. ≥768 keeps side-by-side. */}
+                            <div className="tc-builder-sides" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', alignItems: 'start' }}>
+                                {TcTradeSide({ side: 'A', color: 'var(--k-5dade2, #5dade2)', label: 'YOU SEND', ..._tsDeps })}
+                                {TcTradeSide({ side: 'B', color: 'var(--k-e74c3c, #e74c3c)', label: 'YOU GET', ..._tsDeps })}
+                            </div>
+                            {/* Full TRADE ANALYSIS panel (grade, impact grid, psych-tax
+                                breakdown, likelihood bar) — same TcVerdictPanel the phone
+                                builder sheet mounts, restored here so the desktop builder
+                                shows the Psychological Tax Breakdown by default too. */}
+                            {_verdict.hasTrade && React.createElement(TcVerdictPanel, { ..._verdict, FAAB_RATE })}
+                        </section>
+                    )}
+                    {/* League Teams inline — narrow/portrait only (rail is hidden <1281px). */}
+                    {active === 'desk' && <div className="tc-lt-inline">{renderLeagueTeamsCard()}</div>}
                     {body}
-                    {!buildingLive && builderEl}
                     </div>
-                    {railOn && renderContextRail(_verdict, railItem)}
+                    {railOn && renderContextRail(renderTcTabButtons())}
                     </div>
                 </div>
             );
@@ -4072,8 +3986,6 @@
         function renderAlexVerdict() {
             const v = computeManualVerdict();
             if (!v.hasTrade) return null;
-            // Free tier: nothing renders here (AI is fully Pro-gated — chat's old
-            // free fallback is retired, not replaced, matching insight/waiver-take).
             if (!canAccess('trade-quick-check')) return null;
             // Key the response to the deal's contents so editing the deal invalidates a stale verdict.
             const dealKey = [tradeIds.A.join(','), tradeIds.B.join(','), tradePickIds.A.join(','), tradePickIds.B.join(','), tradeFaab.A, tradeFaab.B].join('|');
@@ -4089,7 +4001,7 @@
                 <div style={{ marginTop: '10px' }}>
                     {!current && (
                         <button type="button" onClick={() => requestAlexVerdict(v, dealKey)}
-                            style={{ width:'100%', background:'var(--acc-fill2, rgba(212,175,55,0.08))', border:'1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius:'var(--card-radius-sm, 8px)', color:'var(--gold)', cursor:'pointer', fontFamily:'var(--font-body)', fontSize:'0.8rem', fontWeight:700, letterSpacing:'0.05em', padding:'9px 12px', minHeight:'44px' }}>
+                            style={{ width:'100%', background:'var(--acc-fill2, rgba(212,175,55,0.08))', border:'1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius:'6px', color:'var(--gold)', cursor:'pointer', fontFamily:'var(--font-body)', fontSize:'0.8rem', fontWeight:700, letterSpacing:'0.05em', padding:'9px 12px', minHeight:'44px' }}>
                             ✨ Ask Alex for a second opinion
                         </button>
                     )}
@@ -4113,8 +4025,8 @@
                                     ? <span style={{ fontSize:'0.72rem', color:'var(--silver)', opacity:0.6 }}>{current.feedback === 'up' ? 'Glad it helped.' : 'Noted — Alex learns from this.'}</span>
                                     : <>
                                         <span style={{ fontSize:'0.72rem', color:'var(--silver)', opacity:0.6 }}>Useful?</span>
-                                        <button type="button" onClick={() => sendVerdictFeedback('up', dealKey)} style={{ background:'none', border:'1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius:'var(--card-radius-xs, 5px)', color:'var(--silver)', cursor:'pointer', fontSize:'0.78rem', padding:'2px 9px' }}>Agree</button>
-                                        <button type="button" onClick={() => sendVerdictFeedback('down', dealKey)} style={{ background:'none', border:'1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius:'var(--card-radius-xs, 5px)', color:'var(--silver)', cursor:'pointer', fontSize:'0.78rem', padding:'2px 9px' }}>Disagree</button>
+                                        <button type="button" onClick={() => sendVerdictFeedback('up', dealKey)} style={{ background:'none', border:'1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius:'4px', color:'var(--silver)', cursor:'pointer', fontSize:'0.78rem', padding:'2px 9px' }}>Agree</button>
+                                        <button type="button" onClick={() => sendVerdictFeedback('down', dealKey)} style={{ background:'none', border:'1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius:'4px', color:'var(--silver)', cursor:'pointer', fontSize:'0.78rem', padding:'2px 9px' }}>Disagree</button>
                                     </>}
                             </div>
                         </GMMessage>
@@ -4136,19 +4048,7 @@
                     const p = playersData[id]; if (!p || !normPos(p.position)) return false;
                     if (q.length >= 1) return `${p.first_name||''} ${p.last_name||''}`.toLowerCase().includes(q);
                     return true;
-                }).map(id => {
-                    const p = playersData[id]; const v = getPlayerValue(id);
-                    const pos = normPos(p.position);
-                    // Position-specific usage read, beyond the DHQ value —
-                    // window.App.StatCatalog's single highest-leverage stat for
-                    // this position (targets/gm for a WR, CMP% for a QB, tackles
-                    // for IDP, etc.), off the season-aggregate statsData[id] line.
-                    const SC = window.App?.StatCatalog;
-                    const stat = SC ? SC.getTopStat(pos) : null;
-                    const usageVal = stat ? SC.computeStat(stat.key, statsData[id] || {}, { perGame: true }) : null;
-                    const usage = usageVal != null ? SC.formatStat(usageVal, stat.format) + ' ' + stat.short : null;
-                    return { id, name:`${p.first_name||''} ${p.last_name||''}`.trim(), pos, team:p.team||'FA', value:v.value, source:v.source, usage };
-                })
+                }).map(id => { const p = playersData[id]; const v = getPlayerValue(id); return { id, name:`${p.first_name||''} ${p.last_name||''}`.trim(), pos:normPos(p.position), team:p.team||'FA', value:v.value, source:v.source }; })
                 .sort((a,b) => { const pd = (TC_POS_ORDER[a.pos]??9) - (TC_POS_ORDER[b.pos]??9); return pd !== 0 ? pd : b.value - a.value; });
             }
 
@@ -4202,10 +4102,10 @@
             const outcomeColor = !gt ? 'var(--silver)' : gt.cat === 'rejected' ? 'var(--loss-red)' : gt.cat === 'counter' ? 'var(--warn)' : 'var(--win-green)';
             // Phone: 44px touch bumps on the lane controls (status select, outcome
             // select, Load in Builder, remove X) — glyph sizes unchanged, plan D7.
-            const selStyle = { padding: '3px 6px', minHeight: _vp.isPhone ? '44px' : undefined, fontSize: '0.68rem', fontFamily: 'var(--font-body)', background: 'var(--charcoal)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 'var(--card-radius-xs, 5px)', color: 'var(--silver)', cursor: 'pointer' };
-            const btnStyle = { padding: '3px 8px', minHeight: _vp.isPhone ? '44px' : undefined, minWidth: _vp.isPhone ? '44px' : undefined, fontSize: '0.68rem', fontFamily: 'var(--font-body)', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 'var(--card-radius-xs, 5px)', color: 'var(--silver)', cursor: 'pointer' };
+            const selStyle = { padding: '3px 6px', minHeight: _vp.isPhone ? '44px' : undefined, fontSize: '0.68rem', fontFamily: 'var(--font-body)', background: 'var(--charcoal)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '4px', color: 'var(--silver)', cursor: 'pointer' };
+            const btnStyle = { padding: '3px 8px', minHeight: _vp.isPhone ? '44px' : undefined, minWidth: _vp.isPhone ? '44px' : undefined, fontSize: '0.68rem', fontFamily: 'var(--font-body)', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', color: 'var(--silver)', cursor: 'pointer' };
             return (
-                <div key={row.id} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px', padding: '7px 10px', marginBottom: '5px', background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 'var(--card-radius-sm, 8px)' }}>
+                <div key={row.id} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px', padding: '7px 10px', marginBottom: '5px', background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '6px' }}>
                     <div style={{ flex: '1 1 240px', minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', flexWrap: 'wrap' }}>
                             {s.grade && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem', fontWeight: 700, color: tcGradeColor(s.grade) }}>{s.grade}</span>}
@@ -4324,11 +4224,11 @@
                             {usingRaw ? 'Raw league trades (Sleeper) valued with DHQ.' : 'League history analyzed with DHQ values.'}
                         </div>
                         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                            <select value={ledgerTeamFilter} onChange={e => { setLedgerTeamFilter(e.target.value); setLedgerShown(20); }} style={{ padding: '4px 8px', minHeight: _vp.isPhone ? '44px' : undefined, fontSize: '0.74rem', fontFamily: 'var(--font-body)', background: 'var(--charcoal)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: 'var(--card-radius-xs, 5px)', color: 'var(--silver)', cursor: 'pointer' }}>
+                            <select value={ledgerTeamFilter} onChange={e => { setLedgerTeamFilter(e.target.value); setLedgerShown(20); }} style={{ padding: '4px 8px', minHeight: _vp.isPhone ? '44px' : undefined, fontSize: '0.74rem', fontFamily: 'var(--font-body)', background: 'var(--charcoal)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '4px', color: 'var(--silver)', cursor: 'pointer' }}>
                                 <option value="all">All Teams</option>
                                 {allRosters.map(r => <option key={r.roster_id} value={r.roster_id}>{ownerNameForRosterId(r.roster_id) || 'Team ' + r.roster_id}</option>)}
                             </select>
-                            {usingRaw && <button onClick={() => refreshLedger(true)} disabled={ledgerSyncing} style={{ padding: '4px 10px', minHeight: _vp.isPhone ? '44px' : undefined, fontSize: '0.72rem', fontFamily: 'var(--font-body)', background: 'var(--acc-fill2, rgba(212,175,55,0.12))', color: 'var(--gold)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: 'var(--card-radius-xs, 5px)', cursor: ledgerSyncing ? 'default' : 'pointer', opacity: ledgerSyncing ? 0.6 : 1 }}>{ledgerSyncing ? 'Refreshing…' : 'Refresh'}</button>}
+                            {usingRaw && <button onClick={() => refreshLedger(true)} disabled={ledgerSyncing} style={{ padding: '4px 10px', minHeight: _vp.isPhone ? '44px' : undefined, fontSize: '0.72rem', fontFamily: 'var(--font-body)', background: 'var(--acc-fill2, rgba(212,175,55,0.12))', color: 'var(--gold)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: '4px', cursor: ledgerSyncing ? 'default' : 'pointer', opacity: ledgerSyncing ? 0.6 : 1 }}>{ledgerSyncing ? 'Refreshing…' : 'Refresh'}</button>}
                         </div>
                     </div>
                     {loading ? (
@@ -4380,16 +4280,15 @@
 
         // ══ PHONE (<768) — Trade Center phone branch (iPhone program Phase 2).
         // Rendered by the early return above the desktop `renderAdaptiveWorkspace()`
-        // call, so the desktop/tablet workspace (module strip, finder panel, the
-        // persistent builder strip :3539-3570 and the fixed 2-card rail
-        // renderContextRail) NEVER mounts on phone and stays byte-identical.
-        // Free/Pro: zero gate movement — the finder region, Owner DNA content and
-        // My Pipeline stay Pro behind the SAME TcProTeaser copy as desktop; the
-        // manual builder, TcVerdictPanel (its internal free/Pro split unchanged)
-        // and the League Ledger stay free.
+        // call, so the desktop/tablet workspace (tc-tab-row, finder panel, the
+        // builder panel and the League Teams context rail) NEVER mounts on phone
+        // and stays byte-identical. Free/Pro: zero gate movement — the finder
+        // region, Owner DNA content and My Pipeline stay Pro behind the SAME
+        // TcProTeaser copy as desktop; the manual builder, TcVerdictPanel (its
+        // internal free/Pro split unchanged) and the League Ledger stay free.
         function renderPhoneWorkspace() {
             const HeroCard = window.WR.HeroCard, AssetRow = window.WR.AssetRow, CardList = window.WR.CardList,
-                FilterPill = window.WR.FilterPill, FilterSheet = window.WR.FilterSheet,
+                FilterPill = window.WR.FilterPill,
                 Sheet = window.WR.Sheet, ActionBar = window.WR.ActionBar;
             const MONO = 'var(--font-mono, "JetBrains Mono", monospace)';
             const MICRO = 'var(--text-micro, 0.6875rem)';
@@ -4400,16 +4299,16 @@
 
             // ── Micro-UI helpers (house style: lineup.js / my-team.js pilots) ──
             const chip = (text, color) => (
-                <span style={{ fontFamily: MONO, fontSize: MICRO, fontWeight: 700, padding: '3px 8px', borderRadius: 'var(--card-radius-xs, 5px)', border: '1px solid ' + color, color, whiteSpace: 'nowrap' }}>{text}</span>
+                <span style={{ fontFamily: MONO, fontSize: MICRO, fontWeight: 700, padding: '3px 8px', borderRadius: '5px', border: '1px solid ' + color, color, whiteSpace: 'nowrap' }}>{text}</span>
             );
             const kpiTile = (label, value, sub, valColor) => (
-                <div key={label} style={{ background: 'var(--black, #121217)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 'var(--card-radius, 10px)', padding: '9px 11px' }}>
+                <div key={label} style={{ background: 'var(--black, #121217)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '9px', padding: '9px 11px' }}>
                     <div style={{ fontFamily: MONO, fontSize: MICRO, color: 'var(--text-muted, #8B8B96)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</div>
                     <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1.3rem', fontWeight: 700, color: valColor || 'var(--white)', lineHeight: 1.15, marginTop: '2px', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
                     {sub ? <div style={{ fontFamily: MONO, fontSize: MICRO, color: 'var(--silver)', opacity: 0.65, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '110px' }}>{sub}</div> : null}
                 </div>
             );
-            const actBtn = (goldOn) => ({ padding: '9px 14px', minHeight: '44px', fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.04em', cursor: 'pointer', borderRadius: 'var(--card-radius-xs, 5px)', fontFamily: 'var(--font-body)', border: '1px solid ' + (goldOn ? 'var(--acc-line2, rgba(212,175,55,0.4))' : 'rgba(255,255,255,0.14)'), background: goldOn ? 'rgba(212,175,55,0.12)' : 'transparent', color: goldOn ? 'var(--gold)' : 'var(--silver)' });
+            const actBtn = (goldOn) => ({ padding: '9px 14px', minHeight: '44px', fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.04em', cursor: 'pointer', borderRadius: '5px', fontFamily: 'var(--font-body)', border: '1px solid ' + (goldOn ? 'var(--acc-line2, rgba(212,175,55,0.4))' : 'rgba(255,255,255,0.14)'), background: goldOn ? 'rgba(212,175,55,0.12)' : 'transparent', color: goldOn ? 'var(--gold)' : 'var(--silver)' });
             const goldDiv = (label, sub) => (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
                     <span style={{ fontFamily: MONO, fontSize: MICRO, fontWeight: 600, color: 'var(--gold)', letterSpacing: '0.12em', textTransform: 'uppercase' }}>{label}</span>
@@ -4417,15 +4316,15 @@
                     <span aria-hidden="true" style={{ flex: 1, height: '1px', background: 'rgba(212,175,55,0.25)' }} />
                 </div>
             );
-            const phSelStyle = { minHeight: '44px', padding: '8px 10px', fontSize: '0.78rem', fontFamily: 'var(--font-body)', background: 'var(--charcoal, #0e0e12)', border: '1px solid rgba(255,255,255,0.14)', borderRadius: 'var(--card-radius-xs, 5px)', color: 'var(--silver)', cursor: 'pointer' };
 
             // ── Finder-control seams — the EXACT same state setters as the desktop
             // finder panel (renderDealHQ's selectFinderFocus / clearFinderFocus /
             // setPartnerFacet), re-declared here because those closures live inside
             // renderDealHQ, which stays untouched for tablet/desktop.
             const finderIntents = [
-                { key: 'help', label: 'Add' },
-                { key: 'shop', label: 'Sell' },
+                { key: 'best', label: 'Best Moves' },
+                { key: 'help', label: 'Get Help' },
+                { key: 'shop', label: 'Shop Target' },
                 { key: 'picks', label: 'Picks' },
             ];
             const intentLabel = (finderIntents.find(i => i.key === finderQuery.intent) || finderIntents[0]).label;
@@ -4512,12 +4411,12 @@
                 if (pickRows.length) phTypeGroups.push({ label: 'Picks', rows: pickRows.slice(0, 5) });
             }
 
-            // ── Asset browser (the min-width:720px desktop grid — the single worst
-            // phone surface) re-poured as WR.AssetRows. Pro-only, exactly like the
+            // ── Asset browser (the min-width desktop grid — the single worst phone
+            // surface) re-poured as WR.AssetRows. Pro-only, exactly like the
             // desktop finder region; same row source, filters and sorts.
             const browsingMyRoster = effMode === 'shop' || effMode === 'sellSurplus' || effMode === 'picks';
-            // Partner pinned + Intent=Add → browse ONLY that partner's roster
-            // (owner ask 2026-07-12); no pin keeps the full league board.
+            // Partner pinned + Intent=Add → browse ONLY that partner's roster;
+            // no pin keeps the full league board.
             const phBrowserRosters = browsingMyRoster
                 ? allRosters.filter(r => String(r.roster_id) === String(myRosterId))
                 : allRosters.filter(r => String(r.roster_id) !== String(myRosterId)
@@ -4531,8 +4430,9 @@
                     return { ...asset, age, lastPoints, primeYears: primeYearsRemaining(asset.pos, age), ownerId: roster.owner_id, rosterId: roster.roster_id, ownerLabel: phRosterLabel(roster) };
                 })) : [];
             // League-derived flex groups (FLEX / SFLEX / IDP FLEX…) join the
-            // plain positions as filter chips (owner ask 2026-07-12); the
-            // posMatchesFilter twin expands a group key to its position set.
+            // plain positions as filter chips; the posMatchesFilter twin expands
+            // a group key to its position set. Optional-chained — degrades to
+            // plain positions until the window.App helpers land.
             const phFlexGroups = (window.App?.getLeagueFlexGroups?.({ league: currentLeague }) || [])
                 .filter(g => (window.App?.FLEX_GROUP_POSITIONS?.[g] || []).some(pos => phAssetRowsAll.some(row => row.pos === pos)));
             const phBrowserPositions = ['ALL', ...Object.keys(TC_POS_ORDER).filter(pos => phAssetRowsAll.some(row => row.pos === pos)), ...phFlexGroups];
@@ -4548,32 +4448,29 @@
                     return b.value - a.value;
                 });
             const phVisibleAssets = phSortedAssets.slice(0, assetBrowserOpen ? 28 : 8);
-            // ── Picks board (owner ask): when Intent=Picks the Add-assets board
-            // lists DRAFT PICKS instead of players, with an Owned/League scope
-            // toggle. Owned = your picks (→ YOU SEND); League = every other
-            // owner's picks (→ YOU GET). Ranked by pick value.
+            // ── Picks board — when Intent=Picks the Add-assets board lists DRAFT
+            // PICKS instead of players, with an Owned/League scope toggle.
+            // Owned = your picks (→ YOU SEND); League = every other owner's
+            // picks (→ YOU GET).
             const phPicksMode = effMode === 'picks';
             const phPicksScopeMine = phPicksScope === 'owned';
-            // Drafted-pick exclusion = the hoisted component-scope pickUndrafted
-            // (shared with the desktop picks board since the 2026-07-12 port).
+            // Drafted-pick exclusion = the component-scope pickUndrafted.
             const phPickRowsAll = (_pro && active === 'desk' && rosterState.isUsable && phPicksMode)
                 ? assessments
                     .filter(a => phPicksScopeMine ? String(a.rosterId) === String(myRosterId) : String(a.rosterId) !== String(myRosterId))
                     .flatMap(a => pickAssetsForOwner(a.ownerId).map(pk => ({ ...pk, ownerId: a.ownerId, rosterId: a.rosterId, ownerName: a.ownerName || a.teamName || ('Team ' + a.rosterId) })))
                     .filter(pickUndrafted)
-                    // Draft order: year, then all rounds within that year, then slot
-                    // (owner ask) — not value-ranked, so 2027 1st→2nd→3rd… then 2028.
+                    // Draft order: year, then all rounds within that year, then slot —
+                    // not value-ranked, so 2027 1st→2nd→3rd… then 2028.
                     .sort(comparePicksByDraftOrder)
                 : [];
             const phVisiblePicks = phPickRowsAll.slice(0, assetBrowserOpen ? 40 : 12);
-            // Gold "+" add affordance → the hoisted component-scope
-            // addAssetToBuilder (ex phAddToBuilder — shared with the desktop
-            // browser's "+" since the 2026-07-12 port; same builder-add +
-            // side-B owner-select semantics).
+            // Gold "+" add affordance → the component-scope addAssetToBuilder
+            // (builder-add + side-B owner-select semantics).
             const phPlusChip = (row) => (
                 <button type="button" aria-label={'Add ' + row.name + ' to the builder'}
                     onClick={e => { e.stopPropagation(); addAssetToBuilder(row); }}
-                    style={{ width: '34px', height: '34px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'var(--card-radius-sm, 8px)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.4))', background: 'rgba(212,175,55,0.10)', color: 'var(--gold)', fontSize: '1.05rem', fontWeight: 700, cursor: 'pointer', fontFamily: MONO, lineHeight: 1, padding: 0 }}>+</button>
+                    style={{ width: '34px', height: '34px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '7px', border: '1px solid var(--acc-line2, rgba(212,175,55,0.4))', background: 'rgba(212,175,55,0.10)', color: 'var(--gold)', fontSize: '1.05rem', fontWeight: 700, cursor: 'pointer', fontFamily: MONO, lineHeight: 1, padding: 0 }}>+</button>
             );
             const phAssetRow = (row) => {
                 const rf = tcRookieInfoFor(row.pid);
@@ -4592,13 +4489,11 @@
                 );
             };
 
-            // Pick "+" → the hoisted component-scope addPickRowToBuilder
-            // (ex phAddPickToBuilder — shared with the desktop picks board
-            // since the 2026-07-12 port).
+            // Pick "+" → the component-scope addPickRowToBuilder.
             const phPickPlusChip = (row) => (
                 <button type="button" aria-label={'Add ' + row.label + ' to the builder'}
                     onClick={e => { e.stopPropagation(); addPickRowToBuilder(row); }}
-                    style={{ width: '34px', height: '34px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'var(--card-radius-sm, 8px)', border: '1px solid var(--acc-line2, rgba(212,175,55,0.4))', background: 'rgba(212,175,55,0.10)', color: 'var(--gold)', fontSize: '1.05rem', fontWeight: 700, cursor: 'pointer', fontFamily: MONO, lineHeight: 1, padding: 0 }}>+</button>
+                    style={{ width: '34px', height: '34px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '7px', border: '1px solid var(--acc-line2, rgba(212,175,55,0.4))', background: 'rgba(212,175,55,0.10)', color: 'var(--gold)', fontSize: '1.05rem', fontWeight: 700, cursor: 'pointer', fontFamily: MONO, lineHeight: 1, padding: 0 }}>+</button>
             );
             const phPickRow = (row) => (
                 <AssetRow key={`${row.rosterId}-${row.id}`} pos="PK" name={row.label}
@@ -4641,7 +4536,7 @@
                 const deltaColor = deal.userGain >= 0 ? 'var(--good)' : 'var(--bad)';
                 const expanded = expandedDealId === deal.id;
                 return (
-                    <div key={deal.id} style={{ background: 'var(--black, #121217)', border: '1px solid ' + (idx === 0 ? 'rgba(212,175,55,0.4)' : 'rgba(255,255,255,0.07)'), borderRadius: 'var(--card-radius, 10px)', padding: '11px 12px' }}>
+                    <div key={deal.id} style={{ background: 'var(--black, #121217)', border: '1px solid ' + (idx === 0 ? 'rgba(212,175,55,0.4)' : 'rgba(255,255,255,0.07)'), borderRadius: '9px', padding: '11px 12px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                             <strong style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--white)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: '1 1 auto' }}>{deal.partnerName}</strong>
                             {chip(deal.grade, deal.gradeColor || 'var(--gold)')}
@@ -4669,16 +4564,11 @@
                 );
             };
 
-            // ── P5 hero — the live deal answered as a decision; else the top
-            // finder move; else a builder prompt. Tier split mirrors TcVerdictPanel:
-            // grade/label/diff/side totals free, accept-odds Pro (the top-finder
-            // branch only exists for Pro — finderDeals is empty on free).
+            // ── Hero — the live deal answered as a decision. Renders ONLY for a
+            // live deal you're actively building; the finder leads with its own
+            // rows otherwise. Tier split mirrors TcVerdictPanel: grade/label/diff/
+            // side totals free, accept-odds Pro.
             const liveDealPartner = _verdict.hasTrade && tradeOwner.B ? (assessments.find(a => a.ownerId === tradeOwner.B) || null) : null;
-            // Hero renders ONLY for a live deal you're actively building. The
-            // "top finder move" hero and the empty-state "build a deal" hero were
-            // both cut (owner ask): the top move is redundant with the #1 scan
-            // row right below it and it hogged the top of the desk. The finder now
-            // leads with a compact Scan / Re-run control instead of a hero.
             let heroEl = null;
             if (_verdict.hasTrade) {
                 heroEl = (
@@ -4691,7 +4581,7 @@
 
             // ── DNA-mini — the rail's second card re-homed inline at the bottom of
             // the desk (and under the log). Same partner precedence and the same
-            // free-tier teaser as renderContextRail/renderAdaptiveWorkspace.
+            // free-tier teaser as the desktop rail.
             const railBoard = _pro ? partnerBoard : [];
             const liveDealOwnerId = _verdict.hasTrade ? tradeOwner.B : null;
             const railItem = (liveDealOwnerId != null && railBoard.find(p => String(p.assessment.ownerId) === String(liveDealOwnerId)))
@@ -4730,13 +4620,11 @@
                 </div>
             );
 
-            // ── P3 finder-controls sheet (Pro — the finder region's gate) ──
-            // ── Inline finder-control choosers (owner ask: no modal window) ──
-            // Each top pill toggles its own inline chooser rendered right under
-            // the pill row — tap a value and it applies immediately + closes.
-            // Replaces the old single "Finder controls" FilterSheet.
+            // ── Inline finder-control choosers (no modal window) — each top pill
+            // toggles its own inline chooser rendered right under the pill row;
+            // tap a value and it applies immediately + closes.
             const finderPanelWrap = body => (
-                <div style={{ background: 'var(--black, #121217)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.22))', borderRadius: 'var(--card-radius-sm, 8px)', padding: '10px 11px' }}>{body}</div>
+                <div style={{ background: 'var(--black, #121217)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.22))', borderRadius: '8px', padding: '10px 11px' }}>{body}</div>
             );
             let finderPanelEl = null;
             if (_pro && rosterState.isUsable && phFinderPanel === 'intent') {
@@ -4749,13 +4637,13 @@
                     </div>
                 );
             } else if (_pro && rosterState.isUsable && phFinderPanel === 'partner') {
-                // Full scrollable partner list (owner ask: a dropdown showing ALL
-                // partners, not a capped chip set). Ranked by board score; tap a
-                // row to pin, tap the pinned row again to clear back to Auto.
+                // Full scrollable partner list (ALL partners, not a capped chip
+                // set). Ranked by board score; tap a row to pin, tap the pinned
+                // row again to clear back to Auto.
                 const partnerRow = on => ({ width: '100%', display: 'flex', alignItems: 'center', gap: '8px', minHeight: '44px', border: 'none', borderBottom: '1px solid rgba(255,255,255,0.05)', background: on ? 'rgba(212,175,55,0.12)' : 'transparent', textAlign: 'left', padding: '7px 10px', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: '0.8rem' });
                 finderPanelEl = finderPanelWrap(
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        <div style={{ maxHeight: '42vh', overflowY: 'auto', WebkitOverflowScrolling: 'touch', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: 'var(--card-radius-sm, 8px)' }}>
+                        <div style={{ maxHeight: '42vh', overflowY: 'auto', WebkitOverflowScrolling: 'touch', border: '1px solid var(--ov-6, rgba(255,255,255,0.1))', borderRadius: '6px' }}>
                             <button type="button" style={partnerRow(effPartnerId == null)} onClick={() => { phSetPartner(null); setPhFinderPanel(null); }}>
                                 <strong style={{ color: effPartnerId == null ? 'var(--gold)' : 'var(--white)', fontWeight: 600 }}>Auto</strong>
                                 <span style={{ fontSize: '0.68rem', color: 'var(--silver)', opacity: 0.65, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Best partner picked for you</span>
@@ -4776,7 +4664,7 @@
                             <div style={{ fontSize: '0.6rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--silver)', opacity: 0.6, marginBottom: '5px' }}>Or target a player / pick</div>
                             {focusR && (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', border: '1px solid rgba(212,175,55,0.35)', borderRadius: 'var(--card-radius-xs, 5px)', background: 'rgba(212,175,55,0.08)', padding: '6px 9px', fontSize: '0.76rem', color: 'var(--white)', minWidth: 0 }}>
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', border: '1px solid rgba(212,175,55,0.35)', borderRadius: '5px', background: 'rgba(212,175,55,0.08)', padding: '6px 9px', fontSize: '0.76rem', color: 'var(--white)', minWidth: 0 }}>
                                         <em style={{ fontStyle: 'normal', fontSize: '0.6rem', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gold)' }}>{focusR.kind === 'pick' ? 'Pick' : focusR.kind === 'owner' ? 'Owner' : (focusR.pos || 'Player')}</em>
                                         <strong style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{focusR.label}</strong>
                                     </span>
@@ -4787,7 +4675,7 @@
                                 onChange={e => setFinderSearch(e.target.value)}
                                 placeholder="Search players, picks, owners"
                                 aria-label="Finder focus search"
-                                style={{ width: '100%', minHeight: '44px', border: '1px solid rgba(212,175,55,0.22)', borderRadius: 'var(--card-radius-xs, 5px)', background: 'rgba(255,255,255,0.045)', color: 'var(--white)', fontFamily: 'var(--font-body)', fontSize: '16px', padding: '8px 10px' }} />
+                                style={{ width: '100%', minHeight: '44px', border: '1px solid rgba(212,175,55,0.22)', borderRadius: '5px', background: 'rgba(255,255,255,0.045)', color: 'var(--white)', fontFamily: 'var(--font-body)', fontSize: '16px', padding: '8px 10px' }} />
                             {phTypeGroups.map(group => (
                                 <div key={group.label}>
                                     <div style={{ padding: '8px 2px 3px', fontSize: '0.6rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--silver)', opacity: 0.6 }}>{group.label}</div>
@@ -4827,9 +4715,9 @@
                 );
             }
 
-            // ── P6 builder sheet — the persistent builder strip's content plus the
-            // FULL TcVerdictPanel (its internal free/Pro split unchanged) and the
-            // Alex second opinion (its own trade-quick-check gate, user-initiated).
+            // ── Builder sheet — the builder's content plus the FULL TcVerdictPanel
+            // (its internal free/Pro split unchanged) and the Alex second opinion
+            // (its own trade-quick-check gate, user-initiated).
             const builderSheetEl = (
                 <Sheet open={phBuilderOpen} onClose={() => setPhBuilderOpen(false)} title={_verdict.hasTrade ? 'Live deal' : 'Trade builder'} desktop={null}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '8px 14px 4px' }}>
@@ -4850,7 +4738,7 @@
                 </Sheet>
             );
 
-            // ── P6 action bar — the canonical live-deal strip (desk only; the Trade
+            // ── Action bar — the canonical live-deal strip (desk only; the Trade
             // Log row tap opens its own sheet instead, per the approved spec).
             const actionBarEl = (
                 <ActionBar visible={active === 'desk'}
@@ -4878,7 +4766,7 @@
                     <React.Fragment>
                         {dealHqNotice && <div className="tc-dhq-notice" onAnimationEnd={() => setDealHqNotice(null)}>{dealHqNotice}</div>}
                         {tradeContext && (
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.24))', borderRadius: 'var(--card-radius-sm, 8px)', padding: '9px 11px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.24))', borderRadius: '8px', padding: '9px 11px' }}>
                                 <div style={{ minWidth: 0 }}>
                                     <span style={{ display: 'block', fontSize: MICRO, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700, fontFamily: MONO }}>Trade Context</span>
                                     <em style={{ display: 'block', color: 'var(--silver)', fontSize: '0.74rem', fontStyle: 'normal', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{formatTradeContextSummary(tradeContext) || 'Opened from the transaction ticker.'}</em>
@@ -4897,17 +4785,12 @@
                         {pillsEl}
                         {finderPanelEl}
                         {_pro && rosterState.isUsable && (
-                            (finderPoolOn && !scanArmed)
-                                ? <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                                    <button type="button" onClick={() => setScanForKey(finderLoopKey)} style={{ flex: 'none', minHeight: '40px', padding: '9px 16px', borderRadius: 'var(--card-radius-sm, 8px)', border: 'none', background: 'var(--gold)', color: 'var(--page-bg, #0A0A0F)', fontFamily: MONO, fontSize: MICRO, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', cursor: 'pointer' }}>{scanForKey != null ? 'Re-run scan' : 'Scan for moves'}</button>
-                                    <span style={{ fontFamily: MONO, fontSize: MICRO, color: 'var(--silver)', opacity: 0.7 }}>{scanForKey != null ? 'Settings changed — re-run to refresh moves.' : `League-wide across ${partnerBoard.length} partners.`}</span>
-                                </div>
-                                : finderDeals.length
+                            finderDeals.length
                                 ? <React.Fragment>
                                     {goldDiv('Finder rows', finderPoolOn ? 'league-wide' : (selectedPartner ? 'vs ' + selectedPartner.ownerName : null))}
-                                    <div style={{ fontFamily: MONO, fontSize: MICRO, color: 'var(--silver)', opacity: 0.7 }}>{finderActionable.length} actionable · {finderMoonshotCount} moonshot{finderMoonshotCount === 1 ? '' : 's'}{scanArmed && !finderPool.done ? ` · scanning ${finderPool.scanned}/${finderPool.total}` : ''}</div>
+                                    <div style={{ fontFamily: MONO, fontSize: MICRO, color: 'var(--silver)', opacity: 0.7 }}>{finderActionable.length} actionable · {finderMoonshotCount} moonshot{finderMoonshotCount === 1 ? '' : 's'}{finderPoolOn && !finderPool.done ? ` · scanning ${finderPool.scanned}/${finderPool.total}` : ''}</div>
                                 </React.Fragment>
-                                : (scanArmed && !finderPool.done
+                                : (finderPoolOn && !finderPool.done
                                     ? <div style={{ fontFamily: MONO, fontSize: MICRO, color: 'var(--silver)', opacity: 0.7 }}>Scanning partner {finderPool.scanned}/{finderPool.total} — moves appear as the league scan runs.</div>
                                     : <div className="tc-dhq-empty">No package found for this intent — change the partner or focus in the finder controls.</div>)
                         )}
@@ -4937,7 +4820,7 @@
                         {_pro && rosterState.isUsable && !phPicksMode && phAssetRowsAll.length > 0 && (
                             <React.Fragment>
                                 {goldDiv('Add assets', browsingMyRoster ? 'Your roster' : (effPartnerId != null ? pinnedPartnerName : 'League board'))}
-                                {/* Position filter lives in the top "Pos" pill chooser now
+                                {/* Position filter lives in the top "Pos" pill chooser
                                     (assetBrowserPos) — no duplicate inline row here. The
                                     active filter still shows in the pill value + empty note. */}
                                 {phVisibleAssets.length > 0
@@ -4950,10 +4833,7 @@
                                     : <div className="tc-dhq-empty">No {assetBrowserPos === 'ALL' ? '' : assetBrowserPos + ' '}assets to browse.</div>}
                             </React.Fragment>
                         )}
-                        {/* Owner DNA mini-card intentionally omitted here (owner ask
-                            2026-08-08/09): mobile Desk tab should not surface it.
-                            It still renders under the Log tab below and in full on
-                            the dedicated Owner DNA sub-tab / on desktop-tablet. */}
+                        {dnaMiniEl}
                     </React.Fragment>
                 );
             }
@@ -4982,7 +4862,7 @@
                         <div key={row.id} role="button" tabIndex={0}
                             onClick={() => setPhLogRowId(row.id)}
                             onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setPhLogRowId(row.id); } }}
-                            style={{ display: 'flex', alignItems: 'center', gap: '9px', minHeight: '56px', padding: '9px 10px', background: 'var(--black, #121217)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 'var(--card-radius, 10px)', cursor: 'pointer' }}>
+                            style={{ display: 'flex', alignItems: 'center', gap: '9px', minHeight: '56px', padding: '9px 10px', background: 'var(--black, #121217)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '9px', cursor: 'pointer' }}>
                             <div style={{ flex: 1, minWidth: 0 }}>
                                 <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--white)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pipelineRowSummary(row)}</div>
                                 <div style={{ fontFamily: MONO, fontSize: MICRO, color: 'var(--text-muted, #8B8B96)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: '1px' }}>{[whenLabel(row), row.partnerName || null, row.source === 'alex-chat' ? 'Alex' : null].filter(Boolean).join(' · ')}</div>
@@ -5060,7 +4940,7 @@
                                         <div style={{ fontFamily: MONO, fontSize: MICRO, letterSpacing: '0.05em', color: 'var(--silver)', textTransform: 'uppercase', marginBottom: '6px' }}>{phLogRow.partnerOwnerId ? 'Log the real-world outcome — teaches Alex this owner\'s psychology' : 'Log outcome (no partner identity — updates status only)'}</div>
                                         {Object.keys(GRUDGE_TYPES).map(k => (
                                             <button key={k} type="button" onClick={() => logDealOutcome(phLogRow, k)}
-                                                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '8px', minHeight: '44px', marginBottom: '6px', padding: '8px 10px', background: 'var(--black, #121217)', border: '1px solid ' + (GRUDGE_TYPES[k].color || 'rgba(255,255,255,0.1)'), borderRadius: 'var(--card-radius-sm, 8px)', color: GRUDGE_TYPES[k].color || 'var(--silver)', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: '0.78rem', fontWeight: 600, textAlign: 'left' }}>
+                                                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '8px', minHeight: '44px', marginBottom: '6px', padding: '8px 10px', background: 'var(--black, #121217)', border: '1px solid ' + (GRUDGE_TYPES[k].color || 'rgba(255,255,255,0.1)'), borderRadius: '7px', color: GRUDGE_TYPES[k].color || 'var(--silver)', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: '0.78rem', fontWeight: 600, textAlign: 'left' }}>
                                                 {GRUDGE_TYPES[k].label}
                                             </button>
                                         ))}
@@ -5078,15 +4958,14 @@
                 </Sheet>
             );
 
-            // ── DNA tab — already card-based with its own phone single-pane path
-            // inside renderOwnerDna (list → detail + back); same gate as desktop.
+            // ── DNA tab — already card-based; same gate as desktop.
             const dnaTabBody = active === 'dna'
                 ? (_pro ? renderOwnerDna() : React.createElement(TcProTeaser, { label: 'Owner DNA', feature: 'owner-dna', sub: 'Profile every manager\'s trading psychology. Know who\'s a Fleecer, who\'s Desperate, and exactly how to approach each trade conversation.' }))
                 : null;
 
             return (
                 // Bottom pad clears the always-on ActionBar + home-indicator dock
-                // without relying on the shell backstop (owner ask 2026-07-12).
+                // without relying on the shell backstop.
                 <div className="tc-trade-root" style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '12px var(--wr-phone-gutter, 12px) calc(60px + var(--wr-bottom-inset, 0px))' }}>
                     {/* Same phone-tier touch bumps as the desktop workspace root —
                         the builder sheet (TcTradeSide) and DNA tab reuse the same
@@ -5097,11 +4976,11 @@
                             .tc-trade-root .tc-ta-roster-filter,
                             .tc-trade-root .tc-dna-select { min-height: 44px; }
                             .tc-trade-root .tc-ta-roster-item { min-height: 44px; }
-                            .tc-trade-root button.tc-dhq-asset-row, .tc-trade-root div.tc-dhq-asset-row[tabindex] { min-height: 44px; }
+                            .tc-trade-root button.tc-dhq-asset-row { min-height: 44px; }
                             .tc-trade-root .tc-rail-dna-link { min-height: 44px; }
                         }
                     `}</style>
-                    {/* P2 sub-nav — same canonical tcTab setters as the desktop
+                    {/* Sub-nav — same canonical tcTab setters as the desktop
                         module-nav; the LOG count mirrors the desktop badge. */}
                     <div className="wr-seg">
                         <button type="button" className={active === 'desk' ? 'is-on' : ''} onClick={() => setTcTab('desk')}>Desk</button>
@@ -5157,8 +5036,8 @@
                 <div key={i} style={{ background: 'var(--black)', border: '2px solid var(--acc-line1, rgba(212,175,55,0.2))', borderLeft: '4px solid ' + (t.dna.color || 'var(--gold)'), borderRadius: 'var(--card-radius)', padding: '16px 20px', marginBottom: '10px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
                         <span style={{ fontFamily: 'var(--font-title)', fontSize: '1.2rem', color: 'var(--white)' }}>{t.ownerName}</span>
-                        <span style={{ fontSize: '0.72rem', fontWeight: 700, color: t.labelCol, background: wrAlpha(t.labelCol, '15'), padding: '2px 8px', borderRadius: 'var(--card-radius-xs, 5px)', textTransform: 'uppercase' }}>{t.label}</span>
-                        {t.dk !== 'NONE' && <span style={{ fontSize: '0.72rem', fontWeight: 700, color: t.dna.color, background: wrAlpha(t.dna.color, '15'), padding: '2px 8px', borderRadius: 'var(--card-radius-xs, 5px)' }}>{t.dna.label}</span>}
+                        <span style={{ fontSize: '0.72rem', fontWeight: 700, color: t.labelCol, background: wrAlpha(t.labelCol, '15'), padding: '2px 8px', borderRadius: '4px', textTransform: 'uppercase' }}>{t.label}</span>
+                        {t.dk !== 'NONE' && <span style={{ fontSize: '0.72rem', fontWeight: 700, color: t.dna.color, background: wrAlpha(t.dna.color, '15'), padding: '2px 8px', borderRadius: '4px' }}>{t.dna.label}</span>}
                         <span style={{ fontSize: '0.72rem', color: t.posture.color }}>{t.posture.label}</span>
                         <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-title)', fontSize: '1.1rem', color: t.compat >= 50 ? 'var(--good)' : t.compat >= 30 ? 'var(--warn)' : 'var(--silver)' }}>{t.compat}%</span>
                     </div>
@@ -5170,7 +5049,7 @@
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <span style={{ fontSize: '0.74rem', color: 'var(--silver)', opacity: 0.5 }}>{t.healthScore} health {'\u00B7'} {t.wins}-{t.losses} {'\u00B7'} {t.tier}</span>
                         {showCTA && <React.Fragment>
-                            <button onClick={() => { const targetRoster = allRosters.find(r => r.roster_id === t.rosterId); const topPid = (targetRoster?.players || []).map(pid => ({ pid, val: getPlayerValue(pid).value })).filter(p => p.val > 0).sort((a, b) => b.val - a.val)[0]; setFinderQuery(qr => ({ ...qr, intent: 'shop', partnerFilter: t.ownerId, focus: topPid ? { kind: 'player', id: topPid.pid } : { kind: 'owner', id: t.ownerId, label: t.ownerName } })); setTcTab('desk'); }} style={{ marginLeft: 'auto', padding: '5px 12px', background: 'var(--gold)', color: 'var(--black)', border: 'none', borderRadius: 'var(--card-radius-xs, 5px)', fontFamily: 'var(--font-body)', fontSize: '0.74rem', cursor: 'pointer', fontWeight: 700 }}>GENERATE TRADES</button>
+                            <button onClick={() => { const targetRoster = allRosters.find(r => r.roster_id === t.rosterId); const topPid = (targetRoster?.players || []).map(pid => ({ pid, val: getPlayerValue(pid).value })).filter(p => p.val > 0).sort((a, b) => b.val - a.val)[0]; setFinderQuery(qr => ({ ...qr, intent: 'shop', partnerFilter: t.ownerId, focus: topPid ? { kind: 'player', id: topPid.pid } : { kind: 'owner', id: t.ownerId, label: t.ownerName } })); setTcTab('desk'); }} style={{ marginLeft: 'auto', padding: '5px 12px', background: 'var(--gold)', color: 'var(--black)', border: 'none', borderRadius: '4px', fontFamily: 'var(--font-body)', fontSize: '0.74rem', cursor: 'pointer', fontWeight: 700 }}>GENERATE TRADES</button>
                         </React.Fragment>}
                     </div>
                 </div>
@@ -5187,7 +5066,7 @@
                     </div>
 
                     {/* Strategy summary */}
-                    <div style={{ background: 'var(--acc-fill1, rgba(212,175,55,0.06))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: 'var(--card-radius, 10px)', padding: '14px 18px', marginBottom: '20px', fontSize: '0.85rem', color: 'var(--silver)', lineHeight: 1.7 }}>
+                    <div style={{ background: 'var(--acc-fill1, rgba(212,175,55,0.06))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius: '10px', padding: '14px 18px', marginBottom: '20px', fontSize: '0.85rem', color: 'var(--silver)', lineHeight: 1.7 }}>
                         {stratText}
                     </div>
 
@@ -5206,7 +5085,7 @@
                     {/* Avoid / low probability */}
                     {avoid.length > 0 && <div style={{ marginBottom: '20px' }}>
                         <div style={{ fontFamily: 'var(--font-title)', fontSize: '1.1rem', color: 'var(--silver)', letterSpacing: '0.06em', marginBottom: '8px', opacity: 0.6 }}>LOW PROBABILITY</div>
-                        {avoid.map((t, i) => <div key={'avoid-'+i} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', background: 'var(--ov-1, rgba(255,255,255,0.02))', borderRadius: 'var(--card-radius-sm, 8px)', marginBottom: '4px', opacity: 0.5 }}>
+                        {avoid.map((t, i) => <div key={'avoid-'+i} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', background: 'var(--ov-1, rgba(255,255,255,0.02))', borderRadius: '6px', marginBottom: '4px', opacity: 0.5 }}>
                             <span style={{ fontSize: '0.82rem', color: 'var(--silver)' }}>{t.ownerName}</span>
                             <span style={{ fontSize: '0.72rem', color: 'var(--silver)' }}>{t.compat}% fit {'\u00B7'} {t.dna.label}</span>
                             <span style={{ fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.4 }}>Low roster overlap</span>
@@ -5214,24 +5093,24 @@
                     </div>}
 
                     {/* Target map summary */}
-                    <div style={{ background: 'var(--black)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: 'var(--card-radius, 10px)', padding: '14px', marginBottom: '16px' }}>
+                    <div style={{ background: 'var(--black)', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: '10px', padding: '14px', marginBottom: '16px' }}>
                         <div style={{ fontFamily: 'var(--font-title)', fontSize: '1rem', color: 'var(--gold)', marginBottom: '8px' }}>LEAGUE TARGET MAP</div>
                         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                            {allTargets.map((t, i) => <span key={i} style={{ fontSize: '0.74rem', padding: '3px 10px', borderRadius: 'var(--card-radius-xs, 5px)', background: wrAlpha(t.labelCol, '12'), border: '1px solid ' + wrAlpha(t.labelCol, '30'), color: t.labelCol, fontWeight: 600 }}>{t.ownerName} {t.compat}%</span>)}
+                            {allTargets.map((t, i) => <span key={i} style={{ fontSize: '0.74rem', padding: '3px 10px', borderRadius: '4px', background: wrAlpha(t.labelCol, '12'), border: '1px solid ' + wrAlpha(t.labelCol, '30'), color: t.labelCol, fontWeight: 600 }}>{t.ownerName} {t.compat}%</span>)}
                         </div>
                     </div>
 
                     {/* Trade history insight */}
                     {(() => {
                         const tradeHist = window.App?.LI?.tradeHistory || [];
-                        if (!tradeHist.length) return <div style={{ background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.06))', borderRadius: 'var(--card-radius, 10px)', padding: '14px', marginBottom: '16px' }}>
+                        if (!tradeHist.length) return <div style={{ background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.06))', borderRadius: '10px', padding: '14px', marginBottom: '16px' }}>
                             <div style={{ fontFamily: 'var(--font-title)', fontSize: '1rem', color: 'var(--silver)', opacity: 0.6, marginBottom: '4px' }}>LEAGUE TRADE PATTERNS</div>
                             <div style={{ fontSize: '0.82rem', color: 'var(--silver)', opacity: 0.4 }}>No trade history available yet. As trades occur, patterns will emerge here.</div>
                         </div>;
                         const activeCounts = {};
                         tradeHist.forEach(t => (t.roster_ids || []).forEach(rid => { activeCounts[rid] = (activeCounts[rid] || 0) + 1; }));
                         const mostActive = Object.entries(activeCounts).sort((a, b) => b[1] - a[1]).slice(0, 3);
-                        return <div style={{ background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.06))', borderRadius: 'var(--card-radius, 10px)', padding: '14px', marginBottom: '16px' }}>
+                        return <div style={{ background: 'var(--ov-1, rgba(255,255,255,0.02))', border: '1px solid var(--ov-4, rgba(255,255,255,0.06))', borderRadius: '10px', padding: '14px', marginBottom: '16px' }}>
                             <div style={{ fontFamily: 'var(--font-title)', fontSize: '1rem', color: 'var(--gold)', marginBottom: '6px' }}>WHAT WORKS IN THIS LEAGUE</div>
                             <div style={{ fontSize: '0.82rem', color: 'var(--silver)', lineHeight: 1.6 }}>
                                 {tradeHist.length} trades completed. Most active: {mostActive.map(([rid, cnt]) => (ownerNameForRosterId(parseInt(rid)) || 'Team ' + rid) + ' (' + cnt + ')').join(', ')}.

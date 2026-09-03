@@ -187,7 +187,44 @@
       .catch(function () { return fallback; });
   }
 
+  // ── Shared AI-text formatter ─────────────────────────────────────
+  // One consistent look for every surface that renders the AI's free prose
+  // (Alex chat, ReconAI chat, draft-room commentary, player "latest read",
+  // season recaps). Escapes HTML first, then renders **bold**, turns a lone
+  // ---/***/___ line into a slim divider, and keeps blank lines as real
+  // paragraph gaps (\n -> <br>). Pair it with lineHeight ~1.5 on the
+  // container. Deliberately tiny — this is Alex's chat style, standardized.
+  function _aiEscape(str) {
+    return String(str == null ? '' : str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+  var _AI_HR = '<hr style="border:0;border-top:1px solid var(--ov-6, rgba(255,255,255,0.12));margin:12px 0">';
+  // Private-use sentinel marking a divider line: a codepoint that can
+  // never appear in real prose, so a literal "HR" is never mistaken
+  // for a divider.
+  var _AI_HR_MARK = String.fromCharCode(0xE000);
+  function formatAI(str) {
+    var esc = _aiEscape(str).replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    var lines = esc.split('\n');
+    for (var i = 0; i < lines.length; i++) {
+      // a line that is only 3+ dashes / asterisks / underscores = a divider
+      if (/^\s*([-*_])\1{2,}\s*$/.test(lines[i])) lines[i] = _AI_HR_MARK;
+    }
+    // join with <br>, then swap dividers in — absorbing the <br>s that would
+    // otherwise stack on either side (the <hr> carries its own margin).
+    var joined = lines.join('<br>');
+    var re = new RegExp('(?:<br>)*' + _AI_HR_MARK + '(?:<br>)*', 'g');
+    return joined.replace(re, _AI_HR);
+  }
+
+  window.WR = window.WR || {};
+  window.WR.formatAI = formatAI;
+
   window.AlexVoice = {
+    formatAI: formatAI,
     hashStr: hashStr,
     pick: pick,
     pickRot: pickRot,

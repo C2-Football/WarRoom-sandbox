@@ -8,7 +8,7 @@
 // LeagueMapTab in embed mode. Keeping it separate prevents AnalyticsPanel from
 // re-initialising the sort/filter/search state on every render of other sub-tabs.
 window.AnalyticsLeagueEmbed = function AnalyticsLeagueEmbed(props) {
-    const { analyticsTab, standings, currentLeague, playersData, statsData, sleeperUserId,
+    const { analyticsTab, standings, currentLeague, playersData, statsData, stats2025Data, sleeperUserId,
         myRoster, leagueSkin, activeYear, timeRecomputeTs, setActiveTab, getAcquisitionInfo, getOwnerName } = props;
     const [lpSort, setLpSort] = React.useState({ key: 'dhq', dir: -1 });
     const [lpFilter, setLpFilter] = React.useState('');
@@ -34,82 +34,12 @@ window.AnalyticsLeagueEmbed = function AnalyticsLeagueEmbed(props) {
         lpSort, setLpSort,
         lpFilter, setLpFilter,
         lpSearch, setLpSearch,
-        standings, currentLeague, leagueSkin, playersData, statsData, sleeperUserId, myRoster,
+        standings, currentLeague, leagueSkin, playersData, statsData, stats2025Data, sleeperUserId, myRoster,
         activeYear, timeRecomputeTs, setActiveTab,
         getAcquisitionInfo: getAcquisitionInfo || (() => ({ method: 'Unknown', date: '', cost: '' })),
         getOwnerName,
     });
 };
-
-// ── Round-by-round draft position mix (multi-season) ────────────────────────
-// Walks the league's Sleeper previous_league_id chain — the same convention
-// js/shared/league-history.js (window.WrHistory) and commissioner-office.js's
-// rlChains already use to reach a league's prior seasons — and pulls real
-// per-pick round+position data straight from Sleeper's draft-picks endpoint.
-// pick.metadata.position already carries the drafted player's position, so
-// no playersData cross-reference is needed. Cached in localStorage (6h TTL,
-// mirrors WrHistory's cache) since a full walk is a handful of network calls.
-const DRAFT_POSMIX_CACHE_TTL = 6 * 60 * 60 * 1000;
-const DRAFT_POSMIX_CHAIN_MAX = 15;
-function draftPosMixCacheKey(leagueId) { return 'wr_draft_posmix_' + (leagueId || 'default'); }
-async function draftPosMixFetchJson(url) {
-    try { const r = await fetch(url); return r.ok ? r.json() : null; } catch (e) { return null; }
-}
-async function draftPosMixWalkChain(startId) {
-    const out = [];
-    let lid = startId;
-    const seen = new Set();
-    while (lid && lid !== '0' && out.length < DRAFT_POSMIX_CHAIN_MAX && !seen.has(lid)) {
-        seen.add(lid);
-        const info = (typeof window.fetchLeagueInfo === 'function')
-            ? await window.fetchLeagueInfo(lid).catch(() => null)
-            : await draftPosMixFetchJson('https://api.sleeper.app/v1/league/' + lid);
-        if (!info) break;
-        out.push({ leagueId: lid, season: parseInt(info.season) || null });
-        lid = info.previous_league_id;
-    }
-    return out;
-}
-// Aggregates every COMPLETED draft's picks, round by round, position by
-// position, across the whole reachable chain. A season with no completed
-// draft (mid pre-draft, or a chain hop that 404s) is simply skipped — the
-// season count reported back is only seasons that actually contributed picks,
-// so the UI never silently overstates its own coverage.
-async function buildDraftPosMix(startLeagueId) {
-    if (!startLeagueId) return null;
-    const chain = await draftPosMixWalkChain(startLeagueId);
-    if (!chain.length) return null;
-    const roundCounts = {};   // { round: { POS: count } }
-    const roundTotals = {};   // { round: totalPicksThatRound }
-    const seasonsCounted = [];
-    await Promise.all(chain.map(async ({ leagueId, season }) => {
-        const drafts = await draftPosMixFetchJson('https://api.sleeper.app/v1/league/' + leagueId + '/drafts');
-        const completed = (Array.isArray(drafts) ? drafts : []).filter(d => d && d.status === 'complete' && d.draft_id);
-        if (!completed.length) return;
-        let sawPick = false;
-        await Promise.all(completed.map(async draft => {
-            const picks = await draftPosMixFetchJson('https://api.sleeper.app/v1/draft/' + draft.draft_id + '/picks');
-            (Array.isArray(picks) ? picks : []).forEach(p => {
-                const rd = Number(p && p.round);
-                if (!rd || rd < 1) return;
-                const pos = (p.metadata && p.metadata.position) ? String(p.metadata.position).toUpperCase() : 'UNK';
-                sawPick = true;
-                if (!roundCounts[rd]) roundCounts[rd] = {};
-                roundCounts[rd][pos] = (roundCounts[rd][pos] || 0) + 1;
-                roundTotals[rd] = (roundTotals[rd] || 0) + 1;
-            });
-        }));
-        if (sawPick && season) seasonsCounted.push(season);
-    }));
-    if (!seasonsCounted.length) return null;
-    return {
-        fetchedAt: Date.now(),
-        leagueId: startLeagueId,
-        roundCounts,
-        roundTotals,
-        seasons: seasonsCounted.sort((a, b) => b - a),
-    };
-}
 
 function AnalyticsPanel({
   analyticsData,
@@ -153,7 +83,6 @@ function AnalyticsPanel({
             ? <div style={{ marginBottom: 'var(--card-gap, 14px)' }} dangerouslySetInnerHTML={{ __html: window.wrLockCard(label, 'analytics_depth', sub) }} />
             : null
     );
-
     // Phone tier (≤767, iPhone program Phase 3): shared viewport seam
     // (js/shared/viewport.js, one debounced app-wide listener) + kit gate.
     // Kit presence (wr-primitives.js loads earlier in the babel chain) is
@@ -196,11 +125,6 @@ function AnalyticsPanel({
     const pctFmt = (v) => Math.round((v || 0) * 100) + '%';
     const numFmt = (v) => v != null ? (typeof v === 'number' ? v.toLocaleString() : v) : '\u2014';
     const posLabel = pos => window.App?.posLabel?.(pos) || (pos === 'DEF' ? 'D/ST' : pos);
-    // Fixed position palette shared by every draft-round visual on this tab (Round
-    // Conversion tape, Winner Formula bars, Round-by-Round Position Mix below):
-    // same position = same color everywhere, so the eye doesn't have to re-learn
-    // the key per panel. Teal is reserved for YOU elsewhere on this tab.
-    const POS_COLOR = { RB: 'var(--gold)', WR: '#4e8ecd', QB: 'var(--k-9b8afb,#9b8afb)', TE: 'var(--good)', DL: '#e07a5f', LB: '#c77dff', DB: '#5fb0c4', K: 'rgba(189,184,173,0.45)', DEF: 'rgba(189,184,173,0.45)', UNK: 'rgba(189,184,173,0.3)' };
     // showAlerts block removed — alerts now on Brief tab
 
     // ── ANALYST VIEW: full analytics terminal ──
@@ -218,7 +142,6 @@ function AnalyticsPanel({
     ];
     const activeSubTab = subTabs.find(t => t.key === analyticsTab) || subTabs[0];
     const analyticsViewTab = activeSubTab.key;
-
     const _analyticsContext = {
         roster: 'Winner-template gaps, room coverage, and roster construction evidence.',
         draft: 'Pick value, hit-rate patterns, and current-pick strategy.',
@@ -243,42 +166,6 @@ function AnalyticsPanel({
             }).catch(() => {});
         }
         return () => window.removeEventListener('wr_history_loaded', onLoaded);
-    }, [historyLeagueId]);
-    // Round-by-Round Position Mix (Draft sub-tab) — same previous_league_id chain
-    // walk as WrHistory above, but pulling real per-pick round+position data
-    // instead of season records. Cached separately (wr_draft_posmix_<id>) since
-    // it's a different shape; see buildDraftPosMix at module scope for the walk.
-    const [draftPosMix, setDraftPosMix] = React.useState({ status: 'loading', leagueId: null });
-    // Ideal Draft Strategy — By Draft Slot (redraft/chopped only): which
-    // third of the draft order the tab is reading.
-    const [slotTierTab, setSlotTierTab] = React.useState('early');
-    React.useEffect(() => {
-        if (!historyLeagueId) return;
-        let alive = true;
-        setDraftPosMix(prev => (prev.leagueId === historyLeagueId ? prev : { status: 'loading', leagueId: historyLeagueId }));
-        (async () => {
-            try {
-                const cacheKey = draftPosMixCacheKey(historyLeagueId);
-                let cached = null;
-                try { const raw = localStorage.getItem(cacheKey); cached = raw ? JSON.parse(raw) : null; } catch (e) { /* corrupt cache — refetch */ }
-                if (cached && Date.now() - cached.fetchedAt < DRAFT_POSMIX_CACHE_TTL) {
-                    if (alive) setDraftPosMix({ status: 'ready', leagueId: historyLeagueId, data: cached });
-                    return;
-                }
-                const result = await buildDraftPosMix(historyLeagueId);
-                if (!alive) return;
-                if (result) {
-                    try { localStorage.setItem(cacheKey, JSON.stringify(result)); } catch (e) { /* quota — in-memory only this session */ }
-                    setDraftPosMix({ status: 'ready', leagueId: historyLeagueId, data: result });
-                } else {
-                    setDraftPosMix({ status: 'empty', leagueId: historyLeagueId });
-                }
-            } catch (e) {
-                if (window.wrLog) window.wrLog('analytics.draftPosMix', e);
-                if (alive) setDraftPosMix({ status: 'empty', leagueId: historyLeagueId });
-            }
-        })();
-        return () => { alive = false; };
     }, [historyLeagueId]);
     const leagueRosters = currentLeague?.rosters || _SS.rosters || [];
     const leagueUsers = currentLeague?.users || window.S?.leagueUsers || [];
@@ -346,9 +233,9 @@ function AnalyticsPanel({
                         // paragraph ate most of a screen before any data).
                         facts: null,
                     }, <React.Fragment>
-                        {thesis && (window.WR.ClampedRead
+                        {window.WR.ClampedRead
                             ? React.createElement(window.WR.ClampedRead, { text: thesis, maxHeight: 44, fadeColor: 'var(--black, #121217)', style: { fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 500, color: 'var(--silver)', lineHeight: 1.5, marginTop: '2px' } })
-                            : <div style={{ fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 500, color: 'var(--silver)', lineHeight: 1.5 }}>{thesis}</div>)}
+                            : <div style={{ fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 500, color: 'var(--silver)', lineHeight: 1.5 }}>{thesis}</div>}
                         {/* "Suggested Mode" callout removed from the phone analytics
                             hero (owner ask 2026-07-12) — your operating posture already
                             lives in the persistent GM Mode badge + GM's Office. Desktop
@@ -364,7 +251,7 @@ function AnalyticsPanel({
             <div>
                 <span>Research Question</span>
                 <h2>{title}</h2>
-                {thesis && <p>{thesis}</p>}
+                <p>{thesis}</p>
                 {mode && (
                     <div className="analytics-mode-callout" style={{ borderLeftColor: mode.color }}>
                         <span>Suggested Mode</span>
@@ -394,7 +281,7 @@ function AnalyticsPanel({
                         return (
                             <button key={key} type="button" aria-expanded={open}
                                 onClick={() => _setProofOpen(open ? null : key)}
-                                style={{ textAlign: 'left', gridColumn: open ? '1 / -1' : 'auto', minHeight: '58px', background: 'var(--black, #121217)', border: '1px solid ' + (open ? 'var(--acc-line2, rgba(212,175,55,0.32))' : 'rgba(255,255,255,0.07)'), borderLeft: '3px solid ' + col, borderRadius: 'var(--card-radius, 10px)', padding: '8px 10px', cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
+                                style={{ textAlign: 'left', gridColumn: open ? '1 / -1' : 'auto', minHeight: '58px', background: 'var(--black, #121217)', border: '1px solid ' + (open ? 'var(--acc-line2, rgba(212,175,55,0.32))' : 'rgba(255,255,255,0.07)'), borderLeft: '3px solid ' + col, borderRadius: '9px', padding: '8px 10px', cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
                                 <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', minWidth: 0 }}>
                                     <span style={{ fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 600, color: 'var(--text-muted, #8B8B96)', textTransform: 'uppercase', letterSpacing: '0.05em', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.label}</span>
                                     <span aria-hidden="true" style={{ color: 'var(--text-muted, #55555f)', fontSize: '0.62rem', flexShrink: 0, transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.12s' }}>›</span>
@@ -488,7 +375,7 @@ function AnalyticsPanel({
             <div className="wr-seg" style={{ marginBottom: '10px' }}>
                 {subTabs.map(t => (
                     <button key={t.key} className={analyticsViewTab === t.key ? 'is-on' : ''} onClick={() => setAnalyticsTab(t.key)}>
-                        {{ trades: 'Market', assets: 'Players' }[t.key] || t.label}
+                        {{ trades: 'Market', assets: 'Players', reports: 'Reports' }[t.key] || t.label}
                     </button>
                 ))}
             </div>
@@ -614,7 +501,7 @@ function AnalyticsPanel({
             const kpiCardStyle = {
                 background: 'linear-gradient(135deg, var(--surf-solid, rgba(26,26,26,0.95)), var(--surf-solid, rgba(10,10,10,0.98)))',
                 border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))',
-                borderRadius: 'var(--card-radius, 10px)',
+                borderRadius: '10px',
                 padding: '10px 12px 8px',
                 flex: '1 1 0',
                 minWidth: '140px',
@@ -753,18 +640,32 @@ function AnalyticsPanel({
                     .filter(pid => posOf(pid) === pos)
                     .map(pid => rankOf(pos, playerScores[pid] || 0))
                     .sort((a, b) => a - b);
-                const have = mine.filter(rk => rk <= threshold).length; // quality starters
                 const bestRank = mine.length ? mine[0] : Infinity;
-                const grade =
-                    have >= slotsInt + Math.ceil(slotsInt / 2) ? 'A' :
-                    have >= slotsInt ? 'B' :
-                    have >= 1 ? 'C' :
-                    bestRank <= threshold * 2 ? 'D' : 'F';
+                // One grading system (2026-09-02): when the shared assessment
+                // is loaded, quality counts and the letter come from the SAME
+                // engine that drives weakness chips and strengths — including
+                // the ESPN depth-chart door and the elite-concentration guard
+                // this local model never had. The local rank math stays as the
+                // engine-less fallback.
+                const pa = assessment?.posAssessment?.[pos] || null;
+                const have = pa ? (pa.nflStarters || 0) : mine.filter(rk => rk <= threshold).length;
+                const bar = pa ? (pa.minQuality || pa.startingReq || slotsInt) : slotsInt;
+                const grade = pa
+                    ? (pa.status === 'deficit' ? 'F'
+                        : pa.status === 'thin' ? (have >= bar - 1 ? 'C' : 'D')
+                        : pa.status === 'surplus' ? ((have - bar) >= 2 ? 'A' : 'B')
+                        : 'B')
+                    : (have >= slotsInt + Math.ceil(slotsInt / 2) ? 'A' :
+                        have >= slotsInt ? 'B' :
+                        have >= 1 ? 'C' :
+                        bestRank <= threshold * 2 ? 'D' : 'F');
                 const tone = (grade === 'A' || grade === 'B') ? 'good' : grade === 'F' ? 'bad' : 'neutral';
                 const color = (grade === 'A' || grade === 'B') ? goodColor : grade === 'C' ? warnColor : badColor;
                 let severity = grade === 'F' ? 'critical' : grade === 'D' ? 'high' : grade === 'C' ? 'medium' : null;
                 if (severity && STREAM_POS.has(pos)) severity = demoteSev[severity];
-                coverageByPos[pos] = { pos, slotsInt, threshold, have, bestRank, grade, tone, color, severity };
+                // Display denominator = the engine's requirement when available,
+                // so the card reads quality-vs-need (5/3), not quality-vs-slots.
+                coverageByPos[pos] = { pos, slotsInt: pa ? bar : slotsInt, threshold, have, bestRank, grade, tone, color, severity };
             });
             const coveragePosList = Object.keys(coverageByPos);
 
@@ -856,14 +757,19 @@ function AnalyticsPanel({
             // fallback off the robust tier/window/cliff signals; only lean on noisy
             // winner-template deltas when the champion sample is trustworthy (winnerN >= 2).
             let tierModeLabel, tierModeColor, rosterStrategy;
+            // One message (2026-09-02): the inferred posture must not tell a
+            // team the engine calls CONTENDING to 'sell aging veterans'. The
+            // engine's trade window gates the sell-flavored labels.
+            const _engineWindow = assessment?.window || assessment?.tradeWindow || '';
             if (winnerN < 2) {
                 if (tier === 'REBUILDING') { tierModeLabel = 'REBUILD'; tierModeColor = warnColor; rosterStrategy = 'accumulate youth and picks — you are early in the build (champion benchmark unavailable)'; }
+                else if (_engineWindow === 'CONTENDING') { tierModeLabel = 'WIN-NOW'; tierModeColor = goodColor; rosterStrategy = 'press your open window — surgical upgrades at your weakest starter rooms'; }
                 else { tierModeLabel = 'RETOOL'; tierModeColor = warnColor; rosterStrategy = 'target your weakest starter rooms (champion benchmark unavailable for template comparison)'; }
             } else if (tier === 'REBUILDING' || compYears <= 1) {
                 tierModeLabel = 'REBUILD'; tierModeColor = badColor; rosterStrategy = 'sell aging veterans for youth and picks — your window is closing';
             } else if (rosterCliffPct >= 25 && compYears <= 2) {
                 tierModeLabel = 'WIN-NOW'; tierModeColor = warnColor; rosterStrategy = 'win now — cash aging value before the cliff while your window is open';
-            } else if (ageDiffDiag > 1.5 && dhqGap < 0) {
+            } else if (ageDiffDiag > 1.5 && dhqGap < 0 && _engineWindow !== 'CONTENDING') {
                 tierModeLabel = 'RETOOL'; tierModeColor = warnColor; rosterStrategy = 'sell aging veterans and acquire young elites';
             } else if (eliteDiffDiag < -1) {
                 tierModeLabel = 'RELOAD'; tierModeColor = warnColor; rosterStrategy = 'buy young elite players to close the talent gap';
@@ -881,19 +787,12 @@ function AnalyticsPanel({
                 win_now:  { label: 'WIN-NOW',     color: gm.badgeColor || badColor,  directive: 'Spend future picks and young depth on proven starters — the window is open now.' },
                 custom:   { label: gm.modeLabel || 'CUSTOM', color: gm.badgeColor || warnColor, directive: tierModeDirective },
             };
-            // GM Strategy is primary. When no strategy is set, defer to the SAME
-            // recommendation GM's Office computes (window.WR.GmMode.recommendMode,
-            // off this roster's tier + health score) rather than the tier/champion-
-            // benchmark inference below — the two surfaces used to run independent
-            // logic and could suggest different modes for the same roster.
-            const recommendedMode = window.WR?.GmMode?.recommendMode ? window.WR.GmMode.recommendMode(assessment) : null;
-            const gmFrame = gm.hasStrategy
-                ? (GM_MODE_FRAME[gm.mode] || GM_MODE_FRAME.custom)
-                : (recommendedMode ? GM_MODE_FRAME[recommendedMode] : null);
+            // GM Strategy is primary; tier inference is the fallback when no strategy is set.
+            const gmFrame = gm.hasStrategy ? (GM_MODE_FRAME[gm.mode] || GM_MODE_FRAME.custom) : null;
             const modeLabel = gmFrame ? gmFrame.label : tierModeLabel;
             const modeColor = gmFrame ? gmFrame.color : tierModeColor;
             const modeDirective = gmFrame ? gmFrame.directive : tierModeDirective;
-            const modeSource = gm.hasStrategy ? 'GM Strategy' : (recommendedMode ? 'recommended, matches GM’s Office' : 'inferred from tier');
+            const modeSource = gmFrame ? 'GM Strategy' : 'inferred from tier';
             // Analysis window label — driven by GM Strategy timeline when set, else the model's
             // estimated compete window. horizonYears: 1 | 2.5 | 7.
             const _windowYears = gm.hasStrategy ? gm.horizonYears : compYears;
@@ -967,6 +866,7 @@ function AnalyticsPanel({
                 {!isPro && <ProLock label="Analytics Command" sub="The research thesis, suggested mode directive, and tier / win-now pressure reads for this roster are Pro." />}
                 {isPro && <AnalyticsCommandPanel
                     title="What exactly separates this roster from the league's winning build?"
+                    thesis={'Analytics is reading your roster as evidence: winner-template gaps, room-level coverage, age-window risk, and the positions where a move actually changes your title path.'}
                     mode={{ label: modeLabel, directive: modeDirective + ' (' + modeSource + ')', color: modeColor }}
                 />}
 
@@ -976,12 +876,14 @@ function AnalyticsPanel({
                     <div className="analytics-lab-card">
                         <span>Champion Blueprint</span>
                         <strong>Position Investment Delta</strong>
+                        <p>Bars show your DHQ share by room vs the champion-template share. Shares are zero-sum — being light in one room often just means you are (correctly) heavy in another (e.g. QB in superflex), so read the Gap against your format, not in isolation.</p>
                         <AnalyticsDeltaRows rows={investmentRows} benchmarkLabel="Elite" />
                     </div>
                     <div className="analytics-lab-card">
                         <span>Priority Evidence</span>
                         <strong>Rooms To Fix First</strong>
                         {isPro ? <React.Fragment>
+                            <p>Roster-construction gaps ranked by urgency — what should drive your Trade Center and Free Agency moves. Hover a row for the underlying detail.</p>
                             <AnalyticsDataStack rows={gapRows} compact />
                         </React.Fragment> : <ProLock label="Priority Evidence" sub="Roster gaps ranked by urgency — the fix-first queue is a Pro read." />}
                     </div>
@@ -992,6 +894,7 @@ function AnalyticsPanel({
                         <span>Coverage Matrix</span>
                         <strong>Starter Quality By Room</strong>
                         {isPro ? <React.Fragment>
+                        <p>Each room is graded on how many of your players rank inside the startable tier — the top (starting slots × {numTeams} teams) at the position by DHQ value. A = clear surplus, B = covered, C/D = startable but thin, F = no startable-tier body.</p>
                         <div className="analytics-chip-grid">
                             {coveragePosList.map(pos => {
                                 const c = coverageByPos[pos];
@@ -1044,8 +947,8 @@ function AnalyticsPanel({
                             {proj.map((p, i) => (
                                 <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
                                     <span style={{ color: 'var(--silver)', fontFamily: 'var(--font-body)', minWidth: '40px', fontSize: 'var(--text-body, 1rem)' }}>{p.year}</span>
-                                    <div style={{ flex: 1, position: 'relative', height: '24px', background: 'var(--ov-3, rgba(255,255,255,0.05))', borderRadius: 'var(--card-radius-sm, 8px)', overflow: 'hidden' }}>
-                                        <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: (p.projectedDHQ / maxDHQ * 100) + '%', background: tierColor(p.tier), borderRadius: 'var(--card-radius-sm, 8px)', opacity: 0.6, transition: 'width 0.5s ease' }} />
+                                    <div style={{ flex: 1, position: 'relative', height: '24px', background: 'var(--ov-3, rgba(255,255,255,0.05))', borderRadius: '6px', overflow: 'hidden' }}>
+                                        <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: (p.projectedDHQ / maxDHQ * 100) + '%', background: tierColor(p.tier), borderRadius: '6px', opacity: 0.6, transition: 'width 0.5s ease' }} />
                                         <div style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', fontSize: 'var(--text-label, 0.75rem)', fontFamily: 'var(--font-body)', color: 'var(--white)', fontWeight: 700, whiteSpace: 'nowrap' }}>
                                             {p.projectedDHQ.toLocaleString()} DHQ
                                         </div>
@@ -1111,7 +1014,7 @@ function AnalyticsPanel({
                                             <span style={{ color: 'var(--silver)' }}>{p.name} ({p.age})</span>
                                             <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                                 <span style={{ color: badColor }}>{p.dhq.toLocaleString()} DHQ</span>
-                                                <span style={{ padding: '2px 8px', background: 'rgba(231,76,60,0.15)', color: badColor, borderRadius: 'var(--card-radius-xs, 5px)', fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700, letterSpacing: '0.05em' }}>TRADE NOW</span>
+                                                <span style={{ padding: '2px 8px', background: 'rgba(231,76,60,0.15)', color: badColor, borderRadius: '4px', fontSize: 'var(--text-label, 0.75rem)', fontWeight: 700, letterSpacing: '0.05em' }}>TRADE NOW</span>
                                             </span>
                                         </div>
                                     ))}
@@ -1141,15 +1044,18 @@ function AnalyticsPanel({
                 myDraftProfile[rd] = {};
                 Object.entries(posCounts).forEach(([pos, cnt]) => { myDraftProfile[rd][pos] = +(cnt / myPicks.length).toFixed(2); });
             });
+            let totalHitDiff = 0;
             let hitRounds = 0;
             let winnerHitAvg = 0, leagueHitAvg = 0;
             rounds.forEach(rd => {
                 const hr = dr.winnerHitRate[rd];
                 if (!hr) return;
+                totalHitDiff += (hr.winners - hr.league);
                 winnerHitAvg += hr.winners;
                 leagueHitAvg += hr.league;
                 hitRounds++;
             });
+            const avgHitAdv = hitRounds > 0 ? totalHitDiff / hitRounds : 0;
             winnerHitAvg = hitRounds > 0 ? winnerHitAvg / hitRounds : 0;
             leagueHitAvg = hitRounds > 0 ? leagueHitAvg / hitRounds : 0;
             // (Removed Draft Grade computation — it was the league-wide winner-vs-field spread,
@@ -1175,7 +1081,7 @@ function AnalyticsPanel({
             const dKpiCardStyle = {
                 background: 'linear-gradient(135deg, var(--surf-solid, rgba(26,26,26,0.95)), var(--surf-solid, rgba(10,10,10,0.98)))',
                 border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))',
-                borderRadius: 'var(--card-radius-lg, 14px)',
+                borderRadius: '14px',
                 padding: '20px 18px 14px',
                 flex: '1 1 0',
                 minWidth: '140px',
@@ -1205,8 +1111,14 @@ function AnalyticsPanel({
                 const hits = myPicks.filter(dp => dp.isHit || dp.isStarter).length;
                 myHitRates[rd] = hits / myPicks.length;
             });
+            const myR1Hit = myHitRates[1] || 0;
+            const winnerR1Hit = (dr.winnerHitRate[1] || {}).winners || 0;
             const topDraftPos = topDraftTarget ? topDraftTarget[0] : null; // null-honest; no 'RB/WR' mask
-            // Personal R1-R2 anchor conversion, with explicit denominators (suppressed when thin).
+            // Personal R1 + R1-R2 anchor conversion, with explicit denominators (suppressed when thin).
+            const myR1Picks = draftOutcomes.filter(dp => dp.round === 1 && dp.roster_id === myRid);
+            const myR1Count = myR1Picks.length;
+            const myR1Hits = myR1Picks.filter(dp => dp.isHit || dp.isStarter).length;
+            const winnerR1Count = draftOutcomes.filter(dp => dp.round === 1 && winnerIds.has(dp.roster_id)).length;
             const myAnchorPicks = draftOutcomes.filter(dp => dp.roster_id === myRid && dp.round <= 2);
             const myAnchorN = myAnchorPicks.length;
             const myAnchorHits = myAnchorPicks.filter(dp => dp.isHit || dp.isStarter).length;
@@ -1300,43 +1212,24 @@ function AnalyticsPanel({
             const topCurrentPicks = [...currentPicks].sort((a, b) => b.value - a.value || a.year - b.year || a.round - b.round).slice(0, 5);
             const leagueId = currentLeague?.id || currentLeague?.league_id || '';
             const movedPickCount = tradedPicks.filter(p => !sameId(p.owner_id, p.roster_id)).length;
-            // 'Owned Picks' + 'Early Capital' proof cards removed (owner ask) \u2014 the raw pick-capital
-            // count duplicated the Winner's Perch / Ideal Draft Strategy panels below with less signal.
-            // Surface the league's own most recent completed draft (grade/DHQ) here instead of a
-            // hardcoded 'Pending' \u2014 this tab used to show that placeholder even right after you
-            // drafted, because nothing linked the saved recap in. The round-conversion/winner-DNA
-            // panels further down are a separate, still-unbuilt feature (they need actual per-pick
-            // hit-rate history across seasons, which nothing in the app computes yet) \u2014 that's
-            // still correctly gated behind hasDraftOutcomeHistory below.
-            // The same archive (js/draft/state.js buildDraftRecap, wr_draft_recap_archive_<id>)
-            // also holds MOCK draft recaps \u2014 a user can run a Mock Draft Center session
-            // (js/draft/command-center.js ModeSelector: solo/manual/scenario/ghost) and hit Save,
-            // and nothing used to stop that mock grade from being read here as if it were the
-            // league's real outcome. Real drafts (Follow Live Draft, Sleeper- or MFL-synced) are
-            // the ONLY path that ever sets mode:'live-sync' (command-center.js forcedMode); every
-            // Mock Draft Center run uses one of MOCK_DRAFT_MODES instead. Filter those out here
-            // rather than tag a new field at save time \u2014 mode already carries this signal.
-            // Recaps saved before this field existed have no mode at all; treat missing/unknown
-            // as trusted-real (mock is the newer, rarer path) so old history isn't hidden.
-            const MOCK_DRAFT_MODES = new Set(['solo', 'manual', 'ghost', 'scenario']);
-            const isRealDraftRecap = r => !!r && !MOCK_DRAFT_MODES.has(r.mode);
-            const latestRecap = (window.App?.PostDraft?.getRecapArchive && leagueId)
-                ? (window.App.PostDraft.getRecapArchive(leagueId).find(isRealDraftRecap) || null)
-                : null;
-            const historicalProofItems = latestRecap ? [
-                {
-                    label: 'Latest Draft',
-                    value: (latestRecap.grade?.letter || '\u2014') + ' \u00b7 ' + Number(latestRecap.totalDHQ || latestRecap.grade?.totalDHQ || 0).toLocaleString() + ' DHQ',
-                    detail: (latestRecap.rank ? 'Finished #' + latestRecap.rank + (latestRecap.percentile != null ? ' (' + latestRecap.percentile + 'th percentile)' : '') + '. ' : '')
-                        + 'Round-by-round hit-rate needs a season of results, so that read stays slot-value-only until games are played.',
-                    tone: 'good', color: goodColor,
-                },
-            ] : [
-                { label: 'Draft Outcomes', value: 'Pending', detail: 'No draft recap on record for this league yet; reads use slot value only.', tone: 'warn', color: warnColor },
+            // Draft-only fallback when no per-pick outcome rows exist (no championship/history filler).
+            const historicalProofItems = [
+                { label: 'Owned Picks', value: currentPicks.length || '\u2014', detail: currentPickValue.toLocaleString() + ' DHQ across visible years.', tone: 'good', color: goodColor },
+                { label: 'Early Capital', value: earlyPicks, detail: 'Picks in R1-R2 to anchor a build.', tone: earlyPicks >= 3 ? 'good' : 'warn', color: earlyPicks >= 3 ? goodColor : warnColor },
+                { label: 'Draft Outcomes', value: 'Pending', detail: 'No per-pick outcome rows yet; reads use slot value only.', tone: 'warn', color: warnColor },
             ];
+            const draftProofItems = hasDraftOutcomeHistory ? [
+                { label: 'League Skill Spread', value: signedNum(Math.round(avgHitAdv * 100), ' pts'), detail: 'Elite-vs-field hit-rate gap across ' + hitRounds + ' rounds (league-wide, not your team).', tone: toneFromDelta(avgHitAdv), color: avgHitAdv >= 0 ? goodColor : badColor },
+                { label: 'Elite R1 Benchmark', value: pctFmt(winnerR1Hit), detail: 'Title-tier R1 hit rate (n=' + winnerR1Count + ' winner R1 picks).', tone: winnerR1Count >= 3 ? 'good' : 'warn', color: winnerR1Count >= 3 ? goodColor : warnColor },
+                { label: 'Your R1 Conversion', value: myR1Count < 2 ? 'n=' + myR1Count : pctFmt(myR1Hit), detail: myR1Count < 2 ? 'Need 2+ recorded R1 picks; only ' + myR1Count + ' loaded.' : myR1Hits + '/' + myR1Count + ' R1 picks hit (elite ' + pctFmt(winnerR1Hit) + ').', tone: myR1Count < 2 ? 'warn' : (myR1Hit >= winnerR1Hit ? 'good' : 'warn'), color: myR1Count < 2 ? warnColor : (myR1Hit >= winnerR1Hit ? goodColor : warnColor) },
+                { label: 'R1-R2 Anchor Conversion', value: myAnchorN < 2 ? 'n=' + myAnchorN : pctFmt(myAnchorRate), detail: myAnchorN < 2 ? 'Need 2+ premium picks; only ' + myAnchorN + ' loaded.' : myAnchorHits + '/' + myAnchorN + ' premium picks hit (elite ' + pctFmt(winnerAnchorRate) + ', n=' + winnerAnchorN + ').', tone: myAnchorN < 2 ? 'warn' : (myAnchorRate >= winnerAnchorRate ? 'good' : 'warn'), color: myAnchorN < 2 ? warnColor : (myAnchorRate >= winnerAnchorRate ? goodColor : warnColor) },
+                // 'Value vs Slot' + 'Benchmark Confidence' proof cards removed (owner ask).
+                { label: 'Current Capital', value: currentPickValue.toLocaleString(), detail: currentPicks.length + ' current picks, ' + earlyPicks + ' in R1-R2.', tone: earlyPicks >= 3 ? 'good' : 'warn', color: earlyPicks >= 3 ? goodColor : warnColor },
+            ] : historicalProofItems;
             // \u2500\u2500 Draft intel: Round-Conversion tape + Winner-Formula DNA (full-width) \u2500\u2500
-            // POS_COLOR now lives at component scope (shared with the Round-by-Round
-            // Position Mix panel below) \u2014 same position, same color, everywhere on this tab.
+            // Fixed position palette: same position = same color across every round (the scannable
+            // primitive). Teal is reserved for YOU, so champions use a gold-anchored multi-hue set.
+            const POS_COLOR = { RB: 'var(--gold)', WR: '#4e8ecd', QB: 'var(--k-9b8afb,#9b8afb)', TE: 'var(--good)', DL: '#e07a5f', LB: '#c77dff', DB: '#5fb0c4', K: 'rgba(189,184,173,0.45)', DEF: 'rgba(189,184,173,0.45)', UNK: 'rgba(189,184,173,0.3)' };
             // One lane per round on a fixed 0-100% axis. Never filtered: zero-pick rounds still render.
             const roundTape = rounds.map(rd => {
                 const youPct = Math.round((myHitRates[rd] || 0) * 100);
@@ -1384,221 +1277,19 @@ function AnalyticsPanel({
             ];
             // Draft research-question header is bare (no stat boxes) \u2014 see AnalyticsCommandPanel call below.
 
-            // Proof grid: once outcome history exists, the Ideal Draft Strategy panel
-            // below (round×position heatmap) and Round Conversion / Winner Formula
-            // already carry the full read — no separate stat cards here (owner ask,
-            // they duplicated those panels with less signal). Without outcome
-            // history, fall back to the 'Draft Outcomes: Pending' notice.
-            const draftProofItems = hasDraftOutcomeHistory ? [] : historicalProofItems;
-
-            // ── Ideal Draft Strategy (hit rate by round × position, winners only) ──
-            // Winner-scoped, same population as Round Conversion / Winner Formula
-            // below (dr.winnerHitRate / dr.winnerDraftProfile) — "ideal" means what
-            // title teams actually did, not what any team in the league happened to
-            // hit on. Sourced from dr.winnerPosHitRate (analytics-engine.js
-            // analyzeDraftPatterns): ranks positions within a round only once 2+
-            // winner picks share that position; a round where no position clears
-            // that bar falls back to the league-wide ranking instead of going empty
-            // (source: 'league'), which the UI discloses per-round rather than
-            // passing a league number off as a champion one.
-            const winnerPosHitRate = dr.winnerPosHitRate || {};
-            const strategyRounds = Object.keys(winnerPosHitRate).map(Number).sort((a, b) => a - b)
-                .map(rd => ({ rd, ...winnerPosHitRate[rd] }))
-                .filter(r => r.total > 0 || (r.ranked || []).length);
-            // ── The Winner's Perch (redraft only) ──
-            // Redraft leagues re-draft the whole roster every season, so draft
-            // slot is a real recurring input, not a one-time rookie-draft echo.
-            // For each slot 1..N: how many times has the team drafting there
-            // finished top 3, and how many of those were the title (parens).
-            // Multi-season, sourced from WrHistory (walks previous_league_id) —
-            // free read, same tier as Trophy Room's raw standings history.
-            const isRedraftLeague = resolvedLeagueSkin?.type === 'redraft';
-            const winnersPerch = isRedraftLeague ? (window.WrHistory?.getDraftSlotPerch?.(leagueId) || []) : [];
-            const perchSeasons = winnersPerch.length ? (window.WrHistory?.getCached?.(leagueId)?.seasonsLoaded || 0) : 0;
-            const perchMaxTop3 = winnersPerch.reduce((m, r) => Math.max(m, r.top3), 0);
-
-            // ── Ideal Draft Strategy enhancements: a pos×round heatmap, and (for
-            // redraft/chopped/best-ball/DFS) a by-draft-slot cut of the same read.
-            // Round Conversion and Winner Formula below stay untouched — this only
-            // reshapes the free Ideal Draft Strategy panel above the proof grid.
-            const POS_ORDER = ['QB', 'RB', 'WR', 'TE', 'DL', 'LB', 'DB', 'K'];
-
-            // By-slot data (redraft/chopped/best-ball/DFS only — see
-            // analyzeDraftPatternsBySlotTier in analytics-engine.js: a full
-            // re-draft every season makes "which third of the order" a real,
-            // repeated input; a dynasty startup happens once and a rookie draft's
-            // slot is set by standings, not a choice, so it doesn't apply there).
-            const isSeasonalLeague = ['redraft', 'chopped', 'best_ball', 'dfs'].includes(resolvedLeagueSkin?.type);
-            const bySlot = d.draftBySlot;
-            const SLOT_TIERS = [
-                { key: 'early', label: 'Early', sub: '1st third of the order' },
-                { key: 'mid', label: 'Middle', sub: '2nd third of the order' },
-                { key: 'late', label: 'Late', sub: 'final third of the order' },
-            ];
-            const hasSlotTiers = isSeasonalLeague && !!bySlot && bySlot.hasSlotData
-                && SLOT_TIERS.some(t => Object.keys(bySlot[t.key] || {}).length > 0);
-            // 'all' (pooled, every pick) is always the first tab; slot tiers only
-            // join it when this league format + history actually supports them.
-            const strategyTab = hasSlotTiers ? slotTierTab : 'all';
-            const activeHitRate = strategyTab === 'all' ? winnerPosHitRate : (bySlot?.[strategyTab] || {});
-            const activeRounds = Object.keys(activeHitRate).map(Number).sort((a, b) => a - b)
-                .map(rd => ({ rd, ...activeHitRate[rd] }))
-                .filter(r => (r.ranked || []).length);
-            const activeHeadline = activeRounds.map(r => 'R' + r.rd + ' ' + posLabel(r.ranked[0].pos)).join(' → ');
-
-            // Blueprint heatmap: pos × round pivot of the active tab's per-round
-            // ranked lists — the same numbers the recommended-path chips read,
-            // transposed into a grid that's scannable in one glance.
-            const blueprintPositions = Array.from(new Set(activeRounds.flatMap(r => (r.ranked || []).map(p => p.pos))));
-            const blueprintRows = POS_ORDER.filter(p => blueprintPositions.includes(p))
-                .concat(blueprintPositions.filter(p => !POS_ORDER.includes(p)));
-            const cellFor = (pos, rd) => ((activeHitRate[rd] || {}).ranked || []).find(p => p.pos === pos) || null;
-
-            // Recommended-path confidence: only rounds where the leader is winner-
-            // sourced (not a fallback) AND has 3+ champion samples read as High;
-            // any fallback or thin round pulls it down rather than overstating it.
-            const pathRounds = activeRounds;
-            const pathWinnerSourced = pathRounds.filter(r => r.source === 'winners' && (r.ranked[0].total || 0) >= 3).length;
-            const pathConfidence = !pathRounds.length ? null
-                : pathWinnerSourced === pathRounds.length ? 'High'
-                : pathWinnerSourced >= Math.ceil(pathRounds.length / 2) ? 'Medium' : 'Low';
-            const pathFallbackNote = strategyTab === 'all'
-                ? ' * = round too thin on champions alone; ranking is league-wide.'
-                : " * = round too thin on champions alone; ranking is this third's whole round.";
-
-            const bpThStyle = { padding: '5px 7px', textAlign: 'center', fontFamily: 'JetBrains Mono, monospace', fontSize: 'var(--text-micro)', color: 'var(--silver)', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid var(--ov-4,rgba(255,255,255,0.08))', whiteSpace: 'nowrap' };
-            const bpTdStyle = { padding: '5px 7px', textAlign: 'center', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.7rem', borderBottom: '1px solid var(--ov-3,rgba(255,255,255,0.04))', fontVariantNumeric: 'tabular-nums' };
+            // Free floor: raw pick capital only. The champion-benchmark
+            // hit-rate reads (row 9 "draft hit-rate reads") are Pro.
+            const freeDraftProofItems = hasDraftOutcomeHistory ? historicalProofItems.slice(0, 2) : historicalProofItems;
 
             return (
             <React.Fragment>
-                {!isPro && <ProLock label="Draft Intelligence Reads" sub="The draft research thesis and champion-benchmark conversion reads are Pro. The Ideal Draft Strategy read below stays free." />}
+                {!isPro && <ProLock label="Draft Intelligence Reads" sub="The draft research thesis and champion-benchmark conversion reads are Pro. Your raw pick capital stays below." />}
                 {isPro && <AnalyticsCommandPanel
                     title="What does this league actually reward in the draft?"
+                    thesis="Anyone can count who picked what. Did your slots pay off, what did your champions spend early picks on, and how much value are you letting age out in future rounds?"
                 />}
 
-                {winnersPerch.length > 0 && (
-                    <div className="analytics-panel" style={{ marginBottom: 'var(--card-gap, 14px)' }}>
-                        <div className="analytics-panel-head">
-                            <span>The Winner's Perch</span>
-                            <em>{perchSeasons} season{perchSeasons === 1 ? '' : 's'} of draft history</em>
-                        </div>
-                        <div style={{ display: 'grid', gap: '4px' }}>
-                            {winnersPerch.map(row => {
-                                const isBest = row.top3 > 0 && row.top3 === perchMaxTop3;
-                                return (
-                                    <div key={row.slot} className="analytics-data-row is-compact" style={isBest ? { borderColor: 'rgba(46,204,113,0.4)', background: 'rgba(46,204,113,0.08)' } : undefined}>
-                                        <strong>Slot {row.slot}</strong>
-                                        <b style={{ color: row.top3 ? (isBest ? 'var(--good)' : 'var(--gold)') : 'var(--silver)' }}>
-                                            {row.top3 ? row.top3 + (row.titles ? ' (' + row.titles + ')' : '') : '—'}
-                                        </b>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </div>
-                )}
-
-                {/* ── Ideal Draft Strategy ──────────────────────────────────────
-                    One panel: "All Picks" is the original pooled read; Early/
-                    Middle/Late join it as tabs only for redraft/chopped/best-ball/
-                    DFS leagues with enough by-slot history (see
-                    analyzeDraftPatternsBySlotTier, analytics-engine.js) — a full
-                    re-draft every season makes "which third of the order" a real,
-                    repeated input; dynasty/keeper don't get the tabs since a
-                    startup happens once and a rookie draft's slot is set by
-                    standings, not a choice. */}
-                {(strategyRounds.length > 0 || hasSlotTiers) && (
-                    <div className="analytics-panel" style={{ marginBottom: 'var(--card-gap, 14px)' }}>
-                        <div className="analytics-panel-head">
-                            <span>Ideal Draft Strategy</span>
-                            <em>Champion hit rate by round &amp; position</em>
-                        </div>
-
-                        {hasSlotTiers && (
-                            <div style={{ display: 'flex', gap: '6px', marginBottom: '14px' }}>
-                                {[{ key: 'all', label: 'All Picks', sub: 'every draft slot' }, ...SLOT_TIERS].map(t => {
-                                    const has = t.key === 'all' ? strategyRounds.length > 0 : Object.keys(bySlot[t.key] || {}).length > 0;
-                                    return (
-                                        <button key={t.key} type="button" disabled={!has} onClick={() => setSlotTierTab(t.key)}
-                                            title={has ? t.sub : 'Not enough champion picks from this third of the draft yet'}
-                                            style={{
-                                                flex: '1 1 0', padding: '8px 10px', borderRadius: 'var(--card-radius-sm, 8px)', cursor: has ? 'pointer' : 'not-allowed',
-                                                border: '1px solid ' + (strategyTab === t.key ? 'var(--gold)' : 'var(--ov-5, rgba(255,255,255,0.08))'),
-                                                background: strategyTab === t.key ? 'rgba(212,175,55,0.1)' : 'transparent',
-                                                color: !has ? 'var(--ov-8, rgba(255,255,255,0.3))' : strategyTab === t.key ? 'var(--gold)' : 'var(--silver)',
-                                                textAlign: 'center', fontFamily: 'var(--font-body)',
-                                            }}>
-                                            <div style={{ fontWeight: 700, fontSize: 'var(--text-body, 1rem)' }}>{t.label}</div>
-                                            <div style={{ fontSize: 'var(--text-micro)', opacity: 0.75 }}>{t.sub}</div>
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        )}
-
-                        {!activeRounds.length ? (
-                            <div style={{ color: 'var(--silver)', fontSize: 'var(--text-body, 1rem)', padding: '8px 0' }}>
-                                Not enough champion draft history from this third of the order yet — needs more seasons before a real pattern shows.
-                            </div>
-                        ) : (
-                        <React.Fragment>
-                        {activeHeadline && (
-                            <div style={{ marginBottom: '14px' }}>
-                                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: '6px 10px', marginBottom: '6px' }}>
-                                    <span style={{ fontSize: 'var(--text-micro)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700 }}>Recommended path</span>
-                                    {pathConfidence && <span style={{ fontSize: 'var(--text-micro)', color: 'var(--silver)' }}>confidence: {pathConfidence}</span>}
-                                </div>
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                                    {activeRounds.map(r => (
-                                        <span key={r.rd} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', border: '1px solid ' + (POS_COLOR[r.ranked[0].pos] || POS_COLOR.UNK), borderRadius: '999px', padding: '3px 10px', fontSize: 'var(--text-label, 0.75rem)', fontFamily: 'JetBrains Mono, monospace' }}>
-                                            <b style={{ color: 'var(--silver)' }}>R{r.rd}</b>
-                                            <b style={{ color: POS_COLOR[r.ranked[0].pos] || POS_COLOR.UNK }}>{posLabel(r.ranked[0].pos)}</b>
-                                        </span>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Blueprint heatmap: same numbers as the recommended path, laid out for a one-glance scan instead of a per-round scroll. */}
-                        <div style={{ overflowX: 'auto' }}>
-                            <table style={{ borderCollapse: 'collapse', minWidth: '100%' }}>
-                                <thead>
-                                    <tr>
-                                        <th style={{ ...bpThStyle, textAlign: 'left' }}>Pos</th>
-                                        {activeRounds.map(r => (
-                                            <th key={r.rd} style={bpThStyle} title={'champ n=' + r.total + ' · ' + r.ranked[0].rate + '% starter (top position)' + (r.source !== 'winners' ? ' — thin on champions; fallback read' : '')}>
-                                                R{r.rd}{r.source !== 'winners' ? '*' : ''}
-                                            </th>
-                                        ))}
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {blueprintRows.map(pos => (
-                                        <tr key={pos}>
-                                            <td style={{ ...bpTdStyle, textAlign: 'left', color: POS_COLOR[pos] || POS_COLOR.UNK, fontWeight: 700 }}>{posLabel(pos)}</td>
-                                            {activeRounds.map(r => {
-                                                const cell = cellFor(pos, r.rd);
-                                                return (
-                                                    <td key={r.rd} style={{ ...bpTdStyle, background: cell ? 'rgba(46,204,113,' + Math.min(0.5, cell.rate / 100 * 0.45 + 0.05).toFixed(2) + ')' : 'transparent', color: cell ? (cell.rate >= 50 ? 'var(--white)' : 'var(--silver)') : 'rgba(189,184,173,0.3)' }}
-                                                        title={cell ? posLabel(pos) + ' R' + r.rd + ': ' + cell.rate + '% (n=' + cell.total + ')' : undefined}>
-                                                        {cell ? cell.rate + '%' : '—'}
-                                                    </td>
-                                                );
-                                            })}
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                        <div style={{ fontSize: 'var(--text-micro)', color: 'var(--silver)', opacity: 0.7, marginTop: '8px' }}>
-                            Darker green = higher champion starter-rate. Dash = fewer than 2 champion picks at that position/round.{activeRounds.some(r => r.source !== 'winners') ? pathFallbackNote : ''}
-                        </div>
-                        </React.Fragment>
-                        )}
-                    </div>
-                )}
-
-                <AnalyticsProofGrid items={draftProofItems} />
+                <AnalyticsProofGrid items={isPro ? draftProofItems : freeDraftProofItems} />
 
                 {hasDraftOutcomeHistory && !isPro ? (
                     <ProLock label="Round Conversion + Winner Formula" sub="Hit-rate vs the champion standard and what title teams draft round-by-round are Pro reads." />
@@ -1609,6 +1300,7 @@ function AnalyticsPanel({
                         <div className="analytics-lab-card">
                             <span>Round Conversion</span>
                             <strong>Hit Rate vs the Champion Standard</strong>
+                            <p>Each round is one lane on a fixed 0-100% scale. The gold rail is the title-tier (champion) hit rate; the faint silver tick is the league field. Your bar grows toward the rail &mdash; past it, you beat the standard. Rounds with fewer than 2 picks draw as a hollow ghost: direction, not a verdict.</p>
                             <div style={{ display: 'flex', gap: '18px', borderTop: '1px solid var(--ov-4,rgba(255,255,255,0.06))', borderBottom: '1px solid var(--ov-4,rgba(255,255,255,0.06))', padding: '12px 0', margin: '4px 0 14px' }}>
                                 {[
                                     { k: 'Anchor (R1-R2)', v: anchorGradable ? anchorPct + '%' : '\u2014', c: anchorGradable ? 'var(--good)' : 'var(--silver)', s: 'you \u00B7 ' + myAnchorHits + '/' + myAnchorN },
@@ -1633,7 +1325,7 @@ function AnalyticsPanel({
                                 const tint = t.state !== 'solid' ? 'rgba(255,255,255,0.02)' : (t.gap >= 0 ? 'linear-gradient(90deg,rgba(46,204,113,0.10),transparent)' : 'rgba(240,165,0,0.10)');
                                 const gapColor = t.state !== 'solid' ? 'rgba(189,184,173,0.45)' : (t.gap >= 0 ? 'var(--good)' : 'var(--warn)');
                                 return (
-                                <div key={t.rd} style={{ display: 'grid', gridTemplateColumns: _phone ? '44px 28px minmax(0,1fr) 78px' : '52px 34px minmax(0,1fr) 132px', alignItems: 'center', gap: _phone ? '7px' : '10px', minHeight: '34px', borderRadius: 'var(--card-radius-sm, 8px)', padding: '4px 8px', borderBottom: '1px solid var(--ov-4,rgba(255,255,255,0.06))', background: tint, opacity: t.state === 'empty' ? 0.5 : 1 }}>
+                                <div key={t.rd} style={{ display: 'grid', gridTemplateColumns: _phone ? '44px 28px minmax(0,1fr) 78px' : '52px 34px minmax(0,1fr) 132px', alignItems: 'center', gap: _phone ? '7px' : '10px', minHeight: '34px', borderRadius: '6px', padding: '4px 8px', borderBottom: '1px solid var(--ov-4,rgba(255,255,255,0.06))', background: tint, opacity: t.state === 'empty' ? 0.5 : 1 }}>
                                     <span style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '1rem', color: 'var(--gold)' }}>R{t.rd}</span>
                                     <span style={{ fontSize: 'var(--text-micro)', color: t.n === 1 ? 'var(--warn)' : 'var(--silver)' }}>{t.n === 0 ? '\u2014' : 'n=' + t.n}</span>
                                     <div style={{ position: 'relative', height: '10px', borderRadius: '99px', background: 'rgba(255,255,255,0.055)', overflow: 'visible' }}>
@@ -1671,6 +1363,7 @@ function AnalyticsPanel({
                         <div className="analytics-lab-card">
                             <span>Winner Formula</span>
                             <strong>What Champions Draft, Round by Round</strong>
+                            <p>Each bar is the full pick budget of title teams that round, split by position &mdash; the winning recipe. Your actual picks pin on as teal markers: on the recipe when you matched the champion lean, off-script when you zigged to a band they barely touch. One pick is one mark (&times;1), never a trend.</p>
                             {/* Template Lean callout removed (owner ask) — the per-round
                                 bars below already carry the champion recipe. */}
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px 12px', marginBottom: '14px', fontSize: 'var(--text-micro)', color: 'var(--silver)' }}>
@@ -1692,7 +1385,7 @@ function AnalyticsPanel({
                                         <div style={{ fontSize: 'var(--text-micro)', color: 'var(--silver)' }}>{myRdCount ? 'you n=' + myRdCount : 'you: \u2014'}</div>
                                     </div>
                                     <div>
-                                        <div style={{ display: 'flex', height: '26px', borderRadius: 'var(--card-radius-sm, 8px)', overflow: 'hidden', opacity: myRdCount ? 1 : 0.55 }}>
+                                        <div style={{ display: 'flex', height: '26px', borderRadius: '6px', overflow: 'hidden', opacity: myRdCount ? 1 : 0.55 }}>
                                             {wEntries.map(([pos, pct]) => (
                                                 <span key={pos} title={posLabel(pos) + ' ' + pctFmt(pct)} style={{ width: (pct * 100) + '%', background: POS_COLOR[pos] || POS_COLOR.UNK, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'JetBrains Mono, monospace', fontSize: 'var(--text-micro)', color: '#0c0c0f', overflow: 'hidden', whiteSpace: 'nowrap' }}>{pct >= 0.12 ? posLabel(pos) + ' ' + pctFmt(pct) : ''}</span>
                                             ))}
@@ -1737,78 +1430,12 @@ function AnalyticsPanel({
                         <div className="analytics-lab-card">
                             <span>Build Map</span>
                             <strong>How To Use The Current Draft Board</strong>
+                            <p>Capital is the currency here: anchor your early picks, and use the round shape to plan trade-ups and consolidations.</p>
                             <AnalyticsDataStack rows={buildRows} />
                         </div>
                     </div>
                 )}
             </React.Fragment>
-            );
-        })()}
-
-        {/* ═══ ROUND-BY-ROUND POSITION MIX (multi-season Sleeper history) ═══
-            Independent of the d.draft-backed panels above (own fetch, own cache —
-            see buildDraftPosMix at module scope), so it renders whenever the
-            league's Sleeper history reaches at least one completed draft, even
-            if the local per-user hit-rate math above has nothing to show yet. */}
-        {analyticsViewTab === 'draft' && (() => {
-            if (draftPosMix.status === 'empty') return null;
-            if (draftPosMix.status === 'loading') {
-                return (
-                    <div className="analytics-lab-grid" style={{ gridTemplateColumns: '1fr' }}>
-                        <div className="analytics-lab-card">
-                            <span>Draft DNA</span>
-                            <strong>Round-by-Round Position Mix</strong>
-                            <p style={{ color: 'var(--silver)', opacity: 0.6 }}>Loading this league's Sleeper draft history…</p>
-                        </div>
-                    </div>
-                );
-            }
-            const mix = draftPosMix.data;
-            const roundNums = Object.keys(mix?.roundTotals || {}).map(Number).sort((a, b) => a - b);
-            if (!mix || !roundNums.length) return null;
-            const seasonCount = mix.seasons.length;
-            const seasonSpan = seasonCount > 1 ? (mix.seasons[seasonCount - 1] + '–' + mix.seasons[0]) : String(mix.seasons[0]);
-            return (
-                <div className="analytics-lab-grid" style={{ gridTemplateColumns: '1fr' }}>
-                    <div className="analytics-lab-card">
-                        <span>Draft DNA</span>
-                        <strong>Round-by-Round Position Mix</strong>
-                        <p style={{ fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.75, marginTop: '-4px', marginBottom: '12px', lineHeight: 1.5 }}>
-                            What every team drafted at each position, round by round, pooled across every season this league's Sleeper history reaches — <b style={{ color: 'var(--gold)' }}>{seasonCount} season{seasonCount === 1 ? '' : 's'}</b> ({seasonSpan}).
-                        </p>
-                        {roundNums.map(rd => {
-                            const total = mix.roundTotals[rd] || 0;
-                            const entries = Object.entries(mix.roundCounts[rd] || {}).sort((a, b) => b[1] - a[1]);
-                            return (
-                                <div key={rd} style={{ display: 'grid', gridTemplateColumns: _phone ? '54px minmax(0,1fr)' : '74px minmax(0,1fr)', gap: '10px', alignItems: 'center', marginBottom: '8px' }}>
-                                    <div>
-                                        <div style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: '0.95rem', color: 'var(--gold)' }}>R{rd}</div>
-                                        <div style={{ fontSize: 'var(--text-micro)', color: 'var(--silver)' }}>n={total}</div>
-                                    </div>
-                                    <div style={{ display: 'flex', height: '24px', borderRadius: 'var(--card-radius-sm, 8px)', overflow: 'hidden' }}>
-                                        {entries.map(([pos, cnt]) => {
-                                            const pct = total ? cnt / total : 0;
-                                            return (
-                                                <span
-                                                    key={pos}
-                                                    title={posLabel(pos) + ' ' + pctFmt(pct) + ' (' + cnt + ' picks)'}
-                                                    style={{ width: (pct * 100) + '%', background: POS_COLOR[pos] || POS_COLOR.UNK, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'JetBrains Mono, monospace', fontSize: 'var(--text-micro)', color: '#0c0c0f', overflow: 'hidden', whiteSpace: 'nowrap' }}
-                                                >
-                                                    {pct >= 0.1 ? posLabel(pos) + ' ' + pctFmt(pct) : ''}
-                                                </span>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            );
-                        })}
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px 14px', marginTop: '10px', fontSize: 'var(--text-micro)', color: 'var(--silver)' }}>
-                            {Object.keys(POS_COLOR).filter(p => p !== 'UNK').map(p => (
-                                <span key={p}><i style={{ display: 'inline-block', width: '10px', height: '10px', background: POS_COLOR[p], borderRadius: '2px', marginRight: '4px', verticalAlign: 'middle' }} />{posLabel(p)}</span>
-                            ))}
-                        </div>
-                    </div>
-                </div>
             );
         })()}
 
@@ -1826,6 +1453,8 @@ function AnalyticsPanel({
             const faabRemaining = waiverBudget > 0 ? Math.max(0, waiverBudget - waiverUsed) : null;
             const faabEfficiency = wa.faabEfficiency || {};
             const hasFaabEfficiency = Number.isFinite(Number(faabEfficiency.winners)) || Number.isFinite(Number(faabEfficiency.league));
+            const topEffPos = Object.entries(wa.faabEffByPos || {})
+                .sort((a, b) => (b[1].dhqPerDollar || 0) - (a[1].dhqPerDollar || 0))[0];
             const topPosBought = (prof) => {
                 const entries = Object.entries(prof.positionsBought || {}).sort((a, b) => b[1] - a[1]);
                 return entries.slice(0, 3).map(([p]) => p).join(', ') || '\u2014';
@@ -1841,6 +1470,12 @@ function AnalyticsPanel({
             const myWinRate = myGraded > 0 ? Math.round((mp.tradesWon || 0) / myGraded * 100) : null;
             const wGraded = (wp.tradesWon || 0) + (wp.tradesLost || 0) + (wp.tradesFair || 0);
             const wWinRate = wGraded > 0 ? Math.round((wp.tradesWon || 0) / wGraded * 100) : null;
+            const bargainPos = Object.entries(wa.faabEffByPos || {}).map(([pos, e]) => {
+                const med = (wa.leagueFaabProfile?.[pos]?.median) || 0;
+                const avgBid = e.avgBid || 0;
+                return { pos, med, avgBid, dhqPerDollar: e.dhqPerDollar || 0, underMedian: med > 0 && avgBid < med };
+            }).filter(x => x.underMedian).sort((a, b) => b.dhqPerDollar - a.dhqPerDollar);
+            const topBargain = bargainPos[0];
             const weeksElapsed = Number(currentLeague?.settings?.leg || currentLeague?.settings?.last_scored_leg || 0);
             const faabPct = (waiverBudget > 0 && faabRemaining != null) ? Math.round(faabRemaining / waiverBudget * 100) : null;
             // Weekly burn is only meaningful after a few scoring weeks. Dividing a full offseason /
@@ -1862,7 +1497,7 @@ function AnalyticsPanel({
             const tKpiCardStyle = {
                 background: 'linear-gradient(135deg, var(--surf-solid, rgba(26,26,26,0.95)), var(--surf-solid, rgba(10,10,10,0.98)))',
                 border: '1px solid var(--acc-line1, rgba(212,175,55,0.25))',
-                borderRadius: 'var(--card-radius-lg, 14px)',
+                borderRadius: '14px',
                 padding: '20px 18px 14px',
                 flex: '1 1 0',
                 minWidth: '140px',
@@ -1875,6 +1510,8 @@ function AnalyticsPanel({
                 { label: 'Trade Frequency Edge', value: signedNum(Number((mp.avgTradesPerSeason - wp.avgTradesPerSeason).toFixed(1))), detail: 'Your trades/season vs elite-tier behavior' + ((window.App?.LI?.leagueYears || []).length ? '.' : ' (season count assumed; league history thin).'), tone: toneFromDelta(mp.avgTradesPerSeason - wp.avgTradesPerSeason), color: mp.avgTradesPerSeason >= wp.avgTradesPerSeason ? goodColor : warnColor },
                 { label: 'Value Per Deal', value: signedNum(mp.avgValueGained, ' DHQ'), detail: 'Average DHQ gained/lost in completed trades.', tone: toneFromDelta(mp.avgValueGained), color: valueDeltaColor },
                 { label: 'Trade Win Rate', value: myWinRate == null ? '\u2014' : myWinRate + '%', detail: myWinRate == null ? 'No graded trades yet.' : (mp.tradesWon || 0) + 'W / ' + (mp.tradesFair || 0) + 'F / ' + (mp.tradesLost || 0) + 'L vs elite ' + (wWinRate == null ? 'n/a' : wWinRate + '%') + '.', tone: myWinRate == null ? 'warn' : ((wWinRate != null && myWinRate >= wWinRate) || myWinRate >= 50) ? 'good' : 'warn', color: myWinRate == null ? 'var(--silver)' : (myWinRate >= (wWinRate || 50)) ? goodColor : warnColor },
+                { label: 'FAAB Bargain Spot', value: topBargain ? posLabel(topBargain.pos) : '\u2014', detail: topBargain ? 'Avg bid $' + Math.round(topBargain.avgBid) + ' below $' + Math.round(topBargain.med) + ' median, ' + topBargain.dhqPerDollar + ' DHQ/$.' : 'No position is priced below its median yet.', tone: topBargain ? 'good' : 'warn', color: topBargain ? goodColor : warnColor },
+                { label: 'Best Waiver Yield', value: (topEffPos && (topEffPos[1].count || 0) >= 2) ? posLabel(topEffPos[0]) : '\u2014', detail: topEffPos ? (topEffPos[1].dhqPerDollar || 0) + ' DHQ/FAAB-$ (hindsight, ' + (topEffPos[1].count || 0) + ' claims).' : 'Bid outcome sample is still thin.', tone: (topEffPos && (topEffPos[1].count || 0) >= 2) ? 'good' : 'warn', color: (topEffPos && (topEffPos[1].count || 0) >= 2) ? goodColor : warnColor },
             ];
             // Net Buy/Sell Posture: positionsSold is already returned by the engine but was unused here.
             const allFlowPos = [...new Set([...Object.keys(wp.positionsBought||{}), ...Object.keys(mp.positionsBought||{}), ...Object.keys(wp.positionsSold||{}), ...Object.keys(mp.positionsSold||{})])].filter(p => p !== 'UNK').sort();
@@ -1920,23 +1557,27 @@ function AnalyticsPanel({
             const myTradeWindow = !(tr.myLast5 || []).length ? null : myEarlyTrades >= Math.ceil((tr.myLast5 || []).length / 2) ? 'early' : 'mid/late';
 
             // Free floor: raw trade/waiver numbers. The market reads (thesis,
-            // trade-pattern read, clock verdict, alert cards) are Pro (row 9
-            // "trades market reads").
+            // trade-pattern read, FAAB bargain call, clock verdict, alert
+            // cards) are Pro (row 9 "trades market reads").
+            const shownMarketProofItems = isPro ? marketProofItems : marketProofItems.filter(i => i.label !== 'FAAB Bargain Spot');
+
             return (
             <React.Fragment>
-                {!isPro && <ProLock label="Market Reads" sub="The market-mispricing thesis and trade-pattern read are Pro. Raw trade and waiver numbers stay below." />}
+                {!isPro && <ProLock label="Market Reads" sub="The market-mispricing thesis, trade-pattern read, and FAAB bargain calls are Pro. Raw trade and waiver numbers stay below." />}
                 {isPro && <AnalyticsCommandPanel
                     title="Where is the league market mispricing value?"
+                    thesis="Market analytics should explain owner behavior and price movement. This view separates trade liquidity, deal quality, waiver pricing, FAAB leverage, and position flow before sending you to Trade Center or Free Agency."
                 />}
 
-                <AnalyticsProofGrid items={marketProofItems} />
+                <AnalyticsProofGrid items={shownMarketProofItems} />
 
                 <div className="analytics-lab-grid">
                     <div className="analytics-lab-card">
                         <span>Waiver Economy</span>
                         <strong>Position Price Map</strong>
+                        <p>Average FAAB paid by room. Use this to decide whether a free-agent target is cheap relative to the league's actual market.</p>
                         <div className="analytics-mini-table">
-                            {Object.entries(wa.leagueFaabProfile || {}).sort((a, b) => (b[1].avg || 0) - (a[1].avg || 0)).map(([pos, info]) => (
+                            {Object.entries(wa.leagueFaabProfile || {}).sort((a, b) => (b[1].avg || 0) - (a[1].avg || 0)).slice(0, 6).map(([pos, info]) => (
                                 <div key={pos}><strong>{posLabel(pos)}</strong><span>${Math.round(info.avg || 0)} avg</span><em>{info.count || 0} bids</em></div>
                             ))}
                             {!Object.keys(wa.leagueFaabProfile || {}).length && <div><strong>No FAAB history</strong><span>Use Free Agency recommendations until transactions load.</span></div>}
@@ -1945,6 +1586,7 @@ function AnalyticsPanel({
                     <div className="analytics-lab-card">
                         <span>Market Clock</span>
                         <strong>When Winners Trade</strong>
+                        <p>Share of value-creating TRADES by season window (trade timing, not waiver claims) — title teams vs the league field.</p>
                         {[
                             { label: 'Champions', t: wTiming, gold: true },
                             { label: 'League field', t: lTiming, gold: false },
@@ -1956,7 +1598,7 @@ function AnalyticsPanel({
                                     <span style={{ color: row.gold ? 'var(--gold)' : 'var(--silver)', fontWeight: 700, letterSpacing: '0.04em' }}>{row.label}</span>
                                     <span style={{ color: 'var(--silver)', fontFamily: 'JetBrains Mono, monospace' }}>{'E ' + pctFmt(row.t.early || 0) + ' · M ' + pctFmt(row.t.mid || 0) + ' · L ' + pctFmt(row.t.late || 0)}</span>
                                 </div>
-                                <div style={{ display: 'flex', height: '16px', borderRadius: 'var(--card-radius-xs, 5px)', overflow: 'hidden', background: 'rgba(255,255,255,0.04)' }}>
+                                <div style={{ display: 'flex', height: '16px', borderRadius: '5px', overflow: 'hidden', background: 'rgba(255,255,255,0.04)' }}>
                                     {segs.map(([sl, v, bg]) => v > 0 ? (
                                         <span key={sl} title={sl + ' ' + pctFmt(v)} style={{ width: (v * 100) + '%', background: bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'var(--text-micro)', color: '#0c0c0f', overflow: 'hidden', whiteSpace: 'nowrap' }}>{v >= 0.12 ? sl : ''}</span>
                                     ) : null)}
@@ -1976,6 +1618,7 @@ function AnalyticsPanel({
                     <div className="analytics-lab-card">
                         <span>Trade Flow</span>
                         <strong>Net Buy/Sell Posture by Position</strong>
+                        <p>Positive = net buyer, negative = net seller (acquired minus sold). Gold marker = elite-tier posture.</p>
                         {tradeFlowRows.length ? <AnalyticsDeltaRows rows={tradeFlowRows} benchmarkLabel="Elite" /> : <div className="analytics-proof-card"><strong>No position trade flow yet</strong><em>Completed trade data has not yielded position movement.</em></div>}
                     </div>
                 </div>
@@ -1988,7 +1631,7 @@ function AnalyticsPanel({
                                 {[{ deal: tr.myBiggestWin, kicker: 'Best Deal', color: goodColor }, { deal: tr.myBiggestLoss, kicker: 'Worst Deal', color: badColor }].filter(x => x.deal).map((x, i) => {
                                     const d = x.deal; const net = d.netDhq != null ? d.netDhq : d.net;
                                     return (
-                                    <div key={i} style={{ border: '1px solid var(--ov-4, rgba(255,255,255,0.06))', borderLeft: '3px solid ' + x.color, borderRadius: 'var(--card-radius-sm, 8px)', padding: '10px 12px', background: 'rgba(255,255,255,0.02)' }}>
+                                    <div key={i} style={{ border: '1px solid var(--ov-4, rgba(255,255,255,0.06))', borderLeft: '3px solid ' + x.color, borderRadius: '8px', padding: '10px 12px', background: 'rgba(255,255,255,0.02)' }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
                                             <span style={{ fontSize: 'var(--text-micro)', color: x.color, textTransform: 'uppercase', letterSpacing: '0.09em', fontWeight: 800 }}>{x.kicker}</span>
                                             <span style={{ fontSize: 'var(--text-micro)', color: 'var(--silver)' }}>S{d.season || '?'}{d.fairness != null ? ' · fairness ' + Math.round(d.fairness) : ''}</span>
@@ -2013,7 +1656,7 @@ function AnalyticsPanel({
                                 <div key={i} style={{ padding: '8px 0', borderBottom: '1px solid var(--ov-4, rgba(255,255,255,0.06))', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                         <span style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--gold)', fontFamily: 'var(--font-body)' }}>S{trade.season || '?'} W{trade.week || '?'}</span>
-                                        <span style={{ fontSize: 'var(--text-label, 0.75rem)', fontFamily: 'var(--font-body)', padding: '2px 8px', borderRadius: 'var(--card-radius, 10px)', background: wrAlpha(resultColor, '22'), color: resultColor, border: '1px solid ' + wrAlpha(resultColor, '44'), fontWeight: 700 }}>{result}</span>
+                                        <span style={{ fontSize: 'var(--text-label, 0.75rem)', fontFamily: 'var(--font-body)', padding: '2px 8px', borderRadius: '10px', background: wrAlpha(resultColor, '22'), color: resultColor, border: '1px solid ' + wrAlpha(resultColor, '44'), fontWeight: 700 }}>{result}</span>
                                     </div>
                                     <div style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', fontFamily: 'var(--font-body)' }}>
                                         {assetListText(trade.gave, trade.gavePicks)} <span style={{ color: 'var(--gold)', margin: '0 4px' }}>{'\u2192'}</span> {assetListText(trade.got, trade.gotPicks)}
@@ -2054,12 +1697,11 @@ function AnalyticsPanel({
             );
         })()}
 
-
         {/* Phase 8: All Players / Draft Picks / Custom Reports — ex-League Map sub-views
             rendered inline via LeagueMapTab's embed mode. Local state lives in AnalyticsPanel
             so sort/filter/search persist as the user moves between sub-tabs. */}
         {(analyticsViewTab === 'assets' || analyticsViewTab === 'reports') && React.createElement(window.AnalyticsLeagueEmbed || (() => null), {
-            analyticsTab: analyticsViewTab, standings, currentLeague, playersData, statsData, sleeperUserId,
+            analyticsTab: analyticsViewTab, standings, currentLeague, playersData, statsData, stats2025Data, sleeperUserId,
             myRoster, leagueSkin: resolvedLeagueSkin, activeYear, timeRecomputeTs, setActiveTab, getAcquisitionInfo, getOwnerName,
         })}
 
