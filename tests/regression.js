@@ -673,6 +673,26 @@ test('expanded roster rows use contextual readout without duplicate profile card
   ok(!myTeamSrc.includes('Physical + Draft Profile'), 'duplicate profile card should not return');
 });
 
+test('the phone roster can sort, and its presets are column-guarded', () => {
+  // Owner ask 2026-09-06 was "I want to sort by DHQ". The desktop half landed
+  // then; the phone had no sort entry point at all — rosterSort could only be
+  // changed by tapping a table header, which on a phone means switching to
+  // Full table and hunting a column in a horizontal scroller.
+  sourceHas(myTeamSrc, "{ label: 'Sort by', node: (", 'the phone filter sheet needs a sort control');
+  sourceHas(myTeamSrc, "{ label: 'Direction', node: (", 'and a direction toggle');
+  sourceHas(myTeamSrc, 'onChange={e => sortByColumn(e.target.value)}', 'phone sort must go through sortByColumn so it flattens grouping');
+  sourceHas(myTeamSrc, "label: 'Sort',", 'the active sort belongs on the pill row, not only inside the sheet');
+  // Reset has to clear the sort too, or "Reset" leaves the board reordered.
+  sourceHas(myTeamSrc, "setRosterGroupMode('position'); setRosterSort({ key: 'name', dir: 1 }); }", 'reset must clear the sort');
+  // Same ROSTER_COLUMNS guard the desktop presets carry (a retired column
+  // otherwise renders its raw key as the card slot's label).
+  sourceHas(myTeamSrc, 'PHONE_SLOT_PRESETS = Object.fromEntries(Object.entries({', 'phone presets must be column-guarded');
+  sourceHas(myTeamSrc, '.map(([key, keys]) => [key, keys.filter(k => ROSTER_COLUMNS[k])]))', 'the guard must actually filter');
+  Object.keys({ default: 1, redraft: 1, stats: 1, scout: 1, rookie: 1, full: 1 }).forEach(key => {
+    ok(new RegExp('\\n\\s+' + key + ':\\s+\\[').test(myTeamSrc), 'phone preset missing for ' + key);
+  });
+});
+
 group('compare fields');
 
 test('division comparisons only include the user in their own division', () => {

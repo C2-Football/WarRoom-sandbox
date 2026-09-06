@@ -1478,14 +1478,41 @@ function MyTeamTab({
   // desktop renderCell uses (projFor / App.computeRollingPPG /
   // App.PlayerValue.getRosPoints / App.WeeklyProj.formStats /
   // App.RookieFields.fields) — lookups reused, no formulas duplicated.
-  const PHONE_SLOT_PRESETS = {
+  // Same ROSTER_COLUMNS guard COLUMN_PRESETS carries: a column that a league
+  // skin retires must drop out of the phone preset too, or the card slot
+  // renders the raw key ('posRankNfl') as its label. 'full' is listed rather
+  // than left to the fallback below — Deep Data landing on whichever three
+  // slot-capable columns happen to come first in ROSTER_COLUMNS is arbitrary.
+  const PHONE_SLOT_PRESETS = Object.fromEntries(Object.entries({
     default: ['dhq', 'proj', 'ppg'],
     redraft: ['proj', 'ppg', 'trend'],
     stats:   ['ppg', 'prev', 'trend'],
     scout:   ['yrsExp', 'starterSzn', 'posRankNfl'],
     rookie:  ['rkSlot', 'age', 'dhq'],
-  };
+    full:    ['dhq', 'ppg', 'trend'],
+  }).map(([key, keys]) => [key, keys.filter(k => ROSTER_COLUMNS[k])]));
   const PHONE_SLOT_KEYS = new Set(['dhq', 'proj', 'ppg', 'prev', 'trend', 'age', 'gp', 'hi', 'lo', 'yrsExp', 'starterSzn', 'posRankNfl', 'posRankLg', 'sos', 'peak', 'rkSlot']);
+  // Sort targets offered on phone: Player plus whatever columns are actually
+  // on screen, so the list can't offer a sort whose value the cards don't show.
+  const _phoneSortOptions = [
+    { key: 'name', label: 'Player' },
+    ...visibleCols
+      .filter(k => ROSTER_COLUMNS[k])
+      .map(k => ({ key: k, label: ROSTER_COLUMNS[k].label || ROSTER_COLUMNS[k].shortLabel || k })),
+  ];
+  // A sort restored from a saved view can name a column the current preset
+  // dropped; keep it selectable rather than silently showing the wrong option.
+  if (!_phoneSortOptions.some(o => o.key === rosterSort.key)) {
+    _phoneSortOptions.push({
+      key: rosterSort.key,
+      label: (ROSTER_COLUMNS[rosterSort.key]?.label) || rosterSort.key,
+    });
+  }
+  // Mirrors sortGlyph: DESC-first columns read "high to low" at dir 1.
+  const _phoneSortDescending = DESC_FIRST_SORTS.has(rosterSort.key)
+    ? rosterSort.dir === 1
+    : rosterSort.dir === -1;
+
   // Custom column sets ride the first 3 slot-capable picks; empty → default.
   let _phoneSlotKeys = PHONE_SLOT_PRESETS[activePresetKey]
     || visibleCols.filter(k => PHONE_SLOT_KEYS.has(k)).slice(0, 3);
@@ -1598,6 +1625,12 @@ function MyTeamTab({
       <div className="wr-hscroll" style={{ display: 'flex', gap: '6px', overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch' }}>
         {React.createElement(window.WR.FilterPill, { label: 'Filters', value: rosterFilter, onClick: openSheet })}
         {React.createElement(window.WR.FilterPill, {
+          label: 'Sort',
+          value: (_phoneSortOptions.find(o => o.key === rosterSort.key)?.label || rosterSort.key)
+            + (_phoneSortDescending ? ' \u2193' : ' \u2191'),
+          onClick: openSheet,
+        })}
+        {React.createElement(window.WR.FilterPill, {
           label: phoneTableOpen ? 'Player cards' : 'Full table',
           onClick: () => setPhoneTableOpen(value => !value),
         })}
@@ -1640,6 +1673,24 @@ function MyTeamTab({
             <option value="compact">Compact</option>
           </select>
         ) },
+        // Sorting had no phone entry point at all: rosterSort could only be
+        // changed by tapping a desktop table header, which on a phone means
+        // switching to Full table and finding the right column in a
+        // horizontal scroller. "I want to sort by DHQ" (owner, 2026-09-06)
+        // was effectively desktop-only until this.
+        { label: 'Sort by', node: (
+          <select value={rosterSort.key} onChange={e => sortByColumn(e.target.value)} style={sheetSelectStyle(rosterSort.key !== 'name')} title="Sort the roster">
+            {_phoneSortOptions.map(opt => <option key={opt.key} value={opt.key}>{opt.label}</option>)}
+          </select>
+        ) },
+        { label: 'Direction', node: (
+          <button
+            onClick={() => setRosterSort(prev => ({ ...prev, dir: prev.dir * -1 }))}
+            style={{ ...controlBtn(true), minHeight: '44px', width: '100%' }}
+            title="Reverse the sort">
+            {_phoneSortDescending ? 'High to low' : 'Low to high'}
+          </button>
+        ) },
         { label: 'Group', node: (
           <select value={rosterGroupMode} onChange={e => setRosterGroupMode(e.target.value)} style={sheetSelectStyle(rosterGroupMode !== 'position')} title="Group rows by">
             {GROUP_MODES.map(opt => <option key={opt.key} value={opt.key}>{opt.label}</option>)}
@@ -1665,7 +1716,7 @@ function MyTeamTab({
       ],
       footer: (
         <React.Fragment>
-          <button onClick={() => { setRosterFilter('All'); setVisibleCols(COLUMN_PRESETS.default); setColPreset('default'); setPpgWindow('season'); setRowDensity('comfortable'); setRosterGroupMode('position'); }} style={{ ...controlBtn(false), minHeight: '44px', flex: 1 }}>Reset</button>
+          <button onClick={() => { setRosterFilter('All'); setVisibleCols(COLUMN_PRESETS.default); setColPreset('default'); setPpgWindow('season'); setRowDensity('comfortable'); setRosterGroupMode('position'); setRosterSort({ key: 'name', dir: 1 }); }} style={{ ...controlBtn(false), minHeight: '44px', flex: 1 }}>Reset</button>
           <button onClick={() => setFiltersOpen(false)} style={{ ...controlBtn(true), minHeight: '44px', flex: 2 }}>Apply</button>
         </React.Fragment>
       ),
