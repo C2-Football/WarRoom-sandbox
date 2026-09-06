@@ -2963,7 +2963,7 @@ WRShared.preloadMany(WR_SHARED_FILES);
 <!-- Group "analysis": analytics.js embeds LeagueMapTab, so both defer together
      (league-map.js first — DOM order is execution order within a group). -->
 <script type="text/babel" data-wr-defer="analysis" src="js/tabs/league-map.js?v=20260906poschips1"></script>
-<script type="text/babel" data-wr-defer="myteam" src="js/tabs/my-team.js?v=20260906sort2"></script>
+<script type="text/babel" data-wr-defer="myteam" src="js/tabs/my-team.js?v=20260906radius1"></script>
 <!-- Compare: extracted from My Roster's former sub-view, now a top-level ROSTER-group tab. -->
 <script type="text/babel" data-wr-defer="compare" src="js/tabs/compare.js?v=20260905select2"></script>
 <script type="text/babel" data-wr-defer="central" src="js/tabs/league-central.js?v=20260903kpi1"></script>
@@ -2997,7 +2997,7 @@ WRShared.preloadMany(WR_SHARED_FILES);
 <script type="text/babel" data-wr-defer="timeleague" src="js/components/time-league-standings-panel.js?v=20260818helm1"></script>
 <script type="text/babel" data-wr-defer="timeleague" src="js/components/time-league-activity-panel.js?v=20260818helm1"></script>
 <script type="text/babel" data-wr-defer="timeleague" src="js/components/time-league-gamecast-panel.js?v=20260818helm1"></script>
-<script type="text/babel" data-wr-defer="timeleague" src="js/tabs/time-league.js?v=20260905play1"></script>
+<script type="text/babel" data-wr-defer="timeleague" src="js/tabs/time-league.js?v=20260906radius1"></script>
 <script src="js/tutorial.js?v=20260503tutorial1"></script>
 <!-- 6. Strategy editor: calls shared GMStrategy API, no logic duplication.
      Only consumed by alex-insights' Strategy sub-view, so it rides the same

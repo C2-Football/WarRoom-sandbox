@@ -2320,7 +2320,7 @@ function MyTeamTab({
       )}
       {_phone && !phoneTableOpen && <React.Fragment>
         <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-          <input type="search" aria-label="Search your roster" placeholder="Find a player, team or position" value={phoneSearch} onChange={event => setPhoneSearch(event.target.value)} style={{ minWidth: 0, flex: 1, minHeight: '44px', padding: '10px 12px', fontSize: '16px', borderRadius: '10px', background: 'var(--black)', color: 'var(--white)', border: '1px solid var(--ov-6, rgba(255,255,255,.12))' }} />
+          <input type="search" aria-label="Search your roster" placeholder="Find a player, team or position" value={phoneSearch} onChange={event => setPhoneSearch(event.target.value)} style={{ minWidth: 0, flex: 1, minHeight: '44px', padding: '10px 12px', fontSize: '16px', borderRadius: 'var(--card-radius, 10px)', background: 'var(--black)', color: 'var(--white)', border: '1px solid var(--ov-6, rgba(255,255,255,.12))' }} />
           {phoneSearch && <button type="button" onClick={() => setPhoneSearch('')} style={{ ...controlBtn(false), minHeight: '44px' }}>Clear</button>}
         </div>
         <p style={{ margin: '0 0 12px', fontSize: '0.75rem', color: 'var(--silver)' }}>Tap a player for stats, strategy and roster actions.</p>
