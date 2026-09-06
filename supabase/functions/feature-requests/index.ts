@@ -8,11 +8,12 @@
 //   • vote   — { id }              → cast an upvote (LOGGED-IN ONLY)
 //   • unvote — { id }              → remove your upvote (LOGGED-IN ONLY)
 //
-// New submissions are announced to a PUBLIC Discord channel via
-// DISCORD_IDEAS_WEBHOOK_URL so the community sees what's been proposed.
+// The Discord announcement of new submissions was removed 2026-09-06
+// (owner ruling: no Discord anywhere in the product). The in-app board is
+// the only place ideas surface; it already lists every idea on submit, so
+// nothing was lost besides the mirror.
 //
 // Secrets (supabase secrets set ...):
-//   DISCORD_IDEAS_WEBHOOK_URL  — webhook of the public #feature-requests channel (optional)
 //   SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY — platform-provided
 //
 // DEPLOY:
@@ -28,7 +29,6 @@ import {
     checkRateLimit,
 } from '../_shared/security.ts';
 
-const COLOR_IDEA = 0x4a9dde; // --tactical
 
 interface Session {
     identifier: string;
@@ -66,20 +66,6 @@ async function resolveSession(admin: any, req: Request): Promise<Session | null>
         }
     } catch { /* fall through */ }
     return null;
-}
-
-async function postToDiscord(payload: unknown): Promise<void> {
-    const webhook = Deno.env.get('DISCORD_IDEAS_WEBHOOK_URL');
-    if (!webhook) return;
-    try {
-        await fetch(webhook, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-        });
-    } catch (e) {
-        console.warn('[feature-requests] discord post failed:', e);
-    }
 }
 
 Deno.serve(async (req) => {
@@ -166,22 +152,6 @@ Deno.serve(async (req) => {
                 p_user_id: session.userId,
                 p_username: session.username,
                 p_vote: true,
-            });
-
-            // Announce to the public ideas channel.
-            await postToDiscord({
-                username: 'DHQ Feature Requests',
-                embeds: [{
-                    title: `💡 ${title}`.slice(0, 256),
-                    description: (description || 'No description provided.').slice(0, 2000),
-                    color: COLOR_IDEA,
-                    fields: [
-                        { name: 'Submitted by', value: session.label, inline: true },
-                        ...(category ? [{ name: 'Category', value: category, inline: true }] : []),
-                    ],
-                    footer: { text: 'Vote it up in Dynasty HQ → Feedback' },
-                    timestamp: new Date().toISOString(),
-                }],
             });
 
             return new Response(JSON.stringify({ ok: true, id: created.id }), { headers: responseHeaders });

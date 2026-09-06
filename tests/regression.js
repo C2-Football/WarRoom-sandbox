@@ -839,6 +839,30 @@ test('trophy room reads owner history and championships by current league id', (
   sourceHas(trophyRoomSrc, 'String(window.App?.LI?.championshipLeagueId || \'\') === String(leagueId)', 'fallback championships must be active-league guarded');
 });
 
+group('no discord');
+
+// Owner ruling 2026-09-06: no Discord anywhere in the product. The client side
+// went first; these two edge functions were still posting to webhooks. This
+// guards the whole path so a copy-pasted "announce it" block can't bring it back.
+test('feedback edge functions post to no chat webhook', () => {
+  for (const fn of ['report-bug', 'feature-requests']) {
+    const src = read('supabase/functions/' + fn + '/index.ts');
+    ok(!/discord\.com|DISCORD_[A-Z_]*WEBHOOK/i.test(src), fn + ' still references a Discord webhook');
+    ok(!/postToDiscord/.test(src), fn + ' still has a Discord poster');
+    ok(!/\bembeds\b/.test(src), fn + ' still builds a chat embed');
+  }
+});
+
+test('a bug report that cannot be stored is not reported as sent', () => {
+  // The table used to be the second copy behind Discord, so a failed insert was
+  // logged and swallowed. It is the only copy now.
+  const src = read('supabase/functions/report-bug/index.ts');
+  sourceHas(src, 'if (insertError) throw insertError;', 'insert errors must not be ignored');
+  sourceHas(src, 'status: 502', 'a lost report must fail loudly');
+  ok(!src.includes("console.warn('[report-bug] store failed (continuing):'"), 'store failure must not be best-effort any more');
+  ok(!/reported: true, delivered/.test(src), 'the response should no longer claim chat delivery');
+});
+
 group('compiled preview');
 
 test('compiled preview removes browser Babel and keeps app bundle route-ready', () => {

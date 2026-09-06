@@ -2,18 +2,21 @@
 // Report Bug Edge Function  [v1]
 // Supabase Edge Function: /functions/v1/report-bug
 //
-// Two feeds land here and get posted as a color-coded embed to a
-// PRIVATE Discord staff channel via DISCORD_BUG_WEBHOOK_URL:
-//   • kind:'user'  — a person clicked "Report a bug" (blue embed)
-//   • kind:'crash' — an uncaught error / promise rejection (red embed)
+// Two feeds land here and are stored in public.bug_reports:
+//   • kind:'user'  — a person clicked "Report a bug"
+//   • kind:'crash' — an uncaught error / promise rejection
 //
 // Session is OPTIONAL: crashes can fire before/without login, so we
 // accept anonymous reports (IP rate-limited) but attach the app or
-// Sleeper identity when present. Every report is also stored in
-// public.bug_reports so Discord is never the only copy.
+// Sleeper identity when present.
+//
+// The Discord mirror was removed 2026-09-06 (owner ruling: no Discord
+// anywhere in the product). The table is now the ONLY copy of a report,
+// so a failed insert is a failed report and is reported as such — it is
+// no longer swallowed as best-effort the way it was when a webhook was
+// carrying a second copy.
 //
 // Secrets (supabase secrets set ...):
-//   DISCORD_BUG_WEBHOOK_URL   — webhook of the private #bug-reports-staff channel
 //   SUPABASE_URL              — provided by the platform
 //   SUPABASE_SERVICE_ROLE_KEY — provided by the platform
 //
@@ -31,11 +34,6 @@ import {
     requireSleeperSession,
     checkRateLimit,
 } from '../_shared/security.ts';
-
-// Discord embed colors (decimal)
-const COLOR_CRASH = 0xf0495c; // --neg
-const COLOR_USER = 0x4a9dde;  // --tactical
-const COLOR_HIGH = 0xff6a1a;  // --forge (user-flagged "blocker")
 
 const ALLOWED_KINDS = new Set(['user', 'crash']);
 const ALLOWED_SEVERITY = new Set(['low', 'normal', 'high', 'blocker']);
@@ -76,24 +74,6 @@ async function resolveReporter(admin: any, req: Request): Promise<Reporter> {
         }
     } catch { /* fall through */ }
     return { identifier: `ip:${clientIp(req)}`, userId: null, username: null, label: 'Anonymous' };
-}
-
-function field(name: string, value: string, inline = true) {
-    return { name, value: value && value.length ? value.slice(0, 1024) : '—', inline };
-}
-
-async function postToDiscord(webhook: string, payload: unknown): Promise<boolean> {
-    try {
-        const res = await fetch(webhook, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-        });
-        return res.ok;
-    } catch (e) {
-        console.error('[report-bug] discord post failed:', e);
-        return false;
-    }
 }
 
 Deno.serve(async (req) => {
@@ -154,10 +134,12 @@ Deno.serve(async (req) => {
         const screenshotUrl = s(body?.screenshotUrl, 800);
         const ua = userAgent(req);
 
-        // Persist first (best-effort) so nothing is lost if Discord is down.
+        // The table is the only copy — see the header note. A failure here
+        // loses the report outright, so it surfaces as a 5xx instead of a
+        // { reported: true } the client would show as a successful send.
         let storedId: string | null = null;
         try {
-            const { data } = await supabase.from('bug_reports').insert({
+            const { data, error: insertError } = await supabase.from('bug_reports').insert({
                 kind,
                 identifier: reporter.identifier,
                 user_id: reporter.userId,
@@ -176,51 +158,17 @@ Deno.serve(async (req) => {
                 screenshot_url: screenshotUrl || null,
                 ip_address: clientIp(req),
             }).select('id').maybeSingle();
+            if (insertError) throw insertError;
             storedId = data?.id || null;
-        } catch (e) {
-            console.warn('[report-bug] store failed (continuing):', e);
-        }
-
-        // Post to Discord staff channel.
-        const webhook = Deno.env.get('DISCORD_BUG_WEBHOOK_URL');
-        let delivered = false;
-        if (webhook) {
-            const color = kind === 'crash'
-                ? COLOR_CRASH
-                : (severity === 'blocker' || severity === 'high' ? COLOR_HIGH : COLOR_USER);
-
-            const descParts = [message];
-            if (stack) descParts.push('```' + stack.slice(0, 1500) + '```');
-            const fields = [
-                field('Reporter', reporter.label),
-                field('Severity', severity.toUpperCase()),
-                field('Tier', tier || 'unknown'),
-                field('Page', url || 'unknown', false),
-                field('League', leagueId || '—'),
-                field('Platform', platform || 'web'),
-                field('Version', appVersion || 'unknown'),
-            ];
-            if (storedId) fields.push(field('Report ID', storedId, false));
-
-            const embed: Record<string, unknown> = {
-                title: `${kind === 'crash' ? '💥' : '🐞'} ${title}`.slice(0, 256),
-                description: descParts.join('\n').slice(0, 4000),
-                color,
-                fields,
-                footer: { text: `DHQ ${kind === 'crash' ? 'crash' : 'bug report'} · ${platform || 'web'}` },
-                timestamp: new Date().toISOString(),
-            };
-            if (screenshotUrl) embed.image = { url: screenshotUrl };
-
-            delivered = await postToDiscord(webhook, {
-                username: 'DHQ Bug Feed',
-                embeds: [embed],
+        } catch (e: any) {
+            console.error('[report-bug] store failed:', e);
+            return new Response(JSON.stringify({ error: 'Could not save your report. Please try again.' }), {
+                status: 502,
+                headers: responseHeaders,
             });
-        } else {
-            console.warn('[report-bug] DISCORD_BUG_WEBHOOK_URL not set — stored only.');
         }
 
-        return new Response(JSON.stringify({ reported: true, delivered, id: storedId }), { headers: responseHeaders });
+        return new Response(JSON.stringify({ reported: true, id: storedId }), { headers: responseHeaders });
     } catch (error: any) {
         console.error('[report-bug] error:', error);
         return new Response(JSON.stringify({ error: error?.message || 'Internal server error' }), { status: 500, headers: responseHeaders });
