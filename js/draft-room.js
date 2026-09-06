@@ -182,7 +182,7 @@
                     if (isMflL) {
                         ((window.S?.drafts || currentLeague?.drafts) || []).forEach(d => out.push({
                             season: Number(d.season) || null, draftId: String(d.draft_id || ''), status: String(d.status || ''),
-                            rounds: Number(d?.settings?.rounds) || null, playerType: Number(d?.settings?.player_type),
+                            rounds: Number(d?.settings?.rounds) || null, playerType: Number(d?.settings?.player_type), teams: Number(d?.settings?.teams) || null,
                         }));
                     } else {
                         // league_id isn't guaranteed present on currentLeague depending on
@@ -201,7 +201,7 @@
                             ]);
                             (Array.isArray(drafts) ? drafts : []).forEach(d => out.push({
                                 season: Number(d.season) || null, draftId: String(d.draft_id || ''), status: String(d.status || ''),
-                                rounds: Number(d?.settings?.rounds) || null, playerType: Number(d?.settings?.player_type),
+                                rounds: Number(d?.settings?.rounds) || null, playerType: Number(d?.settings?.player_type), teams: Number(d?.settings?.teams) || null,
                             }));
                             // Sleeper marks "no earlier season" with the literal string '0',
                             // not an absent field — treating it as falsy stops the walk here.
@@ -217,6 +217,32 @@
             })();
             return () => { cancelled = true; };
         }, [showDraftHistory, histDrafts, currentLeague?.league_id, currentLeague?.id]);
+        // A Sleeper draft the owner never ran through the War Room has no local
+        // recap, so its history row was disabled and clicking it did nothing —
+        // every real season in the league was inert. Sleeper serves the finished
+        // board (with player metadata inline) at /draft/{id}/picks, so fetch that
+        // on demand and show the board even when there is no recap to show.
+        const [histBoardId, setHistBoardId] = useState(null);
+        const [histBoards, setHistBoards] = useState({}); // draftId -> 'loading' | rows[] | 'error'
+        // "already fetching" lives in a ref, not in histBoards: keying the effect off
+        // the map means the effect's own 'loading' write re-runs it, and the cleanup
+        // from the first pass would cancel the fetch that pass just started.
+        const histBoardReqRef = React.useRef({});
+        useEffect(() => {
+            const id = histBoardId;
+            if (!id || histBoardReqRef.current[id]) return;
+            histBoardReqRef.current[id] = true;
+            setHistBoards(prev => ({ ...prev, [id]: 'loading' }));
+            fetch('https://api.sleeper.app/v1/draft/' + id + '/picks')
+                .then(r => (r.ok ? r.json() : null))
+                .then(rows => setHistBoards(prev => ({ ...prev, [id]: Array.isArray(rows) && rows.length ? rows : 'error' })))
+                .catch(e => {
+                    delete histBoardReqRef.current[id];
+                    setHistBoards(prev => ({ ...prev, [id]: 'error' }));
+                    window.wrLog?.('draftHistory.picks', e);
+                });
+        }, [histBoardId]);
+
         const [recapPullTick, setRecapPullTick] = useState(0);
 
         // ── Live-draft bridge (shared by the Analyst Mock lock + Recommended Draft lock) ──
@@ -4111,7 +4137,7 @@
                     (auto-saved when a draft completes), browsable with grade,
                     picks, and highlights. */}
                 {showDraftHistory && (() => {
-                    const closeHistory = () => { setShowDraftHistory(false); setHistoryRecapId(null); };
+                    const closeHistory = () => { setShowDraftHistory(false); setHistoryRecapId(null); setHistBoardId(null); };
                     const fmtDate = ts => { try { return ts ? new Date(Number(ts)).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : ''; } catch (e) { return ''; } };
                     const variantLabel = v => v === 'rookie' ? 'Rookie Draft' : v === 'startup' ? 'Startup Draft' : v === 'auction' ? 'Auction Draft' : 'Draft';
                     const modeLabel = m => m === 'live-sync' ? 'Live draft' : m === 'manual' ? 'Manual tracking' : 'Mock';
@@ -4134,7 +4160,7 @@
                                 </div>
                                 {/* The league's REAL draft history (platform chain) leads;
                                     War Room's graded recaps follow. */}
-                                {!detail && (
+                                {!detail && !histBoardId && (
                                     <div style={{ marginBottom: 4 }}>
                                         <div style={{ color: 'var(--gold)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>League Draft History</div>
                                         {histDrafts === null && <div style={{ color: 'var(--silver)', opacity: 0.6, fontSize: '0.78rem', padding: '4px 2px 10px' }}>Loading the league's draft history…</div>}
@@ -4143,25 +4169,26 @@
                                             const recap = draftHistoryRecaps.find(r => String(r.sleeperDraftId || '') === d.draftId) || null;
                                             const label = (d.season || '?') + ' ' + (d.playerType === 1 ? 'Rookie Draft' : 'Draft');
                                             return (
-                                                <button key={d.draftId} type="button" disabled={!recap} onClick={() => recap && setHistoryRecapId(recap.id)}
-                                                    style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left', padding: '9px 12px', marginBottom: 5, borderRadius: 8, cursor: recap ? 'pointer' : 'default', border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', background: 'var(--ov-2, rgba(255,255,255,0.03))', opacity: recap ? 1 : 0.6 }}>
+                                                <button key={d.draftId} type="button" disabled={!recap && d.status !== 'complete'}
+                                                    onClick={() => { if (recap) { setHistoryRecapId(recap.id); } else if (d.status === 'complete') { setHistBoardId(d.draftId); } }}
+                                                    style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left', padding: '9px 12px', marginBottom: 5, borderRadius: 8, cursor: (recap || d.status === 'complete') ? 'pointer' : 'default', border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', background: 'var(--ov-2, rgba(255,255,255,0.03))', opacity: (recap || d.status === 'complete') ? 1 : 0.6 }}>
                                                     <span style={{ minWidth: 0, flex: 1 }}>
                                                         <span style={{ display: 'block', color: 'var(--white)', fontFamily: 'var(--font-display, Rajdhani, sans-serif)', fontWeight: 800, fontSize: '0.88rem' }}>{label}</span>
-                                                        <span style={{ display: 'block', color: 'var(--silver)', opacity: 0.75, fontSize: '0.72rem', marginTop: 2 }}>{(d.status || 'draft')}{d.rounds ? ' · ' + d.rounds + ' rounds' : ''}{recap ? ' · recap saved' : ' · no War Room recap'}</span>
+                                                        <span style={{ display: 'block', color: 'var(--silver)', opacity: 0.75, fontSize: '0.72rem', marginTop: 2 }}>{(d.status || 'draft')}{d.rounds ? ' · ' + d.rounds + ' rounds' : ''}{recap ? ' · recap saved' : (d.status === 'complete' ? ' · view board' : '')}</span>
                                                     </span>
-                                                    {recap && <span style={{ color: 'var(--silver)', opacity: 0.5, fontSize: '0.9rem' }}>›</span>}
+                                                    {(recap || d.status === 'complete') && <span style={{ color: 'var(--silver)', opacity: 0.5, fontSize: '0.9rem' }}>›</span>}
                                                 </button>
                                             );
                                         })}
                                         <div style={{ color: 'var(--gold)', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '14px 0 6px' }}>War Room Recaps</div>
                                     </div>
                                 )}
-                                {!detail && !draftHistoryRecaps.length && (
+                                {!detail && !histBoardId && !draftHistoryRecaps.length && (
                                     <div style={{ padding: '22px 14px', textAlign: 'center', color: 'var(--silver)', fontSize: '0.82rem', lineHeight: 1.6 }}>
                                         No archived drafts yet.<br />When a draft finishes, its board, grade, and recap are archived here automatically.
                                     </div>
                                 )}
-                                {!detail && draftHistoryRecaps.map(r => (
+                                {!detail && !histBoardId && draftHistoryRecaps.map(r => (
                                     <button key={r.id} type="button" onClick={() => setHistoryRecapId(r.id)}
                                         style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left', padding: '10px 12px', marginBottom: 6, borderRadius: 8, cursor: 'pointer', border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', background: 'var(--ov-2, rgba(255,255,255,0.03))' }}>
                                         <span style={{ width: 40, height: 40, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--acc-fill2, rgba(212,175,55,0.1))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.24))', color: 'var(--gold)', fontFamily: 'var(--font-display, Rajdhani, sans-serif)', fontWeight: 900, fontSize: '1.05rem', flexShrink: 0 }}>{isPro ? (r.grade?.letter || '—') : '🔒'}</span>
@@ -4176,6 +4203,58 @@
                                         <span style={{ color: 'var(--silver)', opacity: 0.5, fontSize: '0.9rem' }}>›</span>
                                     </button>
                                 ))}
+                                {/* Sleeper board for a season with no War Room recap. */}
+                                {!detail && histBoardId && (() => {
+                                    const board = histBoards[histBoardId];
+                                    const meta = (histDrafts || []).find(d => d.draftId === histBoardId) || {};
+                                    const back = (
+                                        <button type="button" onClick={() => setHistBoardId(null)}
+                                            style={{ background: 'transparent', border: '1px solid var(--ov-6, rgba(255,255,255,0.12))', borderRadius: 'var(--card-radius-sm, 8px)', color: 'var(--silver)', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: '0.74rem', padding: '6px 12px', minHeight: '38px', marginBottom: 12 }}>‹ All seasons</button>
+                                    );
+                                    if (board === 'loading' || !board) {
+                                        return <div>{back}<div style={{ color: 'var(--silver)', opacity: 0.7, fontSize: '0.82rem', padding: '18px 4px' }}>Loading the {meta.season || ''} board from Sleeper…</div></div>;
+                                    }
+                                    if (board === 'error' || !board.length) {
+                                        return <div>{back}<div style={{ color: 'var(--silver)', opacity: 0.7, fontSize: '0.82rem', padding: '18px 4px' }}>Sleeper didn’t return picks for this draft.</div></div>;
+                                    }
+                                    // Old seasons in the chain can have a different roster
+                                    // set than the current league, so trust the pick's own
+                                    // picked_by user first and fall back to the roster join.
+                                    const ownerFor = (pk) => {
+                                        const users = currentLeague?.users || [];
+                                        const direct = pk.picked_by ? users.find(u => u.user_id === pk.picked_by) : null;
+                                        if (direct) return direct.metadata?.team_name || direct.display_name;
+                                        const roster = (currentLeague?.rosters || []).find(r => String(r.roster_id) === String(pk.roster_id));
+                                        const user = users.find(u => u.user_id === roster?.owner_id);
+                                        return user?.metadata?.team_name || user?.display_name || (pk.roster_id ? 'Team ' + pk.roster_id : '—');
+                                    };
+                                    const teamCount = Number(meta.teams) || Number(currentLeague?.settings?.num_teams) || (currentLeague?.rosters || []).length || 12;
+                                    return (
+                                        <div>
+                                            {back}
+                                            <div style={{ color: 'var(--white)', fontFamily: 'var(--font-display, Rajdhani, sans-serif)', fontWeight: 800, fontSize: '1.05rem' }}>
+                                                {meta.season} {meta.playerType === 1 ? 'Rookie Draft' : 'Draft'}
+                                            </div>
+                                            <div style={{ color: 'var(--silver)', opacity: 0.75, fontSize: '0.74rem', margin: '2px 0 12px' }}>
+                                                {board.length} picks · from Sleeper · no War Room recap for this season
+                                            </div>
+                                            {board.map((pk, i) => {
+                                                const m = pk.metadata || {};
+                                                const nm = [m.first_name, m.last_name].filter(Boolean).join(' ') || ('Player ' + (pk.player_id || ''));
+                                                return (
+                                                    <div key={(pk.player_id || i) + '-' + i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 8px', borderBottom: '1px solid var(--ov-3, rgba(255,255,255,0.04))' }}>
+                                                        <span style={{ color: 'var(--silver)', fontFamily: 'var(--font-mono, monospace)', fontSize: '0.72rem', width: 46, flexShrink: 0 }}>
+                                                            {pk.round}.{String(Number(pk.pick_no) - (Number(pk.round) - 1) * teamCount || pk.draft_slot || 1).padStart(2, '0')}
+                                                        </span>
+                                                        <span style={{ color: 'var(--white)', fontSize: '0.82rem', fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nm}</span>
+                                                        <span style={{ color: 'var(--silver)', opacity: 0.8, fontSize: '0.72rem', flexShrink: 0 }}>{m.position || ''}{m.team ? ' · ' + m.team : ''}</span>
+                                                        <span style={{ color: 'var(--silver)', opacity: 0.6, fontSize: '0.7rem', flexShrink: 0, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ownerFor(pk)}</span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    );
+                                })()}
                                 {detail && (
                                     <div>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 12 }}>
