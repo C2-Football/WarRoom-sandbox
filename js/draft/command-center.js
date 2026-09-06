@@ -719,6 +719,41 @@
             return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
         }, [state]);
 
+        // Keep the board priced on CURRENT values for the whole session.
+        //
+        // state.pool is a snapshot taken once at START_DRAFT. d4153fd re-prices
+        // it on resume, which fixed the reported mismatch for a reloaded room,
+        // but a room left open drifts again the moment the value source moves —
+        // and both sources move on their own: App.LI.playerScores is REASSIGNED
+        // wholesale on a league-intel recompute or a time-travel year change,
+        // and PlayerValue's ROS map is rebuilt when the league's redraft data
+        // lands. The standalone Big Board rebuilds from buildPool every render
+        // and follows along, so the two boards diverge exactly the way the owner
+        // reported.
+        //
+        // Both sources swap object identity when they change, so watching the
+        // references is an exact signal — no hashing thousands of scores. A
+        // poll is still needed because neither publishes an event; 4s is well
+        // inside a pick clock and the check is two reference compares. The
+        // dispatch is a no-op when nothing moved (see REVALUE_POOL).
+        const valuesRefsRef = React.useRef(null);
+        React.useEffect(() => {
+            if (state.phase !== 'drafting') return undefined;
+            const snapshot = () => [
+                window.App?.LI?.playerScores || null,
+                window.App?.PlayerValue?.rosState?.() || null,
+            ];
+            valuesRefsRef.current = snapshot();
+            const id = setInterval(() => {
+                const next = snapshot();
+                const prev = valuesRefsRef.current || [];
+                if (next[0] === prev[0] && next[1] === prev[1]) return;
+                valuesRefsRef.current = next;
+                dispatch({ type: 'REVALUE_POOL' });
+            }, 4000);
+            return () => clearInterval(id);
+        }, [state.phase, dispatch]);
+
         // Current slot + whose turn is it
         // isUserTurn prefers rosterId match (post-trade ownership), but falls back
         // to teamIdx match for leagues where rosterId is null (e.g., unmapped slots).

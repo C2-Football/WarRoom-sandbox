@@ -508,6 +508,50 @@ test('a mock run inside the live room saves somewhere it can be read back', () =
   eq(store[D.LS_KEY(lid, 'live-sync')], undefined, 'and the unreadable orphan is cleared');
 });
 
+test('the draft board re-prices when values move mid-session, and no-ops when they do not', () => {
+  const vm = require('vm');
+  const store = {};
+  const sandbox = { console, fetch: () => Promise.resolve({ ok: false }) };
+  sandbox.window = sandbox;
+  sandbox.localStorage = {
+    getItem: k => (Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null),
+    setItem: (k, v) => { store[k] = String(v); },
+    removeItem: k => { delete store[k]; },
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(read('js/draft/state.js'), sandbox);
+  const D = sandbox.window.DraftCC && sandbox.window.DraftCC.state;
+  ok(D && typeof D.reducer === 'function', 'DraftCC.state.reducer did not initialise');
+
+  // resolvePlayerDhq reads App.LI.playerScores when PlayerValue has no ROS.
+  sandbox.App = { LI: { playerScores: { '1': 5896, '2': 3000 } } };
+  const pool = [{ pid: '1', dhq: 5896, val: 5896 }, { pid: '2', dhq: 3000, val: 3000 }];
+  const before = { phase: 'drafting', pool, originalPool: pool };
+
+  // Nothing moved → the SAME state object, so the autosave and downstream
+  // memos stay quiet on a value refresh that changed nothing.
+  eq(D.reducer(before, { type: 'REVALUE_POOL' }), before, 'an unchanged value source must be a no-op');
+
+  // LI.playerScores is reassigned wholesale on a recompute — the case the
+  // owner hit, where the standalone Big Board moved and the draft room didn't.
+  sandbox.App.LI.playerScores = { '1': 6200, '2': 3000 };
+  const after = D.reducer(before, { type: 'REVALUE_POOL' });
+  ok(after !== before, 'a moved value must produce new state');
+  eq(after.pool[0].dhq, 6200, 'the moved player re-prices');
+  eq(after.pool[0].val, 6200, 'val tracks dhq');
+  eq(after.pool[1], pool[1], 'an unmoved row keeps its identity');
+  eq(after.pool.length, pool.length, 'membership is untouched');
+  eq(after.pool[0].pid, '1', 'order is untouched');
+});
+
+test('the command center watches both value sources by reference', () => {
+  sourceHas(draftCommandCenterSrc, "dispatch({ type: 'REVALUE_POOL' });", 'the room must re-price mid-session, not only on resume');
+  sourceHas(draftCommandCenterSrc, 'window.App?.LI?.playerScores || null', 'LI scores are one source');
+  sourceHas(draftCommandCenterSrc, 'window.App?.PlayerValue?.rosState?.() || null', 'the ROS map is the other');
+  // Reference compares, not a hash of thousands of scores.
+  sourceHas(draftCommandCenterSrc, 'if (next[0] === prev[0] && next[1] === prev[1]) return;', 'the watch must compare references');
+});
+
 group('live draft feed');
 
 test('live trade windows are narrated once, not re-posted', () => {

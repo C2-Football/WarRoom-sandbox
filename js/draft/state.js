@@ -2821,6 +2821,29 @@
             case 'HYDRATE':
                 return { ...state, ...action.state };
 
+            // Re-price the live board against the CURRENT values.
+            //
+            // d4153fd fixed this for a RESUMED room (loadFromLocal revalues on
+            // the way in), but the pool is a snapshot taken once at
+            // START_DRAFT, so the same drift reopens the moment the value
+            // source changes mid-session — which it does: LI.playerScores is
+            // reassigned wholesale on a league-intel recompute or a time-travel
+            // year change, and PlayerValue's ROS map is rebuilt on its own
+            // schedule. The standalone Big Board rebuilds from buildPool every
+            // render and follows along, so the two boards diverge again exactly
+            // the way the owner reported on 2026-09-06.
+            //
+            // Order and membership are untouched — this only rewrites dhq/val
+            // on rows whose value actually moved. Identity is preserved when
+            // nothing moved so the autosave and every memo downstream stay
+            // quiet on a no-op.
+            case 'REVALUE_POOL': {
+                const pool = revaluePool(state.pool);
+                const originalPool = revaluePool(state.originalPool);
+                if (pool === state.pool && originalPool === state.originalPool) return state;
+                return { ...state, pool, originalPool };
+            }
+
             case 'SET_SPEED': {
                 const nextSpeed = action.speed;
                 // Auction's countdown is wall-clock (nomination.deadline), unlike
@@ -2911,15 +2934,21 @@
     }
 
     // Refresh a persisted pool's values in place (order/membership untouched).
+    // Returns the SAME array when nothing moved. REVALUE_POOL leans on that to
+    // no-op: a new array every call would re-render the board and re-arm the
+    // autosave on every value refresh, whether or not a number changed.
     function revaluePool(pool) {
         if (!Array.isArray(pool) || !pool.length) return pool;
-        return pool.map(row => {
+        let changed = false;
+        const next = pool.map(row => {
             if (!row || row.pid == null) return row;
             const resolved = resolvePlayerDhq({ pid: row.pid, player: row.player, csv: row.csv, name: row.name, dhq: row.dhq, val: row.val });
-            const next = Number(resolved && resolved.value) || 0;
-            if (!(next > 0) || next === Number(row.dhq)) return row;
-            return { ...row, dhq: next, val: next };
+            const value = Number(resolved && resolved.value) || 0;
+            if (!(value > 0) || value === Number(row.dhq)) return row;
+            changed = true;
+            return { ...row, dhq: value, val: value };
         });
+        return changed ? next : pool;
     }
 
     function loadFromLocal(leagueId, forcedMode) {
