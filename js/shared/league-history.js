@@ -621,6 +621,84 @@
         return setManualSeasons(leagueId, getManualSeasons(leagueId).filter(r => r.id !== String(id)));
     }
 
+    // A hand-typed name is matched to a current owner case-insensitively, on
+    // either the team name or the display name — so "paper champs" links to the
+    // profile and counts toward that owner's title total. No match is fine: the
+    // timeline falls back to the typed name the same way it does for an owner
+    // who has since left the league.
+    function ownerKeyByName(byKey, name) {
+        const q = String(name || '').trim().toLowerCase();
+        if (!q) return null;
+        const hit = Object.keys(byKey).find(k => String(byKey[k]?.ownerName || '').trim().toLowerCase() === q);
+        if (hit == null) return null;
+        // Object keys are strings; the derived championships store roster ids as
+        // numbers, and Trophy Room compares champion ids with != null / ===.
+        return /^\d+$/.test(hit) ? Number(hit) : hit;
+    }
+
+    // Championship timeline = the seasons Sleeper can see, plus the ones the
+    // owner typed in. A manual row for a season the chain already covers is
+    // ignored rather than merged: the derived record is the one with brackets
+    // behind it, and double-counting a title is worse than dropping a duplicate.
+    function championshipsWithManual(leagueId) {
+        const cache = readCache(leagueId);
+        const out = Object.assign({}, (cache && cache.championships) || {});
+        const byKey = ownerHistoryByRoster(cache);
+        getManualSeasons(leagueId).forEach(row => {
+            const season = String(row.season);
+            if (out[season]) return;
+            const champ = (row.finishes || []).find(f => f.place === 1);
+            const runner = (row.finishes || []).find(f => f.place === 2);
+            if (!champ && !runner) return;
+            const champKey = champ ? ownerKeyByName(byKey, champ.owner) : null;
+            const runnerKey = runner ? ownerKeyByName(byKey, runner.owner) : null;
+            out[season] = {
+                champion: champKey,
+                runnerUp: runnerKey,
+                semiFinals: [],
+                championName: (champ && champ.owner) || null,
+                championAvatar: null,
+                championOwnerId: null,
+                championStillActive: champKey != null,
+                runnerUpName: (runner && runner.owner) || null,
+                runnerUpAvatar: null,
+                runnerUpOwnerId: null,
+                runnerUpStillActive: runnerKey != null,
+                manual: true,
+            };
+        });
+        return out;
+    }
+
+    // Same merge applied to the per-owner totals the All-Time Leaders and
+    // All-Time Standings read, so a pre-Sleeper title shows up in "Most Titles"
+    // and not only on the timeline.
+    function ownerHistoryWithManual(leagueId) {
+        const cache = readCache(leagueId);
+        const byKey = ownerHistoryByRoster(cache);
+        const derivedSeasons = new Set(Object.keys((cache && cache.championships) || {}));
+        getManualSeasons(leagueId).forEach(row => {
+            const season = String(row.season);
+            if (derivedSeasons.has(season)) return;
+            (row.finishes || []).forEach(f => {
+                if (f.place !== 1 && f.place !== 2) return;
+                const key = ownerKeyByName(byKey, f.owner);
+                if (key == null) return;
+                const oh = byKey[key];
+                if (f.place === 1) {
+                    if ((oh.champSeasons || []).includes(season)) return;
+                    oh.championships = (oh.championships || 0) + 1;
+                    oh.champSeasons = (oh.champSeasons || []).concat(season);
+                } else {
+                    if ((oh.runnerUpSeasons || []).includes(season)) return;
+                    oh.runnerUps = (oh.runnerUps || 0) + 1;
+                    oh.runnerUpSeasons = (oh.runnerUpSeasons || []).concat(season);
+                }
+            });
+        });
+        return byKey;
+    }
+
     window.WrHistory = {
         load: build,
         loadIfMissing,
@@ -628,12 +706,9 @@
         playoffRecord,
         championshipPathMatchIds,
         getOwnerHistory: function (leagueId) {
-            return ownerHistoryByRoster(readCache(leagueId));
+            return ownerHistoryWithManual(leagueId);
         },
-        getChampionships: function (leagueId) {
-            const c = readCache(leagueId);
-            return c?.championships || {};
-        },
+        getChampionships: championshipsWithManual,
         getAllTimeTeam: function (leagueId) {
             const c = getCached(leagueId);
             return c?.allTimeTeam || {};

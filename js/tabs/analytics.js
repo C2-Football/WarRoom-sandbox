@@ -111,131 +111,6 @@ async function buildDraftPosMix(startLeagueId) {
     };
 }
 
-// ── The Winner's Perch: owner-entered seasons ────────────────────────────
-// Sleeper's previous_league_id chain stops at the year the league moved onto
-// the platform, so a league that ran for years on paper (or another host)
-// shows a perch built from a fraction of its real history. This is the way
-// in for those years: the top-3 finishers and the slot each drafted from,
-// which is all the perch actually reads. Stored per-league by WrHistory and
-// merged into getDraftSlotPerch alongside the derived seasons.
-function PerchManualEditor({ rows, teamCount, editing, setEditing, onSave, onDelete }) {
-    const blank = () => ({
-        id: '',
-        season: '',
-        finishes: [1, 2, 3].map(place => ({ place, owner: '', draftSlot: '' })),
-    });
-    const placeLabel = { 1: 'Champion', 2: 'Runner-up', 3: 'Third' };
-    const btn = {
-        background: 'transparent',
-        border: '1px solid var(--ov-6, rgba(255,255,255,0.12))',
-        borderRadius: 'var(--card-radius-sm, 8px)',
-        color: 'var(--silver)',
-        cursor: 'pointer',
-        fontFamily: 'var(--font-body)',
-        fontSize: '0.74rem',
-        minHeight: '36px',
-        padding: '6px 12px',
-    };
-    const input = {
-        background: 'var(--ov-2, rgba(255,255,255,0.03))',
-        border: '1px solid var(--ov-5, rgba(255,255,255,0.08))',
-        borderRadius: 'var(--card-radius-sm, 8px)',
-        color: 'var(--white)',
-        fontFamily: 'var(--font-body)',
-        fontSize: '0.8rem',
-        minHeight: '36px',
-        minWidth: 0,
-        padding: '6px 9px',
-        width: '100%',
-    };
-    const patch = (idx, key, value) => setEditing(prev => {
-        const next = Object.assign({}, prev);
-        next.finishes = prev.finishes.map((f, i) => (i === idx ? Object.assign({}, f, { [key]: value }) : f));
-        return next;
-    });
-    const slotOptions = [];
-    for (let i = 1; i <= (Number(teamCount) || 12); i++) slotOptions.push(i);
-    const seasonValid = /^\d{4}$/.test(String(editing?.season || '').trim());
-    // A season with no slot on any finish adds nothing the perch can read, so
-    // it isn't savable — better to say so than to store an inert row.
-    const hasSlot = !!(editing?.finishes || []).some(f => Number(f.draftSlot) > 0);
-
-    return (
-        <div style={{ borderTop: '1px solid var(--ov-4, rgba(255,255,255,0.06))', marginTop: 12, paddingTop: 10 }}>
-            {rows.length > 0 && (
-                <div style={{ display: 'grid', gap: 4, marginBottom: 8 }}>
-                    {rows.map(r => (
-                        <div key={r.id} style={{ alignItems: 'center', display: 'flex', gap: 8 }}>
-                            <span style={{ color: 'var(--gold)', fontFamily: 'var(--font-mono, monospace)', fontSize: '0.74rem', flexShrink: 0, width: 42 }}>{r.season}</span>
-                            <span style={{ color: 'var(--silver)', flex: 1, fontSize: '0.75rem', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {(r.finishes || []).map(f => (placeLabel[f.place] || f.place) + ': ' + (f.owner || '—') + (f.draftSlot ? ' (slot ' + f.draftSlot + ')' : '')).join(' · ') || 'no finishes recorded'}
-                            </span>
-                            <button type="button" onClick={() => setEditing({ id: r.id, season: String(r.season), finishes: [1, 2, 3].map(place => (r.finishes || []).find(f => f.place === place) || { place, owner: '', draftSlot: '' }) })}
-                                style={Object.assign({}, btn, { minHeight: '30px', padding: '3px 9px' })}>Edit</button>
-                            <button type="button" onClick={() => onDelete(r.id)}
-                                style={Object.assign({}, btn, { minHeight: '30px', padding: '3px 9px' })}>Remove</button>
-                        </div>
-                    ))}
-                </div>
-            )}
-
-            {!editing && (
-                <button type="button" onClick={() => setEditing(blank())} style={Object.assign({}, btn, { borderColor: 'var(--acc-line1, rgba(212,175,55,0.24))', color: 'var(--gold)' })}>
-                    + Add a season Sleeper doesn't have
-                </button>
-            )}
-
-            {editing && (
-                <div style={{ background: 'var(--ov-2, rgba(255,255,255,0.025))', border: '1px solid var(--ov-5, rgba(255,255,255,0.08))', borderRadius: 'var(--card-radius, 10px)', padding: '12px' }}>
-                    <label style={{ color: 'var(--gold)', display: 'block', fontSize: 'var(--text-micro, 0.6875rem)', fontWeight: 700, letterSpacing: '0.06em', marginBottom: 4, textTransform: 'uppercase' }}>Season</label>
-                    <input type="text" inputMode="numeric" maxLength={4} placeholder="2014" value={editing.season}
-                        onChange={e => setEditing(prev => Object.assign({}, prev, { season: e.target.value.replace(/[^\d]/g, '') }))}
-                        style={Object.assign({}, input, { marginBottom: 12, maxWidth: 110 })} />
-                    {editing.finishes.map((f, i) => (
-                        <div key={f.place} style={{ display: 'grid', gap: 8, gridTemplateColumns: 'minmax(0,1fr) 108px', marginBottom: 8 }}>
-                            <div>
-                                <label style={{ color: 'var(--silver)', display: 'block', fontSize: 'var(--text-micro, 0.6875rem)', letterSpacing: '0.06em', marginBottom: 4, opacity: 0.8, textTransform: 'uppercase' }}>{placeLabel[f.place]}</label>
-                                <input type="text" placeholder="Team or owner" value={f.owner}
-                                    onChange={e => patch(i, 'owner', e.target.value)} style={input} />
-                            </div>
-                            <div>
-                                <label style={{ color: 'var(--silver)', display: 'block', fontSize: 'var(--text-micro, 0.6875rem)', letterSpacing: '0.06em', marginBottom: 4, opacity: 0.8, textTransform: 'uppercase' }}>Draft slot</label>
-                                <select value={f.draftSlot} onChange={e => patch(i, 'draftSlot', e.target.value)} style={input}>
-                                    <option value="">—</option>
-                                    {slotOptions.map(n => <option key={n} value={n}>{n}</option>)}
-                                </select>
-                            </div>
-                        </div>
-                    ))}
-                    <div style={{ color: 'var(--silver)', fontSize: '0.72rem', lineHeight: 1.5, marginBottom: 10, opacity: 0.7 }}>
-                        The perch only reads the draft slot — the names are yours, so the row is readable later.
-                    </div>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                        <button type="button" disabled={!seasonValid || !hasSlot}
-                            onClick={() => onSave({
-                                id: editing.id || editing.season,
-                                season: Number(editing.season),
-                                finishes: editing.finishes
-                                    .filter(f => f.owner.trim() || Number(f.draftSlot) > 0)
-                                    .map(f => ({ place: f.place, owner: f.owner.trim(), draftSlot: Number(f.draftSlot) || null })),
-                            })}
-                            style={Object.assign({}, btn, {
-                                background: (seasonValid && hasSlot) ? 'var(--acc-fill2, rgba(212,175,55,0.1))' : 'transparent',
-                                borderColor: 'var(--acc-line1, rgba(212,175,55,0.24))',
-                                color: (seasonValid && hasSlot) ? 'var(--gold)' : 'var(--silver)',
-                                cursor: (seasonValid && hasSlot) ? 'pointer' : 'not-allowed',
-                                opacity: (seasonValid && hasSlot) ? 1 : 0.5,
-                            })}>Save season</button>
-                        <button type="button" onClick={() => setEditing(null)} style={btn}>Cancel</button>
-                        {!seasonValid && <span style={{ alignSelf: 'center', color: 'var(--silver)', fontSize: '0.72rem', opacity: 0.6 }}>Enter a 4-digit year.</span>}
-                        {seasonValid && !hasSlot && <span style={{ alignSelf: 'center', color: 'var(--silver)', fontSize: '0.72rem', opacity: 0.6 }}>Set a draft slot on at least one finish.</span>}
-                    </div>
-                </div>
-            )}
-        </div>
-    );
-}
-
 function AnalyticsPanel({
   analyticsData,
   analyticsTab,
@@ -377,10 +252,9 @@ function AnalyticsPanel({
     // Ideal Draft Strategy — By Draft Slot (redraft/chopped only): which
     // third of the draft order the tab is reading.
     const [slotTierTab, setSlotTierTab] = React.useState('early');
-    // Winner's Perch — owner-entered seasons from before this league moved onto
-    // Sleeper. perchEdit is null (closed) or the draft row being edited.
+    // Winner's Perch — the editor (WR.ManualSeasonsEditor) owns its own rows;
+    // this tick just re-reads the merged perch when one is saved elsewhere.
     const [perchTick, setPerchTick] = React.useState(0);
-    const [perchEdit, setPerchEdit] = React.useState(null);
     React.useEffect(() => {
         const onChanged = () => setPerchTick(t => t + 1);
         window.addEventListener('wr_history_manual_changed', onChanged);
@@ -1561,16 +1435,6 @@ function AnalyticsPanel({
             const perchSleeperSeasons = window.WrHistory?.getCached?.(leagueId)?.seasonsLoaded || 0;
             const perchSeasons = perchSleeperSeasons + perchManual.length;
             const perchMaxTop3 = winnersPerch.reduce((m, r) => Math.max(m, r.top3), 0);
-            const perchSaveRow = (row) => {
-                window.WrHistory?.upsertManualSeason?.(leagueId, row);
-                setPerchEdit(null);
-                setPerchTick(t => t + 1);
-            };
-            const perchDeleteRow = (id) => {
-                window.WrHistory?.removeManualSeason?.(leagueId, id);
-                setPerchEdit(null);
-                setPerchTick(t => t + 1);
-            };
 
             // ── Ideal Draft Strategy enhancements: a pos×round heatmap, and (for
             // redraft/chopped/best-ball/DFS) a by-draft-slot cut of the same read.
@@ -1664,14 +1528,9 @@ function AnalyticsPanel({
                                 Slot{perchRetiredSlots.length === 1 ? '' : 's'} {perchRetiredSlots.map(r => r.slot).join(', ')} existed in a larger era of this league and {perchRetiredSlots.length === 1 ? 'is' : 'are'} left out — {perchRetiredSlots.reduce((n2, r) => n2 + r.top3, 0)} top-3 finish{perchRetiredSlots.reduce((n2, r) => n2 + r.top3, 0) === 1 ? '' : 'es'} from {perchRetiredSlots.reduce((n2, r) => n2 + r.seasons, 0)} season-slots you can no longer draft.
                             </div>
                         )}
-                        <PerchManualEditor
-                            rows={perchManual}
-                            teamCount={perchTeamCount}
-                            editing={perchEdit}
-                            setEditing={setPerchEdit}
-                            onSave={perchSaveRow}
-                            onDelete={perchDeleteRow}
-                        />
+                        {window.WR?.ManualSeasonsEditor && (
+                            <window.WR.ManualSeasonsEditor leagueId={leagueId} teamCount={perchTeamCount} showSlots />
+                        )}
                     </div>
                 )}
 

@@ -771,7 +771,66 @@ test('analytics discloses hand-entered seasons and retired slots on the perch', 
   sourceHas(analyticsSrc, "window.WrHistory?.getDraftSlotPerch?.(leagueId, { maxSlots: perchTeamCount })", 'perch must be capped to the current league size');
   sourceHas(analyticsSrc, 'perchManual.length ?', 'perch header must disclose hand-entered seasons');
   sourceHas(analyticsSrc, 'existed in a larger era of this league', 'retired slots must be disclosed, not silently dropped');
-  sourceHas(analyticsSrc, '<PerchManualEditor', 'perch editor must be mounted');
+  sourceHas(analyticsSrc, '<window.WR.ManualSeasonsEditor', 'perch editor must be mounted');
+});
+
+test('hand-entered seasons reach the trophy room, not just the perch', () => {
+  const editorSrc = read('js/components/manual-seasons-editor.js');
+  sourceHas(editorSrc, 'window.WR.ManualSeasonsEditor = ManualSeasonsEditor;', 'editor must register on WR');
+  sourceHas(editorSrc, "window.addEventListener('wr_history_manual_changed', onChanged);", 'both mounts must stay in step');
+  sourceHas(indexHtml, 'js/components/manual-seasons-editor.js', 'editor must load before the tabs that mount it');
+
+  sourceHas(trophyRoomSrc, 'window.WrHistory?.getChampionships?.(leagueId)', 'timeline must read the merged championships');
+  ok(!trophyRoomSrc.includes('return cached?.championships || appChamps || {};'), 'timeline must not read the raw cache past the merge');
+  sourceHas(trophyRoomSrc, "window.addEventListener('wr_history_manual_changed', onManual);", 'trophy room must re-render on a manual save');
+  sourceHas(trophyRoomSrc, 'React.createElement(window.WR.ManualSeasonsEditor', 'trophy room must mount the editor');
+  sourceHas(trophyRoomSrc, 'c.manual', 'a hand-entered season must be labelled as one');
+});
+
+test('manual champions merge into the timeline and the all-time title counts', () => {
+  const vm = require('vm');
+  const store = {};
+  const sandbox = { console };
+  sandbox.window = sandbox;
+  sandbox.localStorage = {
+    getItem: k => (Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null),
+    setItem: (k, v) => { store[k] = String(v); },
+    removeItem: k => { delete store[k]; },
+  };
+  sandbox.CustomEvent = function CustomEvent() {};
+  sandbox.dispatchEvent = () => {};
+  sandbox.fetch = () => Promise.resolve({ ok: false });
+  vm.createContext(sandbox);
+  vm.runInContext(leagueHistorySrc, sandbox);
+  const H = sandbox.window.WrHistory;
+
+  const lid = 'champ-test';
+  store['wr_history_' + lid] = JSON.stringify({
+    fetchedAt: Date.now(),
+    championships: { 2023: { champion: 4, championName: 'Dirty Mike' } },
+    ownerHistory: {
+      u1: { ownerId: 'u1', ownerName: 'Dirty Mike', currentRosterId: 4, championships: 1, champSeasons: ['2023'], runnerUps: 0, runnerUpSeasons: [], seasonHistory: [] },
+      u2: { ownerId: 'u2', ownerName: 'Paper Champs', currentRosterId: 7, championships: 0, champSeasons: [], runnerUps: 0, runnerUpSeasons: [], seasonHistory: [] },
+    },
+  });
+
+  H.upsertManualSeason(lid, { season: 2014, finishes: [{ place: 1, owner: 'paper champs', draftSlot: 7 }, { place: 2, owner: 'Dirty Mike', draftSlot: 1 }] });
+  const champs = H.getChampionships(lid);
+  eq(Object.keys(champs).sort().join(','), '2014,2023', 'timeline spans both eras');
+  eq(champs['2014'].manual, true, 'hand-entered season is flagged');
+  eq(champs['2014'].champion, 7, 'a typed name matching a current owner links to their roster');
+  eq(champs['2014'].championName, 'paper champs', 'the typed name is kept for display');
+
+  const oh = H.getOwnerHistory(lid);
+  eq(oh[7].championships, 1, 'the pre-Sleeper title counts toward Most Titles');
+  eq(oh[7].champSeasons.join(','), '2014', 'and shows up in the season list');
+  eq(oh[4].runnerUps, 1, 'the runner-up counts too');
+  eq(oh[4].championships, 1, "a derived title is not double-counted");
+
+  // A manual row for a season Sleeper already covers must be ignored, not merged.
+  H.upsertManualSeason(lid, { season: 2023, finishes: [{ place: 1, owner: 'Paper Champs' }] });
+  eq(H.getChampionships(lid)['2023'].championName, 'Dirty Mike', 'the derived season wins');
+  eq(H.getOwnerHistory(lid)[7].championships, 1, 'a duplicate season adds no title');
 });
 
 test('trophy room reads owner history and championships by current league id', () => {

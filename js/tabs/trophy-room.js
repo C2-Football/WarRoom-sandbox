@@ -161,12 +161,17 @@ function TrophyRoomTab({ currentLeague, leagueSkin, playersData, myRoster, sleep
             const loadedLeagueId = event?.detail?.leagueId;
             if (!loadedLeagueId || String(loadedLeagueId) === String(leagueId)) setHistoryTick(t => t + 1);
         };
+        const onManual = () => setHistoryTick(t => t + 1);
         window.addEventListener('wr_history_loaded', onLoaded);
+        window.addEventListener('wr_history_manual_changed', onManual);
         // Trigger background fetch if history isn't cached
         if (window.WrHistory && currentLeague) {
             window.WrHistory.loadIfMissing(currentLeague).catch(() => {});
         }
-        return () => window.removeEventListener('wr_history_loaded', onLoaded);
+        return () => {
+            window.removeEventListener('wr_history_loaded', onLoaded);
+            window.removeEventListener('wr_history_manual_changed', onManual);
+        };
     }, [leagueId]);
 
     const ownerHistory = useMemo(() => {
@@ -181,12 +186,16 @@ function TrophyRoomTab({ currentLeague, leagueSkin, playersData, myRoster, sleep
     // uses raw historical roster_ids (which collide with current rosters when
     // owners have left and slots have been re-assigned). WrHistory translates
     // to current rosterIds AND captures the historical owner name explicitly.
+    // getChampionships also folds in the seasons the owner typed in by hand for
+    // years Sleeper's chain can't reach (see WR.ManualSeasonsEditor below), so
+    // this must go through it rather than reading the raw cache.
     const championships = useMemo(() => {
-        const cached = window.WrHistory?.getCached?.(leagueId);
+        const merged = window.WrHistory?.getChampionships?.(leagueId);
+        if (merged && Object.keys(merged).length) return merged;
         const appChamps = String(window.App?.LI?.championshipLeagueId || '') === String(leagueId)
             ? window.App?.LI?.championships
             : null;
-        return cached?.championships || appChamps || {};
+        return appChamps || {};
     }, [leagueId, historyTick]);
     const owners = useMemo(() => Object.values(ownerHistory).sort((a, b) => b.championships - a.championships || b.playoffAppearances - a.playoffAppearances || b.wins - a.wins), [ownerHistory]);
 
@@ -278,7 +287,7 @@ function TrophyRoomTab({ currentLeague, leagueSkin, playersData, myRoster, sleep
                 ),
                 React.createElement('div', { style: { marginTop: '10px' } }),
                 seasons.length === 0
-                    ? React.createElement('div', { style: { color: 'var(--silver)', fontSize: '0.8rem' } }, 'No championship data yet. Play a full season to see your league history.')
+                    ? React.createElement('div', { style: { color: 'var(--silver)', fontSize: '0.8rem' } }, "No championship data yet. Play a full season to see your league history \u2014 or add the years Sleeper can't reach below.")
                     : React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px' } },
                         seasons.map(season => {
                             const c = championships[season];
@@ -288,16 +297,19 @@ function TrophyRoomTab({ currentLeague, leagueSkin, playersData, myRoster, sleep
                             const champOwner = ownerHistory[c.champion];
                             const runnerOwner = ownerHistory[c.runnerUp];
                             const champName = champOwner?.ownerName || c.championName || 'Unknown';
-                            const champLeft = !champOwner && c.championName;
+                            const champLeft = !champOwner && c.championName && !c.manual;
                             const runnerName = runnerOwner?.ownerName || c.runnerUpName || null;
-                            const runnerLeft = !runnerOwner && c.runnerUpName;
+                            const runnerLeft = !runnerOwner && c.runnerUpName && !c.manual;
                             const onClick = () => {
                                 if (c.champion != null) { setSelectedOwner(c.champion); setView('personal'); }
                             };
                             return React.createElement('div', { key: season, style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', background: 'var(--acc-fill1, rgba(212,175,55,0.06))', borderRadius: 'var(--card-radius-sm, 8px)', cursor: c.champion != null ? 'pointer' : 'default' }, onClick },
                                 React.createElement('span', { style: { fontSize: '1.2rem' } }, '\uD83C\uDFC6'),
                                 React.createElement('div', { style: { flex: 1 } },
-                                    React.createElement('div', { style: { fontSize: '0.85rem', fontWeight: 700, color: 'var(--gold)' } }, season + ' Champion'),
+                                    React.createElement('div', { style: { fontSize: '0.85rem', fontWeight: 700, color: 'var(--gold)' } },
+                                        season + ' Champion',
+                                        c.manual && React.createElement('span', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.6, marginLeft: '6px', fontWeight: 400, letterSpacing: '0.04em', textTransform: 'uppercase' } }, 'added by hand'),
+                                    ),
                                     React.createElement('div', { style: { fontSize: '0.78rem', color: 'var(--white)' } },
                                         champName,
                                         champLeft && React.createElement('span', { style: { fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.6, marginLeft: '6px', fontStyle: 'italic' } }, '(former owner)'),
@@ -313,6 +325,13 @@ function TrophyRoomTab({ currentLeague, leagueSkin, playersData, myRoster, sleep
                             );
                         })
                     ),
+                // Pre-Sleeper seasons: the same rows the Winner's Perch reads,
+                // edited from either side (WR.ManualSeasonsEditor). No slot
+                // pickers here — the timeline only needs the names.
+                window.WR?.ManualSeasonsEditor && React.createElement(window.WR.ManualSeasonsEditor, {
+                    leagueId,
+                    teamCount: currentLeague?.rosters?.length || currentLeague?.settings?.num_teams || 12,
+                }),
             );
     }
 
@@ -1217,7 +1236,7 @@ Make it feel like a real sports story. Give it a compelling headline. End with a
                         kicker: newest + ' League champion',
                         headline: String(champName0).toUpperCase(),
                         facts: (runnerName0 ? 'DEF. ' + String(runnerName0).toUpperCase() : 'REIGNING TITLE HOLDER')
-                            + (!champOwner0 && c0?.championName ? ' · FORMER OWNER' : ''),
+                            + (c0?.manual ? ' · ADDED BY HAND' : (!champOwner0 && c0?.championName ? ' · FORMER OWNER' : '')),
                     },
                         React.createElement('div', { style: { fontSize: '1.7rem', lineHeight: 1.2, margin: '4px 0 0' } }, '🏆'),
                         React.createElement('div', null,
@@ -1228,7 +1247,7 @@ Make it feel like a real sports story. Give it a compelling headline. End with a
                     : React.createElement(window.WR.HeroCard, {
                         kicker: 'League champion',
                         headline: 'NO TITLES YET',
-                        facts: 'No championship data yet. Play a full season to see your league history.',
+                        facts: "No championship data yet \u2014 or add the years Sleeper can't reach below.",
                     }),
             ),
             older.length > 0 && React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' } },
@@ -1240,13 +1259,17 @@ Make it feel like a real sports story. Give it a compelling headline. End with a
                     return React.createElement(window.WR.AssetRow, {
                         key: season,
                         pos: '🏆',
-                        name: champName + (!champOwner && c.championName ? ' (former)' : ''),
-                        tag: runnerName ? 'DEF. ' + runnerName : 'CHAMPION',
+                        name: champName + (c.manual ? '' : (!champOwner && c.championName ? ' (former)' : '')),
+                        tag: (runnerName ? 'DEF. ' + runnerName : 'CHAMPION') + (c.manual ? ' · ADDED BY HAND' : ''),
                         slots: [{ label: 'SZN', value: season, tone: 'gold' }],
                         onClick: c.champion != null ? () => { setSelectedOwner(c.champion); setView('personal'); } : undefined,
                     });
                 }),
             ),
+            window.WR?.ManualSeasonsEditor && React.createElement(window.WR.ManualSeasonsEditor, {
+                leagueId,
+                teamCount: currentLeague?.rosters?.length || currentLeague?.settings?.num_teams || 12,
+            }),
         );
     }
 
