@@ -708,6 +708,72 @@ test('history globals are replaced per active league instead of merged across le
   ok(!leagueHistorySrc.includes('Object.assign({}, window.App.LI.championships || {}, cache.championships || {})'), 'championships should not merge prior league data');
 });
 
+// The Winner's Perch merge is real arithmetic, not a string contract, so this
+// one runs the module instead of grepping it: hand-entered pre-Sleeper seasons
+// have to land in the same slot buckets as the derived ones, and a league that
+// shrank must stop advertising slots nobody can draft from.
+test("winner's perch merges hand-entered seasons and caps retired slots", () => {
+  const vm = require('vm');
+  const store = {};
+  const sandbox = { console };
+  sandbox.window = sandbox;
+  sandbox.localStorage = {
+    getItem: k => (Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null),
+    setItem: (k, v) => { store[k] = String(v); },
+    removeItem: k => { delete store[k]; },
+  };
+  sandbox.CustomEvent = function CustomEvent() {};
+  sandbox.dispatchEvent = () => {};
+  sandbox.fetch = () => Promise.resolve({ ok: false });
+  vm.createContext(sandbox);
+  vm.runInContext(leagueHistorySrc, sandbox);
+  const H = sandbox.window.WrHistory;
+  ok(H && typeof H.getDraftSlotPerch === 'function', 'WrHistory did not initialise');
+
+  const lid = 'perch-test';
+  // Derived history: a 14-team era that shrank to 12. Slot 2 won twice, slot
+  // 14 has a lone third-place finish that can never repeat.
+  store['wr_history_' + lid] = JSON.stringify({
+    fetchedAt: Date.now(),
+    ownerHistory: {
+      1: { seasonHistory: [{ draftSlot: 2, place: 1 }, { draftSlot: 2, place: 1 }] },
+      2: { seasonHistory: [{ draftSlot: 5, place: 4 }, { draftSlot: 14, place: 3 }] },
+    },
+  });
+
+  const uncapped = H.getDraftSlotPerch(lid);
+  eq(uncapped.length, 14, 'uncapped perch spans the widest era');
+  const capped = H.getDraftSlotPerch(lid, { maxSlots: 12 });
+  eq(capped.length, 12, 'capped perch stops at the current league size');
+  eq(capped[1].top3, 2, 'slot 2 top-3 count');
+  eq(capped[1].titles, 2, 'slot 2 title count');
+
+  // Hand-entered season merges into the same buckets.
+  eq(H.getManualSeasons(lid).length, 0, 'manual store starts empty');
+  H.upsertManualSeason(lid, { season: 2014, finishes: [{ place: 1, owner: 'Paper Champs', draftSlot: 7 }, { place: 4, owner: 'Nope', draftSlot: 9 }] });
+  const merged = H.getDraftSlotPerch(lid, { maxSlots: 12 });
+  eq(merged[6].top3, 1, 'hand-entered champion lands in slot 7');
+  eq(merged[6].titles, 1, 'hand-entered champion counts as a title');
+  eq(merged[6].manual, 1, 'slot 7 is flagged as hand-entered');
+  eq(H.getManualSeasons(lid)[0].finishes.length, 1, 'a 4th-place finish is dropped — the perch only reads top 3');
+
+  // Editing replaces rather than duplicating; a rebuild must not eat it.
+  H.upsertManualSeason(lid, { id: '2014', season: 2014, finishes: [{ place: 1, owner: 'Paper Champs', draftSlot: 3 }] });
+  eq(H.getManualSeasons(lid).length, 1, 'upsert by id replaces the row');
+  eq(H.getDraftSlotPerch(lid, { maxSlots: 12 })[2].titles, 1, 'edited slot moves the title');
+  H.clear(lid);
+  eq(H.getManualSeasons(lid).length, 1, 'clear() must not delete owner-entered seasons');
+  H.removeManualSeason(lid, '2014');
+  eq(H.getManualSeasons(lid).length, 0, 'remove deletes the row');
+});
+
+test('analytics discloses hand-entered seasons and retired slots on the perch', () => {
+  sourceHas(analyticsSrc, "window.WrHistory?.getDraftSlotPerch?.(leagueId, { maxSlots: perchTeamCount })", 'perch must be capped to the current league size');
+  sourceHas(analyticsSrc, 'perchManual.length ?', 'perch header must disclose hand-entered seasons');
+  sourceHas(analyticsSrc, 'existed in a larger era of this league', 'retired slots must be disclosed, not silently dropped');
+  sourceHas(analyticsSrc, '<PerchManualEditor', 'perch editor must be mounted');
+});
+
 test('trophy room reads owner history and championships by current league id', () => {
   sourceHas(trophyRoomSrc, 'const leagueId = currentLeague?.id || currentLeague?.league_id || \'\';', 'trophy room league id source missing');
   sourceHas(trophyRoomSrc, 'window.WrHistory.getOwnerHistory(leagueId)', 'owner history must be league-scoped');

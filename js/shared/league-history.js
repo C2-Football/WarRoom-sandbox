@@ -526,30 +526,99 @@
     // reflects the draft this app actually saw — never the current season's
     // order applied retroactively. Returns [] when history/draft data is
     // missing (old seasons a platform never exposed a draft for, etc.).
-    function getDraftSlotPerch(leagueId) {
+    function getDraftSlotPerch(leagueId, options) {
+        const opts = options || {};
         const cache = readCache(leagueId);
-        if (!cache) return [];
+        const manual = getManualSeasons(leagueId);
+        if (!cache && !manual.length) return [];
         const bySlot = {};
         let maxSlot = 0;
         let seasonsWithSlot = 0;
-        Object.values(cache.ownerHistory || {}).forEach(oh => {
-            (oh.seasonHistory || []).forEach(sh => {
-                if (!sh.draftSlot) return;
-                seasonsWithSlot++;
-                const slot = sh.draftSlot;
-                maxSlot = Math.max(maxSlot, slot);
-                if (!bySlot[slot]) bySlot[slot] = { slot, top3: 0, titles: 0, seasons: 0 };
-                bySlot[slot].seasons++;
-                if (sh.place && sh.place <= 3) {
-                    bySlot[slot].top3++;
-                    if (sh.place === 1) bySlot[slot].titles++;
-                }
-            });
+        const bump = (slot, place, isManual) => {
+            if (!slot) return;
+            seasonsWithSlot++;
+            maxSlot = Math.max(maxSlot, slot);
+            if (!bySlot[slot]) bySlot[slot] = { slot, top3: 0, titles: 0, seasons: 0, manual: 0 };
+            bySlot[slot].seasons++;
+            if (isManual) bySlot[slot].manual++;
+            if (place && place <= 3) {
+                bySlot[slot].top3++;
+                if (place === 1) bySlot[slot].titles++;
+            }
+        };
+        Object.values((cache && cache.ownerHistory) || {}).forEach(oh => {
+            (oh.seasonHistory || []).forEach(sh => bump(sh.draftSlot, sh.place, false));
+        });
+        // Seasons the owner typed in by hand (pre-Sleeper years the chain walk
+        // can't see) count exactly like a derived one — a top-3 finish off a
+        // 2014 paper draft board is the same evidence as a 2023 Sleeper one.
+        manual.forEach(row => {
+            (row.finishes || []).forEach(f => bump(Number(f.draftSlot) || 0, Number(f.place) || 0, true));
         });
         if (!maxSlot || seasonsWithSlot < 2) return [];
+        // A league that shrank across eras used to render its widest era's slot
+        // count forever — Slot 1–14 on a league that has been 12 teams for
+        // years, two of them rows nobody can draft from again. Cap on the
+        // caller's current size; the caller can diff against the uncapped call
+        // to disclose what fell off rather than silently dropping it.
+        const cap = Number(opts.maxSlots) || 0;
+        const limit = cap || maxSlot;
         const out = [];
-        for (let i = 1; i <= maxSlot; i++) out.push(bySlot[i] || { slot: i, top3: 0, titles: 0, seasons: 0 });
+        for (let i = 1; i <= limit; i++) out.push(bySlot[i] || { slot: i, top3: 0, titles: 0, seasons: 0, manual: 0 });
         return out;
+    }
+
+    // ── Manually entered seasons ──────────────────────────────────────────
+    // Sleeper's previous_league_id chain stops at the year a league moved onto
+    // the platform; leagues older than that have real history the API can never
+    // return. These rows are owner-authored, so they live under their own key
+    // and survive clear() — a cache rebuild must never eat hand-typed data.
+    // Shape: [{ id, season, note, finishes: [{ place, owner, draftSlot }] }]
+    const MANUAL_KEY = (lid) => 'wr_history_manual_' + lid;
+
+    function getManualSeasons(leagueId) {
+        if (!leagueId) return [];
+        try {
+            const raw = JSON.parse(localStorage.getItem(MANUAL_KEY(leagueId)) || '[]');
+            if (!Array.isArray(raw)) return [];
+            return raw
+                .map(r => ({
+                    id: String(r.id || r.season || Math.random().toString(36).slice(2)),
+                    season: Number(r.season) || null,
+                    note: typeof r.note === 'string' ? r.note : '',
+                    finishes: (Array.isArray(r.finishes) ? r.finishes : [])
+                        .map(f => ({
+                            place: Number(f.place) || 0,
+                            owner: typeof f.owner === 'string' ? f.owner : '',
+                            draftSlot: Number(f.draftSlot) || null,
+                        }))
+                        .filter(f => f.place >= 1 && f.place <= 3),
+                }))
+                .filter(r => r.season)
+                .sort((a, b) => b.season - a.season);
+        } catch (e) {
+            return [];
+        }
+    }
+
+    function setManualSeasons(leagueId, rows) {
+        if (!leagueId) return [];
+        const clean = (Array.isArray(rows) ? rows : []).filter(r => Number(r && r.season));
+        try { localStorage.setItem(MANUAL_KEY(leagueId), JSON.stringify(clean)); } catch (e) { /* quota */ }
+        try { window.dispatchEvent(new CustomEvent('wr_history_manual_changed', { detail: { leagueId } })); } catch (e) { /* no-op */ }
+        return getManualSeasons(leagueId);
+    }
+
+    function upsertManualSeason(leagueId, row) {
+        const rows = getManualSeasons(leagueId);
+        const id = String(row.id || row.season);
+        const next = rows.filter(r => r.id !== id);
+        next.push(Object.assign({}, row, { id }));
+        return setManualSeasons(leagueId, next);
+    }
+
+    function removeManualSeason(leagueId, id) {
+        return setManualSeasons(leagueId, getManualSeasons(leagueId).filter(r => r.id !== String(id)));
     }
 
     window.WrHistory = {
@@ -574,6 +643,10 @@
             return c?.hallOfFame || [];
         },
         getDraftSlotPerch,
+        getManualSeasons,
+        setManualSeasons,
+        upsertManualSeason,
+        removeManualSeason,
         clear: function (leagueId) {
             try {
                 localStorage.removeItem(CACHE_KEY(leagueId));
