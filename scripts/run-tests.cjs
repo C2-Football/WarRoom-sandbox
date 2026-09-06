@@ -47,7 +47,7 @@ const SUITE_ORDER = [
   'test:draft-live-decision', 'test:draft-recap', 'test:post-draft-craze',
   'test:draft-strategy-studio', 'test:ai', 'test:ai-scale', 'test:billing',
   'test:security', 'test:bug-capture', 'test:analytics', 'test:tutorial',
-  'test:rookies', 'test:rookie-capital', 'test:rookie-fields', 'test:redraft',
+  'test:rookies', 'test:rookie-capital', 'test:rookie-fields', 'test:redraft', 'test:forecast-ledger',
   'test:chopped', 'test:first-class', 'test:empire', 'test:commish', 'test:timeleague',
 ];
 

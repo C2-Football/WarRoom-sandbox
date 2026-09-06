@@ -30,6 +30,7 @@
     "test:rookie-capital": "node tests/rookie-capital-monotonicity.js",
     "test:rookie-fields": "node tests/rookie-fields.js",
     "test:redraft": "node tests/redraft-engines.js && node tests/redraft-values.js",
+    "test:forecast-ledger": "node tests/forecast-ledger.cjs && node tests/forecast-archive.cjs && node tests/forecast-evaluation.cjs",
     "test:chopped": "node tests/chopped.js && node tests/chop-odds.js",
     "test:first-class": "node tests/first-class-modes.js",
     "test:empire": "node tests/empire-values.js && node tests/empire-decisions.js",

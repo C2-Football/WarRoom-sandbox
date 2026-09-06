@@ -2879,7 +2879,10 @@ WRShared.preloadMany(WR_SHARED_FILES);
 <!-- 2g. League history loader — window.WrHistory — Sleeper chain walker for season history -->
 <script src="js/shared/league-history.js?v=20260906perch2"></script>
 <!-- 2h. Weekly DHQ/health snapshot store — window.WrSnapshots — time-series for ▲/▼ deltas -->
-<script src="js/shared/snapshot-store.js?v=20260601a"></script>
+<script src="js/shared/availability-forecast.js?v=20260906shadow1"></script>
+<script src="js/shared/forecast-ledger.js?v=20260906shadow1"></script>
+<script src="js/shared/forecast-archive.js?v=20260906shadow1"></script>
+<script src="js/shared/snapshot-store.js?v=20260906shadow1"></script>
 <!-- 2h1. NFL draft capital dataset — window.WR_DRAFT_PROFILE — static historical
      [year, round, overall, team] by Sleeper id (Sleeper's API has none).
      Regenerate with scripts/build-draft-profile.cjs. -->
@@ -2892,7 +2895,7 @@ WRShared.preloadMany(WR_SHARED_FILES);
 <script src="js/shared/txn-store.js?v=20260729rd1"></script>
 <!-- 3. Shared utilities: player valuation constants + projection engine -->
 <script type="text/babel" src="js/utils/sos-engine.js?v=20260823pre1"></script>
-<script type="text/babel" src="js/utils/player-value.js?v=20260805mtl1"></script>
+<script type="text/babel" src="js/utils/player-value.js?v=20260906shadow1"></script>
 <!-- 4. Feature modules (no internal dependencies between these) -->
 <!-- data-wr-defer scripts are DEFERRED: emitted INERT (type="text/wr-deferred" by
      every build/serve pipeline) so the browser does NOT parse/execute them at app

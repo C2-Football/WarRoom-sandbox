@@ -105,6 +105,7 @@
             }
         }
         try { capturePlayerValues(); } catch (e) { if (window.dhqLog) window.dhqLog('snapshot.recordPlayers', e); }
+        try { window.App?.ForecastLedger?.captureCurrent(); } catch (_) { /* shadow only */ }
     }
 
     function timeline(lid) { const st = store(); return (st && st.get(KEY(lid), [])) || []; }
