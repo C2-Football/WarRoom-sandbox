@@ -2894,8 +2894,16 @@
                 originalPool: slimPool(state.originalPool && state.originalPool.length ? state.originalPool : state.pool, 600),
                 personas: {},
             };
-            // Use the tab's mode to pick the right key (live-sync → 'live', else 'mock')
-            const keyMode = forcedMode || (state.mode === 'live-sync' ? 'live-sync' : null);
+            // The key follows the STATE's mode, not the tab's. forcedMode is the
+            // tab (the Draft tab passes 'live-sync' whenever it is the live room),
+            // and preferring it meant a mock run inside the live room was written
+            // to the _live_ key while carrying mode:'solo'. loadFromLocal rejects
+            // that blob on the live key (mode mismatch) and never looks for it on
+            // the mock key, so the mock was unresumable — saved every 500ms and
+            // readable by nothing. forcedMode stays as a fallback for a state that
+            // somehow has no mode of its own.
+            const stateMode = state.mode || forcedMode || null;
+            const keyMode = stateMode === 'live-sync' ? 'live-sync' : null;
             localStorage.setItem(LS_KEY(state.leagueId, keyMode), JSON.stringify(toSave));
         } catch (e) {
             if (window.wrLog) window.wrLog('draftState.save', e);
@@ -2925,7 +2933,20 @@
                 return null;
             }
             // Sanity check: if forcedMode is set, ignore state with a mismatched mode
-            if (forcedMode === 'live-sync' && parsed.mode !== 'live-sync') return null;
+            if (forcedMode === 'live-sync' && parsed.mode !== 'live-sync') {
+                // …but a non-live state on the live key is exactly what the old
+                // saveToLocal produced, and no reader can ever reach it there.
+                // Move it to the key it should have had so a mock stranded by
+                // that bug still resumes; never clobber a real mock already
+                // sitting there, and drop the orphan either way so the dead
+                // 600-row blob stops eating quota.
+                try {
+                    const mockKey = LS_KEY(leagueId, null);
+                    if (!localStorage.getItem(mockKey)) localStorage.setItem(mockKey, raw);
+                    localStorage.removeItem(LS_KEY(leagueId, forcedMode));
+                } catch (e) { /* quota or private mode — the reject below still stands */ }
+                return null;
+            }
             if (!forcedMode && parsed.mode === 'live-sync') return null;
             if (!parsed.pickedByIdx) parsed.pickedByIdx = buildPickedByIdx(parsed.picks || []);
             if (!parsed.manualCorrections) parsed.manualCorrections = [];

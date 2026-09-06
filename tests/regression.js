@@ -466,6 +466,48 @@ test('draft autosave has a max wait, not just a debounce', () => {
   sourceHas(draftCommandCenterSrc, 'saveTimerRef.current = setTimeout(flush, 500)', 'the quiet-period debounce should still be 500ms');
 });
 
+// This one runs the module rather than grepping it: the bug was a key/mode
+// asymmetry between two functions, and only a real save→load round trip proves
+// the pair agrees.
+test('a mock run inside the live room saves somewhere it can be read back', () => {
+  const vm = require('vm');
+  const store = {};
+  const sandbox = { console, fetch: () => Promise.resolve({ ok: false }) };
+  sandbox.window = sandbox;
+  sandbox.localStorage = {
+    getItem: k => (Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null),
+    setItem: (k, v) => { store[k] = String(v); },
+    removeItem: k => { delete store[k]; },
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(read('js/draft/state.js'), sandbox);
+  const D = sandbox.window.DraftCC && sandbox.window.DraftCC.state;
+  ok(D && typeof D.saveToLocal === 'function', 'DraftCC.state did not initialise');
+
+  const lid = 'draft-key-test';
+  const mock = { leagueId: lid, mode: 'solo', phase: 'drafting', version: D.DRAFT_STATE_VERSION, picks: [], pool: [], originalPool: [] };
+  // The Draft tab passes forcedMode 'live-sync' whenever it is the live room,
+  // even while a solo mock is what's actually running.
+  D.saveToLocal(mock, 'live-sync');
+  ok(D.loadFromLocal(lid, null), 'a solo mock must be resumable from the mock key');
+  eq(D.loadFromLocal(lid, 'live-sync'), null, 'a solo mock must not masquerade as a live room');
+
+  // A real live-sync state still lands on the live key.
+  const live = { ...mock, mode: 'live-sync' };
+  D.saveToLocal(live, 'live-sync');
+  ok(D.loadFromLocal(lid, 'live-sync'), 'a live state must be resumable from the live key');
+
+  // A blob already stranded on the live key by the old behaviour is migrated
+  // to the key it should have had, not just rejected.
+  const stranded = { leagueId: lid, mode: 'solo', phase: 'drafting', version: D.DRAFT_STATE_VERSION, picks: [{ pid: '99' }], pool: [], originalPool: [] };
+  store[D.LS_KEY(lid, 'live-sync')] = JSON.stringify(stranded);
+  delete store[D.LS_KEY(lid, null)];
+  eq(D.loadFromLocal(lid, 'live-sync'), null, 'the stranded blob is still not a live room');
+  const recovered = D.loadFromLocal(lid, null);
+  ok(recovered && recovered.picks.length === 1, 'the stranded mock is recovered onto the mock key');
+  eq(store[D.LS_KEY(lid, 'live-sync')], undefined, 'and the unreadable orphan is cleared');
+});
+
 group('live draft feed');
 
 test('live trade windows are narrated once, not re-posted', () => {
