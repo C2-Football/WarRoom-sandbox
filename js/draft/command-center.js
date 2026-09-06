@@ -548,6 +548,12 @@
             null,
             () => {
                 let saved = stateFns.loadFromLocal(currentLeague?.league_id || currentLeague?.id, forcedMode);
+                // Belt-and-suspenders: loadFromLocal already rejects a mode
+                // mismatch, but Follow Live Draft must never resume into a
+                // non-live-sync board no matter how a stale/mismatched blob
+                // got past that check — always fall through to a fresh
+                // live-sync setup instead of showing whatever was saved.
+                if (saved && forcedMode === 'live-sync' && saved.mode !== 'live-sync') saved = null;
                 if (saved && saved.phase !== 'setup') {
                     saved = refreshRookieValuesFromEngine(saved, stateFns, playersData);
                     // Recompose personas — we strip them on save, so rehydrate from the live DNA map
