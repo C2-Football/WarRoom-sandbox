@@ -12,10 +12,10 @@
     }
     async function load({ leagues, accountId = '', signal, force = false, onUpdate, fetcher = (...args) => root.fetch(...args), now = Date.now }) {
         const eligible = [...new Map(leagues.filter(l => root.App.LeagueLiveScores.supported(l)).map(l => [keyFor(l), l])).values()];
-        const json = async url => { if (signal?.aborted) throw Error('aborted'); const r = await fetcher(url, { signal }); if (!r.ok) throw Error('Scores unavailable'); return r.json(); };
+        const json = async url => { if (signal?.aborted) throw Error('aborted'); const r = await fetcher(url, { signal, cache: 'no-store' }); if (!r.ok) throw Error('Scores unavailable'); return r.json(); };
         let nfl;
         try { nfl = await json('https://api.sleeper.app/v1/state/nfl'); if (!nfl?.season) throw Error('No season'); }
-        catch (_) { if (!signal?.aborted) eligible.forEach(league => onUpdate({ league, status: 'error', error: 'The league calendar could not load. Refresh to retry.', stories: [] })); return; }
+        catch (_) { if (!signal?.aborted) eligible.forEach(league => onUpdate({ league, status: 'error', error: 'The league calendar could not load. Refresh to retry.', currentError: 'The league calendar could not load. Refresh to retry.', archiveError: '', currentReady: false, resultsReady: false, scheduleReady: false, currentUpdatedAt: null, stories: [] })); return; }
         let cursor = 0;
         const archiveJobs = [];
         async function worker() {
@@ -24,37 +24,57 @@
                 const cached = recent.get(cacheKey);
                 if (!force && cached && cached.selectionKey === JSON.stringify(root.WrWireRivalries?.list(league, cached.value.rivalryHistory) || []) && now() - cached.at < 60000) { onUpdate(cached.value); continue; }
                 const nameFor = rid => root.WrWireStories.oldName(league, rid);
-                let weeks = [], past = { seasons: [], complete: false }, board = null, error = '', currentReady = false;
+                const scheduleExpected = span.live && span.week <= root.WrWireStories.bounds(league).end;
+                const scoresExpected = span.end >= span.start;
+                let weeks = [], past = { seasons: [], complete: false }, board = null;
+                let scoresLoaded = false, scheduleLoaded = !scheduleExpected, scoresError = '', scheduleError = '', archiveError = '';
+                let scoresUpdatedAt = null, scheduleUpdatedAt = null, publishedSelectionKey = '';
                 const publish = status => {
                     if (signal?.aborted) return null;
-                    const edition = root.WrWireStories.build({ rivalries: root.WrWireRivalries?.list(league, past.seasons) || [], league, weeks, start: span.start, end: span.end, priorSeasons: past.seasons, archiveComplete: past.complete,
+                    const rivalries = root.WrWireRivalries?.list(league, past.seasons) || [];
+                    publishedSelectionKey = JSON.stringify(rivalries);
+                    const edition = root.WrWireStories.build({ rivalries, league, weeks, start: span.start, end: span.end, priorSeasons: past.seasons, archiveComplete: past.complete,
                         board, nameFor, headToHead: !root.App?.Chopped?.isChopped?.(league) && league.type !== 'chopped' && league.leagueSkin?.type !== 'chopped',
                         playerName: pid => root.S?.players?.[pid]?.full_name || 'A starting player' });
                     const stories = edition.stories.filter(s => s.documentary || s.week === span.end).concat(edition.previews);
-                    const value = { league, historical: Number(league.season) < Number(nfl.season), status, error, stories, week: span.week, completedThrough: edition.completedThrough, priorSeasons: past.seasons.length, rivalryHistory: past.seasons.map(s => ({ league: s.league })), reusedSeasons: past.fromMemory ? past.seasons.length : past.savedCount || 0, currentReady, at: now() };
+                    const scoresReady = scoresLoaded && edition.completedThrough >= span.end;
+                    const currentReady = scoresReady && scheduleLoaded;
+                    const currentError = [scoresError || (scoresLoaded && !scoresReady ? 'Some completed scores could not load. Refresh to retry.' : ''), scheduleError].filter(Boolean).join(' ');
+                    const error = [currentError, archiveError].filter(Boolean).join(' ');
+                    // Archive progress cannot make current evidence look freshly checked.
+                    // When both sources are present, show the older successful snapshot.
+                    const currentTimes = [scoresExpected && scoresReady ? scoresUpdatedAt : null, scheduleLoaded ? scheduleUpdatedAt : null].filter(t => t != null);
+                    const currentUpdatedAt = currentTimes.length ? Math.min(...currentTimes) : null;
+                    const value = { league, historical: Number(league.season) < Number(nfl.season), status: status === 'ready' && (error || !currentReady) ? 'partial' : status, error, currentError, archiveError, currentUpdatedAt, resultsReady: scoresExpected && scoresReady, scheduleReady: scheduleExpected && scheduleLoaded, stories, week: span.week, completedThrough: edition.completedThrough, priorSeasons: past.seasons.length, rivalryHistory: past.seasons.map(s => ({ league: s.league })), reusedSeasons: past.fromMemory ? past.seasons.length : past.savedCount || 0, currentReady, at: now() };
                     onUpdate(value); return value;
                 };
                 publish('loading');
                 // Current news is usable while the older archive is still loading.
                 await Promise.allSettled([
                     (async () => {
-                        try { const r = await root.App.LeagueLiveTable.loadHistory({ league, week: span.end + 1, signal, force, fetcher, now }); weeks = r.priorWeeks; currentReady = true; }
-                        catch (_) { error = 'Some completed scores could not load. Refresh to retry.'; }
+                        try { const r = await root.App.LeagueLiveTable.loadHistory({ league, week: span.end + 1, signal, force, fetcher, now }); if (!Array.isArray(r?.priorWeeks)) throw Error('Invalid completed scores'); weeks = r.priorWeeks; scoresLoaded = true; scoresUpdatedAt = Number.isFinite(r.updatedAt) ? r.updatedAt : now(); }
+                        catch (_) { scoresError = 'Some completed scores could not load. Refresh to retry.'; }
                         publish('loading');
                     })(),
                     (async () => {
-                        if (!span.live || span.week > root.WrWireStories.bounds(league).end) return;
-                        try { const rows = await json(`https://api.sleeper.app/v1/league/${encodeURIComponent(league.league_id || league.id)}/matchups/${span.week}`); if (!Array.isArray(rows)) throw Error('Invalid scores'); board = { week: span.week, rows }; }
-                        catch (_) { error = 'Current matchups could not load. Refresh to retry.'; }
+                        if (!scheduleExpected) return;
+                        try {
+                            const rows = await json(`https://api.sleeper.app/v1/league/${encodeURIComponent(league.league_id || league.id)}/matchups/${span.week}`);
+                            if (!Array.isArray(rows) || !rows.length || rows.some(r => !r || r.roster_id == null)) throw Error('Invalid matchups');
+                            const ids = new Set(rows.map(r => String(r.roster_id)));
+                            if (ids.size !== rows.length || (league.rosters?.length && (ids.size !== league.rosters.length || league.rosters.some(r => !ids.has(String(r.roster_id)))))) throw Error('Incomplete matchups');
+                            board = { week: span.week, rows }; scheduleLoaded = true; scheduleUpdatedAt = now();
+                        }
+                        catch (_) { scheduleError = 'Current matchups could not load. Refresh to retry.'; }
                         publish('loading');
                     })(),
                 ]);
                 archiveJobs.push(async () => {
                     try { past = await root.WrWireStories.loadArchive({ league, signal, fetcher, now, retry: force, onProgress: p => { past = p; publish('loading'); } }); }
-                    catch (_) { error = 'Earlier history is incomplete. Refresh to retry.'; }
-                    if (!past.complete && !error) error = past.reason || 'Earlier history is incomplete.';
-                    const value = publish(error ? 'partial' : 'ready');
-                    if (value?.status === 'ready') { recent.set(cacheKey, { at: now(), value, selectionKey: JSON.stringify(root.WrWireRivalries?.list(league, past.seasons) || []) }); while (recent.size > 40) recent.delete(recent.keys().next().value); }
+                    catch (_) { archiveError = 'Earlier history is incomplete. Refresh to retry.'; }
+                    if (!past.complete && !archiveError) archiveError = past.reason || 'Earlier history is incomplete.';
+                    const value = publish('ready');
+                    if (value?.status === 'ready') { recent.set(cacheKey, { at: now(), value, selectionKey: publishedSelectionKey }); while (recent.size > 40) recent.delete(recent.keys().next().value); }
                 });
             }
         }
@@ -66,7 +86,7 @@
     // Round-robin each league's best current story before any league's second.
     function headlines(entries, topic = 'all', leagueId = 'all') {
         const queues = entries.filter(e => leagueId === 'all' || String(e.league.league_id || e.league.id) === leagueId).map(entry => {
-            const stories = entry.stories.filter(s => topic === 'history' ? (s.documentary || entry.historical) : !entry.historical && !s.documentary && (topic === 'all' || (topic === 'recaps' ? s.kind === 'recap' : topic === 'rivalries' ? s.category === 'Rivalry watch' || s.category === 'Revenge game' : s.kind === 'record')))
+            const stories = entry.stories.filter(s => topic === 'history' ? (s.documentary || entry.historical) : !entry.historical && !s.documentary && (topic === 'all' || topic === 'stories' || (topic === 'matchups' ? s.preview === true : topic === 'recaps' ? s.kind === 'recap' : topic === 'rivalries' ? s.category === 'Rivalry watch' || s.category === 'Revenge game' : s.kind === 'record')))
                 .slice().sort((a, b) => (b.weight || 0) - (a.weight || 0) || (b.eventSeason || 0) - (a.eventSeason || 0));
             return { entry, stories: topic === 'all' ? root.WrWireStories.frontPage(stories) : stories };
         });

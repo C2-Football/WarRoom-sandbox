@@ -107,3 +107,43 @@ assert(arrivals.stories.some(s => s.category === 'New faces' && /2–0/.test(s.b
 assert(!build([w(1, 100, 90)], { end: 1, league: newcomerLeague, priorSeasons: [earlier], archiveComplete: false }).stories.some(s => s.category === 'New faces'));
 assert(!build([w(1, 100, 90)], { end: 1, priorSeasons: [earlier], archiveComplete: true, nameFor: () => 'Rebranded team' }).stories.some(s => s.category === 'New faces'), 'name changes are not new managers');
 console.log('PASS editorial selection: current-only headlines, distinct subjects, stable weekly lookback and verified newcomers');
+
+// A current matchup earns coverage on its own merits, without an old series.
+const names = rid => ['Alpha', 'Bravo', 'Charlie', 'Delta'][rid - 1];
+const weeklyRows = [
+    { week: 1, rows: [row(1, 120), row(2, 90), row(3, 110, 2), row(4, 80, 2)] },
+    { week: 2, rows: [row(1, 125), row(2, 100), row(3, 115, 2), row(4, 85, 2)] },
+];
+const nextBoard = { week: 3, rows: [row(1, 999), row(3, 999), row(2, 999, 2), row(4, 999, 2)] };
+const currentLeague = { ...fourLeague, settings: { playoff_week_start: 5, playoff_teams: 2 } };
+const previewOptions = { end: 2, league: currentLeague, nameFor: names, board: nextBoard };
+const freshMatchups = build(weeklyRows, previewOptions);
+assert.equal(freshMatchups.rivals.length, 0, 'first meetings are not automatically called historical rivalries');
+assert.equal(freshMatchups.previews.length, 2, 'verified records produce previews without an archive');
+const unbeatenPreview = freshMatchups.previews.find(s => s.rosterIds.includes(1));
+assert.match(unbeatenPreview.text, /Unbeaten starts meet/);
+assert.equal(unbeatenPreview.category, 'Matchup preview');
+assert.equal(unbeatenPreview.formThrough, 2);
+assert.match(unbeatenPreview.body, /Alpha are 2–0 and Charlie are 2–0/);
+assert.match(unbeatenPreview.body, /Alpha average 122\.50 points and Charlie average 112\.50/);
+assert(!/999|projected|upcoming|will win/.test(unbeatenPreview.body), 'this week’s possibly live points never become completed form or a prediction');
+assert.equal(unbeatenPreview.body.split('\n\n').length, 2, 'brief current stakes and scoring paragraphs');
+assert.equal(build(weeklyRows.slice(0, 1), previewOptions).previews.length, 0, 'missing completed weeks cannot create a current-form preview');
+assert.equal(build(weeklyRows, { ...previewOptions, board: { ...nextBoard, week: 4 } }).previews.length, 0, 'stale form is not presented as this week’s form');
+assert.equal(build(weeklyRows, { ...previewOptions, headToHead: false }).previews.length, 0, 'no invented H2H coverage for non-H2H formats');
+assert.equal(build(weeklyRows, { ...previewOptions, board: { ...nextBoard, week: 5 } }).previews.length, 0, 'regular-season context does not invent playoff previews');
+const medianPreview = build(weeklyRows, { ...previewOptions, league: { ...currentLeague, settings: { ...currentLeague.settings, league_average_match: 1 } } }).previews[0];
+assert.match(medianPreview.body, /Alpha are 4–0 and Charlie are 4–0, including median results/);
+assert.match(medianPreview.body, /Alpha average 122\.50/, 'median games do not double the scoring-average denominator');
+const lateStart = build(weeklyRows.map(w => ({ ...w, week: w.week + 2 })), { ...previewOptions, start: 3, end: 4, league: { ...currentLeague, settings: { start_week: 3, playoff_week_start: 8 } }, board: { ...nextBoard, week: 5 } });
+assert.match(lateStart.previews[0].body, /Across 2 completed weeks, Alpha average 122\.50/, 'scoring averages honor the league start week');
+const latestRecap = freshMatchups.stories.find(s => s.kind === 'recap' && s.week === 2 && s.rosterIds.includes(1));
+assert.match(latestRecap.body, /125\.00–100\.00/);
+assert.match(latestRecap.body.split('\n\n')[1], /Alpha are 2–0 and Bravo are 0–2/, 'visible recap copy explains the resulting records');
+assert.match(median.stories.find(s => s.kind === 'recap').body, /including median results/, 'visible records preserve their scoring scope');
+const rivalryWithForm = build(weeklyRows, { ...previewOptions, board: { week: 3, rows: weeklyRows[0].rows }, rivalries: [{ owners: ['1', '2'], name: 'The Derby' }] }).previews.find(s => s.followedRivalry);
+assert(rivalryWithForm && rivalryWithForm.text.startsWith('The Derby:'));
+assert.match(rivalryWithForm.body.split('\n\n')[0], /Through Week 2, Alpha are 2–0 and Bravo are 0–2/);
+assert.match(rivalryWithForm.body.split('\n\n')[1], /recorded series/);
+assert.equal(rivalryWithForm.weight, 84, 'current context preserves the priority of a rivalry the user follows');
+console.log('PASS matchup reporting: current stakes, visible result significance, median-aware averages, incomplete/stale cutoffs, new pairings and selected rivalries');

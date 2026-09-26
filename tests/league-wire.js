@@ -14,7 +14,7 @@ function harness({ reduced = false, phone = false, week = 1 } = {}) {
         useMemo: fn => fn(), useCallback: fn => fn, useEffect: fn => effects.push(fn), useRef: () => ({ current: null }),
     };
     const context = { React, console, setInterval: () => { intervals++; return intervals; }, clearInterval() {}, window: { App: { LeagueLiveScores: { useScores: () => ({ week, rows: [{ roster_id: 1, matchup_id: 1, points: 20 }, { roster_id: 2, matchup_id: 1, points: 10 }] }), rosterPoints: r => typeof r.custom_points === 'number' ? r.custom_points : typeof r.points === 'number' ? r.points : null, supported: () => true } }, WR: { useViewport: () => ({ isPhone: phone }) }, matchMedia: () => ({ matches: reduced }) } };
-    vm.createContext(context); vm.runInContext(journalSource, context); vm.runInContext(source, context);
+    vm.createContext(context); vm.runInContext(fs.readFileSync('js/shared/league-wire-reading.js', 'utf8'), context); vm.runInContext(journalSource, context); vm.runInContext(source, context);
     const props = { currentLeague: { league_id: 'test', season: '2026', rosters: [] }, standings: [], transactions: [] };
     const render = () => { cursor = 0; effects = []; return context.window.WrLeagueWire(props); };
     render();
@@ -173,3 +173,22 @@ nodes(editorialTree).find(n => n.type === 'button' && text(n) === 'Stories').pro
 editorialTree = editorialApp.render();
 assert(!text(editorialTree).includes('Looking back: old champion'), 'stories section remains current');
 console.log('PASS current-news UI: separate lookback, current-only headline rail and Stories section');
+
+// A same-season archive cannot inherit this week's transactions or live records.
+const archiveCutoff = harness({ week: 4 });
+archiveCutoff.props.transactions = [{type:'waiver',status:'complete',created:Date.now(),settings:{waiver_bid:99},adds:{p1:1},roster_ids:[1]}];
+archiveCutoff.setArchive({ key:'test|2026|1|3', status:'ready', weeks });
+let cutoffTree = archiveCutoff.render();
+nodes(cutoffTree).find(n => n.props.className === 'wr-wire-brand').props.onClick();
+cutoffTree = archiveCutoff.render();
+nodes(cutoffTree).find(n => n.props['aria-label'] === 'Wire topic').props.onChange({target:{value:'stories'}});
+cutoffTree = archiveCutoff.render();
+assert.match(text(cutoffTree), /FAAB splash/);
+nodes(cutoffTree).find(n => n.props['aria-label'] === 'Story week').props.onChange({target:{value:'1'}});
+cutoffTree = archiveCutoff.render();
+assert.doesNotMatch(text(cutoffTree), /FAAB splash|LAST 7 DAYS|RECORD WATCH/);
+nodes(cutoffTree).find(n => n.props['aria-label'] === 'Search this Wire').props.onChange({target:{value:'not-a-real-story'}});
+cutoffTree = archiveCutoff.render();
+assert.match(text(cutoffTree),/No matching stories/);
+assert(!nodes(cutoffTree).some(n => n.props.className === 'wr-journal-story is-lead'));
+console.log('PASS archive chronology and searchable story reading');

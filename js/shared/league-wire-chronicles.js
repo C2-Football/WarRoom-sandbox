@@ -71,11 +71,12 @@
                 const headline = streak >= 2 ? `Can ${name} make it ${streak + 1} titles in a row?`
                     : streak === 1 ? `Can ${name} make it back-to-back?`
                     : team.wins < team.losses ? `Can ${name} get back to championship form?` : `Another title run for ${name}?`;
-                const now = `${record(team)} through Week ${end}, with ${score(team.pf)} points scored and the No. ${team.rank} spot in The Wire’s standings.`;
+                const now = `${name} are ${record(team)} through Week ${end}${Number(league.settings?.league_average_match) === 1 ? ', including median results' : ''}, with ${score(team.pf)} points scored. That puts them at No. ${team.rank} in The Wire’s standings.`;
                 const history = streak ? `${latest.winner} won the ${latest.season} title${streak > 1 ? ` after winning ${years.slice(1, streak).join(' and ')}` : ''}.`
                     : `${latest.winner}’s last documented title came in ${latest.season}${years.length > 1 ? `, following ${years.slice(1).join(' and ')}` : ''}.`;
-                const outlook = streak ? 'The title defense has its first results on the board.' : team.wins < team.losses ? 'The pedigree is there; this season’s results still have catching up to do.' : 'The question now is whether this start becomes another championship run.';
-                currentStory(titles, [rid], headline, `${now} ${history} ${outlook}`, streak >= 2 ? 81 : 76);
+                const outlook = streak ? `The ${year} campaign is a bid for ${streak === 1 ? 'back-to-back championships' : `${streak + 1} consecutive titles`}.`
+                    : team.wins < team.losses ? 'A return to that level starts with turning this season’s record around.' : 'Another title would add to that history; the current results are the next chapter.';
+                currentStory(titles, [rid], headline, `${now}\n\n${history} ${outlook}`, streak >= 2 ? 81 : 76);
                 if (years.length === 2) contenders.push({ rid, name, team, titles });
             });
             if (contenders.length >= 2) {
@@ -105,6 +106,15 @@
             if (pair.length !== 2) return;
             const ids = pair.map(r => r.roster_id), facts = rematchFacts(ids);
             if (!facts.length) return;
+            // One matchup gets one story. Add championship context to an
+            // existing current-form or followed-rivalry preview instead of
+            // publishing the same pair a second time under an archive hook.
+            const existing = previews.find(item => item.rosterIds?.length === 2 && ids.every(id => item.rosterIds.some(rid => str(rid) === str(id))));
+            if (existing) {
+                existing.category = 'Rivalry watch'; existing.label = `WK ${Number(board.week)} · CHAMPIONSHIP REMATCH`;
+                existing.weight = Math.max(existing.weight || 0, 79);
+                return;
+            }
             // A title rematch is meaningful even before regular-season history
             // has loaded; it never increments the existing rivalry win count.
             previews.push({ id: `title-rematch:${league.league_id}:${board.week}:${ids.join(':')}`, kind: 'story', category: 'Rivalry watch', label: 'CHAMPIONSHIP REMATCH',
