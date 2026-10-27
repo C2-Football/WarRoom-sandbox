@@ -899,7 +899,9 @@
     }
 
     function TradesSection({ league, cards, team, apply, logIndex, eraFactors, throughWeek, onNavigate, tradeRequest }) {
-        const phone = window.WR?.useViewport ? window.WR.useViewport().isPhone : false;
+        const viewport = window.WR?.useViewport ? window.WR.useViewport() : null;
+        const phone = viewport?.isPhone || false;
+        const inlineAssessment = phone || (Number.isFinite(viewport?.width) && viewport.width < 1100);
         const others = league.teams.filter((t) => t.teamId !== team.teamId);
         const [counterpartyId, setCounterpartyId] = useState(others.length ? others[0].teamId : '');
         const [giveIds, setGiveIds] = useState([]);
@@ -1054,6 +1056,20 @@
         const comparisonDelta = `${give.length} for ${receive.length} · ${balanced && comparable ? `${receiveValue - giveValue >= 0 ? '+' : ''}${fmt1(receiveValue - giveValue)} ${concealed ? 'estimated points/game' : 'reference points'} to your side` : balanced ? 'Missing values or different scoring bases cannot be graded.' : 'Equal-count swaps keep roster sizes fixed.'}`;
         const comparisonBasis = concealed ? 'Completed Vault averages or public candidate-archive averages, as shown with each player’s scoring basis. The comparison does not consult a hidden year or guarantee acceptance.'
             : 'Archived season totals use reference scoring, which can differ from your league. This comparison is not a forecast or acceptance guarantee.';
+        const hasSelections = give.length > 0 || receive.length > 0;
+        const assessment = hasSelections && h('section', { className: 'tl-trade-brief', 'aria-label': 'Trade summary', 'aria-live': 'polite', 'aria-atomic': true },
+            h('div', { className: 'tl-trade-brief-metrics' },
+                h('div', { className: `tl-trade-value-grade${grade?.tone ? ` is-${grade.tone}` : ''}`, title: comparisonBasis },
+                    h('small', null, 'Value grade'), h('strong', null, balanced && comparable ? grade.grade : '—'), h('span', null, comparisonLabel)),
+                h('div', { className: `tl-trade-point-delta${pointDelta > 0 ? ' is-positive' : pointDelta < 0 ? ' is-negative' : ''}` },
+                    h('small', null, 'To your side'), h('strong', { className: 'tabular' }, deltaLabel), h('span', null, concealed ? 'est. pts/game' : 'reference pts')),
+                counterparty?.manager === 'ai' && h('div', { className: 'tl-trade-ai-preview', title: 'Current terms: 100% means this GM would accept now; 0% means reject. This is a deterministic rule check, not a calibrated forecast. Roster moves can change it.' },
+                    h('small', null, 'AI acceptance'), h('strong', { className: 'tabular' }, acceptancePercent == null ? '—' : `${acceptancePercent}%`),
+                    acceptancePercent != null && h('span', { className: 'tl-trade-acceptance-track', role: 'progressbar', 'aria-label': 'AI acceptance for current terms', 'aria-valuenow': acceptancePercent, 'aria-valuemin': 0, 'aria-valuemax': 100 }, h('span', { style: { width: `${acceptancePercent}%` } })),
+                    h('span', null, aiPreview?.label || 'Complete a legal offer'))),
+            h('span', { className: 'tl-trade-counts', title: comparisonDelta }, `${give.length} for ${receive.length}`),
+            acceptanceProblem ? h('p', { className: 'tl-acq-problem' }, `Cannot accept this package with the current rosters: ${acceptanceProblem} You may propose it during planning; rosters are checked again after waivers.`)
+                : balanced && h('p', { className: 'tl-acq-help' }, 'Current roster checks pass. Both rosters are checked again when the offer is accepted.'));
         const side = (label, owner, ids, onToggle) => h('section', { className: 'tl-trade-side' },
             h('div', { className: 'tl-trade-side-head' }, h('div', null, h('small', null, label), h('h3', null, owner?.name || 'Choose a partner')),
                 h('span', null, `${ids.length} selected`)),
@@ -1074,7 +1090,7 @@
                     : h('p', null, receipt.status === 'pending' && !(receipt.deferredUntilWeek > league.currentWeek) ? 'The latest saved status will appear here when the room updates.' : 'No players moved.'),
                 receipt.note && ['rejected', 'withdrawn'].includes(receipt.status) && h('p', null, receipt.note),
                 receipt.status === 'accepted' && onNavigate && h('button', { type: 'button', className: 'tl-btn', onClick: () => onNavigate('roster') }, lineupOpen ? 'Set lineup' : 'View lineup')),
-            deskView === 'builder' && h('div', { className: `tl-trade-builder-layout${counterparty?.manager === 'ai' ? ' has-owner' : ''}` },
+            deskView === 'builder' && h('div', { className: `tl-trade-builder-layout${counterparty?.manager === 'ai' || hasSelections ? ' has-rail' : ''}` },
             h('div', { className: 'tl-card tl-trade-builder' },
                 h('div', { className: 'tl-card-title' }, h('span', null, 'Trade builder'), h('small', null, deskOpen ? `W${league.currentWeek} · DESK OPEN` : 'DESK CLOSED')),
                 h('div', { className: 'tl-trade-controls' },
@@ -1084,19 +1100,8 @@
                     h('input', { className: 'tl-input', placeholder: 'Search either roster…', 'aria-label': 'Search trade players', value: search, onChange: e => setSearch(e.target.value) }),
                     h('select', { className: 'tl-select', 'aria-label': 'Filter trade position', value: position, onChange: e => setPosition(e.target.value) },
                         ['ALL', ...POSITION_ORDER.filter(pos => [...team.roster, ...(counterparty?.roster || [])].some(entry => entry.position === pos))].map(pos => h('option', { key: pos, value: pos }, pos === 'ALL' ? 'All positions' : pos)))),
-                h('section', { className: 'tl-trade-brief', 'aria-label': 'Trade summary', 'aria-live': 'polite', 'aria-atomic': true },
-                    h('div', { className: 'tl-trade-brief-metrics' },
-                        h('div', { className: `tl-trade-value-grade${grade?.tone ? ` is-${grade.tone}` : ''}`, title: comparisonBasis },
-                            h('small', null, 'Value grade'), h('strong', null, balanced && comparable ? grade.grade : '—'), h('span', null, comparisonLabel)),
-                        h('div', { className: `tl-trade-point-delta${pointDelta > 0 ? ' is-positive' : pointDelta < 0 ? ' is-negative' : ''}` },
-                            h('small', null, 'To your side'), h('strong', { className: 'tabular' }, deltaLabel), h('span', null, concealed ? 'est. pts/game' : 'reference pts')),
-                        counterparty?.manager === 'ai' && h('div', { className: 'tl-trade-ai-preview', title: 'Current terms: 100% means this GM would accept now; 0% means reject. This is a deterministic rule check, not a calibrated forecast. Roster moves can change it.' },
-                            h('small', null, 'AI acceptance'), h('strong', { className: 'tabular' }, acceptancePercent == null ? '—' : `${acceptancePercent}%`),
-                            acceptancePercent != null && h('span', { className: 'tl-trade-acceptance-track', role: 'progressbar', 'aria-label': 'AI acceptance for current terms', 'aria-valuenow': acceptancePercent, 'aria-valuemin': 0, 'aria-valuemax': 100 }, h('span', { style: { width: `${acceptancePercent}%` } })),
-                            h('span', null, aiPreview?.label || 'Complete a legal offer'))),
-                    h('span', { className: 'tl-trade-counts', title: comparisonDelta }, `${give.length} for ${receive.length}`),
-                    acceptanceProblem ? h('p', { className: 'tl-acq-problem' }, `Cannot accept this package with the current rosters: ${acceptanceProblem} You may propose it during planning; rosters are checked again after waivers.`)
-                        : balanced && h('p', { className: 'tl-acq-help' }, 'Current roster checks pass. Both rosters are checked again when the offer is accepted.')),
+                inlineAssessment && assessment,
+                !hasSelections && h('p', { className: 'tl-trade-start-hint' }, 'Choose players from either roster to begin.'),
                 h('div', { className: 'tl-trade-packages', 'aria-label': 'Selected trade packages' },
                     tradePackage('YOU SEND', team, give, giveValue, id => setGiveIds(toggle(giveIds, id)), 'send'),
                     tradePackage('YOU RECEIVE', counterparty, receive, receiveValue, id => setReceiveIds(toggle(receiveIds, id)), 'receive')),
@@ -1115,8 +1120,10 @@
                     h('button', { className: 'tl-btn', disabled: sending || (!give.length && !receive.length), onClick: () => { setGiveIds([]); setReceiveIds([]); } }, 'Clear'),
                     h('button', { className: 'tl-btn primary', disabled: sending || !deskOpen || !balanced || !counterparty, onClick: send }, sending ? 'Sending…' : 'Send offer')),
                 ),
-                counterparty?.manager === 'ai' && h('aside', { className: 'tl-trade-owner-panel', 'aria-label': 'Owner DNA' },
-                    h('details', { className: 'tl-trade-gm', open: !phone }, h('summary', null, `Owner DNA · ${counterparty.name}`), h(GmProfile, { team: counterparty, title: 'GM profile' })))),
+                ((!inlineAssessment && hasSelections) || counterparty?.manager === 'ai') && h('aside', { className: 'tl-trade-decision-rail', 'aria-label': 'Trade assessment and owner' },
+                    !inlineAssessment && assessment,
+                    counterparty?.manager === 'ai' && h('section', { className: 'tl-trade-owner-panel', 'aria-label': 'Owner DNA' },
+                        h('details', { className: 'tl-trade-gm', open: !phone }, h('summary', null, `Owner DNA · ${counterparty.name}`), h(GmProfile, { team: counterparty, title: 'GM profile' }))))),
             h('div', { className: 'tl-trade-records', hidden: deskView === 'builder' },
                 h('div', { className: 'tl-card', hidden: deskView !== 'inbox' },
                     h('div', { className: 'tl-card-title' }, h('span', null, 'Inbox'), h('small', null, pending.length ? `${pending.length} PENDING` : 'DESK CLEAR')),

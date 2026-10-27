@@ -256,6 +256,32 @@ async function test(name, fn) { reset(); await fn(); count++; console.log(`  ok 
         cards.delete('player:1-QB'); const missing = render('trades');
         assert(!region(missing, 'AI acceptance for current terms'), 'Unavailable evidence cannot become a numeric probability');
     });
+    await test('desktop assessment starts with either package in the right rail above DNA, while phone keeps it before packages', () => {
+        const oldViewport = window.WR;
+        try {
+            window.WR = { useViewport: () => ({ isPhone: false, width: 1339 }) };
+            league = { ...league, teams: league.teams.map(team => team.teamId === 't2' ? { ...team, manager: 'ai', aiPersona: 'steward' } : team) };
+            let tree = render('trades');
+            assert(!region(tree, 'Trade summary'), 'An empty builder does not spend space on an uncomputed grade');
+            assert(text(tree).includes('Choose players from either roster to begin.'));
+            walk(tree).find(node => node.props['aria-label'] === 'Select 0 QB').props.onChange();
+            tree = render('trades');
+            const rail = region(tree, 'Trade assessment and owner');
+            assert(region(rail, 'Trade summary')); assert(region(rail, 'Owner DNA'));
+            assert(walk(rail).indexOf(region(rail, 'Trade summary')) < walk(rail).indexOf(region(rail, 'Owner DNA')));
+            const builder = walk(tree).find(node => node.props.className === 'tl-card tl-trade-builder');
+            assert(!region(builder, 'Trade summary')); assert.equal(walk(tree).filter(node => node.props['aria-label'] === 'Trade summary').length, 1);
+            assert(text(region(rail, 'Trade summary')).includes('1 for 0')); assert(button(tree, 'Send offer').props.disabled);
+            window.WR = { useViewport: () => ({ isPhone: true, width: 390 }) };
+            tree = render('trades');
+            const all = walk(tree), summary = region(tree, 'Trade summary');
+            assert(all.indexOf(summary) < all.indexOf(region(tree, 'Selected trade packages')));
+            assert(!region(region(tree, 'Trade assessment and owner'), 'Trade summary'));
+            assert.equal(all.filter(node => node.props['aria-label'] === 'Trade summary').length, 1);
+            button(tree, 'Clear').props.onClick(); tree = render('trades'); assert(!region(tree, 'Trade summary'));
+            assert.equal(writes.length, 0, 'Changing presentation and selection never submits a trade');
+        } finally { window.WR = oldViewport; }
+    });
     await test('an owned trade request opens and focuses the exact saved offer once without responding', () => {
         offer(); let tree = render('trades'); button(tree, 'Trade builder').props.onClick();
         const request = { leagueId: league.leagueId, teamId: 't1', tradeId: league.trades[0].tradeId, requestId: 1 };

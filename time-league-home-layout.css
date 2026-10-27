@@ -28,8 +28,37 @@
 .tl-root.tl-play .tl-home-wire-finals { border-top:1px solid var(--charcoal); margin-top:4px; }
 .tl-root.tl-play .tl-home-wire-finals > summary { min-height:44px; padding:12px 0; font-size:13px; font-weight:600; cursor:pointer; }
 .tl-root.tl-play .tl-home-wire-finals .tl-update-highlights { margin-top:8px; }
+.tl-root.tl-play .tl-recap-dashboard,
+.tl-root.tl-play .tl-recap-decision-column,
+.tl-root.tl-play .tl-recap-league-column { display:grid; grid-template-columns:minmax(0,1fr); gap:12px; align-items:start; min-width:0; }
+.tl-root.tl-play .tl-recap-dashboard :is(.tl-card,.tl-home-secondary) { margin:0; }
 
 @media (min-width:1100px) {
+  .tl-root.tl-play .tl-week-recap { display:grid; gap:12px; }
+  .tl-root.tl-play .tl-week-recap .tl-recap-heading { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 12px; }
+  .tl-root.tl-play .tl-week-recap .tl-recap-heading h1 { margin:0; font-size:26px; line-height:1.2; }
+  .tl-root.tl-play .tl-week-recap .tl-recap-heading p { margin:0; font-size:13px; line-height:1.4; }
+  .tl-root.tl-play .tl-week-recap .tl-recap-result { grid-template-columns:minmax(0,1fr) minmax(360px,1fr); min-height:0; margin:0; padding:16px 20px; gap:20px; }
+  .tl-root.tl-play .tl-week-recap .tl-home-hero-copy h2 { margin:6px 0; font-size:25px; line-height:1.15; }
+  .tl-root.tl-play .tl-week-recap .tl-home-hero-copy p { margin:0; font-size:13px; line-height:1.4; }
+  .tl-root.tl-play .tl-week-recap .tl-home-team :is(.tl-matchup-helmet,.tl-helmet) { width:52px; height:52px; }
+  .tl-root.tl-play .tl-week-recap .tl-home-team > strong { margin-top:4px; font-size:15px; line-height:1.2; }
+  .tl-root.tl-play .tl-week-recap .tl-home-team > span:not(.tl-matchup-helmet) { font-size:11px; line-height:1.4; letter-spacing:0; }
+  .tl-root.tl-play .tl-recap-dashboard { grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+  .tl-root.tl-play .tl-recap-dashboard .tl-card { padding:14px 16px; }
+  .tl-root.tl-play .tl-recap-dashboard h2 { margin:0 0 10px; font-size:21px; line-height:1.2; }
+  .tl-root.tl-play .tl-recap-dashboard .tl-update-highlights { margin:0 0 10px; padding:0 0 10px; gap:12px; }
+  .tl-root.tl-play .tl-recap-dashboard .tl-update-highlights strong { font-size:16px; line-height:1.3; }
+  .tl-root.tl-play .tl-recap-dashboard .tl-update-highlights :is(small,span) { font-size:12px; line-height:1.4; }
+  .tl-root.tl-play .tl-recap-dashboard .tl-hint,
+  .tl-root.tl-play .tl-recap-next > p { margin:8px 0; font-size:13px; line-height:1.4; }
+  .tl-root.tl-play .tl-recap-next > h2 { margin:5px 0; font-size:20px; }
+  .tl-root.tl-play .tl-recap-dashboard .tl-update-results { grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+  .tl-root.tl-play .tl-recap-dashboard .tl-update-match { min-width:0; padding:10px; }
+  .tl-root.tl-play .tl-recap-dashboard .tl-update-match > div { gap:6px; }
+  .tl-root.tl-play .tl-recap-dashboard .tl-update-match :is(span,strong) { font-size:12px; line-height:1.4; }
+  .tl-root.tl-play .tl-recap-dashboard .tl-update-match span { min-width:0; overflow-wrap:anywhere; }
+  .tl-root.tl-play .tl-recap-dashboard .tl-home-secondary > summary { min-height:44px; padding:12px 14px; font-size:13px; cursor:pointer; }
   .tl-root.tl-play .tl-home-dashboard { gap:12px; }
   .tl-root.tl-play .tl-home-dashboard > .tl-home-hero { min-height:180px; margin-bottom:0; padding:20px 24px; gap:24px; grid-template-columns:minmax(0,1fr) minmax(360px,.9fr); }
   .tl-root.tl-play .tl-home-dashboard .tl-home-hero-copy h1 { margin:7px 0 8px; font-size:30px; line-height:1.08; }

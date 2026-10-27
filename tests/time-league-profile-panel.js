@@ -25,6 +25,15 @@ const text = value => Array.isArray(value) ? value.map(text).join(' ') : value &
 const render = () => { stateIndex = 0; refIndex = 0; return window.WrTimeLeagueProfilePanel({}); };
 async function run() {
     let view = render();
+    const customize = tree => nodes(tree, node => node.type === 'details' && node.props.className === 'tl-profile-customize')[0];
+    const guestDisclosure = customize(view);
+    assert(guestDisclosure && guestDisclosure.props.open !== true, 'Profile editing starts collapsed behind a native keyboard-operable disclosure');
+    assert.equal(text(nodes(guestDisclosure, node => node.type === 'summary')[0]).trim(), 'Customize Names, team design & privacy');
+    assert.equal(nodes(guestDisclosure, node => node.type === 'form').length, 1, 'The original explicit-save form remains mounted inside Customize');
+    assert.equal(nodes(view, node => node.props.role === 'status' && text(node).includes('Loading your team design')).length, 1);
+    assert(!nodes(guestDisclosure, node => node.props.role === 'status').length, 'Loading remains visible while Customize is collapsed');
+    const identity = nodes(view, node => node.props.className?.includes('tl-profile-banner-copy'))[0];
+    assert(text(identity).includes('Commander') && text(identity).includes('Device profile') && text(identity).includes('Private profile'));
     assert(nodes(view, node => node.type === 'fieldset')[0].props.disabled, 'Editor must wait for profile load');
     effects.shift()();
     await Promise.resolve();
@@ -50,11 +59,14 @@ async function run() {
     assert.equal(chosen.assetId, 'simanek', 'Applying team colors must retain the chosen complete asset');
     assert.equal(chosen.artworkMode, 'team-colors');
     assert.equal(chosen.shellColor, '#123456');
+    assert.equal(customize(view).props.key, guestDisclosure.props.key, 'Editing and rerendering retain the same native disclosure/form rather than discard a draft');
     userId = 'alice';
     Profile.saveLocal({ teamName: 'Alice Owls', displayName: 'Alice', publicProfile: true }, 'alice');
     states[0] = { userId: 'alice', profile: Profile.readLocal(), loading: false };
     view = render();
     assert(text(view).includes('Alice Owls'));
+    assert.notEqual(customize(view).props.key, guestDisclosure.props.key, 'An account switch resets the native disclosure to its collapsed default');
+    assert(text(nodes(view, node => node.props.className?.includes('tl-profile-banner-copy'))[0]).includes('Account profile'));
     const publicCheckbox = nodes(view, node => node.type === 'input' && node.props.type === 'checkbox')[0];
     assert.equal(publicCheckbox.props.checked, true);
     let saves = 0;
@@ -65,11 +77,25 @@ async function run() {
     await nodes(view, node => node.type === 'form')[0].props.onSubmit({ preventDefault() {} });
     assert.equal(saves, 1);
     assert.equal(Profile.readLocal().publicProfile, false);
+    view = render();
+    assert(!nodes(customize(view), node => node.props.className?.includes('tl-profile-feedback')).length, 'Save confirmation remains visible outside the collapsible editor');
+    assert(text(nodes(view, node => node.props.className?.includes('tl-profile-feedback'))[0]).includes('Profile saved to your account'));
+    App.TimeLeagueRemote.saveProfile = async () => ({ ok: false, error: 'Connection lost. Your changes are still here.' });
+    const nameInput = nodes(view, node => node.type === 'input' && node.props.maxLength === 40)[1];
+    nameInput.props.onChange({ target: { value: 'Unsaved Owls' } });
+    view = render();
+    await nodes(view, node => node.type === 'form')[0].props.onSubmit({ preventDefault() {} });
+    view = render();
+    const error = nodes(view, node => node.props.role === 'alert')[0];
+    assert(error && text(error).includes('Connection lost') && text(error).includes('Reload profile'));
+    assert(!nodes(customize(view), node => node.props.role === 'alert').length, 'A save error and recovery action cannot disappear when Customize closes');
+    assert.equal(nodes(view, node => node.type === 'input' && node.props.maxLength === 40)[1].props.value, 'Unsaved Owls');
+    assert.equal(Profile.readLocal().teamName, 'Alice Owls', 'A failed save never publishes or overwrites the persisted design');
     userId = 'bob';
     view = render();
     assert(!text(view).includes('Alice Owls'), 'Account data must disappear before effects run after account switch');
     assert(nodes(view, node => node.type === 'fieldset')[0].props.disabled);
     assert(!nodes(view, node => node.type === 'input' && node.props.type === 'checkbox')[0].props.checked);
-    console.log('Vault profile editor: guest privacy, load gating, helmet/backdrop controls, explicit Save and first-render account isolation passed.');
+    console.log('Vault profile editor: collapsed Customize, compact identity, mounted draft retention, visible load/save/recovery feedback, guest privacy, helmet/backdrop controls, explicit Save and first-render account isolation passed.');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });

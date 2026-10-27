@@ -23,6 +23,8 @@ window.requestAnimationFrame = () => {};
 let phone = false;
 window.WR = { useViewport: () => ({ isPhone: phone }) };
 for (const name of ['Setup', 'Draft', 'Home', 'Team', 'Gamecast', 'Stats', 'Rivals']) window[`WrTimeLeague${name}Panel`] = function Panel() {};
+window.WrTimeLeagueCareerView = function CareerView() {};
+window.WrTimeLeagueProfilePanel = function ProfilePanel() {};
 window.WrTimeLeagueWeekGates = function WeekGates() {};
 window.App.TimeLeaguePlayerCards = {};
 window.TimeLeagueMail = {
@@ -219,4 +221,70 @@ test('Messages review opens the exact owned, visible trade without changing a sa
         else delete TimeLeagueMail.tradesForConversation;
     }
 });
-console.log(`PASS ${passed} Vault navigation, Home mail, phase context and public-era groups`);
+test('Stats and the persistent gamecast have distinct sibling keys so navigation cannot replace or duplicate playback', () => {
+    const sample = fixture(), draw = mount(sample, 'stats');
+    let tree = draw();
+    const workspace = byClass(tree, 'tl-gamecast-workspace'), stats = component(tree, 'Stats');
+    assert.equal(workspace.props.key, `gamecast:${sample.leagueId}`);
+    assert.equal(stats.props.key, `stats:${sample.leagueId}`);
+    assert.notEqual(workspace.props.key, stats.props.key, 'Duplicate React keys can orphan the paused panel and mount a visible final');
+    component(tree, 'Gamecast').props.onPlaybackChange({ leagueId: sample.leagueId, week: 2, done: false, replay: false, playing: false });
+    tree = draw();
+    assert.equal(component(tree, 'Stats').props.throughWeek, 1);
+    button(byClass(tree, 'tl-sidenav'), 'GAMEDAY').props.onClick(); tree = draw();
+    assert.equal(byClass(tree, 'tl-gamecast-workspace').props.key, workspace.props.key);
+    assert.equal(component(tree, 'Gamecast').props.active, true);
+});
+
+test('Achievements lives inside My Profile while legacy trophy links, owned seats and phone navigation keep working', () => {
+    const sample = fixture(), before = JSON.stringify(sample);
+    for (const phase of ['season', 'complete']) {
+        const draw = mount({ ...sample, phase }, 'achievements', { role: 'member', seatTeamId: 't2', draftStarted: true });
+        let tree = draw();
+        assert.equal(tree.props['data-vault-tab'], 'career');
+        const labels = walk(byClass(tree, 'tl-sidenav')).filter(node => node.type === 'button').map(text);
+        assert(!labels.some(label => label.includes('ACHIEVEMENTS')));
+        assert(labels.some(label => label.includes('MY PROFILE')));
+        assert.equal(component(tree, 'Team').props.section, 'achievements');
+        assert.equal(component(tree, 'Team').props.activeTeamId, 't2', 'Only the claimed manager supplies trophy context');
+        const profileNav = byClass(tree, 'tl-profile-view-nav');
+        assert.equal(button(profileNav, 'Achievements').props['aria-pressed'], true);
+        button(profileNav, 'Profile & career').props.onClick(); tree = draw();
+        assert(!component(tree, 'Team'));
+        assert(walk(tree).some(node => node.type === window.WrTimeLeagueCareerView));
+        button(byClass(tree, 'tl-profile-view-nav'), 'Achievements').props.onClick();
+        assert.equal(component(draw(), 'Team').props.section, 'achievements');
+        phone = true;
+        const mobile = renderHelper(walk(tree).find(node => node.type?.name === 'MobileGameNav'));
+        const moreLabels = walk(mobile).filter(node => node.type === 'button').map(text);
+        assert(moreLabels.some(label => label.trim().endsWith('My profile')));
+        assert(!moreLabels.some(label => label.includes('Trophies') || label.includes('Achievements')));
+        phone = false;
+    }
+    const draw = mount(sample);
+    component(draw(), 'Home').props.onNavigate('achievements');
+    assert.equal(component(draw(), 'Team').props.section, 'achievements', 'Existing Home trophy links route into the profile section');
+    const draft = mount({ ...sample, phase: 'draft' }, 'achievements')();
+    assert.equal(draft.props['data-vault-tab'], 'draft');
+    assert(!component(draft, 'Team'), 'A legacy trophy preference cannot skip the draft reveal');
+    assert.equal(JSON.stringify(sample), before, 'Moving the UI never changes earned state');
+});
+
+test('profile records and achievements cannot announce an unwatched final; explicit replays keep earned records available', () => {
+    const sample = fixture(), before = JSON.stringify(sample);
+    for (const tab of ['career', 'achievements']) {
+        const draw = mount(sample, tab), cast = component(draw(), 'Gamecast');
+        cast.props.onPlaybackChange({ leagueId: sample.leagueId, week: 2, done: false, replay: false });
+        let tree = draw();
+        assert(text(tree).includes('Your career and achievements update after the final whistle.'));
+        assert(!component(tree, 'Team'));
+        assert(!walk(tree).some(node => node.type === window.WrTimeLeagueCareerView), 'Saved career aggregates can include the already resolved, unwatched game');
+        button(tree, 'Watch game').props.onClick(); assert.equal(draw().props['data-vault-tab'], 'gameday');
+        component(draw(), 'Gamecast').props.onPlaybackChange({ leagueId: sample.leagueId, week: 2, done: false, replay: true });
+        state[4] = tab; tree = draw();
+        assert(!text(tree).includes('Your career and achievements update after the final whistle.'));
+        assert(tab === 'career' ? walk(tree).some(node => node.type === window.WrTimeLeagueCareerView) : component(tree, 'Team'));
+    }
+    assert.equal(JSON.stringify(sample), before);
+});
+console.log(`PASS ${passed} Vault navigation, profile, Home mail, phase context and public-era groups`);

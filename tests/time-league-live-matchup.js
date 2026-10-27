@@ -1,7 +1,7 @@
 'use strict';
 const assert = require('node:assert/strict');
 global.window = globalThis; window.App = {};
-for (const name of ['roster','rules','draft-room','era-rules','types','season','helmet','engine','rivals','ai','actions','ui','gamecast']) require('../js/shared/time-league-' + name + '.js');
+for (const name of ['roster','rules','draft-room','era-rules','types','season','helmet','engine','hidden-years','rivals','ai','actions','ui','gamecast']) require('../js/shared/time-league-' + name + '.js');
 const { TimeLeagueEngine: E, TimeLeagueGamecast: G, TimeLeagueSeason: S } = App;
 const disk = new Map(); let saveFails = false;
 window.localStorage = { getItem: key => disk.get(key) || null, setItem: (key, value) => { if (saveFails) throw new Error('Disk full'); disk.set(key, value); }, removeItem: key => disk.delete(key) };
@@ -173,10 +173,29 @@ const gateButton=label=>button(dock(dockProps()),label);
     assert.equal(root.states[4].value, 'gameday', 'Finishing an explicit replay does not force another recap');
     assert(!gateButton('End week'), 'Rollover requires returning to the recap');
     gateButton('Week recap').props.onClick();
+    const beforeEndWeek=root.states[1].value;
     await gateButton('End week').props.onClick();tree=play();tree=play();
-    assert.equal(root.states[4].value,'waivers');assert.equal(root.states[1].value.weekStage,'claims');
+    assert.equal(root.states[4].value,'home');assert.equal(root.states[1].value.weekStage,'claims');
     assert.equal(cast.states[0].value,null,'Advancing clears the old replay so the next game shows its own lineup');
     assert.deepEqual(root.states[1].value.finalizedWeeks[0],finals,'Watching, pausing and advancing preserves the saved box score');
+
+    const retryRoot=harness(),retryLeague={...beforeEndWeek,leagueId:beforeEndWeek.leagueId+'-retry'};
+    retryRoot.states[1]={value:retryLeague};retryRoot.states[4]={value:'home'};retryRoot.states[6]={value:cards};retryRoot.states[7]={value:logs};
+    const retryDraw=()=>retryRoot.render(()=>TimeLeague({onClose(){}}));
+    component(retryDraw(),WrTimeLeagueGamecastPanel).props.onPlaybackChange({leagueId:retryLeague.leagueId,week:1,done:true,playing:false});
+    const retryDock=()=>dock(component(retryDraw(),WrTimeLeagueWeekGates).props);
+    saveFails=true;
+    try{
+        assert.equal(await button(retryDock(),'End week').props.onClick(),false);
+        assert.equal(retryRoot.states[1].value,retryLeague,'A failed End week keeps the committed postgame snapshot');
+        assert.equal(retryRoot.states[4].value,'home','A failed End week stays on the recap');
+        assert.equal(retryRoot.states[1].value.weekStage,'postgame');
+    }finally{saveFails=false;}
+    await button(retryDraw(),'Retry save').props.onClick();
+    assert.equal(retryRoot.states[1].value.weekStage,'claims','Retry commits the pending next-week transition');
+    assert.equal(retryRoot.states[4].value,'home','A successful End week retry routes to Home');
+    assert.equal(retryRoot.states[1].value.currentWeek,retryLeague.currentWeek,'Retry cannot advance a second week');
+    assert.deepEqual(retryRoot.states[1].value.finalizedWeeks,retryLeague.finalizedWeeks,'Retry preserves all settled results');
 
     const member={role:'member',seatTeamId:'t1'};
     let props={...dockProps(),league:{...root.states[1].value,weekStage:'claims',settings:{...league.settings,advancementMode:'majority'}},currentTab:'waivers',onlineMeta:member};
@@ -227,6 +246,73 @@ const gateButton=label=>button(dock(dockProps()),label);
         assert(words(rendered).includes('100.04')&&words(rendered).includes('100.02'), `${name} cannot round a narrow final into an apparent tie`);
     }
     assert.equal(JSON.stringify(narrow),beforeNarrow,'Compact presentation never changes the saved result');
+
+    // Inspecting another game is presentation only: the owning seat, clock,
+    // playback mode and already-committed league are not replaced.
+    const inspectionSeed=E.createTimeLeague({name:'Inspect every matchup',seed:'inspect-matchups',createdAt:'2026-01-01T00:00:00Z',
+        settings:{...league.settings,draftTeamOrder:['t1','t2','t3','t4'],gameDeckVersion:1,hiddenYears:true,rosterSlots:{QB:1},maxQuarterbacks:1},
+        seats:['Owner','Own opponent','Other home','Other away'].map(name=>({name,manager:'human'}))});
+    const inspectionStats=[{passYd:200},{passYd:225},{passInt:2},{passYd:300,passTd:1,rushYd:24}],inspectionPoints=[8,9,-4,18.4];
+    const inspectionTeams=inspectionSeed.teams.map((team,i)=>({...team,roster:[{entryId:`inspect-${i}`,editionId:`inspect-${i}`,identity:`player:inspect-${i}`,name:`Inspected player ${i}`,
+        position:'QB',slot:'QB',drawnSeason:2000,hiddenDecade:'2000s',acquiredVia:'draft',acquiredWeek:1}]}));
+    const inspectionWeek={week:1,headlines:[],results:inspectionTeams.map((team,i)=>({teamId:team.teamId,total:inspectionPoints[i],starters:[{...team.roster[0],points:inspectionPoints[i],stats:inspectionStats[i]}]})),
+        matchups:[{home:'t1',away:'t2',homePoints:8,awayPoints:9,winner:'t2'},{home:'t3',away:'t4',homePoints:-4,awayPoints:18.4,winner:'t4'}]};
+    const inspectionTimeline=G.buildGamecast({...inspectionWeek,seed:'inspection',scoring:inspectionSeed.settings.scoring});
+    const negativeMoment=inspectionTimeline.events.find(event=>event.teamId==='t3'&&event.points<0);assert(negativeMoment);
+    // The display is allowed the public decade, never an assigned year.
+    for(const entry of [...inspectionTeams.flatMap(team=>team.roster),...inspectionWeek.results.flatMap(result=>result.starters)]){
+        delete entry.drawnSeason;Object.defineProperty(entry,'drawnSeason',{get(){throw Error('Inspection read a concealed assigned season');}});
+    }
+    const inspectionBase={...inspectionSeed,phase:'season',weekStage:'ready',seasonsRevealed:true,teams:inspectionTeams,
+        schedule:[1,2].map(week=>({week,pairs:[['t1','t2'],['t3','t4']]}))};
+    const inspectButton=page=>{
+        const stripNode=all(page).find(node=>node.type?.name==='ScoreboardStrip');
+        return all(stripNode.type(stripNode.props)).find(node=>node.type==='button'&&node.props['aria-label'].startsWith('Inspect Other home vs. Other away'));
+    };
+    for(const mode of ['pregame','live','replay','final']){
+        const ctx=harness();let writes=0;
+        const saved=mode==='pregame'?inspectionBase:{...inspectionBase,currentWeek:2,weekStage:'postgame',finalizedWeeks:[inspectionWeek]};
+        if(mode==='live'||mode==='replay'){
+            ctx.states[0]={value:{timeline:inspectionTimeline,weekData:inspectionWeek,finalized:saved,live:mode==='live'}};
+            ctx.states[1]={value:mode==='live'?negativeMoment.t:0};ctx.states[2]={value:mode==='live'};ctx.states[3]={value:60};
+        }
+        const props={league:saved,cards:new Map(),logIndex:new Map(),onUpdate(){writes++;},active:true,seatTeamId:'t1'};
+        const draw=()=>ctx.render(()=>WrTimeLeagueGamecastPanel(props));
+        let page=draw();ctx.refs[0].current=ctx.states[1].value;
+        const before=JSON.stringify(saved),clockBefore=ctx.states[1].value,playingBefore=ctx.states[2].value;
+        inspectButton(page).props.onClick();page=draw();
+        const focusEvents=[],primary=all(page).find(node=>node.props.className==='tl-gameday-primary');
+        primary.props.ref.current={closest:selector=>selector==='.tl-root'?{scrollIntoView(){focusEvents.push('room');}}:null,
+            focus:options=>{assert(options.preventScroll);focusEvents.push('primary');}};
+        ctx.pending.forEach(run=>run());
+        assert.deepEqual(focusEvents,['room','primary'],'A phone picker below the lineup brings the selected matchup into view');
+        const hero=all(page).find(node=>node.type?.name==='HeroMatchup');
+        assert.equal(hero.props.row.home,'t3');assert.equal(hero.props.row.away,'t4');
+        const lineup=all(page).find(node=>node.type?.name==='LiveLineups'),renderedLineup=lineup.type(lineup.props);
+        const visiblePlayers=all(renderedLineup).filter(node=>node.props['data-entry-id']);
+        assert.deepEqual(visiblePlayers.map(node=>node.props['data-entry-id']),['inspect-2','inspect-3']);
+        const landed=inspectionTimeline.events.filter(event=>event.t<=clockBefore);
+        const expected=mode==='final'?-4:mode==='pregame'?0:landed.filter(event=>event.teamId==='t3').reduce((sum,event)=>sum+Math.round(event.points*100),0)/100;
+        assert.equal(hero.props.row.homePoints,expected,'The inspected hero score and starter total share the landed clock');
+        assert.equal(Number(words(all(visiblePlayers[0]).find(node=>node.props.className?.includes('tl-live-player-points')))),expected);
+        if(mode==='pregame'||mode==='replay')assert(visiblePlayers.every(node=>Number(words(all(node).find(item=>item.props.className?.includes('tl-live-player-points'))))===0),'An inspected future/fresh replay lineup cannot expose final points');
+        if(mode==='live'){assert(expected<0,'Negative landed production is visible in the inspected matchup');assert(['t3','t4'].includes(lineup.props.currentPlay.teamId));assert(lineup.props.currentPlay.t<=clockBefore);assert(words(hero.props.spotlight).includes(lineup.props.currentPlay.description),'The inspected spotlight follows only a landed moment in that matchup');}
+        assert(!/\b2000\b/.test(words(renderedLineup)),'Inspecting another team does not disclose its hidden year');
+        assert.equal(inspectButton(page).props['aria-pressed'],true);
+        assert(!words(page).includes('Scoring moments & quarter recap'));
+        assert.equal(ctx.states[1].value,clockBefore);assert.equal(ctx.states[2].value,playingBefore);
+        button(page,'Your matchup →').props.onClick();page=draw();
+        assert.equal(all(page).find(node=>node.type?.name==='HeroMatchup').props.row.home,'t1');
+        assert.equal(ctx.states[1].value,clockBefore);assert.equal(writes,0);assert.equal(JSON.stringify(saved),before);
+        if(mode==='pregame'){
+            inspectButton(page).props.onClick();page=draw();props.league={...saved,currentWeek:2};page=draw();
+            assert.equal(all(page).find(node=>node.type?.name==='HeroMatchup').props.row.home,'t1','A selection cannot carry into another week');
+            props.league={...saved,leagueId:'another-room'};page=draw();
+            assert.equal(all(page).find(node=>node.type?.name==='HeroMatchup').props.row.home,'t1','A selection cannot carry into another room');
+            props.league=saved;props.onlineMeta={role:'member',seatTeamId:'t1'};page=draw();inspectButton(page).props.onClick();page=draw();
+            assert(button(page,'WAITING FOR COMMISSIONER').props.disabled,'Inspecting another game never grants advancement authority');
+        }
+    }
 
     // Deliver a frame even after cancellation to model a queued callback or a
     // delayed effect cleanup. Pausing must stop the clock synchronously, and a

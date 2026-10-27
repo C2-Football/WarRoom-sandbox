@@ -70,8 +70,9 @@ button(tree,'1 MIN').props.onClick(); tree=cast(); assert.equal(state[3],60);
 for (const boundary of [15,30,45,60]) {
     button(tree,'NEXT QUARTER').props.onClick(); tree=cast();
     assert.equal(state[1],boundary); assert.equal(state[2],false,'Quarter stepping pauses at the break');
-    const recap=walk(tree).find(node=>typeof node.type==='function' && node.type.name==='QuarterRecap');
-    assert.equal(recap.props.clock,boundary);
+    const hero=walk(tree).find(node=>typeof node.type==='function' && node.type.name==='HeroMatchup');
+    assert.equal(hero.props.quarterScore.props.clock,boundary,'The retained quarter table uses the same committed playback clock');
+    assert(!text(tree).includes('Scoring moments & quarter recap'),'The removed feed disclosure cannot remain in the game day view');
 }
 assert(!button(tree,'NEXT QUARTER'),'Finished playback replaces running controls with final actions');
 assert(button(tree,'REPLAY FROM START') && button(tree,'CLOSE GAMECAST'));

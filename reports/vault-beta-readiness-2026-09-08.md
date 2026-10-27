@@ -1,5 +1,92 @@
 # The Vault — beta readiness review
 
+## October 27, 2026 profile and matchup feedback pass
+
+Status: VERIFIED locally. Baseline checkpoint: `8f6ece0`. This finite pass
+completes the 11 new trade, stats, profile, live-matchup, recap and End week
+comments. Scoring, historical data, saves and authoritative actions remain
+unchanged. No deployment was performed.
+
+| Requirement | Status | Completion criterion |
+|---|---|---|
+| Trade assessment sidebar (1) | VERIFIED | One 250px assessment above Owner DNA after selection, absent when empty; phone/tablet portrait places it before packages; all six sizes verified |
+| Compact player stats and ownership (2–4) | VERIFIED | Representative desktop rows are 55px; one Owned by column/link; marked glossary removed; real team dialog/details/filter/sort and phone owner labels work |
+| My Profile and Customize (5–7) | VERIFIED | Achievements removed from main navigation and available inside My Profile; old Trophy Case routes work; closed editor, retained unsaved draft and existing 2/11 earned state verified; marked note removed |
+| Inspect other live matchups (8–9) | VERIFIED | Scoreboard buttons select both lineups and spotlight at the same clock; switching while playing continues; phone return/focus works; marked scoring-moments section absent |
+| Compact postgame Home (10) | VERIFIED | Six-team recap ends at 766.05px, above the 819px dock at 1339×892; exact final, explanation, three league results and next opponent all retained |
+| End week handoff (11) | VERIFIED | Actual confirmed advances land Home at Week 3 and Week 5; failed-save test stays postgame and Retry commits once then opens Home |
+| Integration and verification | VERIFIED | Final 80-command Vault suite, core 97/97, first-class 7/7, shared draft checks, seven-script lint and build pass; 36 real responsive view checks; saved reload verified |
+
+The trade builder reuses its existing assessment and acceptance rule. The right
+rail holds the assessment above Owner DNA after either side starts a package;
+there is no empty grade card or duplicate assessment. Narrow layouts retain the
+assessment before the selected packages. Stats keeps recorded detail behind a
+small native disclosure, removes repeated ownership from the player identity,
+and exposes one explicit Owned by column. Phone summaries retain the owner,
+with a working team-profile link in the detail. Metric definitions remain on
+the controls, and the selected period fits at 390px.
+
+My Profile now has Profile & career and Achievements sections. Existing Trophy
+Case links and saved achievement-view preferences still reach the same earned
+state. Customize is closed by default; the form stays mounted so collapse does
+not discard an unsaved draft. Loading, errors, recovery and save feedback remain
+visible outside it. No profile save or publication was submitted during browser
+QA. First-time game playback withholds updated career/achievement aggregates
+until the final whistle; explicit replays retain access to earned history.
+
+Game-day selection is local presentation state, scoped to the room and week.
+It never changes the owner's lineup, authority, clock, pace, saved score or next
+action. An actual paused foreign matchup retained END Q1 and 58/224 moments
+across Profile and Stats; Stats still showed only completed Week 3 during Week
+4 playback. Switching another matchup while playing kept Q2 running. Phone
+All matchups returned focus to the selected view. The complete scoring-moments
+disclosure is removed; matchup analysis, source explanation and saved scoring
+archive remain available.
+
+Browser QA found a pre-existing component-key collision: Stats and the persistent
+gamecast shared a sibling key. Visiting Stats could leave the paused view hidden
+beside a new visible final. Distinct gamecast/stats keys now preserve one
+workspace and the exact selected playback. A regression test covers key identity
+and the replay horizon, and the actual navigation sequence passes. The existing
+draft key contract is retained.
+
+The disposable six-team save on `3038` progressed from one completed week to
+four through actual controls. Its final foreign matchup, Warlord Kade
+121.78–99.24 Frankie Deals, matched both nine-player sums. Finishing foreign playback still
+opened the owner's Home recap, Archive Owls 122.54–89.86 Riverboat Sol.
+End week opened Home, and reload/named Resume retained Week 5 planning with
+exactly 4/14 weeks saved. User gameplay on `3037` was not used as a fixture.
+
+Trades, Stats, Profile, Achievements, recap and a selected live matchup were
+captured at 390×844, 430×932, 1024×1366, 1366×1024, 1339×892 and 1440×900.
+All 36 checks had no document horizontal overflow. The three desktop sizes fit
+the standard recap and all 18 live starters/essential controls above the dock.
+Phone, portrait tablet, expanded details and custom/longer content scroll
+naturally. This is local Chromium emulation; hosted multiplayer, WebKit,
+physical devices and browser text enlargement remain unverified. Rapid automated
+resizing briefly required reopening More after the viewport settled; device
+rotation timing remains a follow-up check, not a claim of physical-device proof.
+
+No data/rules or save-schema migration is required. Engine, season, AI, hidden
+years, player-stat, profile and career data modules match `8f6ece0` byte-for-byte.
+Existing future-work priorities below remain unchanged.
+
+Evidence: [source hashes, checks and interactive results](public-readiness/evidence/vault-profile-matchups-20261027.json).
+Logs/captures: `output/playwright/vault-profile-matchups-20261027/`.
+Representative [recap](../output/playwright/vault-profile-matchups-20261027/recap-final-1339x892.png),
+[live matchup](../output/playwright/vault-profile-matchups-20261027/other-live-matchup-1339x892.png),
+[trade rail](../output/playwright/vault-profile-matchups-20261027/trades-1339x892.png),
+[compact stats](../output/playwright/vault-profile-matchups-20261027/stats-1339x892.png),
+[phone profile](../output/playwright/vault-profile-matchups-20261027/profile-390x844.png).
+The `attempt-duplicate-gamecast` files record the repaired finding, not final UI.
+
+Run `node scripts/serve-static.cjs --port=3037 --compile` and inspect
+`http://127.0.0.1:3037/?vault=1`. Node 20.20.2 checks:
+`npm run test:timeleague`, `npm run test:core`, `npm run test:first-class`,
+`npm run test:game-draft-table`, ESLint on seven changed runtime scripts and
+`node scripts/build-deploy.cjs`. All pass; build compiles 161 JSX scripts and
+minifies 300 modules. Final captured browser errors/warnings were empty.
+
 ## October 27, 2026 gameplay desks feedback pass
 
 Status: VERIFIED locally. Baseline checkpoint: `279131f`. Finite scope: the 15

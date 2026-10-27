@@ -185,7 +185,13 @@
                         h(TeamLockup, { team: myTeam, standing: myStanding, side: 'mine', score: myScore, scoreDigits: 2 }),
                         h('div', { className: 'tl-home-vs' }, h('span', null, `WEEK ${justFinished.week}`), h('strong', null, 'FINAL')),
                         h(TeamLockup, { team: opponent, standing: opponentStanding, side: 'opponent', score: opponent && justFinished.results.find(result => result.teamId === opponent.teamId)?.total, scoreDigits: 2, emptyLabel: finishedKind === 'bye' ? 'BYE' : finishedKind === 'observer' ? 'Not in this round' : 'No matchup' }))),
-                h(SavedResultExplanation, { league, week: justFinished, team: myTeam, onNavigate, onInspectScore }),
+                h('div', { className: 'tl-recap-dashboard' },
+                h('div', { className: 'tl-recap-decision-column' },
+                    h(SavedResultExplanation, { league, week: justFinished, team: myTeam, onNavigate, onInspectScore }),
+                    h('section', { className: 'tl-card tl-recap-next' }, h('span', { className: 'tl-eyebrow' }, `UP NEXT · WEEK ${league.currentWeek}`),
+                        h('h2', null, nextOpponent ? `${myTeam.name} vs. ${nextOpponent.name}` : playoffObserver ? 'Follow the championship' : 'No matchup scheduled'),
+                        h('p', null, playoffObserver ? 'Your playoff run is complete. End week when you are ready, then follow the remaining games from game day.' : league.settings.waiversEnabled ? 'End week opens the next waiver window. Submit claims, resolve waivers, then set your lineup for kickoff.' : 'End week opens the next planning window. Review trades and set your lineup for kickoff.'))),
+                h('div', { className: 'tl-recap-league-column' },
                 h('section', { className: 'tl-card tl-league-update' },
                     h('h2', null, 'Around the league'),
                     weeklyLeaders && h('div', { className: 'tl-update-highlights' },
@@ -194,10 +200,7 @@
                     h('div', { className: 'tl-update-results', 'aria-label': `Week ${justFinished.week} results` }, justFinished.matchups.map(match =>
                         h('div', { key: `${match.home}:${match.away}`, className: 'tl-update-match' }, h('small', null, 'FINAL'),
                             [[match.home, match.homePoints], [match.away, match.awayPoints]].map(([id, points]) => h('div', { key: id, className: match.winner === id ? 'winner' : '' }, h('span', null, teamName(id)), h('strong', null, points.toFixed(2)))))))),
-                h('details', { className: 'tl-home-secondary' }, h('summary', null, 'Updated standings & team profiles'), h(window.WrTimeLeagueStandingsPanel, { league, embedded: true })),
-                h('section', { className: 'tl-card tl-recap-next' }, h('span', { className: 'tl-eyebrow' }, `UP NEXT · WEEK ${league.currentWeek}`),
-                    h('h2', null, nextOpponent ? `${myTeam.name} vs. ${nextOpponent.name}` : playoffObserver ? 'Follow the championship' : 'No matchup scheduled'),
-                    h('p', null, playoffObserver ? 'Your playoff run is complete. End week when you are ready, then follow the remaining games from game day.' : league.settings.waiversEnabled ? 'End week opens the next waiver window. Submit claims, resolve waivers, then set your lineup for kickoff.' : 'End week opens the next planning window. Review trades and set your lineup for kickoff.')));
+                h('details', { className: 'tl-home-secondary' }, h('summary', null, 'Updated standings & team profiles'), h(window.WrTimeLeagueStandingsPanel, { league, embedded: true })))));
         }
 
         return h('div', { className: `tl-home${league.phase === 'season' ? ' tl-home-dashboard' : ''}` },

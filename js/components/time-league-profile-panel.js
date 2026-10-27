@@ -51,11 +51,14 @@
         return h('section', { className: 'tl-profile', style },
             h('header', { className: `tl-profile-banner tl-profile-backdrop-${draft.backdrop}` },
                 h('div', { className: 'tl-profile-banner-copy' }, h('small', null, 'THE VAULT · YOUR TEAM IDENTITY'), h('h2', null, draft.teamName), h('p', null, draft.displayName),
-                    h('div', { className: 'tl-profile-status' }, h('span', null, draft.publicProfile && userId ? 'Public profile' : 'Private profile'), draft.lookingForLeague && userId && h('span', null, 'Looking for a league'))),
+                    h('div', { className: 'tl-profile-status' }, h('span', null, userId ? 'Account profile' : 'Device profile'), h('span', null, draft.publicProfile && userId ? 'Public profile' : 'Private profile'), draft.lookingForLeague && userId && h('span', null, 'Looking for a league'))),
                 h('div', { className: 'tl-profile-banner-helmet' }, h(window.TimeLeagueHelmetIcon, { helmet: draft.helmet, letter: mark, size: 210, title: `${draft.teamName} helmet` }))),
+            loading && h('p', { className: 'tl-profile-loading', role: 'status' }, 'Loading your team design…'),
+            feedback && matchingAccount && h('div', { className: `tl-profile-feedback${feedback.error ? ' is-error' : ''}`, role: feedback.error ? 'alert' : 'status' }, feedback.text, feedback.error && h('button', { type: 'button', className: 'tl-btn', disabled: frozen, onClick: () => setRefresh(value => value + 1) }, 'Reload profile')),
+            h('details', { className: 'tl-profile-customize', key: userId || 'device' },
+                h('summary', null, h('span', null, 'Customize'), h('small', null, 'Names, team design & privacy')),
             h('form', { className: 'tl-profile-form', onSubmit: save },
                 h('div', { className: 'tl-profile-heading' }, h('div', null, h('h3', null, 'Make it yours.'), h('p', null, 'Build the look you bring into every new league.')), h('small', null, userId ? 'SAVED TO YOUR ACCOUNT' : 'DEVICE PROFILE')),
-                loading && h('p', { role: 'status' }, 'Loading your team design…'),
                 h('fieldset', { disabled: frozen, className: 'tl-profile-fields' },
                     h('div', { className: 'tl-profile-name-grid' },
                         h('label', { className: 'tl-field' }, h('span', null, 'Your display name'), h('input', { value: draft.displayName, maxLength: 40, required: true, autoComplete: 'nickname', onChange: event => {
@@ -74,8 +77,7 @@
                         h('label', null, h('input', { type: 'checkbox', checked: Boolean(userId && draft.publicProfile), disabled: !userId, onChange: event => change({ publicProfile: event.target.checked, lookingForLeague: event.target.checked && draft.lookingForLeague }) }), h('span', null, h('strong', null, 'Show my profile in the Vault community'), h('small', null, 'Share your display name, team design and multiplayer results on the leaderboard.'))),
                         h('label', null, h('input', { type: 'checkbox', checked: Boolean(userId && draft.lookingForLeague), disabled: !userId || !draft.publicProfile, onChange: event => change({ lookingForLeague: event.target.checked }) }), h('span', null, h('strong', null, 'I’m looking for a league'), h('small', null, 'Let other managers find you and invite you to a league.'))),
                         !userId && h('p', null, 'Sign in to save across devices and join the community. Your guest design stays private.'))),
-                feedback && matchingAccount && h('div', { className: `tl-profile-feedback${feedback.error ? ' is-error' : ''}`, role: feedback.error ? 'alert' : 'status' }, feedback.text, feedback.error && h('button', { type: 'button', className: 'tl-btn', disabled: frozen, onClick: () => setRefresh(value => value + 1) }, 'Reload profile')),
-                h('footer', { className: 'tl-profile-save' }, h('p', null, 'Your saved design is the default for new teams. Existing league teams keep their own look.'), h('button', { type: 'submit', className: 'tl-btn primary', disabled: frozen || !draft.displayName.trim() || !draft.teamName.trim() }, saving ? 'Saving…' : 'Save profile'))));
+                h('footer', { className: 'tl-profile-save' }, h('p', null, 'Your saved design is the default for new teams. Existing league teams keep their own look.'), h('button', { type: 'submit', className: 'tl-btn primary', disabled: frozen || !draft.displayName.trim() || !draft.teamName.trim() }, saving ? 'Saving…' : 'Save profile')))));
     }
     window.WrTimeLeagueProfilePanel = WrTimeLeagueProfilePanel;
 })();

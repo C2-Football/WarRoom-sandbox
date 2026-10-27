@@ -3,6 +3,7 @@
 /* global require, global, process, WrTimeLeagueTeamPanel */
 const assert = require('node:assert/strict');
 global.window = globalThis; window.App = {};
+window.WR = { useViewport: () => ({ isPhone: true }) };
 for (const name of ['roster', 'helmet', 'rules', 'draft-room', 'era-rules', 'season', 'engine', 'ai', 'ui', 'hidden-years', 'player-stats']) require(`../js/shared/time-league-${name}.js`);
 let states = [], refs = [], cursor = 0, refCursor = 0;
 global.React = {

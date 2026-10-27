@@ -1,0 +1,1382 @@
+{
+  "date": "2026-10-27",
+  "baseline": "8f6ece049cb5451db61fa1948f8c8d8368ed398e",
+  "origin": "http://127.0.0.1:3038/?vault=1",
+  "fixture": "Menu QA · October 26; disposable six-team solo save with nine starters and three bench players. No gameplay actions on 3037.",
+  "matrix": [
+    {
+      "view": "recap",
+      "viewport": [
+        1339,
+        892
+      ],
+      "dock": {
+        "bottom": 892,
+        "height": 73,
+        "left": 196,
+        "right": 1339,
+        "top": 819,
+        "width": 1143,
+        "x": 196,
+        "y": 819
+      },
+      "finalScores": [
+        "Archive Owls",
+        "139.96",
+        "Warlord Kade",
+        "118.34"
+      ],
+      "overflow": false,
+      "recap": {
+        "bottom": 766.046875,
+        "height": 669.046875,
+        "left": 220,
+        "right": 1315,
+        "top": 97,
+        "width": 1095,
+        "x": 220,
+        "y": 97
+      },
+      "results": 3
+    },
+    {
+      "view": "recap",
+      "viewport": [
+        1440,
+        900
+      ],
+      "dock": {
+        "bottom": 900,
+        "height": 73,
+        "left": 196,
+        "right": 1440,
+        "top": 827,
+        "width": 1244,
+        "x": 196,
+        "y": 827
+      },
+      "finalScores": [
+        "Archive Owls",
+        "139.96",
+        "Warlord Kade",
+        "118.34"
+      ],
+      "overflow": false,
+      "recap": {
+        "bottom": 747.8515625,
+        "height": 650.8515625,
+        "left": 220,
+        "right": 1416,
+        "top": 97,
+        "width": 1196,
+        "x": 220,
+        "y": 97
+      },
+      "results": 3
+    },
+    {
+      "view": "recap",
+      "viewport": [
+        1366,
+        1024
+      ],
+      "dock": {
+        "bottom": 1024,
+        "height": 73,
+        "left": 196,
+        "right": 1366,
+        "top": 951,
+        "width": 1170,
+        "x": 196,
+        "y": 951
+      },
+      "finalScores": [
+        "Archive Owls",
+        "139.96",
+        "Warlord Kade",
+        "118.34"
+      ],
+      "overflow": false,
+      "recap": {
+        "bottom": 766.046875,
+        "height": 669.046875,
+        "left": 220,
+        "right": 1342,
+        "top": 97,
+        "width": 1122,
+        "x": 220,
+        "y": 97
+      },
+      "results": 3
+    },
+    {
+      "view": "recap",
+      "viewport": [
+        1024,
+        1366
+      ],
+      "dock": {
+        "bottom": 1366,
+        "height": 73,
+        "left": 196,
+        "right": 1024,
+        "top": 1293,
+        "width": 828,
+        "x": 196,
+        "y": 1293
+      },
+      "finalScores": [
+        "Archive Owls",
+        "139.96",
+        "Warlord Kade",
+        "118.34"
+      ],
+      "overflow": false,
+      "recap": {
+        "bottom": 1299.234375,
+        "height": 1169.1875,
+        "left": 220,
+        "right": 1000,
+        "top": 130.046875,
+        "width": 780,
+        "x": 220,
+        "y": 130.046875
+      },
+      "results": 3
+    },
+    {
+      "view": "recap",
+      "viewport": [
+        430,
+        932
+      ],
+      "dock": {
+        "bottom": 857,
+        "height": 102.59375,
+        "left": 0,
+        "right": 430,
+        "top": 754.40625,
+        "width": 430,
+        "x": 0,
+        "y": 754.40625
+      },
+      "finalScores": [
+        "Archive Owls",
+        "139.96",
+        "Warlord Kade",
+        "118.34"
+      ],
+      "overflow": false,
+      "recap": {
+        "bottom": 1750.46875,
+        "height": 1636.7265625,
+        "left": 12,
+        "right": 418,
+        "top": 113.7421875,
+        "width": 406,
+        "x": 12,
+        "y": 113.7421875
+      },
+      "results": 3
+    },
+    {
+      "view": "recap",
+      "viewport": [
+        390,
+        844
+      ],
+      "dock": {
+        "bottom": 769,
+        "height": 137.890625,
+        "left": 0,
+        "right": 390,
+        "top": 631.109375,
+        "width": 390,
+        "x": 0,
+        "y": 631.109375
+      },
+      "finalScores": [
+        "Archive Owls",
+        "139.96",
+        "Warlord Kade",
+        "118.34"
+      ],
+      "overflow": false,
+      "recap": {
+        "bottom": 1884.359375,
+        "height": 1718.6171875,
+        "left": 12,
+        "right": 378,
+        "top": 165.7421875,
+        "width": 366,
+        "x": 12,
+        "y": 165.7421875
+      },
+      "results": 3
+    },
+    {
+      "view": "live-matchup",
+      "viewport": [
+        1339,
+        892
+      ],
+      "controls": {
+        "bottom": 811.125,
+        "height": 240.9453125,
+        "left": 220,
+        "right": 567.625,
+        "top": 570.1796875,
+        "width": 347.625,
+        "x": 220,
+        "y": 570.1796875
+      },
+      "dock": {
+        "bottom": 892,
+        "height": 65,
+        "left": 196,
+        "right": 1339,
+        "top": 827,
+        "width": 1143,
+        "x": 196,
+        "y": 827
+      },
+      "lineup": {
+        "bottom": 806.875,
+        "height": 593.578125,
+        "left": 579.625,
+        "right": 1315,
+        "top": 213.296875,
+        "width": 735.375,
+        "x": 579.625,
+        "y": 213.296875
+      },
+      "moments": 0,
+      "names": [
+        "The Archivist",
+        "Steward Vance"
+      ],
+      "overflow": false,
+      "players": 18,
+      "rows": 9,
+      "workspaces": 1
+    },
+    {
+      "view": "live-matchup",
+      "viewport": [
+        1440,
+        900
+      ],
+      "controls": {
+        "bottom": 811.125,
+        "height": 240.9453125,
+        "left": 220,
+        "right": 600.046875,
+        "top": 570.1796875,
+        "width": 380.046875,
+        "x": 220,
+        "y": 570.1796875
+      },
+      "dock": {
+        "bottom": 900,
+        "height": 65,
+        "left": 196,
+        "right": 1440,
+        "top": 835,
+        "width": 1244,
+        "x": 196,
+        "y": 835
+      },
+      "lineup": {
+        "bottom": 806.875,
+        "height": 593.578125,
+        "left": 612.046875,
+        "right": 1416,
+        "top": 213.296875,
+        "width": 803.953125,
+        "x": 612.046875,
+        "y": 213.296875
+      },
+      "moments": 0,
+      "names": [
+        "The Archivist",
+        "Steward Vance"
+      ],
+      "overflow": false,
+      "players": 18,
+      "rows": 9,
+      "workspaces": 1
+    },
+    {
+      "view": "live-matchup",
+      "viewport": [
+        1366,
+        1024
+      ],
+      "controls": {
+        "bottom": 811.125,
+        "height": 240.9453125,
+        "left": 220,
+        "right": 576.2890625,
+        "top": 570.1796875,
+        "width": 356.2890625,
+        "x": 220,
+        "y": 570.1796875
+      },
+      "dock": {
+        "bottom": 1024,
+        "height": 65,
+        "left": 196,
+        "right": 1366,
+        "top": 959,
+        "width": 1170,
+        "x": 196,
+        "y": 959
+      },
+      "lineup": {
+        "bottom": 806.875,
+        "height": 593.578125,
+        "left": 588.2890625,
+        "right": 1342,
+        "top": 213.296875,
+        "width": 753.7109375,
+        "x": 588.2890625,
+        "y": 213.296875
+      },
+      "moments": 0,
+      "names": [
+        "The Archivist",
+        "Steward Vance"
+      ],
+      "overflow": false,
+      "players": 18,
+      "rows": 9,
+      "workspaces": 1
+    },
+    {
+      "view": "live-matchup",
+      "viewport": [
+        1024,
+        1366
+      ],
+      "controls": {
+        "bottom": 958.6875,
+        "height": 197.390625,
+        "left": 220,
+        "right": 1000,
+        "top": 761.296875,
+        "width": 780,
+        "x": 220,
+        "y": 761.296875
+      },
+      "dock": {
+        "bottom": 1366,
+        "height": 65,
+        "left": 196,
+        "right": 1024,
+        "top": 1301,
+        "width": 828,
+        "x": 196,
+        "y": 1301
+      },
+      "lineup": {
+        "bottom": 1872.6953125,
+        "height": 848.3203125,
+        "left": 220,
+        "right": 1000,
+        "top": 1024.375,
+        "width": 780,
+        "x": 220,
+        "y": 1024.375
+      },
+      "moments": 0,
+      "names": [
+        "The Archivist",
+        "Steward Vance"
+      ],
+      "overflow": false,
+      "players": 18,
+      "rows": 9,
+      "workspaces": 1
+    },
+    {
+      "view": "live-matchup",
+      "viewport": [
+        430,
+        932
+      ],
+      "controls": {
+        "bottom": 912.140625,
+        "height": 265.734375,
+        "left": 12,
+        "right": 418,
+        "top": 646.40625,
+        "width": 406,
+        "x": 12,
+        "y": 646.40625
+      },
+      "dock": {
+        "bottom": 857,
+        "height": 90.296875,
+        "left": 0,
+        "right": 430,
+        "top": 766.703125,
+        "width": 430,
+        "x": 0,
+        "y": 766.703125
+      },
+      "lineup": {
+        "bottom": 2045.6328125,
+        "height": 1044.6015625,
+        "left": 12,
+        "right": 418,
+        "top": 1001.03125,
+        "width": 406,
+        "x": 12,
+        "y": 1001.03125
+      },
+      "moments": 0,
+      "names": [
+        "The Archivist",
+        "Steward Vance"
+      ],
+      "overflow": false,
+      "players": 18,
+      "rows": 9,
+      "workspaces": 1
+    },
+    {
+      "view": "live-matchup",
+      "viewport": [
+        390,
+        844
+      ],
+      "controls": {
+        "bottom": 912.140625,
+        "height": 265.734375,
+        "left": 12,
+        "right": 378,
+        "top": 646.40625,
+        "width": 366,
+        "x": 12,
+        "y": 646.40625
+      },
+      "dock": {
+        "bottom": 769,
+        "height": 90.296875,
+        "left": 0,
+        "right": 390,
+        "top": 678.703125,
+        "width": 390,
+        "x": 0,
+        "y": 678.703125
+      },
+      "lineup": {
+        "bottom": 2066.4296875,
+        "height": 1065.3984375,
+        "left": 12,
+        "right": 378,
+        "top": 1001.03125,
+        "width": 366,
+        "x": 12,
+        "y": 1001.03125
+      },
+      "moments": 0,
+      "names": [
+        "The Archivist",
+        "Steward Vance"
+      ],
+      "overflow": false,
+      "players": 18,
+      "rows": 9,
+      "workspaces": 1
+    },
+    {
+      "view": "trades",
+      "viewport": [
+        1339,
+        892
+      ],
+      "assessments": 1,
+      "brief": {
+        "bottom": 643.546875,
+        "height": 300.375,
+        "left": 1065,
+        "right": 1315,
+        "top": 343.171875,
+        "width": 250,
+        "x": 1065,
+        "y": 343.171875
+      },
+      "builder": {
+        "bottom": 1182.8203125,
+        "height": 839.6484375,
+        "left": 220,
+        "right": 1051,
+        "top": 343.171875,
+        "width": 831,
+        "x": 220,
+        "y": 343.171875
+      },
+      "insideBuilder": false,
+      "overflow": false,
+      "owner": {
+        "bottom": 910.015625,
+        "height": 254.46875,
+        "left": 1065,
+        "right": 1315,
+        "top": 655.546875,
+        "width": 250,
+        "x": 1065,
+        "y": 655.546875
+      },
+      "packages": {
+        "bottom": 595.1796875,
+        "height": 116.390625,
+        "left": 237,
+        "right": 1034,
+        "top": 478.7890625,
+        "width": 797,
+        "x": 237,
+        "y": 478.7890625
+      }
+    },
+    {
+      "view": "trades",
+      "viewport": [
+        1440,
+        900
+      ],
+      "assessments": 1,
+      "brief": {
+        "bottom": 643.546875,
+        "height": 300.375,
+        "left": 1166,
+        "right": 1416,
+        "top": 343.171875,
+        "width": 250,
+        "x": 1166,
+        "y": 343.171875
+      },
+      "builder": {
+        "bottom": 1182.8203125,
+        "height": 839.6484375,
+        "left": 220,
+        "right": 1152,
+        "top": 343.171875,
+        "width": 932,
+        "x": 220,
+        "y": 343.171875
+      },
+      "insideBuilder": false,
+      "overflow": false,
+      "owner": {
+        "bottom": 910.015625,
+        "height": 254.46875,
+        "left": 1166,
+        "right": 1416,
+        "top": 655.546875,
+        "width": 250,
+        "x": 1166,
+        "y": 655.546875
+      },
+      "packages": {
+        "bottom": 595.1796875,
+        "height": 116.390625,
+        "left": 237,
+        "right": 1135,
+        "top": 478.7890625,
+        "width": 898,
+        "x": 237,
+        "y": 478.7890625
+      }
+    },
+    {
+      "view": "trades",
+      "viewport": [
+        1366,
+        1024
+      ],
+      "assessments": 1,
+      "brief": {
+        "bottom": 643.546875,
+        "height": 300.375,
+        "left": 1092,
+        "right": 1342,
+        "top": 343.171875,
+        "width": 250,
+        "x": 1092,
+        "y": 343.171875
+      },
+      "builder": {
+        "bottom": 1182.8203125,
+        "height": 839.6484375,
+        "left": 220,
+        "right": 1078,
+        "top": 343.171875,
+        "width": 858,
+        "x": 220,
+        "y": 343.171875
+      },
+      "insideBuilder": false,
+      "overflow": false,
+      "owner": {
+        "bottom": 910.015625,
+        "height": 254.46875,
+        "left": 1092,
+        "right": 1342,
+        "top": 655.546875,
+        "width": 250,
+        "x": 1092,
+        "y": 655.546875
+      },
+      "packages": {
+        "bottom": 595.1796875,
+        "height": 116.390625,
+        "left": 237,
+        "right": 1061,
+        "top": 478.7890625,
+        "width": 824,
+        "x": 237,
+        "y": 478.7890625
+      }
+    },
+    {
+      "view": "trades",
+      "viewport": [
+        1024,
+        1366
+      ],
+      "assessments": 1,
+      "brief": {
+        "bottom": 689.3671875,
+        "height": 177.53125,
+        "left": 237,
+        "right": 983,
+        "top": 511.8359375,
+        "width": 746,
+        "x": 237,
+        "y": 511.8359375
+      },
+      "builder": {
+        "bottom": 1407.3984375,
+        "height": 1031.1796875,
+        "left": 220,
+        "right": 1000,
+        "top": 376.21875,
+        "width": 780,
+        "x": 220,
+        "y": 376.21875
+      },
+      "insideBuilder": true,
+      "overflow": false,
+      "owner": {
+        "bottom": 1631.703125,
+        "height": 210.3046875,
+        "left": 220,
+        "right": 1000,
+        "top": 1421.3984375,
+        "width": 780,
+        "x": 220,
+        "y": 1421.3984375
+      },
+      "packages": {
+        "bottom": 819.7578125,
+        "height": 116.390625,
+        "left": 237,
+        "right": 983,
+        "top": 703.3671875,
+        "width": 746,
+        "x": 237,
+        "y": 703.3671875
+      }
+    },
+    {
+      "view": "trades",
+      "viewport": [
+        430,
+        932
+      ],
+      "assessments": 1,
+      "brief": {
+        "bottom": 833.046875,
+        "height": 198.28125,
+        "left": 25,
+        "right": 405,
+        "top": 634.765625,
+        "width": 380,
+        "x": 25,
+        "y": 634.765625
+      },
+      "builder": {
+        "bottom": 1981.390625,
+        "height": 1532.265625,
+        "left": 12,
+        "right": 418,
+        "top": 449.125,
+        "width": 406,
+        "x": 12,
+        "y": 449.125
+      },
+      "insideBuilder": true,
+      "overflow": false,
+      "owner": {
+        "bottom": 2054.390625,
+        "height": 59,
+        "left": 12,
+        "right": 418,
+        "top": 1995.390625,
+        "width": 406,
+        "x": 12,
+        "y": 1995.390625
+      },
+      "packages": {
+        "bottom": 1018.8125,
+        "height": 171.765625,
+        "left": 25,
+        "right": 405,
+        "top": 847.046875,
+        "width": 380,
+        "x": 25,
+        "y": 847.046875
+      }
+    },
+    {
+      "view": "trades",
+      "viewport": [
+        390,
+        844
+      ],
+      "assessments": 1,
+      "brief": {
+        "bottom": 865.4375,
+        "height": 223.078125,
+        "left": 25,
+        "right": 365,
+        "top": 642.359375,
+        "width": 340,
+        "x": 25,
+        "y": 642.359375
+      },
+      "builder": {
+        "bottom": 2013.78125,
+        "height": 1557.0625,
+        "left": 12,
+        "right": 378,
+        "top": 456.71875,
+        "width": 366,
+        "x": 12,
+        "y": 456.71875
+      },
+      "insideBuilder": true,
+      "overflow": false,
+      "owner": {
+        "bottom": 2086.78125,
+        "height": 59,
+        "left": 12,
+        "right": 378,
+        "top": 2027.78125,
+        "width": 366,
+        "x": 12,
+        "y": 2027.78125
+      },
+      "packages": {
+        "bottom": 1051.203125,
+        "height": 171.765625,
+        "left": 25,
+        "right": 365,
+        "top": 879.4375,
+        "width": 340,
+        "x": 25,
+        "y": 879.4375
+      }
+    },
+    {
+      "view": "stats",
+      "viewport": [
+        1339,
+        892
+      ],
+      "glossaries": 0,
+      "mobileRows": 0,
+      "overflow": false,
+      "owners": [],
+      "rows": [
+        55,
+        55,
+        55
+      ],
+      "workspaces": 1
+    },
+    {
+      "view": "profile",
+      "viewport": [
+        1339,
+        892
+      ],
+      "customizeOpen": false,
+      "nav": "PROFILE & CAREER\nACHIEVEMENTS",
+      "notes": 0,
+      "overflow": false,
+      "editorVisible": false
+    },
+    {
+      "view": "achievements",
+      "viewport": [
+        1339,
+        892
+      ],
+      "header": "MY PROFILE",
+      "mainAchievementsLinks": 0,
+      "overflow": false,
+      "title": "TROPHY CASE\n2/11 earned — Archive Owls"
+    },
+    {
+      "view": "stats",
+      "viewport": [
+        1440,
+        900
+      ],
+      "glossaries": 0,
+      "mobileRows": 0,
+      "overflow": false,
+      "owners": [],
+      "rows": [
+        55,
+        55,
+        55
+      ],
+      "workspaces": 1
+    },
+    {
+      "view": "profile",
+      "viewport": [
+        1440,
+        900
+      ],
+      "customizeOpen": false,
+      "nav": "PROFILE & CAREER\nACHIEVEMENTS",
+      "notes": 0,
+      "overflow": false,
+      "editorVisible": false
+    },
+    {
+      "view": "achievements",
+      "viewport": [
+        1440,
+        900
+      ],
+      "header": "MY PROFILE",
+      "mainAchievementsLinks": 0,
+      "overflow": false,
+      "title": "TROPHY CASE\n2/11 earned — Archive Owls"
+    },
+    {
+      "view": "stats",
+      "viewport": [
+        1366,
+        1024
+      ],
+      "glossaries": 0,
+      "mobileRows": 0,
+      "overflow": false,
+      "owners": [],
+      "rows": [
+        55,
+        55,
+        55
+      ],
+      "workspaces": 1
+    },
+    {
+      "view": "profile",
+      "viewport": [
+        1366,
+        1024
+      ],
+      "customizeOpen": false,
+      "nav": "PROFILE & CAREER\nACHIEVEMENTS",
+      "notes": 0,
+      "overflow": false,
+      "editorVisible": false
+    },
+    {
+      "view": "achievements",
+      "viewport": [
+        1366,
+        1024
+      ],
+      "header": "MY PROFILE",
+      "mainAchievementsLinks": 0,
+      "overflow": false,
+      "title": "TROPHY CASE\n2/11 earned — Archive Owls"
+    },
+    {
+      "view": "stats",
+      "viewport": [
+        1024,
+        1366
+      ],
+      "glossaries": 0,
+      "mobileRows": 0,
+      "overflow": false,
+      "owners": [],
+      "rows": [
+        55,
+        55,
+        55
+      ],
+      "workspaces": 1
+    },
+    {
+      "view": "profile",
+      "viewport": [
+        1024,
+        1366
+      ],
+      "customizeOpen": false,
+      "nav": "PROFILE & CAREER\nACHIEVEMENTS",
+      "notes": 0,
+      "overflow": false,
+      "editorVisible": false
+    },
+    {
+      "view": "achievements",
+      "viewport": [
+        1024,
+        1366
+      ],
+      "header": "MY PROFILE",
+      "mainAchievementsLinks": 0,
+      "overflow": false,
+      "title": "TROPHY CASE\n2/11 earned — Archive Owls"
+    },
+    {
+      "view": "stats",
+      "viewport": [
+        430,
+        932
+      ],
+      "glossaries": 0,
+      "mobileRows": 20,
+      "overflow": false,
+      "owners": [
+        {
+          "text": "RB · 2006 · Warlord Kade",
+          "title": "Owned by Warlord Kade"
+        },
+        {
+          "text": "QB · 2018 · Riverboat Sol",
+          "title": "Owned by Riverboat Sol"
+        }
+      ],
+      "periodWidth": 128,
+      "rows": [],
+      "workspaces": 1
+    },
+    {
+      "view": "profile",
+      "viewport": [
+        430,
+        932
+      ],
+      "customizeOpen": false,
+      "nav": "PROFILE & CAREER\nACHIEVEMENTS",
+      "notes": 0,
+      "overflow": false,
+      "editorVisible": false
+    },
+    {
+      "view": "achievements",
+      "viewport": [
+        430,
+        932
+      ],
+      "header": "MY PROFILE",
+      "mainAchievementsLinks": 0,
+      "overflow": false,
+      "title": "TROPHY CASE\n2/11 earned — Archive Owls"
+    },
+    {
+      "view": "stats",
+      "viewport": [
+        390,
+        844
+      ],
+      "glossaries": 0,
+      "mobileRows": 20,
+      "overflow": false,
+      "owners": [
+        {
+          "text": "RB · 2006 · Warlord Kade",
+          "title": "Owned by Warlord Kade"
+        },
+        {
+          "text": "QB · 2018 · Riverboat Sol",
+          "title": "Owned by Riverboat Sol"
+        }
+      ],
+      "periodWidth": 128,
+      "rows": [],
+      "workspaces": 1
+    },
+    {
+      "view": "profile",
+      "viewport": [
+        390,
+        844
+      ],
+      "customizeOpen": false,
+      "nav": "PROFILE & CAREER\nACHIEVEMENTS",
+      "notes": 0,
+      "overflow": false,
+      "editorVisible": false
+    },
+    {
+      "view": "achievements",
+      "viewport": [
+        390,
+        844
+      ],
+      "header": "MY PROFILE",
+      "mainAchievementsLinks": 0,
+      "overflow": false,
+      "title": "TROPHY CASE\n2/11 earned — Archive Owls"
+    }
+  ],
+  "stats": {
+    "glossaries": 0,
+    "header": [
+      "Player",
+      "FPTS ↓",
+      "Vault GP",
+      "PPG",
+      "Owned by",
+      "Pos"
+    ],
+    "overflow": false,
+    "rows": [
+      {
+        "height": 55,
+        "text": "1\nRobert Smith\nRB · 2000\nStats\n\t30.8\t1\t30.8\t\nSteward Vance ↗\n\tRB"
+      },
+      {
+        "height": 55,
+        "text": "2\nTyreek Hill\nWR · 2023\nStats\n\t29.8\t1\t29.8\t\nWarlord Kade ↗\n\tWR"
+      },
+      {
+        "height": 55,
+        "text": "3\nDomanick Williams\nRB · 2004\nStats\n\t27.6\t1\t27.6\t\nThe Archivist ↗\n\tRB"
+      },
+      {
+        "height": 55,
+        "text": "4\nEddie George\nRB · 2000\nStats\n\t26.9\t1\t26.9\t\nRiverboat Sol ↗\n\tRB"
+      },
+      {
+        "height": 55,
+        "text": "5\nDavante Adams\nWR · 2020\nStats\n\t26.8\t1\t26.8\t\nThe Archivist ↗\n\tWR"
+      }
+    ]
+  },
+  "profile": {
+    "customizeOpen": false,
+    "mainNavigation": "V\nTHE VAULT\nFANTASY THROUGH TIME\n⌂\nHOME\n▶\nGAMEDAY\n♙\nROSTER\n+\nWAIVERS\n⇄\nTRADES\n▥\nPLAYER STATS\n▤\nDRAFT RECAP\n✉\nMESSAGES\n1\n★\nMY PROFILE\n◎\nCOMMUNITY\n◷\nACTIVITY",
+    "noteCount": 0,
+    "editorVisibleWhenClosed": false
+  },
+  "customizeDraft": "QA Unsubmitted draft survived collapse/reopen; no Save profile submitted",
+  "tradeEmpty": {
+    "assessments": 0,
+    "owner": {
+      "bottom": 597.640625,
+      "height": 254.46875,
+      "left": 1065,
+      "right": 1315,
+      "top": 343.171875,
+      "width": 250,
+      "x": 1065,
+      "y": 343.171875
+    }
+  },
+  "pregameSelection": {
+    "dock": "WEEK 2 · 1 OF 4\nBids & trades\nNEW MESSAGE\nFRANKIE DEALS\nREVIEW BIDS\n•••",
+    "focused": "Week 2 matchup",
+    "names": [
+      "Frankie Deals",
+      "The Archivist"
+    ],
+    "points": [
+      "0.00",
+      "0.00",
+      "0.00",
+      "0.00",
+      "0.00",
+      "0.00",
+      "0.00",
+      "0.00",
+      "0.00",
+      "0.00",
+      "0.00",
+      "0.00",
+      "0.00",
+      "0.00",
+      "0.00",
+      "0.00",
+      "0.00",
+      "0.00"
+    ],
+    "rows": 9
+  },
+  "endWeek": {
+    "dock": "WEEK 3 · 1 OF 4\nBids & trades\nNEW MESSAGE\nWARLORD KADE\nREVIEW BIDS\n•••",
+    "header": "Menu QA · October 26\nHOME\nERAS\n1970s\n2000s\n2010s\n2020s\nWEEK 3\n✉\n2\n•••",
+    "headerTop": 22,
+    "hero": "WIN IN WEEK 2\nArchive Owls vs. The Archivist\n\nAdd a player or keep your roster. Review waiver claims before moving to final lineup decisions.\n\nREVIEW WAIVER CLAIMS →\nREVIEW LINEUP\nArchive Owls\n1-1 · 226.6 PF\nWK 3\nVS\nUPCOMING\nThe Archivist\n2-0 · 280.0 PF",
+    "tab": "home"
+  },
+  "endWeekFinal": {
+    "header": "Menu QA · October 26\nHOME\nERAS\n1970s\n2000s\n2010s\n2020s\nWEEK 5\n✉\n4\n•••",
+    "hero": "WIN IN WEEK 4\nArchive Owls vs. Steward Vance\n\nAdd a player or keep your roster. Review waiver claims before moving to final lineup decisions.\n\nREVIEW WAIVER CLAIMS →\nREVIEW LINEUP\nArchive Owls\n2-2 · 424.8 PF\nWK 5\nVS\nUPCOMING\nSteward Vance\n2-2 · 419.0 PF",
+    "tab": "home"
+  },
+  "recap": {
+    "dock": {
+      "bottom": 892,
+      "height": 73,
+      "left": 196,
+      "right": 1339,
+      "top": 819,
+      "width": 1143,
+      "x": 196,
+      "y": 819
+    },
+    "hero": "YOUR RESULT\nA win in the books.\n\nArchive Owls · 2–2 regular-season record · 424.8 regular-season points\n\nArchive Owls\n122.54\n2-2 · 424.8 PF\nWEEK 4\nFINAL\nRiverboat Sol\n89.86\n1-3 · 372.0 PF",
+    "recap": {
+      "bottom": 766.046875,
+      "height": 669.046875,
+      "left": 220,
+      "right": 1315,
+      "top": 97,
+      "width": 1095,
+      "x": 220,
+      "y": 97
+    }
+  },
+  "initialLive": {
+    "controls": "WEEK 3 — PAUSED\n53/206 game moments\n📡\nEND Q1\nNEXT PLAY\nSELECTED MATCHUP\n5 MIN\n3 MIN\n1 MIN\nINSTANT\n\n5-minute game · 75 seconds per quarter. Next quarter skips to the break and pauses.",
+    "controlsBounds": {
+      "bottom": 811.125,
+      "height": 240.9453125,
+      "left": 220,
+      "right": 567.625,
+      "top": 570.1796875,
+      "width": 347.625,
+      "x": 220,
+      "y": 570.1796875
+    },
+    "dock": {
+      "bottom": 892,
+      "height": 65,
+      "left": 196,
+      "right": 1339,
+      "top": 827,
+      "width": 1143,
+      "x": 196,
+      "y": 827
+    },
+    "focused": "Week 3 matchup",
+    "lineup": {
+      "bottom": 806.875,
+      "height": 593.578125,
+      "left": 579.625,
+      "right": 1315,
+      "top": 213.296875,
+      "width": 735.375,
+      "x": 579.625,
+      "y": 213.296875
+    },
+    "moments": 0,
+    "names": [
+      "Riverboat Sol",
+      "Warlord Kade"
+    ],
+    "primary": {
+      "bottom": 873.3203125,
+      "height": 660.0234375,
+      "left": 220,
+      "right": 1315,
+      "top": 213.296875,
+      "width": 1095,
+      "x": 220,
+      "y": 213.296875
+    },
+    "rows": 9,
+    "scores": [
+      "22.0",
+      "17.4"
+    ],
+    "sums": [
+      21.96,
+      17.42
+    ]
+  },
+  "playingSelection": {
+    "clock": "Q2 · 14:54",
+    "controls": "WEEK 4 — PLAYING\n58/224 game moments\n📡\nQ2 · 14:54\nNEXT PLAY\nSELECTED MATCHUP\n5 MIN\n3 MIN\n1 MIN\nINSTANT\n\n5-minute game · 75 seconds per quarter. Next quarter skips to the break and pauses.",
+    "header": "Menu QA · October 26\nGAMEDAY\nERAS\n1970s\n2000s\n2010s\n2020s\nPLAYING · WEEK 4\n✉\n3\n•••",
+    "names": [
+      "The Archivist",
+      "Steward Vance"
+    ]
+  },
+  "phoneSelection": {
+    "clock": "Q2 · 14:53",
+    "focused": "Week 4 matchup",
+    "headerTop": 12,
+    "names": [
+      "Archive Owls",
+      "Riverboat Sol"
+    ],
+    "workspaces": 1
+  },
+  "foreignFinal": {
+    "moments": 0,
+    "names": [
+      "Warlord Kade",
+      "Frankie Deals"
+    ],
+    "rows": 9,
+    "scores": [
+      "121.78",
+      "99.24"
+    ],
+    "sums": [
+      121.78,
+      99.24
+    ],
+    "workspaces": 1
+  },
+  "duplicateWorkspaceBefore": {
+    "header": "Menu QA · October 26\nGAMEDAY\nERAS\n1970s\n2000s\n2010s\n2020s\nFINAL · WEEK 3\n✉\n3\n•••",
+    "workspaces": [
+      {
+        "controls": "Week 3 — Paused53/206 game moments📡END Q1NEXT PLAYSELECTED MATCHUP5 MIN3 MIN1 MININSTANT5-minute game · 75 seconds per quarter. Next quarter skips to the break and pauses.",
+        "heading": "END Q1",
+        "hidden": true
+      },
+      {
+        "heading": "FINAL",
+        "hidden": false
+      }
+    ]
+  },
+  "navigationAfter": {
+    "controls": "WEEK 4 — PAUSED\n58/224 game moments\n📡\nEND Q1\nNEXT PLAY\nSELECTED MATCHUP\n5 MIN\n3 MIN\n1 MIN\nINSTANT\n\n5-minute game · 75 seconds per quarter. Next quarter skips to the break and pauses.",
+    "header": "Menu QA · October 26\nGAMEDAY\nERAS\n1970s\n2000s\n2010s\n2020s\nPAUSED · WEEK 4\n✉\n3\n•••",
+    "names": [
+      "Warlord Kade",
+      "Frankie Deals"
+    ],
+    "workspaces": 1
+  },
+  "navigationBeforeClock": "WEEK 4 — PAUSED\n58/224 game moments\n📡\nEND Q1\nNEXT PLAY\nSELECTED MATCHUP\n5 MIN\n3 MIN\n1 MIN\nINSTANT\n\n5-minute game · 75 seconds per quarter. Next quarter skips to the break and pauses.",
+  "statsAfterRepair": "Through Week 3 · completed Vault weeks · league scoring",
+  "profileAfterRepair": "PROFILE & CAREER\nACHIEVEMENTS\n\nYour career and achievements update after the final whistle.\n\nWATCH GAME",
+  "scope": "Local Chromium viewport emulation. Hosted multiplayer, WebKit, physical devices and browser text enlargement are not verified in this pass. No deployment.",
+  "resumeAfterReload": "V\nMenu QA · October 26\n\nArchive Owls · Planning window open\n\nSEASON\nTHIS BROWSER\nWEEK 5\n4/14 WEEKS SAVED\n6 TEAMS\nCONTINUE →\n•••",
+  "browserLogs": [],
+  "checks": {
+    "vaultSuite": "80 commands passed on Node 20.20.2",
+    "core": "97/97 passed",
+    "firstClass": "7/7 passed",
+    "sharedDraft": "18 source-real cases and room-status checks passed",
+    "navigation": "12 groups passed, including distinct sibling keys and first-playback profile guards",
+    "statsUi": "Ownership, actual links, sorting/filtering, zero/missing values, phone labels and private-field traps passed",
+    "gamecast": "Foreign pregame/live/replay/final, unchanged clock/playing/save, negative points, owned actions, failed End week and Retry → Home passed",
+    "profile": "Collapsed editor, mounted unsaved draft, visible feedback/errors, account/privacy isolation and career note tests passed",
+    "lint": "7 changed runtime scripts; 0 errors and 0 warnings",
+    "build": "Passed:161 JSX scripts compiled;300 modules minified"
+  },
+  "journey": [
+    "Resumed the existing isolated six-team save at Week 2 with one completed week.",
+    "Compared trades without sending a new offer. The empty assessment was absent; one selected package produced one assessment above Owner DNA on desktop and before packages on phone/tablet portrait.",
+    "Player Stats rendered representative 55px rows. Steward Vance ownership opened the correct team dialog and Close restored focus. Robert Smith recorded stats expanded correctly.",
+    "Customize was closed and the form invisible by default. An unsaved display-name draft survived collapse/reopen; Save profile was not submitted. Achievements opened inside My Profile with the existing 2/11 earned state.",
+    "Scored three additional weeks through the real waiver, lineup, kickoff and recap controls. A session interruption restored two completed weeks without rerolling.",
+    "Actual live inspection switched between league matchups. At the repaired navigation boundary, Warlord Kade/Frankie Deals retained END Q1, 58/224 moments and one game-day workspace across Profile and Stats. Stats remained capped at Week 3 during Week 4 playback.",
+    "Switching a playing matchup kept Q2 playback running. Phone All matchups returned to the owning team and focused Week 4 matchup.",
+    "Finishing a foreign matchup still opened the owning team’s Home recap: Archive Owls 122.54–89.86 Riverboat Sol. A different final, Warlord Kade 121.78–99.24 Frankie Deals, equalled both nine-player sums.",
+    "End week returned to Home at Week 3 and Week 5. Reload and named Resume preserved Week 5 planning and exactly 4/14 saved weeks."
+  ],
+  "sourceSha256": {
+    "js/tabs/time-league.js": "31456ff843c5d0591e38c515bae57bb8687e83b0a1cfa017787f1261cc6665a3",
+    "js/components/time-league-home-panel.js": "c55cd49f730366c38a5c2fe6d6b234b31cf5bd909bef90e944a980b89933e598",
+    "js/components/time-league-gamecast-panel.js": "a3b9fcadf06c343fb8b4fc82b6e71e8595fc3648b1ec587be8139a01c6a81db3",
+    "js/components/time-league-team-panel.js": "f2168cd0015c61a068b843da521324ffa8b432cdc1b2248342fd15abb0ce660c",
+    "js/components/time-league-stats-panel.js": "dbe23fdc398eda29742eeffdce5b02026f5905489a299f5af99467d92d131319",
+    "js/components/time-league-profile-panel.js": "cfa7e5f2bdd8968d5a979e5fe3986aad8281ef30f8f3b3ba99682fb66fdc2c10",
+    "js/components/time-league-career-panel.js": "5c68aca9b558a7ef23429ed02089a596e513a4d25e5012cd36eb1d0b9a7c7931",
+    "time-league-home-layout.css": "5729c407954b161e217bc4cac4e0a3676c5569313a695936be795a03d0bb268d",
+    "time-league-gameday-layout.css": "282e410841d025d8c23105ab3a166e03036e4b8c452af2fa8fbe59af2ed0857f",
+    "time-league-profile.css": "b73913b852a1e40a5cbe675ef59009a06fb40eed98b0a9bfa586bce5483f3386",
+    "time-league-team-density.css": "f4de49075641eb855de4b3fc1c41faa450912f621c8b0572f0d60be80aca3cc1",
+    "tests/time-league-stats-ui.js": "b248c7840f1bd517d6cb6fc3624c88cdf41f946d4d06aab68afd1fbdab0770b8",
+    "tests/time-league-browser-context.js": "23de49dc04ebf16f093f25748ea68b551db0bb0da66641ff8b502ef18696f152",
+    "index.html": "ea77997d81d97db5134b33e7b87cdf7604de50195257ca6ba47fc62c9d7d8a91"
+  },
+  "unchangedEngineSha256": {
+    "js/shared/time-league-engine.js": "1702cbb5136b94ccabcdb40d1a7e9493029df7a8df64185183e48e7983aec25f",
+    "js/shared/time-league-season.js": "dc2a4d56111b174dc7a36a3dde86d4b7d0d684c76348e7849815abfcad6de4c2",
+    "js/shared/time-league-ai.js": "2dc3d7211b5391cd8de7963ac28926b5a874ae1ab2336a3174248c9ad1c40eac",
+    "js/shared/time-league-hidden-years.js": "72189164c33f681022ca4f0a85fa9c773baf32c7c232fe41bc61e94101b517c4",
+    "js/shared/time-league-player-stats.js": "7ae5c1581b1c6c1c43c2379b60d80d1ec7fa4b50074a75f8abb127cedaf1fc37",
+    "js/shared/time-league-profile.js": "8ce0e1e7a43200d06795c3ad48a99cb4c359dc8e08f9ab759e49042c784eca63",
+    "js/shared/time-league-career.js": "417481f4be1942a07b11011bba700e4c8836eb46363380ba7a7a19186221df71"
+  },
+  "screenshotsSha256": {
+    "achievements-1024x1366.png": "aaa2ba38afbc7dcfb77b632a335a4083cdeeae6dacce1ba9e7c31b0a8838b4e3",
+    "achievements-1339x892.png": "f996ef0ef8f484e4be51a7d1c8795c60cec5ccc0f95280050c5dd1f655a30662",
+    "achievements-1366x1024.png": "87151fb316f51da3badb14411523b489ce0d6224d564ddee187cc6c71343a7a6",
+    "achievements-1440x900.png": "9ceefdd438a56a759bbe3beebd3e6e0bff96b387b7a323dda527008b8400bc18",
+    "achievements-390x844.png": "1ef40a771c536c6b441cb61b554452e7962367257a543ecf0b5b4b8b58d2e32f",
+    "achievements-430x932.png": "e07b46423e97ea71efdd04b3b1e0541ed32b49673227d6e63a326d29fd6ca63d",
+    "end-week-home-1339x892.png": "69f23e5463babc8778aea6b53c2536e32bac74f065479204d0fb9972516e8009",
+    "other-final-matchup-1339x892.png": "3a638ff044017191357843840fff13ff60be5ff7177c446652d8faee2e032828",
+    "other-live-matchup-1024x1366.png": "c50e1614e5083395037be96fbe3d478bfca0ebd8bf0b360daba60c9f644f607b",
+    "other-live-matchup-1339x892.png": "4da46ab6de156c525e2d8b3c2d25af954c4798f94932fff2224673487778f276",
+    "other-live-matchup-1366x1024.png": "ff5cf18d7f5b7dbd6c2005b8da9226adf62dd0978a148dcea138d43b1e20be53",
+    "other-live-matchup-1440x900.png": "268093b055000fc8ee8a7d1264ed607fb76b0935d5a5cc334fa8573f67fc2503",
+    "other-live-matchup-390x844.png": "a5bb32622d8793443be2c19c1e6b5147c8d5230c46decb3cb6684537bd872b26",
+    "other-live-matchup-430x932.png": "2becf2f223289249ccc7b0b0cc702a7f9008550b94ff104988cdc0af2ad5c045",
+    "phone-matchup-return-390x844.png": "91eb2db21d08b439000ee1014fe92769779e272c8afa619ebd610821b3176c02",
+    "profile-1024x1366.png": "2a7ff0885744873b8d8daef4058ce23951aacf21c76567d297a769bd514bea92",
+    "profile-1339x892.png": "7d79e0a08313901da3e8f7728821cf7e6624f3996d883d701a6e55c1d2e61400",
+    "profile-1366x1024.png": "73b3e88856d10a2a79495dc8ee20f2e46af94c1088a7437683b6e3a0486187d0",
+    "profile-1440x900.png": "f6f159db560c000a5bed311cf5f79d132cb7bea1437179c7ba74d64ebad21b78",
+    "profile-390x844.png": "4b92379da25ef2e822fb50b0f44a96785c02c2ff2e788df0d9e03568fafe9a62",
+    "profile-430x932.png": "1be1c79e995494f944d9b5cb93e74fc4874c92d8210e32424a60137a82eb4e38",
+    "recap-1024x1366.png": "85e6bf6551b61cbba9ee2b23f7aa46c751fdc75988672d9c106dc47a5130b776",
+    "recap-1339x892.png": "29d0978825987ae7da0cfcb6d4eea9f1bbf846067ababb2896af99ac8797f30f",
+    "recap-1366x1024.png": "a4962efd17ff81ae9d30891eaad1b48e94da65d15e5fa48552fa69a53bfb0da0",
+    "recap-1440x900.png": "5520f622c263e85a7efebc417094dda6c2a2288af34a264b81167602ecbc35f1",
+    "recap-390x844.png": "ca818253e87fc01dc812869e34b7107f4edef524b0a4e365baa19f309a7b1178",
+    "recap-430x932.png": "3d3e8bc81854afac0a5c2ffd66355e86f1689cf8f1d8f741ef8221537e5f4bf6",
+    "recap-final-1339x892.png": "a16c9e830aacc5c52e3a49e8024039743ca177d9ab2ed716a88045015f3e3308",
+    "stats-1024x1366.png": "9ea221efb3016d2d60e33e311eea160e0b0384df04bd7a129f8c0595fbe56ef2",
+    "stats-1339x892.png": "c4d4eff63766cb8c8a765d492683dc1753dbaad04c170f08ddfa06dfe8cb4100",
+    "stats-1366x1024.png": "6e4e4eac3b8196e29626c9572e34b1bbfb5724c7be6ee9de76f2e0d0d7c16f16",
+    "stats-1440x900.png": "f534bae68cacf79d24dbe31539683261104de254a69d2073a4e7c8f9d7857216",
+    "stats-390x844.png": "50c90213daafa50a2de0b27d4acf41f562663eec4492eb7c2c1ac7e9e4230d2b",
+    "stats-430x932.png": "86c0bd13e2fbc6cef2a8e09b5127956e336e5c6355a603bb0926f95ae2105f91",
+    "trades-1024x1366.png": "2ae223622ad2961a582fef83d4d164e5b93ad104095da932bc87c72d35bd9405",
+    "trades-1339x892.png": "68c13afe34ae2cbc8a8f4283f376434ed4233f4074d15a3fb05d9bece2319bf2",
+    "trades-1366x1024.png": "96759d006e5c6a0a1c38e1ed45225d3875ac131c813e3b6c601a7ccc66546ab4",
+    "trades-1440x900.png": "d051e81840a35f3228a5314314d5afc05fbef6c90d4bb95004223aa9cddc8657",
+    "trades-390x844.png": "a6c102f589f454dcadf5b1906f650c1c099278ee43bbac7944bc6d0d4ac80782",
+    "trades-430x932.png": "a947482a915f06139b1ac59799a861aa41aaf95cd15aed31a9b7577df13a3b63"
+  },
+  "repairedFinding": "Player Stats and the persistent gamecast reused the same React sibling key. Actual navigation left a hidden paused workspace beside a new visible final. Namespaced gamecast/stats keys now retain one workspace and the exact playback state. attempt-duplicate-gamecast files preserve the prior observation.",
+  "compatibility": "No historical data, scoring, save schema, stored IDs, earned rewards or settings changed. No migration/reset required. Component keys are presentation identity, not stored game IDs. Existing draft key contract is retained.",
+  "visualScope": "36 view/size checks: trades, stats, profile, achievements, recap and selected live matchup at 1339×892, 1440×900, 1366×1024, 1024×1366, 430×932 and 390×844. No document horizontal overflow. Standard six-team desktop recap and nine-slot live lineups/controls fit above the action dock; portrait tablet, phone, expanded detail and longer/custom content scroll naturally.",
+  "followUp": "Rapid automated resize required reopening More once after the viewport settled. Check device rotation timing before claiming physical-device support.",
+  "staticAssets": "Four updated layout styles use the 20261027profiles1 cache version in index.html."
+}
