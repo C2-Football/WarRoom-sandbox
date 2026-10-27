@@ -10,6 +10,50 @@
 
     const Engine = window.App.TimeLeagueEngine;
 
+    function wireStoriesFor(league, teamId, throughWeek) {
+        const teams = new Map(league.teams.map(team => [team.teamId, team.name]));
+        const name = id => teams.get(id) || 'A league team';
+        const actionWeek = Math.max(1, league.currentWeek - (league.weekStage === 'postgame' ? 1 : 0));
+        const planningHorizon = Number.isInteger(throughWeek) ? Math.min(actionWeek, throughWeek + 1) : actionWeek;
+        const finals = (league.finalizedWeeks || []).filter(week => !Number.isInteger(throughWeek) || week.week <= throughWeek);
+        const latest = finals[finals.length - 1];
+        const stories = [];
+        if (latest) {
+            const match = (latest.matchups || []).find(row => row.home === teamId || row.away === teamId) || latest.matchups?.[0];
+            const result = (latest.results || []).find(row => row.teamId === teamId);
+            if (match) {
+                const margin = Math.abs(Math.round(match.homePoints * 100) - Math.round(match.awayPoints * 100)) / 100;
+                stories.push({ id: `final:${latest.week}`, week: latest.week, priority: 8, kicker: 'VAULT RESULT', title: match.winner ? `${name(match.winner)} takes Week ${latest.week}` : `Week ${latest.week} ends level`,
+                    detail: `${name(match.home)} ${match.homePoints.toFixed(2)}–${match.awayPoints.toFixed(2)} ${name(match.away)}. ${margin ? `${margin.toFixed(2)} points made the difference.` : match.winner ? 'The saved tiebreaker decides it.' : 'The tied result stands.'}`, tab: 'gameday', scoreWeek: latest.week });
+            } else if (result) stories.push({ id: `final:${latest.week}`, week: latest.week, priority: 8, kicker: 'VAULT RESULT', title: `${name(teamId)} banks ${result.total.toFixed(2)} lineup points`, detail: `Week ${latest.week} is saved. Inspect the starting lineup and how its points were calculated.`, tab: 'gameday', scoreWeek: latest.week });
+        }
+        (league.trades || []).forEach((trade, index) => {
+            const own = trade.fromTeamId === teamId || trade.toTeamId === teamId;
+            const week = trade.respondedWeek || trade.week || 1;
+            if (week > planningHorizon || (!own && trade.status !== 'accepted') || !['pending', 'accepted'].includes(trade.status)) return;
+            const pending = trade.status === 'pending';
+            stories.push({ id: `trade:${trade.tradeId}`, week, priority: pending && trade.toTeamId === teamId ? 10 : 6, index,
+                kicker: pending ? 'YOUR TRADE DESK' : 'SAVED TRADE', title: pending ? trade.fromTeamId === teamId ? `${name(trade.toTeamId)} has your proposal` : `${name(trade.fromTeamId)} sent you an offer` : `${name(trade.fromTeamId)} and ${name(trade.toTeamId)} make a deal`,
+                detail: `${(trade.giveEntryIds || []).length}-for-${(trade.receiveEntryIds || []).length} player exchange. ${pending ? trade.deferredUntilWeek > planningHorizon ? `Deferred until Week ${trade.deferredUntilWeek}.` : 'Review the packages at the trade desk.' : 'The accepted packages are saved in trade history.'}`, tab: 'trades' });
+        });
+        const awards = (league.waiverResults || []).filter(award => award.week <= planningHorizon);
+        const seenAwards = new Set();
+        [...awards].reverse().forEach((award, index) => {
+            const key = `${award.week}:${award.identity}:${award.winnerTeamId}`;
+            if (seenAwards.has(key)) return;
+            seenAwards.add(key);
+            stories.push({ id: `waiver:${key}`, week: award.week, priority: award.winnerTeamId === teamId ? 7 : 4, index, kicker: 'WAIVER RESULT', title: `${name(award.winnerTeamId)} adds ${award.name || 'a player'}`, detail: `Week ${award.week} award saved${award.contenderTeamIds?.length > 1 ? ` after ${award.contenderTeamIds.length} teams filed a claim` : ''}. Review the recorded waiver activity.`, tab: 'waivers' });
+        });
+        // Draft records contain public selections; no assigned season or hidden
+        // report is needed to describe what actually happened in this room.
+        const picks = league.draftPicks || [];
+        const lastPick = picks[picks.length - 1];
+        if (lastPick?.name) stories.push({ id: 'draft:last', week: 0, priority: 3, kicker: 'DRAFT ARCHIVE', title: `${name(lastPick.teamId)} selected ${lastPick.name}`, detail: `${lastPick.position ? `${lastPick.position} · ` : ''}${picks.length} selections are saved. Revisit the room and the choices that built these teams.`, tab: 'draft' });
+        if (!latest) stories.push({ id: 'draft:rosters', week: 0, priority: 2, kicker: 'THE FIELD IS SET', title: `${league.teams.length} teams. Your next chapter starts here.`, detail: picks.length ? `${picks.length} draft ${picks.length === 1 ? 'pick is' : 'picks are'} saved. Your starting lineup determines which players count in the next game.` : 'Your roster is saved. Review the players who will count in the next game.', tab: 'roster' });
+        if (league.phase === 'complete' && league.championTeamId && latest && latest.week === Engine.seasonEndWeek(league)) stories.push({ id: 'champion', week: latest.week, priority: 11, kicker: 'SEASON MILESTONE', title: `${name(league.championTeamId)} claims the title`, detail: 'The final result is saved. Revisit the season record and your earned achievements.', tab: 'achievements' });
+        return stories.sort((a, b) => b.week - a.week || b.priority - a.priority || (b.index || 0) - (a.index || 0)).slice(0, 3);
+    }
+
     function TeamLockup({ team, standing, side, score, scoreDigits = 1, emptyLabel = 'No matchup' }) {
         if (!team) return h('div', { className: `tl-home-team ${side}` }, h('div', { className: 'tl-home-bye' }, emptyLabel));
         return h('div', { className: `tl-home-team ${side}` },
@@ -50,7 +94,8 @@
 
     function WrTimeLeagueHomePanel({ league, onNavigate, onInspectScore, seatTeamId, cards, logIndex, eraFactors, throughWeek }) {
         const phone = window.WR?.useViewport ? window.WR.useViewport().isPhone : false;
-        const standings = useMemo(() => Engine.computeStandings(league), [league]);
+        const visibleLeague = useMemo(() => Number.isInteger(throughWeek) ? { ...league, finalizedWeeks: league.finalizedWeeks.filter(week => week.week <= throughWeek) } : league, [league, throughWeek]);
+        const standings = useMemo(() => Engine.computeStandings(visibleLeague), [visibleLeague]);
         const teamOf = (teamId) => league.teams.find((team) => team.teamId === teamId);
         const teamName = (teamId) => teamOf(teamId)?.name ?? teamId;
         const standingOf = (teamId) => standings.find((row) => row.teamId === teamId);
@@ -59,7 +104,7 @@
         const currentSchedule = league.currentWeek > league.settings.regularSeasonWeeks ? { pairs: Engine.playoffPairs(league, league.currentWeek) } : league.schedule.find((item) => item.week === league.currentWeek);
         const participation = Engine.weekParticipation(league, myTeam.teamId);
         const postgame = league.weekStage === 'postgame';
-        const justFinished = postgame ? league.finalizedWeeks[league.finalizedWeeks.length - 1] : null;
+        const justFinished = postgame ? visibleLeague.finalizedWeeks[visibleLeague.finalizedWeeks.length - 1] : null;
         const finishedMatch = justFinished?.matchups.find(match => match.home === myTeam.teamId || match.away === myTeam.teamId);
         const currentPair = postgame ? (finishedMatch ? [finishedMatch.home, finishedMatch.away] : null) : participation.pair;
         const opponentId = currentPair?.find((teamId) => teamId !== myTeam.teamId) ?? null;
@@ -73,11 +118,10 @@
             : `This roster cannot fill every required slot. ${recovery.reason}`;
         const pendingWaivers = league.pendingClaims.filter((claim) => claim.teamId === myTeam.teamId).length;
         const openTrades = league.trades.filter((trade) => trade.status === 'pending' && trade.toTeamId === myTeam.teamId && !(trade.deferredUntilWeek > league.currentWeek)).length;
-        const lastFinalized = league.finalizedWeeks[league.finalizedWeeks.length - 1] ?? null;
+        const lastFinalized = visibleLeague.finalizedWeeks[visibleLeague.finalizedWeeks.length - 1] ?? null;
         const lastMatchup = lastFinalized?.matchups.find((matchup) => matchup.home === myTeam.teamId || matchup.away === myTeam.teamId) ?? null;
         const lastResult = lastMatchup ? (lastMatchup.winner === null ? 'T' : lastMatchup.winner === myTeam.teamId ? 'W' : 'L') : null;
-        const recentActivity = [...league.activity].reverse().filter(event => event.week >= (lastFinalized?.week ?? league.currentWeek) && event.kind !== 'draft' && event.kind !== 'reveal').slice(0, 3);
-        const recentMoves = recentActivity.filter(event => event.kind === 'waiver' || event.kind === 'trade').slice(0, 2);
+        const wireStories = wireStoriesFor(league, myTeam.teamId, throughWeek);
         const champion = league.championTeamId ? teamOf(league.championTeamId) : null;
 
         const weeklyLeaders = useMemo(() => {
@@ -204,31 +248,23 @@
 
             h('div', { className: 'tl-home-dashboard-grid' },
             h('div', { className: 'tl-home-standings-workspace' }, playoffHunt,
-                (showHunt || phone) ? h('details', { className: 'tl-home-secondary' }, h('summary', null, 'Full standings & team details'), h(window.WrTimeLeagueStandingsPanel, { league, onNavigate, embedded: true })) : h(window.WrTimeLeagueStandingsPanel, { league, onNavigate, embedded: true })),
+                (showHunt || phone) ? h('details', { className: 'tl-home-secondary' }, h('summary', null, 'Full standings & team details'), h(window.WrTimeLeagueStandingsPanel, { league: visibleLeague, onNavigate, embedded: true })) : h(window.WrTimeLeagueStandingsPanel, { league: visibleLeague, onNavigate, embedded: true })),
             h('section', { className: 'tl-home-recap-grid' },
                 h('article', { className: 'tl-card tl-league-update' },
-                    h('header', { className: 'tl-league-update-heading' }, h('h2', null, 'League update'),
-                        h('span', { className: 'tl-pill info' }, lastFinalized ? `Week ${lastFinalized.week} final` : 'Season opener')),
+                    h('header', { className: 'tl-league-update-heading' }, h('div', null, h('small', { className: 'tl-home-wire-masthead' }, 'THE VAULT WIRE'), h('h2', null, 'League update')),
+                        h('span', { className: 'tl-pill info' }, 'From your league')),
+                    h('ol', { className: 'tl-home-wire', 'aria-label': 'Vault league stories' }, wireStories.map((story, index) => h('li', { key: story.id }, h('button', { type: 'button', className: 'tl-home-wire-story', onClick: () => story.scoreWeek && onInspectScore ? onInspectScore(story.scoreWeek) : onNavigate(story.tab) },
+                        h('small', null, story.kicker, story.week ? ` · WEEK ${story.week}` : ''), h('strong', null, story.title), index === 0 ? h('span', null, story.detail) : null, h('b', { 'aria-hidden': true }, '↗'))))),
+                    lastFinalized && h('details', { className: 'tl-home-wire-finals' }, h('summary', null, `Week ${lastFinalized.week} finals & leaders`),
                     weeklyLeaders && h('div', { className: 'tl-update-highlights' },
                         weeklyLeaders.topTeam && h('div', null, h('small', null, 'High score'), h('strong', null, `${weeklyLeaders.topTeam.total.toFixed(1)} pts`), h('span', null, teamName(weeklyLeaders.topTeam.teamId))),
                         weeklyLeaders.topPlayer && h('div', null, h('small', null, 'Top performer'), h('strong', null, weeklyLeaders.topPlayer.name), h('span', null, `${league.settings.hiddenYears && !league.yearsRevealed ? (window.WrTimeLeagueYearLabel?.(league, weeklyLeaders.topPlayer, cards, logIndex, eraFactors, throughWeek) || window.App.TimeLeagueHiddenYears.label(league, weeklyLeaders.topPlayer)) : weeklyLeaders.topPlayer.drawnSeason} · ${weeklyLeaders.topPlayer.points.toFixed(1)} pts · ${teamName(weeklyLeaders.topPlayer.teamId)}`)),
                         weeklyLeaders.closest && h('div', null, h('small', null, 'Closest game'), h('strong', null, weeklyLeaders.closest.homePoints === weeklyLeaders.closest.awayPoints ? 'Tie game' : `${(Math.abs(Math.round(weeklyLeaders.closest.homePoints * 100) - Math.round(weeklyLeaders.closest.awayPoints * 100)) / 100).toFixed(2)}-point margin`), h('span', null, `${teamName(weeklyLeaders.closest.home)} vs. ${teamName(weeklyLeaders.closest.away)}`))),
-                    lastFinalized ? h('div', { className: 'tl-update-results', 'aria-label': `Week ${lastFinalized.week} results` },
+                    h('div', { className: 'tl-update-results', 'aria-label': `Week ${lastFinalized.week} results` },
                         lastFinalized.matchups.map(match => h('div', { key: `${match.home}:${match.away}`, className: 'tl-update-match' },
                             h('small', null, 'FINAL'),
                             [[match.home,match.homePoints],[match.away,match.awayPoints]].map(([id,points]) => h('div', { key: id, className: match.winner === id ? 'winner' : '' },
-                                h('span', null, teamName(id)), h('strong', null, points.toFixed(2)))))))
-                        : h('div', { className: 'tl-home-opener-update' },
-                            h('h3', null, 'Your draft is saved.'),
-                            h('p', null, `${league.teams.length} teams · ${league.draftPicks.length} draft picks saved. Your next result comes from the starting lineup you choose.`),
-                            h('dl', { className: 'tl-home-readiness' },
-                                h('div', null, h('dt', null, 'Your roster'), h('dd', null, `${myTeam.roster.length} player${myTeam.roster.length === 1 ? '' : 's'}`)),
-                                h('div', null, h('dt', null, 'Starting lineup'), h('dd', null, ready ? 'Legal' : `${lineupProblems.length} issue${lineupProblems.length === 1 ? '' : 's'}`)),
-                                h('div', null, h('dt', null, 'Your desk'), h('dd', null, `${pendingWaivers} claim${pendingWaivers === 1 ? '' : 's'} · ${openTrades} offer${openTrades === 1 ? '' : 's'}`))),
-                            recentMoves.length > 0 && h('div', { className: 'tl-home-recent-moves', 'aria-label': 'Recent activity' },
-                                recentMoves.map(event => h('p', { key: event.id }, event.message)))),
-                    lastFinalized && recentActivity.length > 0 && h('details', { className: 'tl-update-activity' }, h('summary', null, 'Recent league activity'),
-                        recentActivity.map(event => h('div', { key: event.id }, h('span', null, `W${event.week}`), h('p', null, event.message)))),
+                                h('span', null, teamName(id)), h('strong', null, points.toFixed(2)))))))),
                     h('footer', { className: 'tl-update-links' },
                         lastFinalized && h('button', { type: 'button', className: 'tl-btn', onClick: () => onNavigate('gameday') }, 'Replays & box scores →'),
                         !lastFinalized && h('button', { type: 'button', className: 'tl-btn', onClick: () => onNavigate('draft') }, 'Review draft →'),
@@ -237,4 +273,5 @@
     }
 
     window.WrTimeLeagueHomePanel = WrTimeLeagueHomePanel;
+    window.App.TimeLeagueHomeWire = { storiesFor: wireStoriesFor };
 })();

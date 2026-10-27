@@ -73,7 +73,9 @@ for (const boundary of [15,30,45,60]) {
     const recap=walk(tree).find(node=>typeof node.type==='function' && node.type.name==='QuarterRecap');
     assert.equal(recap.props.clock,boundary);
 }
-assert(button(tree,'NEXT QUARTER').props.disabled);
+assert(!button(tree,'NEXT QUARTER'),'Finished playback replaces running controls with final actions');
+assert(button(tree,'REPLAY FROM START') && button(tree,'CLOSE GAMECAST'));
+assert(!walk(tree).some(node=>node.props?.className==='tl-cast-controls') && !walk(tree).some(node=>node.props?.className==='tl-cast-pace'),'Final controls do not retain playback pace or disabled time controls');
 assert.equal(JSON.stringify(league),savedLeague,'Playback controls never mutate the saved result');
 button(tree,'REPLAY FROM START').props.onClick(); tree=cast(); assert.equal(state[1],0);
 button(tree,'RESUME').props.onClick(); tree=cast();
@@ -117,8 +119,14 @@ assert(analysis && !analysis.props.open);
 assert(text(analysis).includes('FINAL RESULT'));
 assert(text(analysis).includes('Week Archive'));
 const phoneChildren = tree.children.filter(Boolean);
-assert.equal(phoneChildren[0].type.name, 'HeroMatchup');
-assert(phoneChildren.findIndex(node => node.type?.name === 'LiveLineups') < phoneChildren.findIndex(node => node.type === 'details'));
+const phonePrimary = phoneChildren.find(node => node.props?.className === 'tl-gameday-primary');
+const phonePrimaryChildren = phonePrimary.children.filter(Boolean);
+const phoneScoreRail = phonePrimaryChildren.find(node => node.props?.className === 'tl-gameday-score-rail');
+assert.equal(phoneScoreRail.children.filter(Boolean)[0].type.name, 'HeroMatchup', 'The phone hero still leads inside the primary score rail');
+assert(phonePrimaryChildren.findIndex(node => node.type?.name === 'LiveLineups') > phonePrimaryChildren.indexOf(phoneScoreRail), 'The complete starting lineups follow the score rail');
+assert(phoneChildren.indexOf(phonePrimary) < phoneChildren.findIndex(node => node.type === 'details'), 'Primary score and lineups precede secondary matchup details');
+assert(phoneChildren.indexOf(phonePrimary) < phoneChildren.findIndex(node => node.props?.className === 'tl-card tl-gamecast-archive'), 'The saved week archive remains after the primary matchup');
+assert(text(phoneScoreRail).includes('Fantasy points use recorded historical games'), 'Score provenance stays in the primary view');
 const upcomingPhone = heroOf(staticCast({ ...league, phase: 'season', weekStage: 'ready', currentWeek: 1, finalizedWeeks: [] }));
 const upcomingDetails = walk(upcomingPhone.type(upcomingPhone.props)).find(node => node.type === 'details');
 assert(text(upcomingDetails).includes('not a calibrated prediction'));

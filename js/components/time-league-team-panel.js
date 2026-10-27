@@ -543,12 +543,11 @@
                     h('div', { className: 'tl-roster-toolbar-actions' }, h('span', { className: `tl-roster-lineup-status ${optimal || participation.kind === 'observer' ? 'good' : 'warn'}` }, participation.kind === 'observer' ? 'No lineup required this round' : editable ? optimal ? 'Lineup legal' : `${problems.length} lineup issue${problems.length === 1 ? '' : 's'}` : league.phase === 'complete' ? 'Season complete' : 'Lineup locked'),
                         PlayerComparison && h('button', { type: 'button', className: 'tl-btn', 'aria-expanded': comparisonOpen, onClick: () => setComparisonOpen(value => !value) }, comparisonOpen ? 'Hide comparison' : 'Compare players'),
                         onStats && h('button', { type: 'button', className: 'tl-btn', onClick: onStats }, 'Player stats'),
-                        h('button', { type: 'button', className: 'tl-btn', 'aria-label': 'Fill empty slots', 'aria-describedby': fillHelpId,
+                        h('button', { type: 'button', className: 'tl-btn', 'aria-label': 'Fill empty slots', 'aria-describedby': emptyCount > 0 || !editable ? fillHelpId : undefined, title: !emptyCount && editable ? fillHelp : undefined,
                             disabled: !editable || moving || !fillPlan, onClick: fillEmptySlots }, moving && fillInFlightRef.current ? 'Filling slots…' : 'Fill empty slots'))),
-                h('p', { className: 'tl-roster-fill-help', id: fillHelpId }, fillHelp),
+                (emptyCount > 0 || !editable) && h('p', { className: 'tl-roster-fill-help', id: fillHelpId }, fillHelp),
                 noGameStarters.length > 0 && h('section', { className: 'tl-roster-game-warning', 'aria-label': 'Current no-game starters' },
-                    h('h3', null, `${noGameStarters.length} starter${noGameStarters.length === 1 ? '' : 's'} with no recorded game`),
-                    h('p', null, `These players will score zero in Vault Week ${league.currentWeek}. They are legal starters; keeping them does not prevent kickoff.`, editable ? ' Compare an eligible replacement before locking.' : ' Lineups are locked; the commissioner can reopen them before kickoff.'),
+                    h('h3', null, `W${league.currentWeek} · ${noGameStarters.length} starter${noGameStarters.length === 1 ? '' : 's'} with no game · 0 pts`),
                     h('ul', null, noGameStarters.map(entry => h('li', { key: entry.entryId },
                         h('span', null, `${entry.name} · ${slotName(entry.slot)}`),
                         editable && h('button', { type: 'button', className: 'tl-btn', disabled: moving, 'aria-label': `Compare replacements for ${entry.name}`, onClick: event => openMove({ entryId: entry.entryId }, event) }, 'Compare replacements'))))),
@@ -575,12 +574,6 @@
                         occupants.length ? occupants.map((entry) => entryRow(entry, slot)) : h('p', { className: 'tl-empty', style: { padding: '10px 14px' } }, `No entries stashed at ${slot}.`));
                 })),
             dossier,
-            h('details', { className: 'tl-roster-help' }, h('summary', null, 'Lineup tips & scouting'),
-                h('p', null, 'Tap Move to see named replacements, or drag a player onto a compatible slot or teammate.'),
-                h('p', null, 'Avg pts / game uses completed Vault games in your league scoring, including bench games and games before acquisition. Weeks with no recorded game are excluded. The same average appears on waivers and lineup choices.'),
-                h('p', null, 'Stars compare this week with the player’s own historical season. Best three games earn 5 stars; worst three earn 1. No-game weeks are excluded. Points left counts the unused archive pool after the year is known; estimates are labeled until then.'),
-                !concealed && h('p', null, 'Stars are a game rating, not the probability of playing or winning. Only the current week’s clue is shown.'),
-                h('p', null, 'No recorded game means zero points this Vault week. The archive does not identify an injury or predict a return date. Future weeks stay sealed.')),
             moveSheet);
     }
 
@@ -799,7 +792,10 @@
                 (!logIndex || (league.settings.eraAdjusted && !eraFactors?.size)) && h('p', { className: 'tl-hint', role: 'status' }, 'Scoring data is unavailable. Point totals will appear when it loads.'),
                 shown.length === 0 ? h('p', { className: 'tl-empty' }, 'No players match these filters.') :
                     h('div', { className: 'tl-waiver-table-scroll' }, h('table', { className: 'tl-waiver-table' },
-                        h('thead', null, h('tr', null, ['#', 'PLAYER', 'POS', estimatedPreviews ? 'EST. PTS LEFT' : 'PTS LEFT', ''].map((label, index) => h('th', { key: index, scope: 'col' }, label)))),
+                        h('thead', null, h('tr', null, [
+                            ['#', 'tl-waiver-rank'], ['PLAYER', 'tl-waiver-player'], ['POS', 'tl-waiver-position'],
+                            ['PTS', 'tl-waiver-points'], [estimatedPreviews ? 'EST. PTS LEFT' : 'PTS LEFT', 'tl-waiver-score'], ['', 'tl-waiver-action'],
+                        ].map(([label, className]) => h('th', { key: className, scope: 'col', className, title: className === 'tl-waiver-points' ? 'Points scored through visible completed Vault weeks, using league scoring; includes bench games and games before acquisition' : undefined }, label)))),
                         h('tbody', null, shown.map((card, index) => {
                             const preview = previews.get(card.identity);
                             const selected = card.identity === targetIdentity;
@@ -811,10 +807,13 @@
                                 h('td', { className: 'tl-waiver-rank' }, index + 1),
                                 h('td', { className: 'tl-waiver-player' }, h('strong', null, card.name), h('small', { className: 'tl-waiver-edition' }, `${card.position} · ${concealed ? yearLabel(league, waiverEntry(card), cards, logIndex, eraFactors, throughWeek) : `${preview?.drawnSeason ?? '—'} season`}`),
                                     h(PlayerSignals, { league, cards, entry, logIndex, eraFactors, throughWeek, read, omitRemaining: repeatedEstimate }),
-                                    h('small', { className: 'tl-waiver-mobile-points' }, previewPoints(preview?.remainingPoints) + (preview?.estimated ? ' est. pts left' : ' pts left'))),
-                                h('td', null, h('span', { className: `tl-pos-badge tl-pos-${card.position}` }, card.position)),
+                                    h('div', { className: 'tl-waiver-mobile-totals' },
+                                        h('span', { className: 'tl-waiver-mobile-scored', title: 'Visible completed Vault points · league scoring' }, h('b', null, previewPoints(read.points)), h('small', null, 'PTS')),
+                                        h('small', { className: 'tl-waiver-mobile-points' }, previewPoints(preview?.remainingPoints) + (preview?.estimated ? ' est. pts left' : ' pts left')))),
+                                h('td', { className: 'tl-waiver-position' }, h('span', { className: `tl-pos-badge tl-pos-${card.position}` }, card.position)),
+                                h('td', { className: 'tl-waiver-points tabular', title: 'Visible completed Vault points · league scoring' }, previewPoints(read.points)),
                                 h('td', { className: 'tl-waiver-score tabular' }, previewPoints(preview?.remainingPoints), !concealed && h('small', null, `${previewPoints(preview?.totalPoints)} total`)),
-                                h('td', null, h('button', { className: `tl-btn${selected ? ' primary' : ''}`, disabled: !wireOpen || filing || Boolean(cancelling), 'aria-label': `${mine.some(claim => claim.addIdentity === card.identity) ? 'Review pending claim for' : 'Claim'} ${card.name}`, 'aria-pressed': selected, onClick: event => chooseTarget(card.identity, event) }, mine.some(claim => claim.addIdentity === card.identity) ? 'Pending' : '+ Claim')));
+                                h('td', { className: 'tl-waiver-action' }, h('button', { className: `tl-btn${selected ? ' primary' : ''}`, disabled: !wireOpen || filing || Boolean(cancelling), 'aria-label': `${mine.some(claim => claim.addIdentity === card.identity) ? 'Review pending claim for' : 'Claim'} ${card.name}`, 'aria-pressed': selected, onClick: event => chooseTarget(card.identity, event) }, mine.some(claim => claim.addIdentity === card.identity) ? 'Pending' : '+ Claim')));
                         })))),
                 h('div', { className: 'tl-waiver-market-foot' }, h('span', null, `${shown.length} of ${filtered.length} shown`),
                     filtered.length > shown.length && h('button', { className: 'tl-btn', onClick: () => setVisibleCount(count => count + rowCap) }, 'Show more')),
@@ -899,7 +898,8 @@
                 team.manager === 'ai' && h(GmProfile, { team, title: 'GM profile' }))));
     }
 
-    function TradesSection({ league, cards, team, apply, logIndex, eraFactors, throughWeek, onNavigate }) {
+    function TradesSection({ league, cards, team, apply, logIndex, eraFactors, throughWeek, onNavigate, tradeRequest }) {
+        const phone = window.WR?.useViewport ? window.WR.useViewport().isPhone : false;
         const others = league.teams.filter((t) => t.teamId !== team.teamId);
         const [counterpartyId, setCounterpartyId] = useState(others.length ? others[0].teamId : '');
         const [giveIds, setGiveIds] = useState([]);
@@ -913,6 +913,25 @@
         const [message, setMessage] = useState('');
         const [receiptId, setReceiptId] = useState('');
         const tradeBusy = React.useRef(false);
+        const requestedTradeRef = React.useRef(null);
+        const handledTradeRequest = React.useRef('');
+        const requestedTrade = tradeRequest?.leagueId === league.leagueId && tradeRequest.teamId === team.teamId && team.manager === 'human'
+            && (typeof tradeRequest.requestId === 'string' || Number.isFinite(tradeRequest.requestId))
+            ? league.trades.find(trade => trade.tradeId === tradeRequest.tradeId && [trade.fromTeamId, trade.toTeamId].includes(team.teamId)) : null;
+        const tradeRequestKey = requestedTrade ? JSON.stringify([league.leagueId, team.teamId, requestedTrade.tradeId, tradeRequest.requestId]) : '';
+        React.useEffect(() => {
+            if (!requestedTrade || handledTradeRequest.current === tradeRequestKey) return;
+            const nextView = requestedTrade.status === 'pending' ? 'inbox' : 'history';
+            if (deskView !== nextView) { setDeskView(nextView); return; }
+            const row = requestedTradeRef.current;
+            if (!row) return;
+            handledTradeRequest.current = tradeRequestKey;
+            const focus = () => { row.focus?.({ preventScroll: true }); row.scrollIntoView?.({ block: 'center', behavior: 'auto' }); };
+            if (typeof window.requestAnimationFrame !== 'function') { focus(); return; }
+            let second;
+            const first = window.requestAnimationFrame(() => { second = window.requestAnimationFrame(focus); });
+            return () => { window.cancelAnimationFrame?.(first); if (second != null) window.cancelAnimationFrame?.(second); };
+        }, [tradeRequestKey, requestedTrade, deskView]);
         const entryById = useMemo(() => {
             const map = new Map();
             for (const item of league.teams) for (const entry of item.roster) map.set(entry.entryId, entry);
@@ -965,6 +984,8 @@
         const grade = comparable ? fairnessGrade(giveValue, receiveValue) : null;
         const offer = { fromTeamId: team.teamId, toTeamId: counterpartyId, giveEntryIds: give, receiveEntryIds: receive };
         const acceptanceProblem = balanced ? Engine.tradeProblem(league, offer) : null;
+        const aiPreview = counterparty?.manager === 'ai' && balanced && typeof AI.previewTrade === 'function' ? AI.previewTrade(league, offer, cards) : null;
+        const acceptancePercent = aiPreview && [0, 100].includes(aiPreview.percent) ? aiPreview.percent : null;
         const toggle = (ids, id) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]);
         const sortByValue = (roster) => [...roster].sort((l, r) => {
             const left = valueOf(l), right = valueOf(r);
@@ -1025,9 +1046,11 @@
             ids.length ? ids.map(id => h('button', { key: id, type: 'button', className: 'tl-trade-chip tl-trade-package-player', disabled: sending,
                 onClick: () => onToggle(id), 'aria-label': `Remove ${entryById.get(id)?.name} from ${direction} package` },
                 h('span', null, entryById.get(id)?.name), h('small', null, entryById.get(id)?.position), h('span', { 'aria-hidden': true }, '×')))
-                : h('p', null, 'Select players below.'));
+                : null);
         };
         const comparisonLabel = balanced ? comparable ? grade.label : 'Comparison unavailable' : 'Build both sides';
+        const pointDelta = balanced && comparable ? Math.round((receiveValue - giveValue) * 10) / 10 : null;
+        const deltaLabel = pointDelta == null ? '—' : `${pointDelta >= 0 ? '+' : ''}${fmt1(pointDelta)}`;
         const comparisonDelta = `${give.length} for ${receive.length} · ${balanced && comparable ? `${receiveValue - giveValue >= 0 ? '+' : ''}${fmt1(receiveValue - giveValue)} ${concealed ? 'estimated points/game' : 'reference points'} to your side` : balanced ? 'Missing values or different scoring bases cannot be graded.' : 'Equal-count swaps keep roster sizes fixed.'}`;
         const comparisonBasis = concealed ? 'Completed Vault averages or public candidate-archive averages, as shown with each player’s scoring basis. The comparison does not consult a hidden year or guarantee acceptance.'
             : 'Archived season totals use reference scoring, which can differ from your league. This comparison is not a forecast or acceptance guarantee.';
@@ -1051,7 +1074,8 @@
                     : h('p', null, receipt.status === 'pending' && !(receipt.deferredUntilWeek > league.currentWeek) ? 'The latest saved status will appear here when the room updates.' : 'No players moved.'),
                 receipt.note && ['rejected', 'withdrawn'].includes(receipt.status) && h('p', null, receipt.note),
                 receipt.status === 'accepted' && onNavigate && h('button', { type: 'button', className: 'tl-btn', onClick: () => onNavigate('roster') }, lineupOpen ? 'Set lineup' : 'View lineup')),
-            deskView === 'builder' && h('div', { className: 'tl-card tl-trade-builder' },
+            deskView === 'builder' && h('div', { className: `tl-trade-builder-layout${counterparty?.manager === 'ai' ? ' has-owner' : ''}` },
+            h('div', { className: 'tl-card tl-trade-builder' },
                 h('div', { className: 'tl-card-title' }, h('span', null, 'Trade builder'), h('small', null, deskOpen ? `W${league.currentWeek} · DESK OPEN` : 'DESK CLOSED')),
                 h('div', { className: 'tl-trade-controls' },
                     h('label', null, h('span', { className: 'tl-label' }, 'PARTNER'),
@@ -1061,11 +1085,18 @@
                     h('select', { className: 'tl-select', 'aria-label': 'Filter trade position', value: position, onChange: e => setPosition(e.target.value) },
                         ['ALL', ...POSITION_ORDER.filter(pos => [...team.roster, ...(counterparty?.roster || [])].some(entry => entry.position === pos))].map(pos => h('option', { key: pos, value: pos }, pos === 'ALL' ? 'All positions' : pos)))),
                 h('section', { className: 'tl-trade-brief', 'aria-label': 'Trade summary', 'aria-live': 'polite', 'aria-atomic': true },
-                    h('div', { className: 'tl-trade-brief-verdict' }, h('strong', null, comparisonLabel), h('span', null, comparisonDelta)),
-                    h('small', null, concealed ? 'Public averages · scoring basis shown with each player' : 'Reference scoring · archived season totals'),
+                    h('div', { className: 'tl-trade-brief-metrics' },
+                        h('div', { className: `tl-trade-value-grade${grade?.tone ? ` is-${grade.tone}` : ''}`, title: comparisonBasis },
+                            h('small', null, 'Value grade'), h('strong', null, balanced && comparable ? grade.grade : '—'), h('span', null, comparisonLabel)),
+                        h('div', { className: `tl-trade-point-delta${pointDelta > 0 ? ' is-positive' : pointDelta < 0 ? ' is-negative' : ''}` },
+                            h('small', null, 'To your side'), h('strong', { className: 'tabular' }, deltaLabel), h('span', null, concealed ? 'est. pts/game' : 'reference pts')),
+                        counterparty?.manager === 'ai' && h('div', { className: 'tl-trade-ai-preview', title: 'Current terms: 100% means this GM would accept now; 0% means reject. This is a deterministic rule check, not a calibrated forecast. Roster moves can change it.' },
+                            h('small', null, 'AI acceptance'), h('strong', { className: 'tabular' }, acceptancePercent == null ? '—' : `${acceptancePercent}%`),
+                            acceptancePercent != null && h('span', { className: 'tl-trade-acceptance-track', role: 'progressbar', 'aria-label': 'AI acceptance for current terms', 'aria-valuenow': acceptancePercent, 'aria-valuemin': 0, 'aria-valuemax': 100 }, h('span', { style: { width: `${acceptancePercent}%` } })),
+                            h('span', null, aiPreview?.label || 'Complete a legal offer'))),
+                    h('span', { className: 'tl-trade-counts', title: comparisonDelta }, `${give.length} for ${receive.length}`),
                     acceptanceProblem ? h('p', { className: 'tl-acq-problem' }, `Cannot accept this package with the current rosters: ${acceptanceProblem} You may propose it during planning; rosters are checked again after waivers.`)
-                        : balanced && h('p', { className: 'tl-acq-help' }, 'Current roster checks pass. Both rosters are checked again when the offer is accepted.'),
-                    h('p', { className: 'tl-trade-brief-consequence' }, 'If accepted, received players enter your bench. Set your starting lineup afterward.')),
+                        : balanced && h('p', { className: 'tl-acq-help' }, 'Current roster checks pass. Both rosters are checked again when the offer is accepted.')),
                 h('div', { className: 'tl-trade-packages', 'aria-label': 'Selected trade packages' },
                     tradePackage('YOU SEND', team, give, giveValue, id => setGiveIds(toggle(giveIds, id)), 'send'),
                     tradePackage('YOU RECEIVE', counterparty, receive, receiveValue, id => setReceiveIds(toggle(receiveIds, id)), 'receive')),
@@ -1076,13 +1107,16 @@
                     h('div', { className: 'tl-trade-verdict' },
                         h('strong', null, comparisonLabel),
                         h('span', null, `You send ${points(giveValue)} · You receive ${points(receiveValue)} ${concealed ? 'estimated points/game' : 'reference points'}`),
-                        h('small', null, comparisonBasis))),
+                        h('small', null, comparisonBasis),
+                        counterparty?.manager === 'ai' && h('p', null, 'AI acceptance checks the current terms with this GM’s deterministic rules: 100% means accept now; 0% means reject. It is not a calibrated forecast, and roster moves can change the decision.'),
+                        aiPreview?.reason && h('p', null, aiPreview.reason))),
                 h('div', { className: 'tl-trade-submit' },
                     h('input', { className: 'tl-input', 'aria-label': 'Trade offer note', placeholder: 'Add a note to your offer…', value: note, disabled: sending, onChange: e => setNote(e.target.value) }),
                     h('button', { className: 'tl-btn', disabled: sending || (!give.length && !receive.length), onClick: () => { setGiveIds([]); setReceiveIds([]); } }, 'Clear'),
                     h('button', { className: 'tl-btn primary', disabled: sending || !deskOpen || !balanced || !counterparty, onClick: send }, sending ? 'Sending…' : 'Send offer')),
-                h('details', { className: 'tl-trade-gm' }, h('summary', null, `Know your partner · ${counterparty?.name || 'Opposing GM'}`),
-                    counterparty?.manager === 'ai' ? h(GmProfile, { team: counterparty, title: 'Owner DNA' }) : h('p', null, 'Human manager — attach a note and negotiate directly.'))),
+                ),
+                counterparty?.manager === 'ai' && h('aside', { className: 'tl-trade-owner-panel', 'aria-label': 'Owner DNA' },
+                    h('details', { className: 'tl-trade-gm', open: !phone }, h('summary', null, `Owner DNA · ${counterparty.name}`), h(GmProfile, { team: counterparty, title: 'GM profile' })))),
             h('div', { className: 'tl-trade-records', hidden: deskView === 'builder' },
                 h('div', { className: 'tl-card', hidden: deskView !== 'inbox' },
                     h('div', { className: 'tl-card-title' }, h('span', null, 'Inbox'), h('small', null, pending.length ? `${pending.length} PENDING` : 'DESK CLEAR')),
@@ -1093,7 +1127,7 @@
                         const deferred = trade.deferredUntilWeek > league.currentWeek;
                         const canRespond = responseOpen && !deferred;
                         const problem = Engine.tradeProblem(league, trade);
-                        return h('div', { key: trade.tradeId, style: { padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' } },
+                        return h('div', { key: trade.tradeId, 'data-trade-id': trade.tradeId, tabIndex: -1, ref: requestedTrade?.tradeId === trade.tradeId ? requestedTradeRef : null, style: { padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' } },
                             h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 } },
                                 h('span', { className: `tl-pill ${incoming ? 'gold' : 'info'}` }, incoming ? 'INCOMING' : 'OUTGOING'),
                                 h('span', { className: 'tl-label' }, `W${trade.week} · ${from?.name ?? trade.fromTeamId} → ${to?.name ?? trade.toTeamId}`)),
@@ -1124,7 +1158,7 @@
                     settled.map((trade) => {
                         const from = teamById(trade.fromTeamId); const to = teamById(trade.toTeamId);
                         const accepted = trade.status === 'accepted';
-                        return h('div', { key: trade.tradeId, className: `tl-feedrow${accepted ? '' : ' caution'}` },
+                        return h('div', { key: trade.tradeId, className: `tl-feedrow${accepted ? '' : ' caution'}`, 'data-trade-id': trade.tradeId, tabIndex: -1, ref: requestedTrade?.tradeId === trade.tradeId ? requestedTradeRef : null },
                             h('time', null, `W${trade.week}`),
                             h('div', null, h('p', { style: { margin: 0 } },
                                 h('span', { className: `tl-pill ${accepted ? 'good' : trade.status === 'rejected' ? 'bad' : 'warn'}` }, trade.status.toUpperCase()),
@@ -1166,7 +1200,7 @@
             }));
     }
 
-    function WrTimeLeagueTeamPanel({ league, cards, section, activeTeamId, onSelectTeam, onUpdate, onlineMeta, logIndex, eraFactors, onBrowseWaivers, waiverSlot, waiverContext, onClearWaiverContext, throughWeek, onStats, onNavigate, onReopenPlanning }) {
+    function WrTimeLeagueTeamPanel({ league, cards, section, activeTeamId, onSelectTeam, onUpdate, onlineMeta, logIndex, eraFactors, onBrowseWaivers, waiverSlot, waiverContext, onClearWaiverContext, throughWeek, onStats, onNavigate, onReopenPlanning, tradeRequest }) {
         const archiveCards = cards;
         cards = Engine.cardsFor(league, cards);
         const standings = useMemo(() => Engine.computeStandings(league), [league]);
@@ -1191,7 +1225,7 @@
                 ? h('div', { className: 'tl-card' }, h('p', { className: 'tl-empty' }, 'Join a manager seat to open your roster.'))
                 : section === 'roster' ? h(RosterSection, { key: team.teamId, league, cards, archiveCards, team, apply, logIndex, eraFactors, onBrowseWaivers, throughWeek, onStats, onNavigate, onlineMeta, onReopenPlanning })
                     : section === 'waivers' ? h(WaiversSection, { key: team.teamId, league, cards, team, standings, apply, waiverSlot, waiverContext, onClearWaiverContext, logIndex, eraFactors, throughWeek, onNavigate })
-                        : section === 'trades' ? h(TradesSection, { key: team.teamId, league, cards, team, apply, logIndex, eraFactors, throughWeek, onNavigate })
+                        : section === 'trades' ? h(TradesSection, { key: team.teamId, league, cards, team, apply, logIndex, eraFactors, throughWeek, onNavigate, tradeRequest })
                             : h(AchievementsSection, { key: team.teamId, league, team }));
     }
 

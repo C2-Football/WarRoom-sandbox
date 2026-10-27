@@ -183,4 +183,40 @@ test('public assigned seasons determine decades only after the permitted reveal;
     assert.equal(helper.type({ league: { ...league, teams: [{ roster: [] }, {}] } }), null);
     assert.equal(helper.type({ league: { ...league, teams: [{ roster: [{ hiddenDecade: 'invalid' }] }] } }), null);
 });
+test('Messages review opens the exact owned, visible trade without changing a saved offer', () => {
+    const sample = fixture({ trades: [
+        { tradeId: 'own-offer', fromTeamId: 't2', toTeamId: 't1', status: 'pending', week: 1 },
+        { tradeId: 'foreign-offer', fromTeamId: 't3', toTeamId: 't4', status: 'pending', week: 1 },
+        { tradeId: 'withheld-offer', fromTeamId: 't1', toTeamId: 't2', status: 'accepted', week: 8 },
+    ] });
+    const before = JSON.stringify(sample);
+    // The inbox projection supplies visibility; the shell must honor it as well
+    // as ownership when a stale or invalid link is invoked.
+    const original = TimeLeagueMail.tradesForConversation;
+    TimeLeagueMail.tradesForConversation = (room, owner, other) => room.trades.filter(trade =>
+        trade.tradeId !== 'withheld-offer' && [trade.fromTeamId, trade.toTeamId].includes(owner)
+        && [trade.fromTeamId, trade.toTeamId].includes(other)).map(trade => ({ trade }));
+    try {
+        const draw = mount(sample, 'messages');
+        const inbox = component(draw(), 'Rivals');
+        inbox.props.onTrades('foreign-offer');
+        assert.equal(draw().props['data-vault-tab'], 'messages');
+        inbox.props.onTrades('withheld-offer');
+        assert.equal(draw().props['data-vault-tab'], 'messages');
+        inbox.props.onTrades('own-offer');
+        let tree = draw(), request = component(tree, 'Team').props.tradeRequest;
+        assert.equal(tree.props['data-vault-tab'], 'trades');
+        assert.deepEqual(request, { leagueId: sample.leagueId, teamId: 't1', tradeId: 'own-offer', requestId: 1 });
+        inbox.props.onTrades('own-offer');
+        assert.equal(component(draw(), 'Team').props.tradeRequest.requestId, 2, 'Reopening an offer schedules a fresh focus request');
+        const online = mount(sample, 'messages', { role: 'member', seatTeamId: 't2', draftStarted: true });
+        component(online(), 'Rivals').props.onTrades('own-offer');
+        request = component(online(), 'Team').props.tradeRequest;
+        assert.equal(request.teamId, 't2', 'The claimed seat owns the review context');
+        assert.equal(JSON.stringify(sample), before, 'Navigation never files, accepts or duplicates an offer');
+    } finally {
+        if (original) TimeLeagueMail.tradesForConversation = original;
+        else delete TimeLeagueMail.tradesForConversation;
+    }
+});
 console.log(`PASS ${passed} Vault navigation, Home mail, phase context and public-era groups`);

@@ -61,7 +61,24 @@
 .tl-chat-error { color: #ffbbaa; font-size: 12px; margin: 9px 0 0; }
 .tl-chat-readonly { padding: 14px 20px; font-size: 12px; color: #adbdd3; }
 .tl-inbox button:focus-visible, .tl-inbox textarea:focus-visible, .tl-inbox select:focus-visible { outline: 2px solid #87eed0; outline-offset: 2px; }
+.tl-chat-trades { flex:0 0 auto; min-width:0; color:#e7f1ff; background:#17253a; border-bottom:1px solid #ffffff20; }
+.tl-chat-trades > summary { min-height:44px; padding:12px 20px; font-size:13px; font-weight:600; cursor:pointer; }
+.tl-chat-trades > summary > span { float:right; margin-left:8px; color:#a9cfdd; font-size:12px; }
+.tl-chat-trades > summary:focus-visible { outline:2px solid #87eed0; outline-offset:-3px; }
+.tl-chat-trade-list { max-height:min(36dvh,300px); overflow-y:auto; overscroll-behavior:contain; padding:0 20px 12px; }
+.tl-chat-proposal { padding:12px; border:1px solid #ffffff26; border-radius:10px; background:#111d30; overflow-wrap:anywhere; }
+.tl-chat-proposal + .tl-chat-proposal { margin-top:8px; }
+.tl-chat-proposal header { display:grid; gap:5px; }
+.tl-chat-proposal header small, .tl-chat-proposal-saved { color:#aebed5; font-size:11px; line-height:1.4; }
+.tl-chat-proposal header strong { font-size:14px; color:#a4ffdf; }
+.tl-chat-proposal dl { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:12px 0; }
+.tl-chat-proposal dl > div { min-width:0; }
+.tl-chat-proposal dt { font-size:11px; color:#aebed5; margin-bottom:4px; }
+.tl-chat-proposal dd { margin:0; font-size:13px; line-height:1.4; }
+.tl-chat-proposal .tl-chat-trade { display:block; min-height:44px; font-size:13px; }
 @media (max-width: 700px) {
+    .tl-chat-trades > summary { padding:12px; }
+    .tl-chat-trade-list { padding:0 12px 10px; max-height:32dvh; }
     .tl-rival-previews { grid-template-columns: 1fr; }
     .tl-inbox.tl-card { display: flex; height: var(--tl-chat-available-height, calc(100dvh - 102px - env(safe-area-inset-top, 0px) - var(--tl-mobile-nav-space, calc(70px + env(safe-area-inset-bottom, 0px))))); min-height: 0; }
     .tl-inbox-owners, .tl-chat { width: 100%; flex: 1; }

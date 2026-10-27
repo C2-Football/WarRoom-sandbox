@@ -1,0 +1,1872 @@
+{
+  "date": "2026-10-27",
+  "origin": "http://127.0.0.1:3038/?vault=1",
+  "baseline": "279131f36b715ed631d6668e6143faa2fbf8c74f",
+  "fixture": "Menu QA · October 26; isolated 3038 six-team save, nine starters plus three bench players, 72 saved draft picks",
+  "matrix": [
+    {
+      "view": "HOME",
+      "lineupRows": 0,
+      "overflow": false,
+      "pts": [],
+      "rosterRowHeights": [],
+      "viewport": [
+        1339,
+        892
+      ],
+      "visibleBounds": [
+        {
+          "bottom": 752.859375,
+          "class": "tl-card tl-league-update",
+          "top": 407.6875,
+          "width": 433.203125,
+          "x": 881.796875
+        },
+        {
+          "bottom": 892,
+          "class": "tl-week-action-row",
+          "top": 827,
+          "width": 1143,
+          "x": 196
+        }
+      ]
+    },
+    {
+      "lineupRows": 9,
+      "overflow": false,
+      "pts": [],
+      "rosterRowHeights": [],
+      "view": "GAMEDAY",
+      "visibleBounds": [
+        {
+          "bottom": 782.375,
+          "class": "tl-gameday-primary",
+          "top": 188.796875,
+          "width": 1095,
+          "x": 220
+        },
+        {
+          "bottom": 782.375,
+          "class": "tl-live-lineups",
+          "top": 188.796875,
+          "width": 735.375,
+          "x": 579.625
+        },
+        {
+          "bottom": 892,
+          "class": "tl-week-action-row",
+          "top": 819,
+          "width": 1143,
+          "x": 196
+        }
+      ],
+      "viewport": [
+        1339,
+        892
+      ]
+    },
+    {
+      "view": "ROSTER",
+      "lineupRows": 0,
+      "overflow": false,
+      "pts": [],
+      "rosterRowHeights": [
+        69.296875,
+        69.296875,
+        69.296875
+      ],
+      "viewport": [
+        1339,
+        892
+      ],
+      "visibleBounds": [
+        {
+          "bottom": 892,
+          "class": "tl-week-action-row",
+          "top": 827,
+          "width": 1143,
+          "x": 196
+        }
+      ]
+    },
+    {
+      "view": "WAIVERS",
+      "lineupRows": 0,
+      "overflow": false,
+      "pts": [
+        "0.0",
+        "0.0",
+        "0.0"
+      ],
+      "rosterRowHeights": [],
+      "viewport": [
+        1339,
+        892
+      ],
+      "visibleBounds": [
+        {
+          "bottom": 892,
+          "class": "tl-week-action-row",
+          "top": 827,
+          "width": 1143,
+          "x": 196
+        }
+      ]
+    },
+    {
+      "view": "TRADES",
+      "lineupRows": 0,
+      "overflow": false,
+      "pts": [],
+      "rosterRowHeights": [],
+      "tradeSummary": "Value grade\nA+\nSteal\nTo your side\n+4.4\nest. pts/game\nAI acceptance\n0%\nWould decline now\n1 for 1\n\nCurrent roster checks pass. Both rosters are checked again when the offer is accepted.",
+      "viewport": [
+        1339,
+        892
+      ],
+      "visibleBounds": [
+        {
+          "bottom": 448.640625,
+          "class": "tl-trade-owner-panel",
+          "top": 194.171875,
+          "width": 250,
+          "x": 1065
+        },
+        {
+          "bottom": 892,
+          "class": "tl-week-action-row",
+          "top": 827,
+          "width": 1143,
+          "x": 196
+        }
+      ]
+    },
+    {
+      "view": "MESSAGES",
+      "lineupRows": 0,
+      "overflow": false,
+      "pts": [],
+      "rosterRowHeights": [],
+      "viewport": [
+        1339,
+        892
+      ],
+      "visibleBounds": []
+    },
+    {
+      "view": "HOME",
+      "lineupRows": 0,
+      "overflow": false,
+      "pts": [],
+      "rosterRowHeights": [],
+      "viewport": [
+        1440,
+        900
+      ],
+      "visibleBounds": [
+        {
+          "bottom": 734.6640625,
+          "class": "tl-card tl-league-update",
+          "top": 407.6875,
+          "width": 473.6015625,
+          "x": 942.3984375
+        },
+        {
+          "bottom": 900,
+          "class": "tl-week-action-row",
+          "top": 835,
+          "width": 1244,
+          "x": 196
+        }
+      ]
+    },
+    {
+      "lineupRows": 9,
+      "overflow": false,
+      "pts": [],
+      "rosterRowHeights": [],
+      "view": "GAMEDAY",
+      "visibleBounds": [
+        {
+          "bottom": 782.375,
+          "class": "tl-gameday-primary",
+          "top": 188.796875,
+          "width": 1196,
+          "x": 220
+        },
+        {
+          "bottom": 782.375,
+          "class": "tl-live-lineups",
+          "top": 188.796875,
+          "width": 803.953125,
+          "x": 612.046875
+        },
+        {
+          "bottom": 900,
+          "class": "tl-week-action-row",
+          "top": 827,
+          "width": 1244,
+          "x": 196
+        }
+      ],
+      "viewport": [
+        1440,
+        900
+      ]
+    },
+    {
+      "view": "ROSTER",
+      "lineupRows": 0,
+      "overflow": false,
+      "pts": [],
+      "rosterRowHeights": [
+        69.296875,
+        69.296875,
+        69.296875
+      ],
+      "viewport": [
+        1440,
+        900
+      ],
+      "visibleBounds": [
+        {
+          "bottom": 900,
+          "class": "tl-week-action-row",
+          "top": 835,
+          "width": 1244,
+          "x": 196
+        }
+      ]
+    },
+    {
+      "view": "WAIVERS",
+      "lineupRows": 0,
+      "overflow": false,
+      "pts": [
+        "0.0",
+        "0.0",
+        "0.0"
+      ],
+      "rosterRowHeights": [],
+      "viewport": [
+        1440,
+        900
+      ],
+      "visibleBounds": [
+        {
+          "bottom": 900,
+          "class": "tl-week-action-row",
+          "top": 835,
+          "width": 1244,
+          "x": 196
+        }
+      ]
+    },
+    {
+      "view": "TRADES",
+      "lineupRows": 0,
+      "overflow": false,
+      "pts": [],
+      "rosterRowHeights": [],
+      "tradeSummary": "Value grade\nA+\nSteal\nTo your side\n+4.4\nest. pts/game\nAI acceptance\n0%\nWould decline now\n1 for 1\n\nCurrent roster checks pass. Both rosters are checked again when the offer is accepted.",
+      "viewport": [
+        1440,
+        900
+      ],
+      "visibleBounds": [
+        {
+          "bottom": 448.640625,
+          "class": "tl-trade-owner-panel",
+          "top": 194.171875,
+          "width": 250,
+          "x": 1166
+        },
+        {
+          "bottom": 900,
+          "class": "tl-week-action-row",
+          "top": 835,
+          "width": 1244,
+          "x": 196
+        }
+      ]
+    },
+    {
+      "view": "MESSAGES",
+      "lineupRows": 0,
+      "overflow": false,
+      "pts": [],
+      "rosterRowHeights": [],
+      "viewport": [
+        1440,
+        900
+      ],
+      "visibleBounds": []
+    },
+    {
+      "view": "HOME",
+      "lineupRows": 0,
+      "overflow": false,
+      "pts": [],
+      "rosterRowHeights": [],
+      "viewport": [
+        1366,
+        1024
+      ],
+      "visibleBounds": [
+        {
+          "bottom": 752.859375,
+          "class": "tl-card tl-league-update",
+          "top": 407.6875,
+          "width": 444,
+          "x": 898
+        },
+        {
+          "bottom": 1024,
+          "class": "tl-week-action-row",
+          "top": 959,
+          "width": 1170,
+          "x": 196
+        }
+      ]
+    },
+    {
+      "lineupRows": 9,
+      "overflow": false,
+      "pts": [],
+      "rosterRowHeights": [],
+      "view": "GAMEDAY",
+      "visibleBounds": [
+        {
+          "bottom": 782.375,
+          "class": "tl-gameday-primary",
+          "top": 188.796875,
+          "width": 1122,
+          "x": 220
+        },
+        {
+          "bottom": 782.375,
+          "class": "tl-live-lineups",
+          "top": 188.796875,
+          "width": 753.7109375,
+          "x": 588.2890625
+        },
+        {
+          "bottom": 1024,
+          "class": "tl-week-action-row",
+          "top": 951,
+          "width": 1170,
+          "x": 196
+        }
+      ],
+      "viewport": [
+        1366,
+        1024
+      ]
+    },
+    {
+      "view": "ROSTER",
+      "lineupRows": 0,
+      "overflow": false,
+      "pts": [],
+      "rosterRowHeights": [
+        69.296875,
+        69.296875,
+        69.296875
+      ],
+      "viewport": [
+        1366,
+        1024
+      ],
+      "visibleBounds": [
+        {
+          "bottom": 1024,
+          "class": "tl-week-action-row",
+          "top": 959,
+          "width": 1170,
+          "x": 196
+        }
+      ]
+    },
+    {
+      "view": "WAIVERS",
+      "lineupRows": 0,
+      "overflow": false,
+      "pts": [
+        "0.0",
+        "0.0",
+        "0.0"
+      ],
+      "rosterRowHeights": [],
+      "viewport": [
+        1366,
+        1024
+      ],
+      "visibleBounds": [
+        {
+          "bottom": 1024,
+          "class": "tl-week-action-row",
+          "top": 959,
+          "width": 1170,
+          "x": 196
+        }
+      ]
+    },
+    {
+      "view": "TRADES",
+      "lineupRows": 0,
+      "overflow": false,
+      "pts": [],
+      "rosterRowHeights": [],
+      "tradeSummary": "Value grade\nA+\nSteal\nTo your side\n+4.4\nest. pts/game\nAI acceptance\n0%\nWould decline now\n1 for 1\n\nCurrent roster checks pass. Both rosters are checked again when the offer is accepted.",
+      "viewport": [
+        1366,
+        1024
+      ],
+      "visibleBounds": [
+        {
+          "bottom": 448.640625,
+          "class": "tl-trade-owner-panel",
+          "top": 194.171875,
+          "width": 250,
+          "x": 1092
+        },
+        {
+          "bottom": 1024,
+          "class": "tl-week-action-row",
+          "top": 959,
+          "width": 1170,
+          "x": 196
+        }
+      ]
+    },
+    {
+      "view": "MESSAGES",
+      "lineupRows": 0,
+      "overflow": false,
+      "pts": [],
+      "rosterRowHeights": [],
+      "viewport": [
+        1366,
+        1024
+      ],
+      "visibleBounds": []
+    },
+    {
+      "view": "HOME",
+      "lineupRows": 0,
+      "overflow": false,
+      "pts": [],
+      "rosterRowHeights": [],
+      "viewport": [
+        1024,
+        1366
+      ],
+      "visibleBounds": [
+        {
+          "bottom": 1362.1015625,
+          "class": "tl-card tl-league-update",
+          "top": 1016.7265625,
+          "width": 780,
+          "x": 220
+        },
+        {
+          "bottom": 1366,
+          "class": "tl-week-action-row",
+          "top": 1301,
+          "width": 828,
+          "x": 196
+        }
+      ]
+    },
+    {
+      "lineupRows": 9,
+      "overflow": false,
+      "pts": [],
+      "rosterRowHeights": [],
+      "view": "GAMEDAY",
+      "visibleBounds": [
+        {
+          "bottom": 1545.6640625,
+          "class": "tl-gameday-primary",
+          "top": 241.0625,
+          "width": 780,
+          "x": 220
+        },
+        {
+          "bottom": 1529.6640625,
+          "class": "tl-live-lineups",
+          "top": 681.34375,
+          "width": 780,
+          "x": 220
+        },
+        {
+          "bottom": 1366,
+          "class": "tl-week-action-row",
+          "top": 1293,
+          "width": 828,
+          "x": 196
+        }
+      ],
+      "viewport": [
+        1024,
+        1366
+      ]
+    },
+    {
+      "view": "ROSTER",
+      "lineupRows": 0,
+      "overflow": false,
+      "pts": [],
+      "rosterRowHeights": [
+        90.3359375,
+        90.3359375,
+        90.3359375
+      ],
+      "viewport": [
+        1024,
+        1366
+      ],
+      "visibleBounds": [
+        {
+          "bottom": 1366,
+          "class": "tl-week-action-row",
+          "top": 1301,
+          "width": 828,
+          "x": 196
+        }
+      ]
+    },
+    {
+      "view": "WAIVERS",
+      "lineupRows": 0,
+      "overflow": false,
+      "pts": [],
+      "rosterRowHeights": [],
+      "viewport": [
+        1024,
+        1366
+      ],
+      "visibleBounds": [
+        {
+          "bottom": 1366,
+          "class": "tl-week-action-row",
+          "top": 1301,
+          "width": 828,
+          "x": 196
+        }
+      ]
+    },
+    {
+      "view": "TRADES",
+      "lineupRows": 0,
+      "overflow": false,
+      "pts": [],
+      "rosterRowHeights": [],
+      "tradeSummary": "Value grade\nA+\nSteal\nTo your side\n+4.4\nest. pts/game\nAI acceptance\n0%\nWould decline now\n1 for 1\n\nCurrent roster checks pass. Both rosters are checked again when the offer is accepted.",
+      "viewport": [
+        1024,
+        1366
+      ],
+      "visibleBounds": [
+        {
+          "bottom": 1482.703125,
+          "class": "tl-trade-owner-panel",
+          "top": 1272.3984375,
+          "width": 780,
+          "x": 220
+        },
+        {
+          "bottom": 1366,
+          "class": "tl-week-action-row",
+          "top": 1301,
+          "width": 828,
+          "x": 196
+        }
+      ]
+    },
+    {
+      "view": "MESSAGES",
+      "lineupRows": 0,
+      "overflow": false,
+      "pts": [],
+      "rosterRowHeights": [],
+      "viewport": [
+        1024,
+        1366
+      ],
+      "visibleBounds": []
+    },
+    {
+      "view": "HOME",
+      "lineupRows": 0,
+      "overflow": false,
+      "pts": [],
+      "rosterRowHeights": [],
+      "viewport": [
+        430,
+        932
+      ],
+      "visibleBounds": [
+        {
+          "bottom": 1160.6484375,
+          "class": "tl-card tl-league-update",
+          "top": 764.6953125,
+          "width": 406,
+          "x": 12
+        },
+        {
+          "bottom": 857,
+          "class": "tl-week-action-row",
+          "top": 766.703125,
+          "width": 430,
+          "x": 0
+        }
+      ]
+    },
+    {
+      "lineupRows": 9,
+      "overflow": false,
+      "pts": [],
+      "rosterRowHeights": [],
+      "view": "GAMEDAY",
+      "visibleBounds": [
+        {
+          "bottom": 1236.9140625,
+          "class": "tl-gameday-primary",
+          "top": 113.7421875,
+          "width": 406,
+          "x": 12
+        },
+        {
+          "bottom": 1220.9140625,
+          "class": "tl-live-lineups",
+          "top": 510.609375,
+          "width": 406,
+          "x": 12
+        },
+        {
+          "bottom": 857,
+          "class": "tl-week-action-row",
+          "top": 754.40625,
+          "width": 430,
+          "x": 0
+        }
+      ],
+      "viewport": [
+        430,
+        932
+      ]
+    },
+    {
+      "view": "ROSTER",
+      "lineupRows": 0,
+      "overflow": false,
+      "pts": [],
+      "rosterRowHeights": [
+        132.78125,
+        132.78125,
+        132.78125
+      ],
+      "viewport": [
+        430,
+        932
+      ],
+      "visibleBounds": [
+        {
+          "bottom": 857,
+          "class": "tl-week-action-row",
+          "top": 766.703125,
+          "width": 430,
+          "x": 0
+        }
+      ]
+    },
+    {
+      "view": "WAIVERS",
+      "lineupRows": 0,
+      "overflow": false,
+      "pts": [
+        "0.0\nPTS",
+        "0.0\nPTS",
+        "0.0\nPTS"
+      ],
+      "rosterRowHeights": [],
+      "viewport": [
+        430,
+        932
+      ],
+      "visibleBounds": [
+        {
+          "bottom": 857,
+          "class": "tl-week-action-row",
+          "top": 766.703125,
+          "width": 430,
+          "x": 0
+        }
+      ]
+    },
+    {
+      "view": "TRADES",
+      "lineupRows": 0,
+      "overflow": false,
+      "pts": [],
+      "rosterRowHeights": [],
+      "tradeSummary": "Value grade\nA+\nSteal\nTo your side\n+4.4\nest. pts/game\nAI acceptance\n0%\nWould decline now\n1 for 1\n\nCurrent roster checks pass. Both rosters are checked again when the offer is accepted.",
+      "viewport": [
+        430,
+        932
+      ],
+      "visibleBounds": [
+        {
+          "bottom": 1832.015625,
+          "class": "tl-trade-owner-panel",
+          "top": 1773.015625,
+          "width": 406,
+          "x": 12
+        },
+        {
+          "bottom": 857,
+          "class": "tl-week-action-row",
+          "top": 766.703125,
+          "width": 430,
+          "x": 0
+        }
+      ]
+    },
+    {
+      "view": "MESSAGES",
+      "lineupRows": 0,
+      "overflow": false,
+      "pts": [],
+      "rosterRowHeights": [],
+      "viewport": [
+        430,
+        932
+      ],
+      "visibleBounds": []
+    },
+    {
+      "view": "HOME",
+      "lineupRows": 0,
+      "overflow": false,
+      "pts": [],
+      "rosterRowHeights": [],
+      "viewport": [
+        390,
+        844
+      ],
+      "visibleBounds": [
+        {
+          "bottom": 1199.0390625,
+          "class": "tl-card tl-league-update",
+          "top": 764.6953125,
+          "width": 366,
+          "x": 12
+        },
+        {
+          "bottom": 769,
+          "class": "tl-week-action-row",
+          "top": 678.703125,
+          "width": 390,
+          "x": 0
+        }
+      ]
+    },
+    {
+      "lineupRows": 9,
+      "overflow": false,
+      "pts": [],
+      "rosterRowHeights": [],
+      "view": "GAMEDAY",
+      "visibleBounds": [
+        {
+          "bottom": 1257.7109375,
+          "class": "tl-gameday-primary",
+          "top": 113.7421875,
+          "width": 366,
+          "x": 12
+        },
+        {
+          "bottom": 1241.7109375,
+          "class": "tl-live-lineups",
+          "top": 510.609375,
+          "width": 366,
+          "x": 12
+        },
+        {
+          "bottom": 769,
+          "class": "tl-week-action-row",
+          "top": 631.109375,
+          "width": 390,
+          "x": 0
+        }
+      ],
+      "viewport": [
+        390,
+        844
+      ]
+    },
+    {
+      "view": "ROSTER",
+      "lineupRows": 0,
+      "overflow": false,
+      "pts": [],
+      "rosterRowHeights": [
+        132.78125,
+        132.78125,
+        132.78125
+      ],
+      "viewport": [
+        390,
+        844
+      ],
+      "visibleBounds": [
+        {
+          "bottom": 769,
+          "class": "tl-week-action-row",
+          "top": 678.703125,
+          "width": 390,
+          "x": 0
+        }
+      ]
+    },
+    {
+      "view": "WAIVERS",
+      "lineupRows": 0,
+      "overflow": false,
+      "pts": [
+        "0.0\nPTS",
+        "0.0\nPTS",
+        "0.0\nPTS"
+      ],
+      "rosterRowHeights": [],
+      "viewport": [
+        390,
+        844
+      ],
+      "visibleBounds": [
+        {
+          "bottom": 769,
+          "class": "tl-week-action-row",
+          "top": 678.703125,
+          "width": 390,
+          "x": 0
+        }
+      ]
+    },
+    {
+      "view": "TRADES",
+      "lineupRows": 0,
+      "overflow": false,
+      "pts": [],
+      "rosterRowHeights": [],
+      "tradeSummary": "Value grade\nA+\nSteal\nTo your side\n+4.4\nest. pts/game\nAI acceptance\n0%\nWould decline now\n1 for 1\n\nCurrent roster checks pass. Both rosters are checked again when the offer is accepted.",
+      "viewport": [
+        390,
+        844
+      ],
+      "visibleBounds": [
+        {
+          "bottom": 1864.40625,
+          "class": "tl-trade-owner-panel",
+          "top": 1805.40625,
+          "width": 366,
+          "x": 12
+        },
+        {
+          "bottom": 769,
+          "class": "tl-week-action-row",
+          "top": 678.703125,
+          "width": 390,
+          "x": 0
+        }
+      ]
+    },
+    {
+      "view": "MESSAGES",
+      "lineupRows": 0,
+      "overflow": false,
+      "pts": [],
+      "rosterRowHeights": [],
+      "viewport": [
+        390,
+        844
+      ],
+      "visibleBounds": []
+    }
+  ],
+  "trade": {
+    "positive": {
+      "builder": {
+        "bottom": 708.3515625,
+        "height": 1031.1796875,
+        "left": 220,
+        "right": 1051,
+        "top": -322.828125,
+        "width": 831,
+        "x": 220,
+        "y": -322.828125
+      },
+      "overflow": false,
+      "owner": {
+        "bottom": 354.46875,
+        "height": 254.46875,
+        "left": 1065,
+        "right": 1315,
+        "top": 100,
+        "width": 250,
+        "x": 1065,
+        "y": 100
+      },
+      "summary": "Value grade\nA+\nSteal\nTo your side\n+4.4\nest. pts/game\nAI acceptance\n0%\nWould decline now\n1 for 1\n\nCurrent roster checks pass. Both rosters are checked again when the offer is accepted."
+    },
+    "negative": "Value grade\nC\nSlight Loss\nTo your side\n-1.7\nest. pts/game\nAI acceptance\n100%\nWould accept now\n1 for 1\n\nCurrent roster checks pass. Both rosters are checked again when the offer is accepted.",
+    "sent": [
+      {
+        "id": "tr2",
+        "text": "OUTGOING\nW1 · ARCHIVE OWLS → WARLORD KADE\n\nArchive Owls sends Larry Johnson\n\nWarlord Kade sends Marshall Faulk\n\nThe GM will respond after the waiver batch runs, during Decisions & lineup.\n\nQUEUED FOR REVIEW"
+      },
+      {
+        "id": "tr1",
+        "text": "W1ACCEPTED Warlord Kade sent Clinton Portis for Tyreek Hill from Frankie Deals\"Here is my opening shot. You get Clinton Portis (RB) for Tyreek Hill (WR). Best-lineup visible-evidence estimate: +0.1 pts/game for you, +1.8 for Warlord Kade. Both rosters can field a legal lineup. An estimate from observed games and possible years. Early results are still building the picture.\""
+      }
+    ],
+    "review": {
+      "focusedTrade": "tr2",
+      "requestVisible": [
+        {
+          "id": "tr2",
+          "text": "OUTGOING\nW1 · ARCHIVE OWLS → WARLORD KADE\n\nArchive Owls sends Larry Johnson\n\nWarlord Kade sends Marshall Faulk\n\nThe GM will respond after the waiver batch runs, during Decisions & lineup.\n\nQUEUED FOR REVIEW"
+        }
+      ],
+      "tab": "trades"
+    },
+    "resume": [
+      {
+        "id": "tr2",
+        "text": "OUTGOING\nW1 · ARCHIVE OWLS → WARLORD KADE\n\nArchive Owls sends Larry Johnson\n\nWarlord Kade sends Marshall Faulk\n\nThe GM will respond after the waiver batch runs, during Decisions & lineup.\n\nQUEUED FOR REVIEW"
+      }
+    ],
+    "resolvedText": "You proposed · Week 1\nRejected\nYou send\nLarry Johnson\nYou receive\nMarshall Faulk\nOutcome saved in Week 1\nReview trade →",
+    "resolvedReview": {
+      "focused": "tr2",
+      "visible": [
+        {
+          "id": "tr2",
+          "text": "W1\n\nREJECTED Archive Owls offered Larry Johnson for Marshall Faulk from Warlord Kade\n\n\"That does not make me stronger. Bring more. Marshall Faulk stays for now. Early results are still building the picture.\""
+        },
+        {
+          "id": "tr1",
+          "text": "W1\n\nACCEPTED Warlord Kade sent Clinton Portis for Tyreek Hill from Frankie Deals\n\n\"Here is my opening shot. You get Clinton Portis (RB) for Tyreek Hill (WR). Best-lineup visible-evidence estimate: +0.1 pts/game for you, +1.8 for Warlord Kade. Both rosters can field a legal lineup. An estimate from observed games and possible years. Early results are still building the picture.\""
+        }
+      ]
+    }
+  },
+  "finalScores": {
+    "dock": {
+      "bottom": 892,
+      "height": 73,
+      "left": 196,
+      "right": 1339,
+      "top": 819,
+      "width": 1143,
+      "x": 196,
+      "y": 819
+    },
+    "lineup": {
+      "bottom": 845.375,
+      "height": 611.578125,
+      "left": 579.625,
+      "right": 1315,
+      "top": 233.796875,
+      "width": 735.375,
+      "x": 579.625,
+      "y": 233.796875
+    },
+    "pairs": [
+      [
+        0,
+        15.66
+      ],
+      [
+        21,
+        5.1
+      ],
+      [
+        1.8,
+        8.4
+      ],
+      [
+        18.7,
+        7.8
+      ],
+      [
+        17.7,
+        11.6
+      ],
+      [
+        0,
+        10.6
+      ],
+      [
+        19.4,
+        19.7
+      ],
+      [
+        6,
+        -1
+      ],
+      [
+        2,
+        12
+      ]
+    ],
+    "rowCount": 9,
+    "scores": [
+      "86.60",
+      "89.86"
+    ],
+    "sums": [
+      86.6,
+      89.86
+    ]
+  },
+  "reloadScores": {
+    "archiveCount": 0,
+    "boxScores": [
+      {
+        "heading": "ARCHIVE OWLS\tYEAR\t86.60\n",
+        "label": "Archive Owls box score"
+      },
+      {
+        "heading": "FRANKIE DEALS ◆\tYEAR\t89.86\n",
+        "label": "Frankie Deals box score"
+      },
+      {
+        "heading": "WARLORD KADE\tYEAR\t118.58\n",
+        "label": "Warlord Kade box score"
+      },
+      {
+        "heading": "STEWARD VANCE ◆\tYEAR\t118.66\n",
+        "label": "Steward Vance box score"
+      },
+      {
+        "heading": "THE ARCHIVIST ◆\tYEAR\t148.36\n",
+        "label": "The Archivist box score"
+      },
+      {
+        "heading": "RIVERBOAT SOL\tYEAR\t116.86\n",
+        "label": "Riverboat Sol box score"
+      }
+    ]
+  },
+  "week2Wire": "THE VAULT WIRE\nLeague update\nFROM YOUR LEAGUE\nSAVED TRADE · WEEK 2\nWarlord Kade and The Archivist make a deal\n1-for-1 player exchange. The accepted packages are saved in trade history.\n↗\nVAULT RESULT · WEEK 1\nFrankie Deals takes Week 1\n↗\nSAVED TRADE · WEEK 1\nWarlord Kade and Frankie Deals make a deal\n↗\nWeek 1 finals & leaders\nREPLAYS & BOX SCORES →\nALL ACTIVITY →\nTROPHY CASE →",
+  "reloadWeek2": {
+    "header": "Menu QA · October 26\nHOME\nERAS\n1970s\n2000s\n2010s\n2020s\nWEEK 2\n✉\n1\n•••",
+    "wire": "THE VAULT WIRE\nLeague update\nFROM YOUR LEAGUE\nSAVED TRADE · WEEK 2\nWarlord Kade and The Archivist make a deal\n1-for-1 player exchange. The accepted packages are saved in trade history.\n↗\nVAULT RESULT · WEEK 1\nFrankie Deals takes Week 1\n↗\nSAVED TRADE · WEEK 1\nWarlord Kade and Frankie Deals make a deal\n↗\nWeek 1 finals & leaders\nREPLAYS & BOX SCORES →\nALL ACTIVITY →\nTROPHY CASE →"
+  },
+  "initialLiveFit": {
+    "dock": {
+      "bottom": 892,
+      "height": 65,
+      "left": 196,
+      "right": 1339,
+      "top": 827,
+      "width": 1143,
+      "x": 196,
+      "y": 827
+    },
+    "lineup": {
+      "bottom": 845.375,
+      "height": 611.578125,
+      "left": 579.625,
+      "right": 1315,
+      "top": 233.796875,
+      "width": 735.375,
+      "x": 579.625,
+      "y": 233.796875
+    },
+    "overflow": false,
+    "primary": {
+      "bottom": 858.71875,
+      "height": 624.921875,
+      "left": 220,
+      "right": 1315,
+      "top": 233.796875,
+      "width": 1095,
+      "x": 220,
+      "y": 233.796875
+    }
+  },
+  "pauseDefect": "WEEK 1 — PAUSED\n148/198 game moments\n📡\nQ3 · 3:23\nNEXT PLAY\nMY MATCHUP\n5 MIN\n3 MIN\n1 MIN\nINSTANT\n\n5-minute game · 75 seconds per quarter. Next quarter skips to the break and pauses.",
+  "proofBoundary": "Local IAB/Chromium viewport emulation. No WebKit, physical-device, hosted online or deployment verification. User progress on 3037 was not used as a test fixture.",
+  "gameDayStates": [
+    {
+      "state": "scored-paused",
+      "viewport": [
+        1339,
+        892
+      ],
+      "dock": {
+        "bottom": 892,
+        "height": 65,
+        "left": 196,
+        "right": 1339,
+        "top": 827,
+        "width": 1143,
+        "x": 196,
+        "y": 827
+      },
+      "header": {
+        "bottom": 81,
+        "height": 59,
+        "left": 220,
+        "right": 1315,
+        "top": 22,
+        "width": 1095,
+        "x": 220,
+        "y": 22
+      },
+      "lineup": {
+        "bottom": 806.875,
+        "height": 593.578125,
+        "left": 579.625,
+        "right": 1315,
+        "top": 213.296875,
+        "width": 735.375,
+        "x": 579.625,
+        "y": 213.296875
+      },
+      "overflow": false,
+      "players": 18,
+      "primary": {
+        "bottom": 819.3203125,
+        "height": 606.0234375,
+        "left": 220,
+        "right": 1315,
+        "top": 213.296875,
+        "width": 1095,
+        "x": 220,
+        "y": 213.296875
+      },
+      "rows": 9
+    },
+    {
+      "state": "scored-paused",
+      "viewport": [
+        1440,
+        900
+      ],
+      "dock": {
+        "bottom": 900,
+        "height": 65,
+        "left": 196,
+        "right": 1440,
+        "top": 835,
+        "width": 1244,
+        "x": 196,
+        "y": 835
+      },
+      "header": {
+        "bottom": 81,
+        "height": 59,
+        "left": 220,
+        "right": 1416,
+        "top": 22,
+        "width": 1196,
+        "x": 220,
+        "y": 22
+      },
+      "lineup": {
+        "bottom": 806.875,
+        "height": 593.578125,
+        "left": 612.046875,
+        "right": 1416,
+        "top": 213.296875,
+        "width": 803.953125,
+        "x": 612.046875,
+        "y": 213.296875
+      },
+      "overflow": false,
+      "players": 18,
+      "primary": {
+        "bottom": 806.875,
+        "height": 593.578125,
+        "left": 220,
+        "right": 1416,
+        "top": 213.296875,
+        "width": 1196,
+        "x": 220,
+        "y": 213.296875
+      },
+      "rows": 9
+    },
+    {
+      "state": "scored-paused",
+      "viewport": [
+        1366,
+        1024
+      ],
+      "dock": {
+        "bottom": 1024,
+        "height": 65,
+        "left": 196,
+        "right": 1366,
+        "top": 959,
+        "width": 1170,
+        "x": 196,
+        "y": 959
+      },
+      "header": {
+        "bottom": 81,
+        "height": 59,
+        "left": 220,
+        "right": 1342,
+        "top": 22,
+        "width": 1122,
+        "x": 220,
+        "y": 22
+      },
+      "lineup": {
+        "bottom": 806.875,
+        "height": 593.578125,
+        "left": 588.2890625,
+        "right": 1342,
+        "top": 213.296875,
+        "width": 753.7109375,
+        "x": 588.2890625,
+        "y": 213.296875
+      },
+      "overflow": false,
+      "players": 18,
+      "primary": {
+        "bottom": 819.3203125,
+        "height": 606.0234375,
+        "left": 220,
+        "right": 1342,
+        "top": 213.296875,
+        "width": 1122,
+        "x": 220,
+        "y": 213.296875
+      },
+      "rows": 9
+    },
+    {
+      "state": "scored-paused",
+      "viewport": [
+        1024,
+        1366
+      ],
+      "dock": {
+        "bottom": 1366,
+        "height": 65,
+        "left": 196,
+        "right": 1024,
+        "top": 1301,
+        "width": 828,
+        "x": 196,
+        "y": 1301
+      },
+      "header": {
+        "bottom": 114.046875,
+        "height": 92.046875,
+        "left": 220,
+        "right": 1000,
+        "top": 22,
+        "width": 780,
+        "x": 220,
+        "y": 22
+      },
+      "lineup": {
+        "bottom": 1828.6953125,
+        "height": 848.3203125,
+        "left": 220,
+        "right": 1000,
+        "top": 980.375,
+        "width": 780,
+        "x": 220,
+        "y": 980.375
+      },
+      "overflow": false,
+      "players": 18,
+      "primary": {
+        "bottom": 1844.6953125,
+        "height": 1545.6328125,
+        "left": 220,
+        "right": 1000,
+        "top": 299.0625,
+        "width": 780,
+        "x": 220,
+        "y": 299.0625
+      },
+      "rows": 9
+    },
+    {
+      "state": "scored-paused",
+      "viewport": [
+        430,
+        932
+      ],
+      "dock": {
+        "bottom": 857,
+        "height": 90.296875,
+        "left": 0,
+        "right": 430,
+        "top": 766.703125,
+        "width": 430,
+        "x": 0,
+        "y": 766.703125
+      },
+      "header": {
+        "bottom": 103.7421875,
+        "height": 91.7421875,
+        "left": 12,
+        "right": 418,
+        "top": 12,
+        "width": 406,
+        "x": 12,
+        "y": 12
+      },
+      "lineup": {
+        "bottom": 1914.5390625,
+        "height": 1009.5078125,
+        "left": 12,
+        "right": 418,
+        "top": 905.03125,
+        "width": 406,
+        "x": 12,
+        "y": 905.03125
+      },
+      "overflow": false,
+      "players": 18,
+      "primary": {
+        "bottom": 1930.5390625,
+        "height": 1816.796875,
+        "left": 12,
+        "right": 418,
+        "top": 113.7421875,
+        "width": 406,
+        "x": 12,
+        "y": 113.7421875
+      },
+      "rows": 9
+    },
+    {
+      "state": "scored-paused",
+      "viewport": [
+        390,
+        844
+      ],
+      "dock": {
+        "bottom": 769,
+        "height": 90.296875,
+        "left": 0,
+        "right": 390,
+        "top": 678.703125,
+        "width": 390,
+        "x": 0,
+        "y": 678.703125
+      },
+      "header": {
+        "bottom": 155.7421875,
+        "height": 143.7421875,
+        "left": 12,
+        "right": 378,
+        "top": 12,
+        "width": 366,
+        "x": 12,
+        "y": 12
+      },
+      "lineup": {
+        "bottom": 2008.1328125,
+        "height": 1051.1015625,
+        "left": 12,
+        "right": 378,
+        "top": 957.03125,
+        "width": 366,
+        "x": 12,
+        "y": 957.03125
+      },
+      "overflow": false,
+      "players": 18,
+      "primary": {
+        "bottom": 2024.1328125,
+        "height": 1858.390625,
+        "left": 12,
+        "right": 378,
+        "top": 165.7421875,
+        "width": 366,
+        "x": 12,
+        "y": 165.7421875
+      },
+      "rows": 9
+    },
+    {
+      "state": "final",
+      "viewport": [
+        1339,
+        892
+      ],
+      "controls": {
+        "bottom": 670.328125,
+        "height": 154.1484375,
+        "left": 220,
+        "right": 567.625,
+        "top": 516.1796875,
+        "width": 347.625,
+        "x": 220,
+        "y": 516.1796875
+      },
+      "dock": {
+        "bottom": 892,
+        "height": 73,
+        "left": 196,
+        "right": 1339,
+        "top": 819,
+        "width": 1143,
+        "x": 196,
+        "y": 819
+      },
+      "lineup": {
+        "bottom": 806.875,
+        "height": 593.578125,
+        "left": 579.625,
+        "right": 1315,
+        "top": 213.296875,
+        "width": 735.375,
+        "x": 579.625,
+        "y": 213.296875
+      },
+      "overflow": false,
+      "players": 18,
+      "primary": {
+        "bottom": 806.875,
+        "height": 593.578125,
+        "left": 220,
+        "right": 1315,
+        "top": 213.296875,
+        "width": 1095,
+        "x": 220,
+        "y": 213.296875
+      },
+      "rows": 9
+    },
+    {
+      "state": "final",
+      "viewport": [
+        1440,
+        900
+      ],
+      "controls": {
+        "bottom": 618.328125,
+        "height": 102.1484375,
+        "left": 220,
+        "right": 600.046875,
+        "top": 516.1796875,
+        "width": 380.046875,
+        "x": 220,
+        "y": 516.1796875
+      },
+      "dock": {
+        "bottom": 900,
+        "height": 73,
+        "left": 196,
+        "right": 1440,
+        "top": 827,
+        "width": 1244,
+        "x": 196,
+        "y": 827
+      },
+      "lineup": {
+        "bottom": 806.875,
+        "height": 593.578125,
+        "left": 612.046875,
+        "right": 1416,
+        "top": 213.296875,
+        "width": 803.953125,
+        "x": 612.046875,
+        "y": 213.296875
+      },
+      "overflow": false,
+      "players": 18,
+      "primary": {
+        "bottom": 806.875,
+        "height": 593.578125,
+        "left": 220,
+        "right": 1416,
+        "top": 213.296875,
+        "width": 1196,
+        "x": 220,
+        "y": 213.296875
+      },
+      "rows": 9
+    },
+    {
+      "state": "final",
+      "viewport": [
+        1366,
+        1024
+      ],
+      "controls": {
+        "bottom": 670.328125,
+        "height": 154.1484375,
+        "left": 220,
+        "right": 576.2890625,
+        "top": 516.1796875,
+        "width": 356.2890625,
+        "x": 220,
+        "y": 516.1796875
+      },
+      "dock": {
+        "bottom": 1024,
+        "height": 73,
+        "left": 196,
+        "right": 1366,
+        "top": 951,
+        "width": 1170,
+        "x": 196,
+        "y": 951
+      },
+      "lineup": {
+        "bottom": 806.875,
+        "height": 593.578125,
+        "left": 588.2890625,
+        "right": 1342,
+        "top": 213.296875,
+        "width": 753.7109375,
+        "x": 588.2890625,
+        "y": 213.296875
+      },
+      "overflow": false,
+      "players": 18,
+      "primary": {
+        "bottom": 806.875,
+        "height": 593.578125,
+        "left": 220,
+        "right": 1342,
+        "top": 213.296875,
+        "width": 1122,
+        "x": 220,
+        "y": 213.296875
+      },
+      "rows": 9
+    },
+    {
+      "state": "final",
+      "viewport": [
+        1024,
+        1366
+      ],
+      "controls": {
+        "bottom": 829.640625,
+        "height": 112.34375,
+        "left": 220,
+        "right": 1000,
+        "top": 717.296875,
+        "width": 780,
+        "x": 220,
+        "y": 717.296875
+      },
+      "dock": {
+        "bottom": 1366,
+        "height": 73,
+        "left": 196,
+        "right": 1024,
+        "top": 1293,
+        "width": 828,
+        "x": 196,
+        "y": 1293
+      },
+      "lineup": {
+        "bottom": 1743.6484375,
+        "height": 848.3203125,
+        "left": 220,
+        "right": 1000,
+        "top": 895.328125,
+        "width": 780,
+        "x": 220,
+        "y": 895.328125
+      },
+      "overflow": false,
+      "players": 18,
+      "primary": {
+        "bottom": 1759.6484375,
+        "height": 1460.5859375,
+        "left": 220,
+        "right": 1000,
+        "top": 299.0625,
+        "width": 780,
+        "x": 220,
+        "y": 299.0625
+      },
+      "rows": 9
+    },
+    {
+      "state": "final",
+      "viewport": [
+        430,
+        932
+      ],
+      "controls": {
+        "bottom": 666.75,
+        "height": 116.34375,
+        "left": 12,
+        "right": 418,
+        "top": 550.40625,
+        "width": 406,
+        "x": 12,
+        "y": 550.40625
+      },
+      "dock": {
+        "bottom": 857,
+        "height": 102.59375,
+        "left": 0,
+        "right": 430,
+        "top": 754.40625,
+        "width": 430,
+        "x": 0,
+        "y": 754.40625
+      },
+      "lineup": {
+        "bottom": 1782.6953125,
+        "height": 1027.0546875,
+        "left": 12,
+        "right": 418,
+        "top": 755.640625,
+        "width": 406,
+        "x": 12,
+        "y": 755.640625
+      },
+      "overflow": false,
+      "players": 18,
+      "primary": {
+        "bottom": 1798.6953125,
+        "height": 1684.953125,
+        "left": 12,
+        "right": 418,
+        "top": 113.7421875,
+        "width": 406,
+        "x": 12,
+        "y": 113.7421875
+      },
+      "rows": 9
+    },
+    {
+      "state": "final",
+      "viewport": [
+        390,
+        844
+      ],
+      "controls": {
+        "bottom": 718.75,
+        "height": 168.34375,
+        "left": 12,
+        "right": 378,
+        "top": 550.40625,
+        "width": 366,
+        "x": 12,
+        "y": 550.40625
+      },
+      "dock": {
+        "bottom": 769,
+        "height": 137.890625,
+        "left": 0,
+        "right": 390,
+        "top": 631.109375,
+        "width": 390,
+        "x": 0,
+        "y": 631.109375
+      },
+      "lineup": {
+        "bottom": 1893.8359375,
+        "height": 1086.1953125,
+        "left": 12,
+        "right": 378,
+        "top": 807.640625,
+        "width": 366,
+        "x": 12,
+        "y": 807.640625
+      },
+      "overflow": false,
+      "players": 18,
+      "primary": {
+        "bottom": 1909.8359375,
+        "height": 1796.09375,
+        "left": 12,
+        "right": 378,
+        "top": 113.7421875,
+        "width": 366,
+        "x": 12,
+        "y": 113.7421875
+      },
+      "rows": 9
+    }
+  ],
+  "finalFocus": {
+    "active": "Week 1 matchup",
+    "controls": "WEEK 1 — FINAL\n198/198 game moments\nREPLAY FROM START\nCLOSE GAMECAST",
+    "dock": {
+      "bottom": 892,
+      "height": 73,
+      "left": 196,
+      "right": 1339,
+      "top": 819,
+      "width": 1143,
+      "x": 196,
+      "y": 819
+    },
+    "header": {
+      "bottom": 81,
+      "height": 59,
+      "left": 220,
+      "right": 1315,
+      "top": 22,
+      "width": 1095,
+      "x": 220,
+      "y": 22
+    },
+    "lineup": {
+      "bottom": 806.875,
+      "height": 593.578125,
+      "left": 579.625,
+      "right": 1315,
+      "top": 213.296875,
+      "width": 735.375,
+      "x": 579.625,
+      "y": 213.296875
+    },
+    "primary": {
+      "bottom": 806.875,
+      "height": 593.578125,
+      "left": 220,
+      "right": 1315,
+      "top": 213.296875,
+      "width": 1095,
+      "x": 220,
+      "y": 213.296875
+    },
+    "scores": [
+      "86.60",
+      "89.86"
+    ]
+  },
+  "pauseFixed": {
+    "unchanged": true,
+    "before": "WEEK 1 — PAUSED\n0/198 game moments\n📡\nQ1 · 14:05\nNEXT PLAY\nMY MATCHUP\n5 MIN\n3 MIN\n1 MIN\nINSTANT\n\n5-minute game · 75 seconds per quarter. Next quarter skips to the break and pauses.",
+    "after": "WEEK 1 — PAUSED\n0/198 game moments\n📡\nQ1 · 14:05\nNEXT PLAY\nMY MATCHUP\n5 MIN\n3 MIN\n1 MIN\nINSTANT\n\n5-minute game · 75 seconds per quarter. Next quarter skips to the break and pauses."
+  },
+  "browserErrors": [],
+  "sourceSha256": {
+    "index.html": "b31f94d0e2ccdf3b0a096935a4dc4e7e183f28e32ab43fd5aa69818348504822",
+    "js/tabs/time-league.js": "77830be03d6e824052ff371e854972317dc568206237d87b29bc641afc08226c",
+    "js/shared/time-league-ai.js": "2dc3d7211b5391cd8de7963ac28926b5a874ae1ab2336a3174248c9ad1c40eac",
+    "js/components/time-league-home-panel.js": "b20b2ca3151bda4758d5be3bee418eae72a6c8ac8aa74805b185920847f8fc2a",
+    "js/components/time-league-team-panel.js": "decf9dcdbef8fc82c8cdaac89162e0d3d4d9175bdb1cbf71193f4383bd249e35",
+    "js/components/time-league-gamecast-panel.js": "b40167103a8e4f96b9540e22687f4b48830c9c1150ae635a1a23b8e34e31517e",
+    "js/components/time-league-rivals-panel.js": "ca3938adfe6ab9fff79af2dc72d06e5a6153a7b3bc568345f70b80b59bb3721a",
+    "time-league-home-layout.css": "a1c0a879525c235be0036c0c0a41e4d91254ca6820a9e9893b0b7fcab453adfd",
+    "time-league-team-density.css": "68c51d3586e414558fa158fc8aa395a8e3a22841b0a57cc32b2235b9de45051d",
+    "time-league-gameday-layout.css": "bdedd6874c7e3b7a6f3232bb76adf1b86883c0b0e8ca974fdac4612ec3fe81c7",
+    "time-league-rivals.css": "c185f9c7cdeb36e47be85ab3cfaf18accfeae8b81a2c3046f41d90b32e7ecec7",
+    "tests/time-league-trade-preview.js": "01207ab7627b1596bd97ca3b087c837eb4fde113b0a5b51dc863fa414dc0c170",
+    "tests/time-league-home-wire-messages.js": "29e0d3d61328e33c25bd64a87c8e8034091b878dd6a3be9f21921bca5253d664",
+    "tests/time-league-live-matchup.js": "ab387b7288775c67ed07cc51836ca6b90ab73c024a06b65817b0f6b167ad1d05"
+  },
+  "screenshotsSha256": {
+    "baseline-gameday-1339x892.png": "5ef0ab56b9617ff9276bf8aa3c7b66ab0717f523dfad24353e60923e43e6e01c",
+    "baseline-home-1339x892.png": "7327ce8eda202f472aa674bdea68c8d8cfa8d4fd5c051fe31b2a96a1e609e3d1",
+    "baseline-roster-1339x892.png": "a74dddf949e963e1deb48e354c3b568ad0fc5a37a76fe71047deb71c1ad415b2",
+    "baseline-trades-1339x892.png": "333a479373e1547acbdd3a284eaff8b6b3f12f1a057ad27761826202fccda0e8",
+    "baseline-waivers-1339x892.png": "ff63afbb0cea34adae32e2d0de5ffa1fe6b394446c98c25be29e20b17a2b8abe",
+    "gameday-1024x1366.png": "e50f7b9c6e8d7bbb5683431e32fda4a5a4e5392fbfa0c681c6d6f81405168ea8",
+    "gameday-1339x892.png": "d593c9c237f2d0a2e7a45a65a2fd22125845b0d3e72c014591fb07f3872acae2",
+    "gameday-1366x1024.png": "1b94f2c8f21f647fe9e0c461b5c1efa29fedf2f0856d51c3a02060982102f4b4",
+    "gameday-1440x900.png": "d0ce68f790c748d705afb9ac468f99ef4c155392185bc952ec13914bba113587",
+    "gameday-390x844.png": "c4e1adcf7919d226a237a8a0bbed5f8dc9a119e1d5cec330bcc4416d199e4cce",
+    "gameday-430x932.png": "57fa5cccb139395dad0ba4fbb55d00ffe634335798326561e3a6b467526cbeab",
+    "gameday-final-1024x1366.png": "7b52f4d7fa5e6f07d88db61aa536563382a2f63f6f759f44f4b79dc5bb0248fe",
+    "gameday-final-1339x892.png": "1ce87bd91b6866b75d83119ce57f1dcc65f003e74a128d3ddaadcc61f1df4570",
+    "gameday-final-1366x1024.png": "c07d3b9dfd86b84274bfa1c88e49a11c70a14ded47c967ba57eba6a19fbf7aa1",
+    "gameday-final-1440x900.png": "9f4bb97cc76f5a855ffe36a5f7e7349182498e2cde1143f89c3a3e2cc9ffec5e",
+    "gameday-final-390x844.png": "9a80c679edfbe4b45c0962f8e1c84c3b7e4f8ebd018e23357b3f4e7ac4ed739c",
+    "gameday-final-430x932.png": "b19e8e2c545c41515499802b1cda5c11d1c0a64fda0288d0d76dd572f2c2745b",
+    "gameday-live-paused-1339x892.png": "361c05d0401ac21dd00ae86d4ef1e8245293f5327ee3629e8b5ac817ce53653f",
+    "gameday-live-scoring-1024x1366.png": "37e1f98b9ce7e26f7ed607faa867f6311824626e60ef62205626e9d253988405",
+    "gameday-live-scoring-1339x892.png": "532bdcef33913dec607d297628ea782d925ab3b380661a0abc3d870b3a183831",
+    "gameday-live-scoring-1366x1024.png": "c6de978e7e73348af6f8e4c51410c67a08f967be5340a924dd667a3e52a14c83",
+    "gameday-live-scoring-1440x900.png": "0b98139eb8a6fc7fbe774e5006c706803ff8bc72a49365939a1a63180776facc",
+    "gameday-live-scoring-390x844.png": "f03a1447651ac31c380bdc0a819d102ce26c918d0d5a4fe99aedf960ee07af2f",
+    "gameday-live-scoring-430x932.png": "3a77740d3c2ce6dfff9ec33b6a3aabadac357ab56264153b00f4efeb89b308ff",
+    "gameday-pregame-1339x892.png": "5ef0ab56b9617ff9276bf8aa3c7b66ab0717f523dfad24353e60923e43e6e01c",
+    "home-1024x1366.png": "53d1f6e71e35744b15936c33711348bab9734879a7b5c70276e77a1e7c1a1ee7",
+    "home-1339x892.png": "7212c254c94e316a4a78f734babb173c08b2556918c22c52a8dd5998ed127e88",
+    "home-1366x1024.png": "48c5c3c4e4cb07b3d6c165ae6bbbe9755fe0f261dd9bc5e589f7f6115fd728ab",
+    "home-1440x900.png": "d5e1338479f98e43ab9a1547b6d7c991c8509dff44498f04616f56141a8284b5",
+    "home-390x844.png": "6ff25669fcf4a119a1689b8107d4e80c897a91c8150ade91ab2ea2f5b655d619",
+    "home-430x932.png": "6738c2b8e01db65eee596f24b9d9480f6a8abc2813a1a0a558c03c26acc248ad",
+    "home-wire-1339x892.png": "e45a007aad095c7d137a9169e109e641acb53bc6d088dee154de3ccea50bfd61",
+    "home-wire-week2-1339x892.png": "3ed7bbd7ac0159c7b8a8f7181d013c7dafbaea5ce32f5ccf2da3602cf58b609b",
+    "messages-1024x1366.png": "8502b54c3ca06f3fcece292fbef619b928acb2ce49db31430ce3046cbba7d80a",
+    "messages-1339x892.png": "d1d1e9aa95f4486cc82160953bf5819f5b39c7a4ae37cec875479f88898ba1f1",
+    "messages-1366x1024.png": "fbaaa8fe54409b1810c6878592eef031b41e827e2366ee132b18587654d4a66a",
+    "messages-1440x900.png": "43eed246ff66b44413cc3174023812bea7016c42197a8505cc26517ab6411644",
+    "messages-390x844.png": "3a03701e4c2c78aced34e79198ef1a1b0ac3b8b71a0f2416250c0f0e4447addd",
+    "messages-430x932.png": "6fad5e841b3302c968794d3ed81698fc0d8d23753d48a24885ea1b01076e201c",
+    "messages-proposal-1339x892.png": "d1d1e9aa95f4486cc82160953bf5819f5b39c7a4ae37cec875479f88898ba1f1",
+    "messages-rejected-1339x892.png": "c72e7c875a6411054cfc239fbdc506a6375c00800d93911827794cd04d7e9238",
+    "roster-1024x1366.png": "747671d578ec90a801cfbca43c842d18a151e31ff1806d6fb6aa03c735d70890",
+    "roster-1339x892.png": "49dd1a5e994185a3cb5d1b497f8a633a4022c5b996018e84ba7fe8c94b76088c",
+    "roster-1366x1024.png": "525e327b4095b158205be2dae5fcfc47cda8dd3af9d66fec35c829b96aad682b",
+    "roster-1440x900.png": "37295873bba96f4270c1e93f310a7878b89a391a0ccf13dcceab8aefff366274",
+    "roster-390x844.png": "960ee4e47d99985783350cf011a2eb625802970d4c59588aca4288f006c8c2b8",
+    "roster-430x932.png": "8a7a4b2726e0de5822886d708d9664ae6450e3cc45ec53a08e1da26ab1ea0f34",
+    "trade-negative-1339x892.png": "798c74eb010707c61d84d27331d5389dd65fde887dd4e407d8192c7a68291a9b",
+    "trade-positive-1339x892.png": "6831b27cc0524ddaa875363cd22b10d76cf2d5a959a7f2e3f3a6ad8cd27cee68",
+    "trades-1024x1366.png": "992e77a5d06dcf78be7aed9d4b415612f4b175337a646d5187f38154f11cf86f",
+    "trades-1339x892.png": "fa0dadc2619492478692d4599e643bbc7c01897ff5d6347cbdec5e687a47fd01",
+    "trades-1366x1024.png": "36cd2c5337b532095db9824aac7409782d334242b220a70cdb77d1995ba1d9f9",
+    "trades-1440x900.png": "0c8de132dd9a2d51be0f7c67ce3d4483b2e66ee4aa1c41265521354d592d6030",
+    "trades-390x844.png": "9a4b773137cc275b043a3fe447aa1fdcab835e82353d6ce30588779d04b952b9",
+    "trades-430x932.png": "4d09cd91cf2c5b3be1f95efead8bf0a33b119cbe4545d16102bc9e7e70dcc18b",
+    "waivers-1024x1366.png": "3a726b1e01556c0bb29ee8545d9f9d94f0443e674d585644f7ef648df3a325a3",
+    "waivers-1339x892.png": "a67a203640a526e5c971a0c7a2d3b822787ba743bb15f91d425ae0db804f5daf",
+    "waivers-1366x1024.png": "8039d959f536df3c5fd7496945efa1487d1aba1b4dbac39bac59206f428086e2",
+    "waivers-1440x900.png": "e23a274e4735ba383858bdabc7a159681c11a27aa292f6d36fb6334cad72cfd7",
+    "waivers-390x844.png": "04460a2500f4ef63384e95ec252aae612b304d3ac81c19727315852a507fcc46",
+    "waivers-430x932.png": "55208676fcf5a78f3e0e8be218c76df0d46b507c127b15ef06179a264dea4b56"
+  },
+  "checks": {
+    "vaultSuite": "79 commands passed on final runtime source; Node 20.20.2",
+    "core": "97/97 passed",
+    "firstClass": "7/7 passed",
+    "sharedDraft": "18 cases and room-status checks passed",
+    "tradePreview": "4 integrity groups; 108 complete saved-response golden parity fixtures against 279131f",
+    "homeWireMessages": "8 groups passed",
+    "browserContext": "9 groups passed",
+    "acquisitionUi": "17 cases passed",
+    "runtimeLint": "6 changed scripts; 0 errors, 0 warnings",
+    "build": "161 JSX scripts compiled; 300 modules minified; passed",
+    "independentReview": "No blocking finding; Home/Wire/Messages/navigation/seat visibility and own-offer links rechecked"
+  },
+  "journey": [
+    "Resumed the isolated six-team save with 72 draft picks and 12 players per team.",
+    "Compared Larry Johnson for Marshall Faulk: A+, +4.4 estimated points/game, 0% current-rule acceptance. A LaDainian Tomlinson package showed C, -1.7 and 100%.",
+    "Sent one proposal, tr2. Messages showed the exact pending packages; Review focused tr2 in the Inbox. Reload preserved one offer.",
+    "Ran waivers. The AI rejected tr2, matching its 0% preview. Messages showed Rejected; Review focused tr2 in the Trade Log.",
+    "Moved Lamar Jackson into the QB slot using the actual swap dialog, locked the lineup and started Week 1.",
+    "Finished saved playback. The 86.60–89.86 final equals the nine visible starter totals on each side. LaDainian Tomlinson’s scoring receipt reconciled to 21.00.",
+    "Ended the week. The Week 2 Wire showed the actual Week 1 result and accepted trades. Reload and named Resume preserved one saved week, the 0–1 record and all six exact box scores.",
+    "Replayed Week 1 without changing results. Pause held the clock unchanged across review. Scored live and final views fit all 18 players at the three checked desktop sizes.",
+    "Instant releases its disappearing button, restores the header to 22px and focuses Week 1 matchup. Final Replay and Close actions remain visible."
+  ],
+  "compatibility": {
+    "scoringAndHistoricalData": "Unchanged",
+    "saveSchema": "Unchanged; no migration or reset",
+    "aiBehavior": "108 exact saved-response parity fixtures unchanged; preview shares the existing deterministic public valuation rule",
+    "acceptanceDisplay": "0/100 for the deterministic AI current-rule response; no percentage for invalid, deferred, closed, human or unknown packages. This is not a calibrated probability.",
+    "productionData": "Untouched",
+    "modeProof": "Local solo interactive journey; multiplayer, authentication and ownership through existing automated contracts only"
+  },
+  "visualScope": "36 view/size checks plus 12 scored-live/final game-day checks. All 48 have no document horizontal overflow. Standard nine-slot score, lineup and essential controls fit above the dock at 1339×892, 1440×900 and 1366×1024. Phone, tablet portrait, expanded details and larger custom rosters retain natural scrolling.",
+  "remainingVerification": "Hosted multiplayer, WebKit, physical devices and enlarged-text browser zoom were not verified in this pass. No deployment."
+}

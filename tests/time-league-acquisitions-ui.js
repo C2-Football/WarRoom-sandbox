@@ -3,11 +3,11 @@
 const assert = require('node:assert/strict');
 global.window = globalThis; window.App = {};
 for (const name of ['roster', 'helmet', 'rules', 'draft-room', 'era-rules', 'season', 'engine', 'ai', 'ui', 'hidden-years', 'player-stats']) require(`../js/shared/time-league-${name}.js`);
-let states = [], refs = [], cursor = 0, refCursor = 0;
+let states = [], refs = [], cursor = 0, refCursor = 0, effects = [];
 global.React = {
     Fragment: 'fragment', createElement: (type, props, ...children) => typeof type === 'function' ? type({ ...props, children }) : ({ type, props: props || {}, children }),
     useState: initial => { const index = cursor++; if (!(index in states)) states[index] = typeof initial === 'function' ? initial() : initial; return [states[index], next => { states[index] = typeof next === 'function' ? next(states[index]) : next; }]; },
-    useMemo: fn => fn(), useRef: initial => { const index = refCursor++; return refs[index] ||= { current: initial }; }, useEffect() {},
+    useMemo: fn => fn(), useRef: initial => { const index = refCursor++; return refs[index] ||= { current: initial }; }, useEffect: effect => { effects.push(effect); },
 };
 require('../js/components/time-league-team-panel.js');
 const E = App.TimeLeagueEngine, S = App.TimeLeagueSeason, stamp = '2026-10-21T00:00:00Z';
@@ -30,7 +30,7 @@ const text = node => node == null || node === false ? '' : typeof node === 'stri
 const button = (tree, label) => walk(tree).find(node => node.type === 'button' && (node.props['aria-label'] === label || text(node.children) === label));
 const region = (tree, label) => walk(tree).find(node => node.props['aria-label'] === label);
 const render = (section = 'waivers', props = {}) => {
-    cursor = 0; refCursor = 0;
+    cursor = 0; refCursor = 0; effects = [];
     return WrTimeLeagueTeamPanel({ league, cards, section, activeTeamId: 't1', onSelectTeam() {}, logIndex: new Map(),
         onNavigate: tab => { navigate = tab; }, onUpdate: async (next, action) => { writes.push({ next, action }); if (saved) league = next; return saved; }, ...props });
 };
@@ -207,6 +207,76 @@ async function test(name, fn) { reset(); await fn(); count++; console.log(`  ok 
                 giveEntryIds: ['0-QB'], receiveEntryIds: ['missing-entry'], note: '' }] };
         const receipt = region(render('trades'), 'Saved trade outcome');
         assert(text(receipt).includes('Remembered Passer')); assert(text(receipt).includes('Unavailable player')); assert(!text(receipt).includes('missing-entry'));
+    });
+    await test('wire PTS uses committed visible Vault points, preserving zero, missing data and the playback horizon', () => {
+        league = { ...league, currentWeek: 2, finalizedWeeks: [{ week: 1, matchups: [], results: [], playerProduction: [{ identity: 'player:Free-Runner', drawnSeason: 2000,
+            points: 12.34, stats: { ...S.emptyStatLine(), rushYd: 123.4 } }] }] };
+        const rowFor = tree => walk(tree).find(node => node.type === 'tr' && text(node).includes('Free Runner'));
+        const pts = tree => walk(rowFor(tree)).find(node => node.type === 'td' && node.props.className === 'tl-waiver-points tabular');
+        assert(text(pts(render())).includes('12.3'));
+        assert.equal(App.TimeLeaguePlayerStats.totals(league, { identity: 'player:Free-Runner', position: 'RB', drawnSeason: 2000 }, new Map(), null, [1]).points, 12.34);
+        assert(text(pts(render('waivers', { throughWeek: 0 }))).includes('0.0'), 'An unwatched saved final cannot add points to the visible column');
+        league.finalizedWeeks[0].playerProduction[0].points = 0;
+        assert(text(pts(render())).includes('0.0'), 'A recorded zero remains zero');
+        league = { ...league, finalizedWeeks: [{ week: 1, matchups: [], results: [] }] };
+        assert.equal(text(pts(render('waivers', { logIndex: null }))), '—', 'Missing past records are not presented as zero');
+        assert.equal(writes.length, 0);
+    });
+    await test('hidden wire PTS reads public completed production without the assigned year or deck', () => {
+        league = { ...league, currentWeek: 2, publicSnapshotVersion: 1, settings: { ...league.settings, hiddenYears: true }, finalizedWeeks: [{ week: 1, results: [], matchups: [],
+            playerProduction: [{ editionId: 'mystery:player:Free-Runner', identity: 'player:Free-Runner', points: 9, stats: { ...S.emptyStatLine(), rushYd: 90 } }] }] };
+        for (const team of league.teams) for (const player of team.roster) {
+            delete player.drawnSeason; player.hiddenDecade = '2000s'; Object.defineProperty(player, 'drawnSeason', { get() { throw new Error('Private year was read for wire PTS'); } });
+        }
+        for (const field of ['seed', 'gameAssignments']) { delete league[field]; Object.defineProperty(league, field, { get() { throw new Error('Private deck was read for wire PTS'); } }); }
+        const row = walk(render()).find(node => node.type === 'tr' && text(node).includes('Free Runner'));
+        assert.equal(text(walk(row).find(node => node.type === 'td' && node.props.className === 'tl-waiver-points tabular')), '9.0'); assert.equal(writes.length, 0);
+    });
+    await test('trade summary shows its existing grade and signed public delta without the removed filler', () => {
+        cards.get('player:0-QB').seasons[0].points = 50;
+        walk(render('trades')).find(node => node.props['aria-label'] === 'Select 0 QB').props.onChange();
+        walk(render('trades')).find(node => node.props['aria-label'] === 'Select 1 QB').props.onChange();
+        const summary = region(render('trades'), 'Trade summary');
+        const grade = walk(summary).find(node => node.props.className?.startsWith('tl-trade-value-grade'));
+        const delta = walk(summary).find(node => node.props.className?.startsWith('tl-trade-point-delta'));
+        assert(text(grade).includes('Value grade')); assert(text(grade).includes('A+')); assert(text(delta).includes('+50.0')); assert(text(delta).includes('reference pts'));
+        assert(!text(summary).includes('If accepted')); assert(!text(render('trades')).includes('Select players below.'));
+        assert(!walk(summary).some(node => node.props.role === 'progressbar'), 'Human managers do not receive an invented acceptance probability');
+        assert.equal(writes.length, 0);
+    });
+    await test('AI acceptance bar shows only the shared deterministic current decision', () => {
+        league = { ...league, teams: league.teams.map(team => team.teamId === 't2' ? { ...team, manager: 'ai', aiPersona: 'steward' } : team) };
+        walk(render('trades')).find(node => node.props['aria-label'] === 'Select 0 QB').props.onChange();
+        walk(render('trades')).find(node => node.props['aria-label'] === 'Select 1 QB').props.onChange();
+        const before = JSON.stringify(league), expected = App.TimeLeagueAI.previewTrade(league, { fromTeamId: 't1', toTeamId: 't2', giveEntryIds: ['0-QB'], receiveEntryIds: ['1-QB'] }, cards);
+        assert([0, 100].includes(expected.percent));
+        const tree = render('trades'), bar = region(tree, 'AI acceptance for current terms');
+        assert.equal(bar.props['aria-valuenow'], expected.percent); assert(text(tree).includes(`${expected.percent}%`)); assert(text(tree).includes('deterministic rules'));
+        assert(region(tree, 'Owner DNA')); assert.equal(JSON.stringify(league), before); assert.equal(writes.length, 0);
+        cards.delete('player:1-QB'); const missing = render('trades');
+        assert(!region(missing, 'AI acceptance for current terms'), 'Unavailable evidence cannot become a numeric probability');
+    });
+    await test('an owned trade request opens and focuses the exact saved offer once without responding', () => {
+        offer(); let tree = render('trades'); button(tree, 'Trade builder').props.onClick();
+        const request = { leagueId: league.leagueId, teamId: 't1', tradeId: league.trades[0].tradeId, requestId: 1 };
+        tree = render('trades', { tradeRequest: request }); effects.forEach(effect => effect());
+        tree = render('trades', { tradeRequest: request });
+        const row = walk(tree).find(node => node.props['data-trade-id'] === request.tradeId); let focused = 0;
+        row.props.ref.current = { focus() { focused++; }, scrollIntoView() {} }; effects.forEach(effect => effect());
+        assert.equal(focused, 1); assert(button(tree, 'Inbox · 1').props['aria-pressed']); assert.equal(writes.length, 0); assert.equal(league.trades[0].status, 'pending');
+        button(tree, 'Trade builder').props.onClick(); tree = render('trades', { tradeRequest: request }); effects.forEach(effect => effect());
+        assert(button(tree, 'Trade builder').props['aria-pressed'], 'A handled request cannot reopen the inbox after manual navigation');
+        for (const invalid of [{ ...request, leagueId: 'wrong' }, { ...request, teamId: 't2' }, { ...request, tradeId: 'missing' }]) {
+            tree = render('trades', { tradeRequest: { ...invalid, requestId: 2 } }); effects.forEach(effect => effect()); assert(button(tree, 'Trade builder').props['aria-pressed']);
+        }
+        league = { ...league, trades: league.trades.map(trade => ({ ...trade, status: 'rejected', note: 'Saved decision' })) };
+        const settledRequest = { ...request, requestId: 3 };
+        render('trades', { tradeRequest: settledRequest }); effects.forEach(effect => effect());
+        tree = render('trades', { tradeRequest: settledRequest });
+        walk(tree).find(node => node.props['data-trade-id'] === request.tradeId).props.ref.current = { focus() { focused++; }, scrollIntoView() {} };
+        effects.forEach(effect => effect());
+        assert(button(tree, 'Trade log').props['aria-pressed']); assert.equal(focused, 2, 'A new explicit request follows a settled offer into its saved history');
+        assert.equal(writes.length, 0);
     });
     console.log(`PASS: ${count} acquisition UI cases; legal preflight, serial saves, queue order/fallbacks, canonical receipts, proposal/acceptance boundaries, unknown values and hidden-data independence.`);
 })().catch(error => { console.error(error); process.exitCode = 1; });

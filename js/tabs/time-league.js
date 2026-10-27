@@ -1117,6 +1117,7 @@
         const [authRequired, setAuthRequired] = useState(false);
         const [, refreshGuest] = useState(0);
         const [inviteAttempt, setInviteAttempt] = useState(0);
+        const [tradeRequest, setTradeRequest] = useState(null);
         const actor = gameActor();
         const actorKey = `${actor?.kind || ''}:${actor?.userId || ''}:${actor?.token || ''}`;
         const GuestPanel = window.App.GameGuestPanel;
@@ -1786,6 +1787,17 @@
             setMailThread(teamId ? { key: mailKey, teamId } : null);
             navigateTab('messages');
         };
+        const openTrade = tradeId => {
+            const trade = league.trades.find(item => item.tradeId === tradeId
+                && [item.fromTeamId, item.toTeamId].includes(responseTeam));
+            if (!trade) return;
+            const counterpart = trade.fromTeamId === responseTeam ? trade.toTeamId : trade.fromTeamId;
+            if (Mail?.tradesForConversation && !Mail.tradesForConversation(league, responseTeam, counterpart, mailThroughWeek)
+                .some(row => row.trade.tradeId === tradeId)) return;
+            setTradeRequest(previous => ({ leagueId: league.leagueId, teamId: responseTeam, tradeId,
+                requestId: (previous?.requestId || 0) + 1 }));
+            navigateTab('trades');
+        };
         const latestFinalWeek = league.finalizedWeeks.at(-1)?.week;
         const postgameMail = unreadMail.find(message => message.id === `game:${latestFinalWeek}:${responseTeam}`) || unreadMail[0];
         const mailSender = league.teams.find(team => team.teamId === postgameMail?.fromTeamId);
@@ -1854,7 +1866,7 @@
                 }),
                 activeTab === 'career' && CareerView ? h(CareerView, { index, league, onlineMeta, onOpenLocal: openLeague, onOpenOnline: openOnlineLeague }) : null,
                 activeTab === 'community' && CommunityPanel ? h(CommunityPanel, { onOpenOnline: openOnlineLeague, onProfile: () => navigateTab('career') }) : null,
-                activeTab === 'messages' && RivalsPanel ? h(RivalsPanel, { key: `${league.leagueId}:${responseTeam}`, league, teamId: responseTeam, throughWeek: mailThroughWeek, threadRequest: mailThread, onRead: onMailRead, isPrivate: Boolean(onlineMeta), onSend: sendRivalMessage, onNavigate: navigateTab }) : null,
+                activeTab === 'messages' && RivalsPanel ? h(RivalsPanel, { key: `${league.leagueId}:${responseTeam}`, league, teamId: responseTeam, throughWeek: mailThroughWeek, threadRequest: mailThread, onRead: onMailRead, isPrivate: Boolean(onlineMeta), onSend: sendRivalMessage, onNavigate: navigateTab, onTrades: openTrade }) : null,
                 h('fieldset', { ref: gameplayRef, hidden: Boolean(storageError), disabled: saving || Boolean(storageError) || Boolean(onlineMeta && (authRequired || !onlineMeta.draftStarted)), style: { border: 0, padding: 0, margin: 0, minWidth: 0, display: storageError ? 'none' : undefined } },
                 ['home', 'gameday'].includes(activeTab) && addPlayoffCounts.length > 0 && h('section', { className: 'tl-card tl-week-gate' },
                     h('div', null, h('strong', null, 'Finish with a playoff?'), h('p', null, 'Keep regular-season results and reopen this season for a seeded championship. This replaces the standings-only title.')),
@@ -1877,7 +1889,7 @@
                 activeTab === 'stats' ? (window.WrTimeLeagueStatsPanel && cardsReady ? h(window.WrTimeLeagueStatsPanel, { key: league.leagueId, league, cards, logIndex, eraFactors, throughWeek: mailThroughWeek, onNavigate: navigateTab }) : loadingNotice) : null,
                 (activeTab === 'roster' || activeTab === 'waivers' || activeTab === 'trades' || activeTab === 'achievements')
                     ? (cardsReady && TeamPanel
-                        ? h(TeamPanel, { league, cards, logIndex, eraFactors, section: activeTab, throughWeek: mailThroughWeek, onNavigate: navigateTab, onReopenPlanning: teamId => dispatchGate({ type: 'reopen-planning', teamId }), onStats: () => navigateTab('stats'), activeTeamId: responseTeam, onSelectTeam: setActiveTeamId, onUpdate: (next, action) => handleUpdate(next, action, { base: league }), onlineMeta,
+                        ? h(TeamPanel, { league, cards, logIndex, eraFactors, section: activeTab, throughWeek: mailThroughWeek, onNavigate: navigateTab, tradeRequest, onReopenPlanning: teamId => dispatchGate({ type: 'reopen-planning', teamId }), onStats: () => navigateTab('stats'), activeTeamId: responseTeam, onSelectTeam: setActiveTeamId, onUpdate: (next, action) => handleUpdate(next, action, { base: league }), onlineMeta,
                             waiverSlot: currentWaiverBrowse?.slot || null,
                             waiverContext: currentWaiverBrowse && !currentWaiverBrowse.contextCleared ? currentWaiverBrowse : null,
                             onClearWaiverContext: () => setWaiverBrowse(previous => previous.leagueId === league.leagueId && previous.teamId === responseTeam

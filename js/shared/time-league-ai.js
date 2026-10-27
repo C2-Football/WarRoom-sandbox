@@ -312,18 +312,63 @@
         }, state);
     }
 
-    function resolveAiTrade(state, trade, cards, createdAt) {
-        cards = App.TimeLeagueEngine.cardsFor(state, cards);
+    function aiTradeRead(state, trade, cards) {
         const from = state.teams.find((team) => team.teamId === trade.fromTeamId);
         const to = state.teams.find((team) => team.teamId === trade.toTeamId);
-        if (!from || !to || trade.status !== "pending") return state;
+        if (!from || !to) return null;
         const persona = adaptivePersona(state, to), strategy = strategyFor(state, to);
         const incoming = trade.giveEntryIds.flatMap((id) => from.roster.find((entry) => entry.entryId === id) ?? []);
         const outgoing = trade.receiveEntryIds.flatMap((id) => to.roster.find((entry) => entry.entryId === id) ?? []);
         const complete = incoming.length === trade.giveEntryIds.length && outgoing.length === trade.receiveEntryIds.length;
-        const after = [...to.roster.filter(entry => !trade.receiveEntryIds.includes(entry.entryId)), ...incoming.map(entry => ({ ...entry, slot: 'BN' }))];
+        // A roster-fit read needs public identity, eligibility and observed
+        // scoring only. Do not spread a canonical entry and read its sealed draw.
+        const moved = entry => ({ entryId: entry.entryId, editionId: entry.editionId,
+            identity: entry.identity, name: entry.name, position: entry.position,
+            hiddenDecade: entry.hiddenDecade, slot: 'BN',
+            ...(!hidden(state) ? { drawnSeason: entry.drawnSeason } : {}) });
+        const after = [...to.roster.filter(entry => !trade.receiveEntryIds.includes(entry.entryId)), ...incoming.map(moved)];
         const legal = tradeLineup(after, state.settings, entry => entryValue(cards, entry, state)).legal;
         const accept = complete && legal && tradeValue(cards, incoming, persona, state) >= tradeValue(cards, outgoing, persona, state) * (acceptThreshold(persona, difficultyFor(state)) + strategy.tradeThresholdDelta + relationshipFor(state, to.teamId, from.teamId).tradePremium);
+        return { from, to, persona, strategy, incoming, outgoing, accept };
+    }
+
+    // Acceptance is deterministic in this game. A preview therefore reports
+    // the current rule's 0/100 decision, never an invented midrange probability.
+    function previewTrade(state, offer, cards) {
+        const unavailable = (label, reason) => ({ percent: null, label, reason });
+        if (state.phase !== 'season' || !['claims', 'lineup'].includes(state.weekStage) || !state.seasonsRevealed) return unavailable('Desk closed', 'Review acceptance during trade planning.');
+        if (!offer || (offer.status && offer.status !== 'pending')) return unavailable('Offer settled', 'This offer already has a saved outcome.');
+        if (offer.deferredUntilWeek > state.currentWeek) return unavailable('Deferred', `Review this offer in Week ${offer.deferredUntilWeek}.`);
+        const problem = App.TimeLeagueEngine.tradeProblem(state, offer);
+        if (problem) return unavailable('Roster blocked', problem);
+        const recipient = state.teams.find(team => team.teamId === offer.toTeamId);
+        if (recipient.manager !== 'ai') return unavailable('Human decision', 'This manager decides whether to accept.');
+        cards = App.TimeLeagueEngine.cardsFor(state, cards);
+        const entries = state.teams.flatMap(team => team.roster).filter(entry => [...offer.giveEntryIds, ...offer.receiveEntryIds].includes(entry.entryId));
+        const bases = new Set();
+        const available = entries.every(entry => {
+            const card = cards?.get(entry.identity);
+            if (!card?.seasons?.length) return false;
+            if (hidden(state)) {
+                const read = observedRead(state, cards, entry);
+                bases.add(read.estimateBasis === 'completed Vault games' ? 'Completed Vault averages' : 'Reference archive averages');
+                return Number.isFinite(read.estimatedAverage);
+            }
+            bases.add('Reference season totals');
+            return Number.isFinite(card.seasons.find(season => season.season === entry.drawnSeason)?.points);
+        });
+        if (!available) return unavailable('Archive unavailable', 'Every selected player needs an available public value.');
+        const read = aiTradeRead(state, offer, cards);
+        return { percent: read.accept ? 100 : 0, label: read.accept ? 'Would accept now' : 'Would decline now',
+            reason: `${[...bases].join(' + ')}. Roster fit, personality and difficulty also apply. This GM uses a fixed rule; roster changes can change the decision.` };
+    }
+
+    function resolveAiTrade(state, trade, cards, createdAt) {
+        cards = App.TimeLeagueEngine.cardsFor(state, cards);
+        if (trade.status !== 'pending') return state;
+        const read = aiTradeRead(state, trade, cards);
+        if (!read) return state;
+        const { to, persona, strategy, incoming, outgoing, accept } = read;
         const inName = bestName(cards, incoming, "That package", state);
         const outName = bestName(cards, outgoing, "my starter", state);
         const note = (accept ? `${persona.accept} ${inName} for ${outName}.` : `${persona.reject} ${outName} stays for now.`) + (strategy.reason ? ` ${strategy.reason}` : '');
@@ -476,7 +521,7 @@
 
     const api = {
         AI_PERSONAS, AI_DIFFICULTY_LABELS, entryValueFromCard, aiDraftChoice, aiAuctionStep, aiPrepareWeek, aiSubmitWaiverClaims,
-        aiRespondToTrades, aiGenerateTrades, strategyFor, adaptivePersona,
+        aiRespondToTrades, aiGenerateTrades, strategyFor, adaptivePersona, previewTrade,
     };
     App.TimeLeagueAI = api;
     if (typeof module !== 'undefined' && module.exports) module.exports = api;

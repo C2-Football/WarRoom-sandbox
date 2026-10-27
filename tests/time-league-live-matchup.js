@@ -81,6 +81,12 @@ const gateButton=label=>button(dock(dockProps()),label);
     assert.equal(await dockProps().onAction({type:'advance-week'}),false,'Stale callbacks cannot skip an unfinished game');
     const getLineups=()=>{const node=all(tree).find(node=>typeof node.type==='function'&&node.type.name==='LiveLineups');return node.type(node.props);};
     const points=()=>all(getLineups()).filter(node=>node.props.className?.includes('tl-live-player-points')).map(node=>words(node));
+    const primary=all(tree).find(node=>node.props.className==='tl-gameday-primary');
+    assert(primary, 'The primary view groups the score rail beside the full lineup');
+    const scoreRail=all(primary).find(node=>node.props.className==='tl-gameday-score-rail');
+    assert(all(scoreRail).some(node=>node.props['aria-label']==='Game playback controls'), 'Playback controls remain with the score');
+    assert(all(primary).some(node=>node.type?.name==='LiveLineups'), 'Every starter remains in the primary view');
+    assert(words(scoreRail).includes('Playback controls do not change the saved result'), 'Playback provenance remains visible beside the score');
     assert(points().every(value=>value==='0.00'),'Final player totals stay hidden at kickoff');
     assert(!words(getLineups()).includes('320 passing yards'));
     assert(!words(getLineups()).includes('Your BN'),'Bench production does not count toward the matchup');
@@ -138,6 +144,9 @@ const gateButton=label=>button(dock(dockProps()),label);
     tree = play();
     const notice = component(tree, WrTimeLeagueMailNotice);
     assert(notice, 'The final scoreboard surfaces its opponent message');
+    const finalPrimary=all(tree).find(node=>node.props.className==='tl-gameday-primary');
+    assert(!component(finalPrimary,WrTimeLeagueMailNotice),'Unread mail stays below the final score and complete lineup');
+    assert(all(tree).indexOf(notice)>all(tree).indexOf(finalPrimary));
     assert(all(dock(dockProps())).some(node => node.props['aria-label'] === 'New message from Opponent. Read and reply'), 'The fixed bottom action row announces the sender even when the scoreboard is offscreen');
     const noticeTree = WrTimeLeagueMailNotice(notice.props);
     assert(words(noticeTree).includes('Opponent sent you a message'));
@@ -193,5 +202,71 @@ const gateButton=label=>button(dock(dockProps()),label);
         assert.equal(sent.type, 'week');
         assert.deepEqual(online.states[0].value.weekData, finals, 'Only the server box score starts online playback');
     } finally { E.finalizeCurrentWeek = localScorer; }
+
+    // A normal nine-starter matchup is complete in the primary panel. This is
+    // a source/control assertion; actual viewport fit is checked in the browser.
+    const standardSlots=['QB','RB','RB','WR','WR','TE','FLEX','K','DEF'];
+    const standardTeams=teams.map((team,side)=>({...team,roster:standardSlots.map((slot,index)=>({
+        entryId:`standard-${side}-${index}`,identity:`player:standard-${side}-${index}`,name:`${side?'Rival':'Your'} starter ${index+1}`,
+        position:slot==='FLEX'?'WR':slot,slot,drawnSeason:2000,acquiredVia:'draft',acquiredWeek:1,
+    }))}));
+    const standard={...league,teams:standardTeams,phase:'season',weekStage:'ready',currentWeek:1,finalizedWeeks:[],
+        settings:{...league.settings,rosterSlots:{QB:1,RB:2,WR:2,TE:1,FLEX:1,K:1,DEF:1,BN:3}}};
+    const renderStandalone=snapshot=>{const ctx=harness();return ctx.render(()=>WrTimeLeagueGamecastPanel({league:snapshot,cards,logIndex:logs,onUpdate(){},active:true}));};
+    const standardTree=renderStandalone(standard);
+    const standardLineups=all(standardTree).find(node=>node.type?.name==='LiveLineups');
+    const standardRows=all(standardLineups.type(standardLineups.props));
+    assert.equal(standardRows.filter(node=>node.props.className==='tl-live-lineup-row').length,9);
+    assert.equal(standardRows.filter(node=>node.props['data-entry-id']).length,18, 'Both teams retain all nine starting players');
+    const narrowWeek={week:1,headlines:[],matchups:[{home:'t1',away:'t2',homePoints:100.04,awayPoints:100.02,winner:'t1'}],
+        results:standardTeams.map((team,index)=>({teamId:team.teamId,total:index?100.02:100.04,starters:team.roster.map((entry,n)=>({...entry,points:n?0:index?100.02:100.04,stats:{passYd:0}}))}))};
+    const narrow={...standard,weekStage:'postgame',currentWeek:2,finalizedWeeks:[narrowWeek]},beforeNarrow=JSON.stringify(narrow);
+    const narrowTree=renderStandalone(narrow);
+    for(const name of ['HeroMatchup','ScoreboardStrip']){
+        const node=all(narrowTree).find(item=>item.type?.name===name),rendered=node.type(node.props);
+        assert(words(rendered).includes('100.04')&&words(rendered).includes('100.02'), `${name} cannot round a narrow final into an apparent tie`);
+    }
+    assert.equal(JSON.stringify(narrow),beforeNarrow,'Compact presentation never changes the saved result');
+
+    // Deliver a frame even after cancellation to model a queued callback or a
+    // delayed effect cleanup. Pausing must stop the clock synchronously, and a
+    // subsequent resume must not revive the old animation loop.
+    const originalFrame=window.requestAnimationFrame,originalCancel=window.cancelAnimationFrame;
+    const queuedFrames=new Map();let frameId=0;
+    window.requestAnimationFrame=fn=>{queuedFrames.set(++frameId,fn);return frameId;};
+    window.cancelAnimationFrame=id=>queuedFrames.delete(id);
+    try{
+        const pausedCast=harness(),timeline=G.buildGamecast({...narrowWeek,seed:'pause-regression',scoring:narrow.settings.scoring});
+        pausedCast.states[0]={value:{timeline,weekData:narrowWeek,finalized:narrow,live:false}};
+        pausedCast.states[1]={value:0};pausedCast.states[2]={value:true};pausedCast.states[3]={value:60};
+        const props={league:narrow,cards,logIndex:logs,onUpdate(){},active:true};
+        const renderPaused=(runEffects=true)=>pausedCast.render(()=>WrTimeLeagueGamecastPanel(props),runEffects);
+        let pausedTree=renderPaused();
+        queuedFrames.get(frameId)(performance.now()+100);pausedTree=renderPaused();
+        const staleFrame=queuedFrames.get(frameId);
+        button(pausedTree,'PAUSE').props.onClick();pausedTree=renderPaused();
+        const stoppedClock=pausedCast.states[1].value;
+        staleFrame(performance.now()+1000);
+        assert.equal(pausedCast.states[1].value,stoppedClock,'A stale animation callback cannot advance a paused clock');
+        button(pausedTree,'RESUME').props.onClick();renderPaused();
+        staleFrame(performance.now()+2000);
+        assert.equal(pausedCast.states[1].value,stoppedClock,'Resuming cannot revive an earlier animation loop');
+        const activeFrame=queuedFrames.get(frameId);
+        props.active=false;renderPaused(false);
+        activeFrame(performance.now()+3000);
+        assert.equal(pausedCast.states[1].value,stoppedClock,'Leaving the tab stops queued frames before effect cleanup runs');
+        props.active=true;
+        const beforeInstant=renderPaused();let blurred=false;
+        button(beforeInstant,'INSTANT').props.onClick({currentTarget:{blur(){blurred=true;}}});
+        const afterInstant=renderPaused(),finalView=all(afterInstant).find(node=>node.props.className==='tl-gameday-primary');
+        const focusEvents=[],room={scrollIntoView(){focusEvents.push('room');}};
+        finalView.props.ref.current={closest:selector=>selector==='.tl-root'?room:null,focus:options=>{assert(options.preventScroll);focusEvents.push('primary');}};
+        queuedFrames.get(frameId)(performance.now()+4000);
+        assert(blurred,'Instant releases its disappearing control before final layout changes');
+        assert.deepEqual(focusEvents,['room','primary'],'A skipped final restores the padded Vault header and focuses the primary matchup');
+        assert(button(afterInstant,'REPLAY FROM START')&&button(afterInstant,'CLOSE GAMECAST'));
+        assert(!button(afterInstant,'NEXT PLAY')&&!button(afterInstant,'5 MIN'),'Final actions replace playback controls');
+        assert.equal(JSON.stringify(narrow),beforeNarrow,'Pause and tab changes never alter saved scoring');
+    }finally{window.requestAnimationFrame=originalFrame;window.cancelAnimationFrame=originalCancel;}
     console.log('PASS: live starter scoring, no final leaks, negative/missing games, saved replay lineups, tab continuity, routed gates, invalid/save failure recovery and multiplayer permissions.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

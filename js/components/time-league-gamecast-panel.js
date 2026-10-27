@@ -148,14 +148,13 @@
                 h('div', { className: 'tl-sc-tag' }, live ? h('span', { className: 'tl-sc-dot' }) : null, mine ? `${statusLabel} · YOUR MATCHUP` : statusLabel),
                 h('div', { className: `tl-sc-row${homeLeading ? ' winning' : ''}` },
                     h('span', { className: 'tl-sc-team' }, h(window.TimeLeagueHelmetIcon, { helmet: homeTeam?.helmet, letter: window.App.TimeLeagueHelmet.monogramFor(homeTeam?.name || row.home), size: 20 }), h('span', null, homeTeam?.name ?? row.home)),
-                    h('span', { className: 'tl-sc-pts tabular' }, row.homePoints.toFixed(1))),
+                    h('span', { className: 'tl-sc-pts tabular' }, row.homePoints.toFixed(statusLabel === 'FINAL' ? 2 : 1))),
                 h('div', { className: `tl-sc-row${awayLeading ? ' winning' : ''}` },
                     h('span', { className: 'tl-sc-team' }, h(window.TimeLeagueHelmetIcon, { helmet: awayTeam?.helmet, letter: window.App.TimeLeagueHelmet.monogramFor(awayTeam?.name || row.away), size: 20 }), h('span', null, awayTeam?.name ?? row.away)),
-                    h('span', { className: 'tl-sc-pts tabular' }, row.awayPoints.toFixed(1))),
-                showLeaders && h('div', { className: 'tl-sc-leader' },
-                    h('small', null, 'AROUND THE LEAGUE'),
-                    leader ? h('span', null, h('b', null, leader.name), ` · ${leader.points.toFixed(1)} pts`, h('small', null, Gamecast.describeStats(leader.stats, 2)))
-                        : h('span', null, 'Waiting for the first scoring moment')));
+                    h('span', { className: 'tl-sc-pts tabular' }, row.awayPoints.toFixed(statusLabel === 'FINAL' ? 2 : 1))),
+                showLeaders && leader && h('details', { className: 'tl-sc-leader' },
+                    h('summary', null, 'Leading scorer'),
+                    h('span', null, h('b', null, leader.name), ` · ${leader.points.toFixed(1)} pts`, h('small', null, Gamecast.describeStats(leader.stats, 2)))));
         }));
     }
 
@@ -213,13 +212,13 @@
                 h('div', { className: 'tl-hero-side' },
                     h('span', { className: 'tl-matchup-helmet is-left' }, h(window.TimeLeagueHelmetIcon, { helmet: mine.helmet, letter: window.App.TimeLeagueHelmet.monogramFor(mine.name), size: 52 })),
                     h('div', { className: `tl-h-name${minePts >= oppPts ? ' leading' : ''}` }, mine.name), h('small', { className: 'tl-live-record' }, record(mine)),
-                    h('div', { className: `tl-h-pts tabular${minePts >= oppPts ? ' leading' : ''}` }, minePts.toFixed(1))),
+                    h('div', { className: `tl-h-pts tabular${minePts >= oppPts ? ' leading' : ''}` }, minePts.toFixed(statusLabel === 'FINAL' ? 2 : 1))),
                 h('div', { className: 'tl-hero-mid' }, h('div', { className: 'tl-h-vs' }, `WEEK ${week}`), h('div', { className: 'tl-h-clock' }, phone && statusLabel === 'UPCOMING' ? 'UPCOMING' : clockLabel)),
                 h('div', { className: 'tl-hero-side' },
                     h('span', { className: 'tl-matchup-helmet' }, h(window.TimeLeagueHelmetIcon, { helmet: opp.helmet, letter: window.App.TimeLeagueHelmet.monogramFor(opp.name), size: 52 })),
                     h('div', { className: `tl-h-name${oppPts > minePts ? ' leading' : ''}` }, opp.name), h('small', { className: 'tl-live-record' }, record(opp)),
-                    h('div', { className: `tl-h-pts tabular${oppPts > minePts ? ' leading' : ''}` }, oppPts.toFixed(1)))),
-            phone ? h('details', { className: 'tl-gamecast-details' }, h('summary', null, 'Matchup details'), analysis, !hasCurrentPlay && spotlight) : analysis,
+                    h('div', { className: `tl-h-pts tabular${oppPts > minePts ? ' leading' : ''}` }, oppPts.toFixed(statusLabel === 'FINAL' ? 2 : 1)))),
+            h('details', { className: 'tl-gamecast-details tl-matchup-analysis' }, h('summary', null, 'Matchup details'), analysis, phone && !hasCurrentPlay && spotlight),
             (!phone || hasCurrentPlay) && spotlight);
 
     }
@@ -239,6 +238,17 @@
         const archiveRef = useRef(null);
         const inspectedRequest = useRef(null);
         const pendingScoreFocus = useRef(false);
+        const primaryRef = useRef(null);
+        const pendingPlaybackFocus = useRef(false);
+        const activeRef = useRef(active);
+        activeRef.current = active;
+        const playbackLoop = useRef({ running: false, speed, epoch: 0 });
+        const running = playing && active;
+        // A queued frame can outlive its effect cleanup. Invalidate it during
+        // render so a paused or hidden game stops before another frame lands.
+        if (playbackLoop.current.running !== running || playbackLoop.current.speed !== speed) {
+            playbackLoop.current = { running, speed, epoch: playbackLoop.current.epoch + 1 };
+        }
         useEffect(() => {
             if (!autoPlayWeek || autoPlayed.current === autoPlayWeek) return;
             const weekData = league.finalizedWeeks.find(week => week.week === autoPlayWeek);
@@ -259,9 +269,11 @@
 
         useEffect(() => {
             if (!playing || !active) return;
+            const epoch = ++playbackLoop.current.epoch;
             let raf = 0;
             let last = performance.now();
             const step = (now) => {
+                if (!playbackLoop.current.running || playbackLoop.current.epoch !== epoch) return;
                 const dt = Math.min(0.1, (now - last) / 1000);
                 last = now;
                 clockRef.current = Math.min(GAMECAST_END, clockRef.current + dt * GAMECAST_END / speed);
@@ -270,7 +282,10 @@
                 raf = window.requestAnimationFrame(step);
             };
             raf = window.requestAnimationFrame(step);
-            return () => window.cancelAnimationFrame(raf);
+            return () => {
+                window.cancelAnimationFrame(raf);
+                if (playbackLoop.current.epoch === epoch) playbackLoop.current.epoch += 1;
+            };
         }, [playing, speed, finishPlayback, active]);
 
         // Keep this panel mounted across tabs, but pause its clock while away.
@@ -279,11 +294,16 @@
             const advanced = previousStage.current === 'postgame' && league.weekStage !== 'postgame';
             previousStage.current = league.weekStage;
             if (playback && (advanced || (playback.live && league.weekStage !== 'postgame' && league.currentWeek > playback.weekData.week))) {
+                pendingPlaybackFocus.current = false;
                 setPlayback(null); setPlaying(false); clockRef.current = 0; setClock(0);
             }
         }, [league.weekStage, league.currentWeek, playback]);
 
-        const skipToEnd = () => { clockRef.current = GAMECAST_END; setClock(GAMECAST_END); if (playing) finishPlayback(); };
+        const skipToEnd = event => {
+            event?.currentTarget?.blur?.();
+            pendingPlaybackFocus.current = true;
+            clockRef.current = GAMECAST_END; setClock(GAMECAST_END); if (playing) finishPlayback();
+        };
         const canRun = league.weekStage === 'ready' && (!onlineMeta || onlineMeta.role === 'commissioner') && league.phase === 'season' && cards !== null && cards.size > 0 && logIndex !== null && (!league.settings.eraAdjusted || Boolean(eraFactors?.size));
 
         const runGameDay = async (force) => {
@@ -307,11 +327,13 @@
             const canonical = saved && typeof saved === 'object' ? saved : settled;
             const savedWeek = canonical.finalizedWeeks.find(item => item.week === league.currentWeek);
             if (!savedWeek) return;
+            pendingPlaybackFocus.current = false;
             setPlayback({ timeline: Gamecast.buildGamecast({ week: savedWeek.week, results: savedWeek.results, matchups: savedWeek.matchups, seed: canonical.seed || canonical.leagueId, scoring: canonical.settings.scoring, simulatedAvailability: canonical.settings.gameDeckVersion === 1 }), weekData: savedWeek, finalized: canonical, live: true });
             setBoxWeek(null); clockRef.current = 0; setClock(0); setSpeed(300); setPlaying(true);
         };
 
         const replayWeek = (week) => {
+            pendingPlaybackFocus.current = false;
             setPlayback({ timeline: Gamecast.buildGamecast({ week: week.week, results: week.results, matchups: week.matchups, seed: league.seed || league.leagueId, scoring: league.settings.scoring, simulatedAvailability: league.settings.gameDeckVersion === 1 }), weekData: week, finalized: league, live: false });
             setBoxWeek(null); clockRef.current = 0; setClock(0); setSpeed(300); setPlaying(true);
         };
@@ -379,6 +401,19 @@
             archiveRef.current.scrollIntoView?.({ block: 'start', behavior: 'auto' });
             archiveRef.current.focus?.({ preventScroll: true });
         }, [active, boxWeekData, playback, scoreRequest]);
+        useEffect(() => {
+            if (!active || !done || !pendingPlaybackFocus.current) return;
+            const frame = window.requestAnimationFrame(() => {
+                const target = primaryRef.current;
+                if (!activeRef.current || clockRef.current < GAMECAST_END || !target || target.closest?.('[hidden]')) return;
+                pendingPlaybackFocus.current = false;
+                // Match normal Vault navigation so the league header retains
+                // its top padding below the shared development banner.
+                (target.closest?.('.tl-root') || target).scrollIntoView?.({ block: 'start', behavior: 'auto' });
+                target.focus?.({ preventScroll: true });
+            });
+            return () => window.cancelAnimationFrame(frame);
+        }, [active, done]);
         // Effects start playback after the first render. Keep the saved final
         // out of that intervening frame, including its accessible box scores.
         if (pendingWeek) return h('section', { className: 'tl-card', role: 'status' },
@@ -426,13 +461,9 @@
         const lineups = h(LiveLineups, { league, row: myRow, singleTeamId: participation.kind === 'bye' ? myTeamId : null, teams: league.teams, rosterSlots: league.settings.rosterSlots,
             weekData: playback?.weekData || savedFinal, landed, final: done || Boolean(savedFinal), currentPlay, identifiedYears });
         if (playback) {
-            return h('div', null,
-                !phone && strip, hero, done && mailNotice, lineups,
-                phone && strip && h('details', { className: 'tl-gamecast-details' }, h('summary', null, 'All matchups'), strip),
-                h('p',{className:'tl-hint'},'Historical totals, reconstructed across four quarters. Quarter timing is simulated. Playback controls do not change the saved result.'),
-                h('div', { className: 'tl-card' },
+            const controls = h('section', { className: 'tl-card tl-gameday-controls', 'aria-label': 'Game playback controls' },
                     h('div', { className: 'tl-card-title' }, h('span', null, `Week ${playback.weekData.week} — ${done ? 'Final' : playing ? 'Playing' : 'Paused'}`), h('small', null, `${landed.length}/${playback.timeline.events.length} game moments`)),
-                    h('div', { className: 'tl-cast-controls' },
+                    !done && h('div', { className: 'tl-cast-controls' },
                         h('span', { style: { color: playing ? 'var(--gold)' : 'var(--text-muted)' } }, '📡'),
                         h('span', { className: 'tabular tl-cast-clock' }, Gamecast.clockLabel(clock)),
                         h('span', { className: 'tl-cast-progress', role: 'progressbar', 'aria-label': 'Game playback', 'aria-valuenow': Math.round(clock / GAMECAST_END * 100), 'aria-valuemin': 0, 'aria-valuemax': 100 },
@@ -440,30 +471,41 @@
                         !onPlaybackChange && h('button',{className:'tl-btn primary',disabled:done,onClick:togglePlayback},playing?'PAUSE':'RESUME'),
                         !onPlaybackChange && h('button',{className:'tl-btn primary',disabled:done,onClick:nextQuarter},'NEXT QUARTER'),
                         h('button',{className:'tl-btn',disabled:done,onClick:nextPlay},'NEXT PLAY'),
-                        done&&h('button',{className:'tl-btn',onClick:()=>{clockRef.current=0;setClock(0);setPlaying(false);}},'REPLAY FROM START'),
                         (myRow || participation.kind === 'bye') && h('button',{className:'tl-btn','aria-pressed':followMine,onClick:()=>setFollowMine(v=>!v)},followMine?myRow?'MY MATCHUP':'MY LINEUP':'ALL MATCHUPS'),
                         CAST_DURATIONS.map(duration => h('button', { key: duration, className: `tl-btn${speed === duration ? ' primary' : ''}`, 'aria-pressed': speed === duration, onClick: () => setSpeed(duration) }, `${duration / 60} MIN`)),
                         h('button', { className: 'tl-btn icon', disabled: done, onClick: skipToEnd }, 'INSTANT')),
-                    h('p', { className: 'tl-cast-pace' }, `${speed / 60}-minute game · ${speed / 4} seconds per quarter. Next quarter skips to the break and pauses.`),
+                    !done && h('p', { className: 'tl-cast-pace' }, `${speed / 60}-minute game · ${speed / 4} seconds per quarter. Next quarter skips to the break and pauses.`),
+                    done && h('div', { className: 'tl-cast-finish-actions' },
+                        h('button', { className: 'tl-btn primary', onClick: () => { pendingPlaybackFocus.current = false; clockRef.current = 0; setClock(0); setPlaying(false); } }, 'REPLAY FROM START'),
+                        league.phase === 'complete' && onGoCeremony && h('button', { className: 'tl-btn primary', onClick: onGoCeremony }, 'CHAMPIONSHIP CEREMONY'),
+                        h('button', { className: 'tl-btn', onClick: () => { pendingPlaybackFocus.current = false; setPlayback(null); clockRef.current = 0; setClock(0); } }, 'CLOSE GAMECAST')));
+            return h('div', { className: 'tl-gameday-panel is-playback', 'data-participation': participation.kind },
+                !phone && strip,
+                h('div', { className: 'tl-gameday-primary', ref: primaryRef, tabIndex: -1, role: 'region', 'aria-label': `Week ${weekLabel} matchup` },
+                    h('div', { className: 'tl-gameday-score-rail' }, hero, controls,
+                        h('p', { className: 'tl-hint tl-gameday-playback-note' }, 'Historical totals, reconstructed across four quarters. Quarter timing is simulated. Playback controls do not change the saved result.')),
+                    lineups),
+                done && mailNotice,
+                phone && strip && h('details', { className: 'tl-gamecast-details' }, h('summary', null, 'All matchups'), strip),
+                h('details', { className: 'tl-card tl-gameday-moments' }, h('summary', null, 'Scoring moments & quarter recap'),
                     h(QuarterRecap, { row: myRow, landed, clock, teamName }),
                     done && headlines.length > 0 && h('div', { style: { marginBottom: 14 } },
                         h('span', { className: 'tl-label' }, `Week ${playback.weekData.week} Wire`),
                         headlines.map((headline, i) => h('p', { key: i, style: { fontSize: 12.5, color: 'var(--text-secondary)', margin: '4px 0' } }, headline))),
-                    h('div', { style: { maxHeight: 320, overflowY: 'auto' } },
+                    h('div', { className: 'tl-gameday-event-feed', style: { maxHeight: 320, overflowY: 'auto' } },
                         visibleEvents.length === 0
                             ? h('div', { className: 'tl-feedrow' }, h('time', null, 'Q1 · 15:00'), h('p', null, 'Crews are in the booth — kickoff momentarily.'))
                             : visibleEvents.slice().reverse().map((event, i) => h('div', { key: i, className: `tl-feedrow${event.isTouchdown ? ' urgent' : ''}` },
                                 h('time', null, `${Gamecast.clockLabel(event.t)} · ${event.kind === 'availability' ? 'STATUS' : `${event.points >= 0 ? '+' : ''}${event.points.toFixed(2)}`}`),
-                                h('p', null, `${event.description} — ${teamName(event.teamId)}`)))),
-                    done && h('div', { style: { marginTop: 14, textAlign: 'center' } },
-                        league.phase === 'complete' && onGoCeremony && h('button', { className: 'tl-btn primary', onClick: onGoCeremony }, 'CHAMPIONSHIP CEREMONY'),
-                        h('button', { className: 'tl-btn', onClick: () => { setPlayback(null); clockRef.current = 0; setClock(0); } }, 'CLOSE GAMECAST'))));
+                                h('p', null, `${event.description} — ${teamName(event.teamId)}`))))));
         }
 
-        return h('div', null,
-            !phone && strip, hero, savedFinal && mailNotice, lineups,
-            phone && strip && h('details', { className: 'tl-gamecast-details' }, h('summary', null, 'All matchups'), strip),
-            league.phase === 'season' && league.weekStage === 'ready' && (!onPlaybackChange || warnings || logsMissing || !logIndex || !cards?.size || (league.settings.eraAdjusted && !eraFactors?.size)) && h('div', { className: 'tl-card' },
+        return h('div', { className: 'tl-gameday-panel', 'data-participation': participation.kind },
+            !phone && strip,
+            h('div', { className: 'tl-gameday-primary', ref: primaryRef, tabIndex: -1, role: 'region', 'aria-label': `Week ${weekLabel} matchup` },
+            h('div', { className: 'tl-gameday-score-rail' }, hero,
+            h('p', { className: 'tl-hint tl-gameday-playback-note' }, 'Fantasy points use recorded historical games. Quarter timing in the gamecast is simulated.'),
+            league.phase === 'season' && league.weekStage === 'ready' && (!onPlaybackChange || warnings || logsMissing || !logIndex || !cards?.size || (league.settings.eraAdjusted && !eraFactors?.size)) && h('div', { className: 'tl-card tl-gameday-command' },
                 h('div', { className: 'tl-card-title' }, h('span', null, `Week ${league.currentWeek} Command`), h('small', null, `${pairs.length} matchups · ${league.settings.eraAdjusted ? 'era-adjusted' : 'raw scoring'}`)),
                 logsMissing && h('div', { className: 'tl-feedrow urgent' }, h('time', null, 'DATA'), h('p', null, 'Weekly game data has not loaded. Use Retry loading above.')),
                 !logsMissing && !logIndex && h('div', { className: 'tl-feedrow' }, h('time', null, 'DATA'), h('p', null, 'Loading historical games…')),
@@ -474,7 +516,9 @@
                     h('div', { style: { display: 'flex', gap: 8, marginTop: 8 } },
                         h('button', { className: 'tl-btn', onClick: onGoRoster }, 'FIX LINEUPS'),
                         h('button', { className: 'tl-btn', onClick: () => runGameDay(true) }, 'RUN ANYWAY'))),
-                !onPlaybackChange && h('button', { className: 'tl-btn primary', disabled: !canRun, onClick: () => runGameDay(false), style: { width: '100%', justifyContent: 'center', padding: '10px', marginTop: 4 } }, onlineMeta && onlineMeta.role !== 'commissioner' ? 'WAITING FOR COMMISSIONER' : '▶ RUN GAME DAY')),
+                !onPlaybackChange && h('button', { className: 'tl-btn primary', disabled: !canRun, onClick: () => runGameDay(false), style: { width: '100%', justifyContent: 'center', padding: '10px', marginTop: 4 } }, onlineMeta && onlineMeta.role !== 'commissioner' ? 'WAITING FOR COMMISSIONER' : '▶ RUN GAME DAY'))), lineups),
+            savedFinal && mailNotice,
+            phone && strip && h('details', { className: 'tl-gamecast-details' }, h('summary', null, 'All matchups'), strip),
             league.phase === 'complete' && h('div', { className: 'tl-card tl-gamecast-champion', style: { display: 'flex', alignItems: 'center', gap: 12 } },
                 h('span', { style: { fontSize: 24 } }, '🏆'),
                 h('div', null, h('span', { className: 'tl-label', style: { display: 'block' } }, 'Season Complete — Champion'), h('strong', { style: { fontFamily: 'var(--font-title)', fontSize: 18 } }, champion ?? 'Unknown')), onGoCeremony && h('button', { className: 'tl-btn primary', onClick: onGoCeremony }, 'CHAMPIONSHIP CEREMONY')),

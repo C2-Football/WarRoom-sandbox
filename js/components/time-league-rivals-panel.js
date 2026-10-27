@@ -28,6 +28,46 @@
         return (window.App.TimeLeagueRivals?.messagesFor(league, teamId, { throughWeek }) || [])
             .filter(message => message.toTeamId === teamId && !ids.includes(message.id));
     }
+    // Planning decisions are already known when the following game begins.
+    // A replay cap hides later decisions without erasing that pregame context.
+    function tradesForConversation(league, teamId, otherTeamId, throughWeek) {
+        if (!league.teams.some(team => team.teamId === teamId && team.manager === 'human')) return [];
+        const actionWeek = Math.max(1, league.currentWeek - (league.weekStage === 'postgame' ? 1 : 0));
+        const horizon = Number.isInteger(throughWeek) ? Math.min(actionWeek, throughWeek + 1) : actionWeek;
+        const names = new Map();
+        const remember = entry => { if (entry?.entryId && entry.name) names.set(entry.entryId, entry.name); };
+        (league.draftPicks || []).forEach(remember);
+        (league.finalizedWeeks || []).filter(week => !Number.isInteger(throughWeek) || week.week <= throughWeek).forEach(week => {
+            (week.results || []).forEach(result => [...(result.starters || []), ...(result.bench || [])].forEach(remember));
+            (week.playerProduction || []).forEach(remember);
+        });
+        league.teams.forEach(team => (team.roster || []).forEach(remember));
+        return (league.trades || []).filter(trade =>
+            ((trade.fromTeamId === teamId && trade.toTeamId === otherTeamId) || (trade.toTeamId === teamId && trade.fromTeamId === otherTeamId))
+            && (trade.week || 1) <= horizon && (!trade.respondedWeek || trade.respondedWeek <= horizon)
+            && ['pending', 'accepted', 'rejected', 'withdrawn'].includes(trade.status))
+            .map((trade, index) => ({
+                trade, index,
+                sent: trade.fromTeamId === teamId,
+                status: trade.status === 'pending' ? trade.deferredUntilWeek > horizon ? `Deferred until Week ${trade.deferredUntilWeek}` : trade.fromTeamId === teamId ? 'Awaiting their response' : 'Awaiting your response'
+                    : trade.status === 'accepted' ? 'Accepted' : trade.status === 'rejected' ? 'Rejected' : 'Withdrawn',
+                give: (trade.giveEntryIds || []).map(id => names.get(id) || 'Unavailable player'),
+                receive: (trade.receiveEntryIds || []).map(id => names.get(id) || 'Unavailable player'),
+            })).sort((a, b) => (b.trade.respondedWeek || b.trade.week || 1) - (a.trade.respondedWeek || a.trade.week || 1) || b.index - a.index);
+    }
+    function ConversationTrades({ rows, otherName, onTrades, onNavigate }) {
+        if (!rows.length) return null;
+        const pending = rows.filter(row => row.trade.status === 'pending').length;
+        return h('details', { className: 'tl-chat-trades' },
+            h('summary', null, `Trade proposals · ${rows.length}`, h('span', null, pending ? `${pending} pending` : 'Saved outcomes')),
+            h('div', { className: 'tl-chat-trade-list', role: 'region', 'aria-label': `Trades with ${otherName}` }, rows.map(row => h('article', { key: row.trade.tradeId, className: 'tl-chat-proposal', 'aria-label': `${row.sent ? 'Sent' : 'Received'} trade · ${row.status}` },
+                h('header', null, h('small', null, `${row.sent ? 'You proposed' : `${otherName} proposed`} · Week ${row.trade.week || 1}`), h('strong', null, row.status)),
+                h('dl', null,
+                    h('div', null, h('dt', null, 'You send'), h('dd', null, (row.sent ? row.give : row.receive).join(', ') || 'No players recorded')),
+                    h('div', null, h('dt', null, 'You receive'), h('dd', null, (row.sent ? row.receive : row.give).join(', ') || 'No players recorded'))),
+                row.trade.respondedWeek ? h('small', { className: 'tl-chat-proposal-saved' }, `Outcome saved in Week ${row.trade.respondedWeek}`) : null,
+                (onTrades || onNavigate) ? h('button', { type: 'button', className: 'tl-chat-trade', onClick: () => onTrades ? onTrades(row.trade.tradeId) : onNavigate('trades'), 'aria-label': `Review ${row.sent ? 'sent' : 'received'} trade with ${otherName} from Week ${row.trade.week || 1}` }, 'Review trade →') : null))));
+    }
     function WrTimeLeagueMailNotice({ league, message, count, onOpen }) {
         const sender = league.teams.find(team => team.teamId === message?.fromTeamId);
         if (!sender) return null;
@@ -38,7 +78,7 @@
                 h('span', { className: 'tl-mail-notice-link', 'aria-hidden': true }, 'Read & reply →')),
             count > 1 ? h('button', { type: 'button', className: 'tl-mail-notice-all', onClick: () => onOpen() }, `${count} unread · Open inbox`) : null);
     }
-    window.TimeLeagueMail = { readKey, readIds, unreadMessages, presentation };
+    window.TimeLeagueMail = { readKey, readIds, unreadMessages, presentation, tradesForConversation };
     window.WrTimeLeagueMailNotice = WrTimeLeagueMailNotice;
     function WrTimeLeagueRivalsPanel({ league, teamId, throughWeek, onTrades, compact = false, onNavigate, onSend, saving = false, isPrivate = false, threadRequest, onOpenThread, onRead }) {
         const R = window.App.TimeLeagueRivals;
@@ -69,6 +109,7 @@
         const unread = messages.filter(message => !read.includes(message.id)).length;
         const selectedId = selection?.key === storageKey ? selection.teamId : null;
         const active = threads.find(thread => thread.team.teamId === selectedId) || threads[0];
+        const activeTrades = active ? tradesForConversation(league, teamId, active.team.teamId, throughWeek) : [];
         const isTyping = mail.typing.some(message => message.fromTeamId === active?.team.teamId && message.toTeamId === teamId);
         const draftKey = `${storageKey}:${active?.team.teamId || ''}`;
         const draft = drafts[draftKey] || { text: '', tone: 'neutral', messageId: '' };
@@ -172,8 +213,10 @@
                 h('div', { className: 'tl-inbox-title' }, h('h2', null, 'Rival mail'), unread ? h('span', { className: 'tl-chat-unread' }, unread) : null),
                 h('nav', { className: 'tl-inbox-list', 'aria-label': 'Conversations' }, threads.map(thread => {
                     const count = thread.messages.filter(message => message.toTeamId === teamId && !read.includes(message.id)).length;
+                    const trades = tradesForConversation(league, teamId, thread.team.teamId, throughWeek);
+                    const tradePreview = trades.find(row => row.trade.status === 'pending') || trades[0];
                     return h('button', { type: 'button', key: thread.team.teamId, className: `tl-inbox-owner${active === thread ? ' is-active' : ''}`, onClick: () => open(thread), 'aria-current': active === thread ? 'true' : undefined },
-                        avatar(thread.team), h('span', { className: 'tl-inbox-owner-copy' }, h('strong', null, thread.team.name), h('span', null, thread.latest ? `${thread.latest.fromTeamId === teamId ? 'You: ' : ''}${thread.latest.text}` : 'Start a conversation')),
+                        avatar(thread.team), h('span', { className: 'tl-inbox-owner-copy' }, h('strong', null, thread.team.name), h('span', null, tradePreview ? `Trade · ${tradePreview.status}` : thread.latest ? `${thread.latest.fromTeamId === teamId ? 'You: ' : ''}${thread.latest.text}` : 'Start a conversation')),
                         count ? h('span', { className: 'tl-chat-unread', 'aria-label': `${count} unread` }, count) : null);
                 }))),
             active ? h('div', { className: 'tl-chat' },
@@ -188,6 +231,7 @@
                     h('span', { className: 'tl-relationship-midpoint' }),
                     h('span', { className: 'tl-relationship-marker', style: { left: `${affinity / 12 * 100}%` } })),
                 h('div', { className: 'tl-relationship-labels', 'aria-hidden': true }, h('span', null, 'Hot rival'), h('span', null, 'Neutral'), h('span', null, 'Friend'))) : null,
+                h(ConversationTrades, { rows: activeTrades, otherName: active.team.name, onTrades, onNavigate }),
                 h('div', { className: 'tl-chat-history', role: 'log', 'aria-label': `Conversation with ${active.team.name}`, 'aria-live': 'polite', 'aria-relevant': 'additions text' },
                     active.profile ? h('details', { className: 'tl-rival-profile' }, h('summary', null, `At the other desk · ${active.strategy?.label || 'Their approach'}`),
                         h('p', null, active.strategy?.reason), h('dl', null,

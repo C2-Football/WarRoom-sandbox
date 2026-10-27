@@ -88,7 +88,8 @@ const choices = tree => byClass(tree, 'tl-roster-candidate').map(node => node.pr
     assert.equal(applied.length, callsBeforeNoOp, 'No-op fills never write a save');
     league = { ...filled, settings: { ...filled.settings, rosterSlots: { ...filled.settings.rosterSlots, DEF: 0 } } };
     reset(); assert(button(render(), 'Fill empty slots').props.disabled);
-    assert(text(byClass(render(), 'tl-roster-fill-help')).includes('Every starting slot is occupied'));
+    assert.equal(byClass(render(), 'tl-roster-fill-help').length, 0, 'A full lineup does not add occupied-slot filler');
+    assert(button(render(), 'Fill empty slots').props.title.includes('Every starting slot is occupied'), 'The disabled action retains its accessible explanation');
     league = { ...originalLeague, weekStage: 'ready' };
     reset(); assert(button(render(), 'Fill empty slots').props.disabled);
     await button(render(), 'Fill empty slots').props.onClick();
@@ -122,7 +123,7 @@ const choices = tree => byClass(tree, 'tl-roster-candidate').map(node => node.pr
     assert.equal(byClass(tree, 'tl-roster-dossier').length, 0, 'No empty scouting column on a roster visit');
     assert.equal(byClass(tree, 'tl-lineup-hero').length, 0, 'Roster rows follow one compact toolbar');
     assert(byClass(tree, 'tl-roster-toolbar').length);
-    assert(walk(tree).find(node => node.type === 'details' && text(node).includes('Lineup tips')));
+    assert(!walk(tree).some(node => node.type === 'details' && text(node).includes('Lineup tips')), 'The repeated scouting advice panel is removed');
 
     button(tree, 'Move Steve Young').props.onClick();
     tree = render();
@@ -249,7 +250,8 @@ const choices = tree => byClass(tree, 'tl-roster-candidate').map(node => node.pr
     const currentKey = S.gameLogKey(entries[0].identity, 1994, 3), currentLog = logs.get(currentKey);
     logs.delete(currentKey); tree = render();
     assert(text(byClass(tree, 'tl-roster-signals')).includes('No recorded game'));
-    assert(text(byClass(tree, 'tl-roster-game-warning')).includes('Steve Young') && text(byClass(tree, 'tl-roster-game-warning')).includes('legal starters'), 'Current zero-game starters are named before lock without becoming illegal');
+    assert(text(byClass(tree, 'tl-roster-game-warning')).includes('Steve Young') && text(byClass(tree, 'tl-roster-game-warning')).includes('0 pts'), 'The compact warning names current zero-game starters and their actual points');
+    assert(!E.lineupProblems(league, league.teams[0].teamId).some(problem => /no recorded|zero points/i.test(problem)), 'A missing game does not become a new lineup blocker');
     button(tree, 'Compare replacements for Steve Young').props.onClick();
     assert(text(byClass(render(), 'tl-roster-move-sheet')).includes('Move Steve Young'), 'The visible advisory opens the same legal replacement chooser');
     button(render(), 'Close lineup choices').props.onClick();
@@ -307,8 +309,9 @@ const choices = tree => byClass(tree, 'tl-roster-candidate').map(node => node.pr
     assert.equal(waiverSignals.length, 3);
     assert(waiverSignals.every(row => text(row).includes('Avg pts / game') && text(row).includes('W3 game rating')), 'Free agents carry directly visible comparable game average and rating');
     assert(text(waiverSignals).includes('100.0') && text(waiverSignals).includes('No games yet'), 'Waiver averages use completed games, with no-game players shown honestly');
-    assert.deepEqual(byClass(wire, 'tl-waiver-score').map(node => node.children[0]), ['20.0', '5.0', '-2.0'], 'Free agents rank by points still playable, including negative scores');
-    assert(text(byClass(wire, 'tl-waiver-score')[0]).includes('120.0 total'), 'Already-played points only appear in the season total');
+    const wireRemaining = byClass(wire, 'tl-waiver-score').filter(node => node.type === 'td');
+    assert.deepEqual(wireRemaining.map(node => node.children[0]), ['20.0', '5.0', '-2.0'], 'Free agents rank by points still playable, including negative scores');
+    assert(text(wireRemaining[0]).includes('120.0 total'), 'The historical season total stays separate from remaining points');
     button(tree, 'Claim Free WR').props.onClick(); tree = render({ section: 'waivers' });
     assert(text(byClass(tree, 'tl-waiver-preview')).includes('20.0') && text(byClass(tree, 'tl-waiver-preview')).includes('120.0'), 'Claim builder carries the same remaining and total points');
     assert(text(byClass(tree, 'tl-waiver-preview')).includes('Vault weeks left') && !text(byClass(tree, 'tl-waiver-preview')).includes('Games left'));
@@ -347,7 +350,7 @@ const choices = tree => byClass(tree, 'tl-roster-candidate').map(node => node.pr
     assert(text(byClass(tree, 'tl-waiver-preview')).includes('Estimated points left') && text(byClass(tree, 'tl-waiver-preview')).includes('Recorded season total'), 'New deck estimates are not represented as guaranteed future points');
     league = legacyLeague; E.waiverPreview = legacyPreview;
     tree = render({ section: 'waivers', logIndex: null });
-    assert(byClass(tree, 'tl-waiver-score').every(node => node.children[0] === '—'), 'Missing scoring data stays unknown rather than showing career-best points');
+    assert(byClass(tree, 'tl-waiver-score').filter(node => node.type === 'td').every(node => node.children[0] === '—'), 'Missing scoring data stays unknown rather than showing career-best points');
     reset(); tree = render({ section: 'waivers', waiverSlot: 'SUPER_FLEX' });
     wire = byClass(tree, 'tl-waiver-table')[0];
     assert(text(wire).includes('Free QB'));

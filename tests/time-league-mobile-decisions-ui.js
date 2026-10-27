@@ -47,8 +47,8 @@ async function test(name, fn) { reset(); await fn(); count++; console.log(`  ok 
         const all = walk(tree), brief = region(tree, 'Trade summary'), packages = region(tree, 'Selected trade packages');
         const pickers = all.find(node => hasClass(node, 'tl-trade-sides')), details = all.find(node => hasClass(node, 'tl-trade-comparison-details'));
         assert(all.indexOf(brief) < all.indexOf(packages)); assert(all.indexOf(packages) < all.indexOf(pickers)); assert(all.indexOf(pickers) < all.indexOf(details));
-        assert(copy(brief).includes('Reference scoring')); assert(copy(brief).includes('Current roster checks pass'));
-        assert(copy(brief).includes('received players enter your bench')); assert(copy(details).includes('not a forecast or acceptance guarantee'));
+        assert(copy(brief).includes('reference pts')); assert(copy(brief).includes('Value grade')); assert(copy(brief).includes('Current roster checks pass'));
+        assert(!copy(brief).includes('received players enter your bench')); assert(copy(details).includes('not a forecast or acceptance guarantee'));
         assert(copy(region(tree, 'Selected send package')).includes('0 QB')); assert(copy(region(tree, 'Selected receive package')).includes('1 QB'));
         for (const label of ['Selected send package', 'Selected receive package']) {
             assert(copy(region(tree, label)).includes('100.0')); assert(copy(region(tree, label)).includes('Reference points'));
@@ -75,7 +75,7 @@ async function test(name, fn) { reset(); await fn(); count++; console.log(`  ok 
         }
         for (const field of ['seed', 'hiddenYearAssignments', 'gameAssignments']) Object.defineProperty(league, field, { configurable: true, get() { throw new Error('Private assignment/deck was read'); } });
         let tree = render('trades'); region(tree, 'Select 0 QB').props.onChange(); region(tree, 'Select 1 QB').props.onChange(); tree = render('trades');
-        assert(copy(region(tree, 'Trade summary')).includes('Public averages')); assert(copy(region(tree, 'Selected send package')).includes('Reference scoring'));
+        assert(copy(region(tree, 'Trade summary')).includes('est. pts/game')); assert(copy(region(tree, 'Selected send package')).includes('Reference scoring'));
         assert(copy(tree).includes('Candidate archive · Reference scoring')); assert(!copy(tree).includes('projected wins')); assert(!copy(tree).includes('Acceptance estimate'));
         // The shared wire allocator checks whether an identity has an existing
         // assignment before using its public snapshot. Public snapshots omit

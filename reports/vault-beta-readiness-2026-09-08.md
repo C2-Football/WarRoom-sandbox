@@ -1,5 +1,88 @@
 # The Vault — beta readiness review
 
+## October 27, 2026 gameplay desks feedback pass
+
+Status: VERIFIED locally. Baseline checkpoint: `279131f`. Finite scope: the 15
+new Home, game-day, roster, waiver, trade and Messages comments. This pass makes
+no historical-data, scoring, save-schema or hosted publication changes.
+
+| Requirement | Status | Completion criterion |
+|---|---|---|
+| Home league Wire (1) | VERIFIED | Three event-driven headlines from actual visible results, trades, waivers or draft records; working destinations; actual Week 2 update verified |
+| Game-day columns (2) | VERIFIED | Score/controls beside all nine starter matchups; scored live and final lineup bottom 806.88px above the 827/819px docks at 1339×892 |
+| Roster cleanup/density (3–6) | VERIFIED | Marked prose/help removed; concise no-record status and Compare action retained; desktop rows measured 69.30px; actual Move/swap/lock worked |
+| Waiver repairs (7–8) | VERIFIED | Labels/numbers remain grouped without overlap; completed-Vault PTS column and phone totals; numeric zero, missing values and visible-week horizon covered |
+| Trade layout/value/acceptance (9–14) | VERIFIED | Owner DNA in a 250px right sidebar on desktop; marked filler removed; signed delta, value grade and shared current-rule AI acceptance read |
+| Trade proposals in Messages (15) | VERIFIED | Own-seat packages/status by counterpart; actual pending → Inbox and rejected → Trade Log links focused the exact saved offer |
+| Compatibility and interactive verification | VERIFIED | Final 79-command Vault suite, core 97/97, first-class 7/7, shared draft checks, lint/build; 48 responsive view/state checks and actual saved-week journey |
+
+The Wire derives its headlines from saved league events. It does not invent
+activity, expose another owner's pending offer or reveal an unwatched result.
+Exact finals/leaders remain expandable. The six-team Home Wire ends at 752.86px,
+above the action dock at the marked desktop size.
+
+Game day keeps scores, essential controls and both starting lineups together.
+Matchup analysis and scoring moments remain available through disclosures; the
+historical-statistics versus simulated-quarter explanation stays visible. Final
+scores retain two decimals, including narrow results such as 100.04–100.02.
+Final playback offers Replay/Close, returns focus to the matchup and restores
+the padded league header. Mail stays below the primary matchup, with existing
+header/dock unread actions still available.
+
+Interactive QA exposed a stale animation callback that advanced the clock after
+Pause. The playback loop now invalidates queued frames on pause, resume, pace
+changes and leaving the view. The regression fails before the repair and passes
+after it; actual browser playback held the same paused clock. Presentation never
+changes the already saved result.
+
+Trade value uses the existing comparison rules. Acceptance reuses the actual
+AI decision and public values; 108 persona/difficulty/package fixtures preserve
+the complete saved responses from `279131f`. This AI is deterministic, so the
+display honestly reports 0% or 100% under the current rule, not an invented
+midrange probability. Human, deferred, unavailable and blocked packages get no
+percentage. Comparison details explain the archive/observed basis. Messages
+derive proposal cards from saved trades and route to existing controls; they do
+not fabricate chat messages or create a second trade store.
+
+CUA/IAB testing used disposable `3038` data. A proposal survived reload as one
+offer, then its actual AI rejection matched the 0% preview and appeared in the
+correct conversation/history. A legal QB swap, lineup lock, game-day playback,
+scoring receipt, End week and named Resume all worked. The 86.60–89.86 result
+matched both nine-player sums and all six box scores remained unchanged after
+reload/replay. Week 2 Home showed real results and completed trades. User
+progress on `3037` was not used as a fixture.
+
+Home, Game day, Roster, Waivers, Trades and Messages were inspected at 390×844,
+430×932, 1024×1366, 1366×1024, 1339×892 and 1440×900, plus scored-live/final
+game-day states at each size. All 48 checks had no document horizontal overflow.
+The single-view game-day claim covers the standard nine-slot desktop matchup;
+phone, tablet portrait, expanded details and larger custom rosters scroll
+naturally. This is local Chromium viewport emulation. Hosted multiplayer,
+WebKit, physical devices and browser enlarged-text zoom are unverified in this
+pass. Existing online authorization/privacy contracts pass automated checks.
+
+No migration or recovery reset is required. Historical records, scoring and
+settled outcomes stay unchanged. Existing future-work priorities below remain;
+no new release blockers were found in this finite feedback pass.
+
+Evidence: [source hashes, checks and interactive results](public-readiness/evidence/vault-desks-20261027.json).
+Logs/captures: `output/playwright/vault-desks-20261027/`.
+Representative [final matchup](../output/playwright/vault-desks-20261027/gameday-final-1339x892.png),
+[Week 2 Wire](../output/playwright/vault-desks-20261027/home-wire-week2-1339x892.png),
+[trade grade/acceptance](../output/playwright/vault-desks-20261027/trade-positive-1339x892.png),
+[proposal in Messages](../output/playwright/vault-desks-20261027/messages-proposal-1339x892.png),
+[phone waivers](../output/playwright/vault-desks-20261027/waivers-390x844.png).
+Earlier `attempt-*` and `before-density-fix` images record repaired findings,
+not final visual evidence.
+
+Run with `node scripts/serve-static.cjs --port=3037 --compile`; inspect
+`http://127.0.0.1:3037/?vault=1`. Verification used Node 20.20.2:
+`npm run test:timeleague`, `npm run test:core`, `npm run test:first-class`,
+`npm run test:game-draft-table`, ESLint on the six changed runtime scripts and
+`node scripts/build-deploy.cjs`. All pass. Build compiles 161 JSX scripts and
+minifies 300 modules. Captured browser errors/warnings were empty. No push,
+backend update or deployment was performed.
+
 ## October 27, 2026 desktop feedback pass
 
 Status: VERIFIED locally. Baseline: `9f7e5d5`. Scope: the nine new annotated
