@@ -139,3 +139,21 @@
   .tl-draft-class-body { padding:0 14px 4px; }
   .tl-draft-class-team strong { font-size:19px; }
 }
+
+/* One draft bug owns the clock, turn, current manager and public room trend. */
+.tl-root.tl-play .tl-on-clock .tl-draft-turn { margin:6px 0 8px; gap:2px; }
+.tl-root.tl-play .tl-on-clock .tl-draft-turn-footer { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px 14px; align-items:center; }
+.tl-root.tl-play .tl-on-clock .tl-draft-current-manager { min-width:0; }
+.tl-root.tl-play .tl-draft-current-manager .tl-draft-seat-label { margin:0 0 2px; color:var(--gold); font-weight:700; }
+.tl-root.tl-play .tl-on-clock .tl-draft-room-run { min-width:0; max-width:190px; padding-left:12px; }
+.tl-root.tl-play .tl-on-clock .tl-draft-room-run strong { font-size:13px; line-height:1.35; }
+.tl-root.tl-play .tl-on-clock .tl-draft-room-run span { margin-top:2px; }
+.tl-root.tl-play .tl-on-clock .tl-draft-sim-actions { grid-column:1 / -1; justify-content:flex-end; }
+.tl-root.tl-play .tl-on-clock .tl-draft-sim-actions .tl-btn { min-height:44px; }
+.tl-root.tl-play .tl-draft-feed-era { display:block; margin-top:2px; color:var(--gold); font-size:12px; line-height:1.35; }
+.tl-root.tl-play .tl-scout-file .tl-era-years { margin:8px 0; }
+.tl-root.tl-play .tl-scout-file .tl-scout-seasons { margin-top:8px; }
+@media(min-width:768px) {
+  .tl-root.tl-play .tl-era-review > summary { padding-block:7px; min-height:44px; gap:8px 12px; }
+  .tl-root.tl-play .tl-era-review-chips { gap:4px 10px; }
+}

@@ -19,14 +19,19 @@ assert.equal(TimeLeagueUtils.defaultSeats()[0].name,'Commander');
 identity={name:'Northern Lights',helmet:App.TimeLeagueHelmet.presetHelmet('ice-speed'),primaryColor:'#113355',secondaryColor:'#AADDFF',backdrop:'aurora'};
 assert.equal(TimeLeagueUtils.defaultSeats()[0].name,identity.name);
 const walk=node=>!node||typeof node!=='object'?[]:Array.isArray(node)?node.flatMap(walk):[node,...walk(node.children)];
-const wrapper=WrTimeLeagueSetupPanel({index:[],onlineIndex:[]});
+let wrapper=WrTimeLeagueSetupPanel({index:[],onlineIndex:[]});
+walk(wrapper).find(node=>node.type==='button'&&JSON.stringify(node.children).includes('Start new')).props.onClick();
+stateIndex=0;refIndex=0;
+wrapper=WrTimeLeagueSetupPanel({index:[],onlineIndex:[]});
 const Builder=walk(wrapper).find(node=>typeof node.type==='function'&&node.type.name==='LeagueBuilder').type;
+states=[];refs=[];
 const button=(tree,label)=>walk(tree).find(node=>node.type==='button'&&JSON.stringify(node.children).includes(label));
 let solo,online;
 const props={onCreate:input=>{solo=input;},onCreateOnline:async input=>{online=input;return{ok:true,rowId:'shared'};},onOpenOnline:()=>{},onlineIndexState:'ready'};
 const render=()=>{stateIndex=0;refIndex=0;effects=[];return Builder(props);};
 (async()=>{
     let tree=render();
+    while(tree.props['data-setup-step']<4){button(tree,'Next →').props.onClick();tree=render();}
     await button(tree,'START SOLO DRAFT').props.onClick();
     assert.equal(solo.seats[0].name,'Northern Lights');
     assert.equal(solo.seats[0].backdrop,'aurora');

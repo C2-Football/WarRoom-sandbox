@@ -1,0 +1,440 @@
+{
+  "status": "passed",
+  "scope": "Local compiled preview at3038; real CUA IAB controls and DOM observations; disposable solo save only. No hosted invitation claim, friends creation, account profile save, physical device or WebKit claim.",
+  "baseline": "b3a3ca7",
+  "views": 6,
+  "menu": [
+    {
+      "guestPanel": false,
+      "headerBottom": 64,
+      "headingTop": 135.296875,
+      "height": 844,
+      "options": [
+        {
+          "bottom": 386.0078125,
+          "height": 80,
+          "label": "Start new"
+        },
+        {
+          "bottom": 474.0078125,
+          "height": 80,
+          "label": "Resume"
+        },
+        {
+          "bottom": 574.1953125,
+          "height": 92.1875,
+          "label": "Join league"
+        },
+        {
+          "bottom": 674.3828125,
+          "height": 92.1875,
+          "label": "Settings"
+        }
+      ],
+      "scrollWidth": 375,
+      "width": 390
+    },
+    {
+      "guestPanel": false,
+      "headerBottom": 64,
+      "headingTop": 135.296875,
+      "height": 932,
+      "options": [
+        {
+          "bottom": 348.5703125,
+          "height": 80,
+          "label": "Start new"
+        },
+        {
+          "bottom": 436.5703125,
+          "height": 80,
+          "label": "Resume"
+        },
+        {
+          "bottom": 524.5703125,
+          "height": 80,
+          "label": "Join league"
+        },
+        {
+          "bottom": 612.5703125,
+          "height": 80,
+          "label": "Settings"
+        }
+      ],
+      "scrollWidth": 415,
+      "width": 430
+    },
+    {
+      "guestPanel": false,
+      "headerBottom": 64,
+      "headingTop": 135.296875,
+      "height": 915,
+      "options": [
+        {
+          "bottom": 348.5703125,
+          "height": 80,
+          "label": "Start new"
+        },
+        {
+          "bottom": 436.5703125,
+          "height": 80,
+          "label": "Resume"
+        },
+        {
+          "bottom": 524.5703125,
+          "height": 80,
+          "label": "Join league"
+        },
+        {
+          "bottom": 612.5703125,
+          "height": 80,
+          "label": "Settings"
+        }
+      ],
+      "scrollWidth": 548,
+      "width": 563
+    },
+    {
+      "guestPanel": false,
+      "headerBottom": 74,
+      "headingTop": 293.5625,
+      "height": 1366,
+      "options": [
+        {
+          "bottom": 247,
+          "height": 92,
+          "label": "Start new"
+        },
+        {
+          "bottom": 349,
+          "height": 92,
+          "label": "Resume"
+        },
+        {
+          "bottom": 451,
+          "height": 92,
+          "label": "Join league"
+        },
+        {
+          "bottom": 553,
+          "height": 92,
+          "label": "Settings"
+        }
+      ],
+      "scrollWidth": 1009,
+      "width": 1024
+    },
+    {
+      "guestPanel": false,
+      "headerBottom": 74,
+      "headingTop": 280,
+      "height": 1024,
+      "options": [
+        {
+          "bottom": 247,
+          "height": 92,
+          "label": "Start new"
+        },
+        {
+          "bottom": 349,
+          "height": 92,
+          "label": "Resume"
+        },
+        {
+          "bottom": 451,
+          "height": 92,
+          "label": "Join league"
+        },
+        {
+          "bottom": 553,
+          "height": 92,
+          "label": "Settings"
+        }
+      ],
+      "scrollWidth": 1351,
+      "width": 1366
+    },
+    {
+      "guestPanel": false,
+      "headerBottom": 74,
+      "headingTop": 280,
+      "height": 900,
+      "options": [
+        {
+          "bottom": 247,
+          "height": 92,
+          "label": "Start new"
+        },
+        {
+          "bottom": 349,
+          "height": 92,
+          "label": "Resume"
+        },
+        {
+          "bottom": 451,
+          "height": 92,
+          "label": "Join league"
+        },
+        {
+          "bottom": 553,
+          "height": 92,
+          "label": "Settings"
+        }
+      ],
+      "scrollWidth": 1425,
+      "width": 1440
+    }
+  ],
+  "steps": [
+    {
+      "createVisible": false,
+      "headerBottom": 64,
+      "heading": "How will you play?",
+      "headingTop": 119,
+      "height": 915,
+      "nav": {
+        "bottom": 844,
+        "top": 775
+      },
+      "scrollWidth": 548,
+      "step": 0,
+      "visibleSections": 1,
+      "width": 563
+    },
+    {
+      "createVisible": false,
+      "headerBottom": 64,
+      "heading": "Choose your era",
+      "headingTop": 119,
+      "height": 915,
+      "nav": {
+        "bottom": 844,
+        "top": 775
+      },
+      "scrollWidth": 548,
+      "step": 1,
+      "visibleSections": 1,
+      "width": 563
+    },
+    {
+      "createVisible": false,
+      "headerBottom": 64,
+      "heading": "Set your draft",
+      "headingTop": 119,
+      "height": 915,
+      "nav": {
+        "bottom": 844,
+        "top": 775
+      },
+      "scrollWidth": 548,
+      "step": 2,
+      "visibleSections": 1,
+      "width": 563
+    },
+    {
+      "createVisible": false,
+      "headerBottom": 64,
+      "heading": "Make it your team",
+      "headingTop": 119,
+      "height": 915,
+      "nav": {
+        "bottom": 844,
+        "top": 775
+      },
+      "scrollWidth": 548,
+      "step": 3,
+      "visibleSections": 1,
+      "width": 563
+    },
+    {
+      "createVisible": true,
+      "headerBottom": 64,
+      "heading": "Ready for the draft?",
+      "headingTop": 119,
+      "height": 915,
+      "nav": {
+        "bottom": 844,
+        "top": 775
+      },
+      "scrollWidth": 548,
+      "step": 4,
+      "visibleSections": 1,
+      "width": 563
+    }
+  ],
+  "review": [
+    {
+      "create": {
+        "bottom": 704,
+        "height": 48,
+        "top": 656
+      },
+      "headerBottom": 64,
+      "headingTop": 119,
+      "height": 844,
+      "navBottom": 773,
+      "scrollWidth": 375,
+      "width": 390
+    },
+    {
+      "create": {
+        "bottom": 792,
+        "height": 48,
+        "top": 744
+      },
+      "headerBottom": 64,
+      "headingTop": 119,
+      "height": 932,
+      "navBottom": 861,
+      "scrollWidth": 415,
+      "width": 430
+    },
+    {
+      "create": {
+        "bottom": 775,
+        "height": 48,
+        "top": 727
+      },
+      "headerBottom": 64,
+      "headingTop": 119,
+      "height": 915,
+      "navBottom": 844,
+      "scrollWidth": 548,
+      "width": 563
+    },
+    {
+      "create": {
+        "bottom": 782,
+        "height": 48,
+        "top": 734
+      },
+      "headerBottom": 74,
+      "headingTop": 114,
+      "height": 1366,
+      "navBottom": 863,
+      "scrollWidth": 1009,
+      "width": 1024
+    },
+    {
+      "create": {
+        "bottom": 782,
+        "height": 48,
+        "top": 734
+      },
+      "headerBottom": 74,
+      "headingTop": 114,
+      "height": 1024,
+      "navBottom": 863,
+      "scrollWidth": 1351,
+      "width": 1366
+    },
+    {
+      "create": {
+        "bottom": 748,
+        "height": 48,
+        "top": 700
+      },
+      "headerBottom": 74,
+      "headingTop": 114,
+      "height": 900,
+      "navBottom": 829,
+      "scrollWidth": 1425,
+      "width": 1440
+    }
+  ],
+  "draft": [
+    {
+      "height": 844,
+      "opponentIntelVisible": false,
+      "scrollWidth": 375,
+      "tickerCount": 1,
+      "width": 390
+    },
+    {
+      "height": 932,
+      "opponentIntelVisible": false,
+      "scrollWidth": 415,
+      "tickerCount": 1,
+      "width": 430
+    },
+    {
+      "height": 915,
+      "opponentIntelVisible": false,
+      "scrollWidth": 548,
+      "tickerCount": 1,
+      "width": 563
+    },
+    {
+      "height": 1366,
+      "opponentIntelVisible": false,
+      "scrollWidth": 1009,
+      "tickerCount": 1,
+      "width": 1024
+    },
+    {
+      "height": 1024,
+      "opponentIntelVisible": false,
+      "scrollWidth": 1351,
+      "tickerCount": 1,
+      "width": 1366
+    },
+    {
+      "height": 900,
+      "opponentIntelVisible": false,
+      "scrollWidth": 1425,
+      "tickerCount": 1,
+      "width": 1440
+    }
+  ],
+  "scout": {
+    "availableYearsVisible": false,
+    "missingBiography": false,
+    "revealTutorial": false,
+    "archiveFooter": false,
+    "recordedGPDisclaimer": false,
+    "gpHeader": true
+  },
+  "journey": {
+    "league": "Menu QA \u00b7 October 26",
+    "team": "Archive Owls",
+    "mode": "Solo / Position Roulette / Hidden Years / Snake / six teams /72picks",
+    "clock": "Manual order, creatorfirst, no pick timer; paused afterfour saved picks",
+    "selected": "LaDainian Tomlinson",
+    "humanPicks": 1,
+    "totalSavedPicks": 4,
+    "publicPickEra": "2000s",
+    "backRetainedNameAndClock": true,
+    "reloadedToMenu": true,
+    "resumeSelectedExactLeague": true,
+    "recentPicksPreserved": true,
+    "rosterPreserved": true,
+    "transientReceiptNote": "The temporary New pick highlight clears on reload; normalized visible roster, counts and names match.",
+    "settings": "Existing device profile controls opened; no Save action",
+    "join": "Guest restoration only inside Join; invalid spaced invitation shows recovery and performs no navigation",
+    "secondSetup": "Walked allfive pages without creating; original saved league stillfour of72picks"
+  },
+  "sourceChangesAfterFirstChecks": "A heading scroll-anchor issue found in screenshots was fixed; allfive steps then keep headingTop119/headerBottom64 and footerbottom844 at563x915. Focused menu/setup tests reran afterfix.",
+  "attempts": "Native malformed-dimension and initial scroll-offset captures are preserved with attempt- prefixes and excluded from passing matrices.",
+  "viewportOverrideRestored": true,
+  "finishedAt": "2026-10-27T01:11:23.846Z",
+  "sourceSha256": {
+    "js/components/time-league-setup-panel.js": "713d4178ff8465098c007cb67883dc2e48a0c36736522e082001bd34de08b0d9",
+    "js/components/time-league-draft-panel.js": "358362cedc9843b67f452e9c8b1b77ae6ca76894596d4629dcfcf6ce96b3e85e",
+    "js/tabs/time-league.js": "1479111fcaefd3eb07d48649967d773e247245555e53a6d152127caa436f58fb",
+    "time-league-focus.css": "81bda28e112d0a2c384cc907fd623a364b87efd9979410a97a73062049a81216",
+    "time-league-mobile.css": "df7ba4093b13e1ac704b00e3bbb9b6fb6d62c8d17fe621c9d077fcf159e7e6ba",
+    "time-league-draft-experience.css": "df51f9d38decd038aab490a79e8dbdc84ae3d8a540ef892919334d6676372987",
+    "time-league-draft-controls.css": "e4e120da816ff9b31d1ba6ea2c2252696383c5866693a718f1cb29b6d2f908bd"
+  },
+  "checks": {
+    "vaultCommands": 76,
+    "vaultSuite": "passed on official Node20.20.2; final scroll-only change followed by focused menu/setup reruns and interactive verification",
+    "entryMenuGroups": 9,
+    "core": "97/97 passed",
+    "firstClass": "7/7 passed",
+    "fullSourceESLint": "0 errors,46 warnings in unchanged source files",
+    "changedRuntimeESLint": "0 errors or warnings",
+    "build": "161 JSX scripts compiled,300 modules minified",
+    "acceptanceHarness": "Existing menu/Resume navigation updated and syntax checked; not browser-executed in this pass"
+  }
+}

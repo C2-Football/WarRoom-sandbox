@@ -44,15 +44,9 @@
         manager: playMode === 'friends' || index === 0 ? 'human' : 'ai',
     }));
 
-    // Native disclosures keep every setup choice reachable without a long phone form.
-    function SetupStep({ id, title, summary, first, children }) {
-        const phone = window.WR?.useViewport ? window.WR.useViewport().isPhone : false;
-        return h(phone ? 'details' : 'div', { className: 'tl-builder-section' + (phone ? ' tl-phone-step' : ''), id, ...(phone ? { open: Boolean(first) } : {}) },
-            phone && h('summary', null, h('strong', null, title), h('span', null, summary)), children);
-    }
-    function LobbyStory() {
-        const phone = window.WR?.useViewport ? window.WR.useViewport().isPhone : false;
-        return h(phone ? 'details' : 'div', { className: 'tl-lobby-story' }, phone && h('summary', null, 'How The Vault works'), h(VaultHero));
+    const SETUP_STEPS = ['Play', 'Era', 'Draft', 'Team', 'Review'];
+    function SetupStep({ id, active, children }) {
+        return h('section', { className: 'tl-builder-section tl-wizard-step', id, hidden: !active }, children);
     }
 
     function PersonaMeterRow({ label, value }) {
@@ -78,34 +72,6 @@
                     h(PersonaMeterRow, { label: 'AGGRESSION', value: persona.aggression }),
                     h(PersonaMeterRow, { label: 'PATIENCE', value: persona.patience }),
                     h(PersonaMeterRow, { label: 'RISK', value: persona.riskTolerance }))));
-    }
-
-    function VaultHero() {
-        const [revealed, setRevealed] = useState(false);
-        const years = ['1970', '1985', '1999', '2012', '2025'];
-        return h('section', { className: 'tl-lobby-hero' },
-            h('div', { className: 'tl-lobby-copy' },
-                h('div', { className: 'tl-hero-kicker' }, h('span', null, '✦'), ' THE HISTORICAL FANTASY GAME'),
-                h('h1', null, 'Football’s greats.', h('br'), h('em', null, 'Your season.')),
-                h('p', null, 'Draft the legends. Discover their seasons. Play 14 weeks for the championship.'),
-                h('a', { className: 'tl-btn primary tl-hero-cta', href: '#vault-setup-0', onClick: event => { event.preventDefault(); document.getElementById('vault-setup-0')?.scrollIntoView({ behavior: 'auto', block: 'start' }); } }, 'Create a league', h('span', { 'aria-hidden': 'true' }, '↗')),
-                h('div', { className: 'tl-hero-proof' },
-                    h('span', null, h('b', null, '50+'), ' seasons'),
-                    h('span', null, h('b', null, '14'), ' gameweeks'),
-                    h('span', null, h('b', null, '1'), ' champion'))),
-            h('div', { className: `tl-lobby-visual${revealed ? ' revealed' : ''}` },
-                h('div', { className: 'tl-stadium-glow' }),
-                h('div', { className: 'tl-visual-score' },
-                    h('span', { className: 'live' }, 'FROM THE ARCHIVE · SAMPLE CARDS'),
-                    h('div', null, h('b', null, revealed ? 'SEASONS REVEALED' : 'MYSTERY SEASONS'), h('strong', null, revealed ? '3 / 3' : '?'))),
-                h('div', { className: 'tl-card-fan' },
-                    [['QB', '1984', 'Dan Marino'], ['RB', '2006', 'LaDainian Tomlinson'], ['WR', '1995', 'Jerry Rice']].map(([position, year, player], index) => h('button', {
-                        key: position, type: 'button', className: `tl-mystery-card card-${index + 1}`,
-                        'aria-label': `${revealed ? 'Seal' : 'Reveal'} sample seasons`, 'aria-pressed': revealed,
-                        onClick: () => setRevealed(!revealed),
-                    }, h('span', null, position), h('b', null, revealed ? year : '????'), h('small', null, revealed ? 'SEASON REVEALED' : 'TAP TO REVEAL'),
-                    h('strong', { className: 'tl-demo-player' }, player)))),
-                h('div', { className: 'tl-era-track' }, years.map((year) => h('span', { key: year }, year)))));
     }
 
     function LeagueCard({ entry, online, onOpen, onDelete }) {
@@ -139,7 +105,7 @@
         if (!index.length && !onlineIndex.length) return null;
         return h('section', { className: 'tl-season-shelf' },
             h('div', { className: 'tl-section-heading' },
-                h('div', null, h('span', { className: 'tl-eyebrow' }, 'BACK IN THE HUDDLE'), h('h2', null, 'Continue playing')),
+                h('div', null, h('span', { className: 'tl-eyebrow' }, 'BACK IN THE HUDDLE'), h('h2', null, 'Saved leagues')),
                 h('small', null, `${index.length + onlineIndex.length} saved ${index.length + onlineIndex.length === 1 ? 'league' : 'leagues'}`)),
             h('div', { className: 'tl-season-list' },
                 index.map((entry) => h(LeagueCard, { key: entry.leagueId, entry, onOpen: () => onOpen(entry.leagueId), onDelete })),
@@ -166,7 +132,7 @@
                 h('span', null, option.blurb)));
     }
 
-    function LeagueBuilder({ onCreate, onCreateOnline, onOpenOnline, onlineIndexState }) {
+    function LeagueBuilder({ onCreate, onCreateOnline, onOpenOnline, onlineIndexState, onBack, active = true }) {
         const [playMode, setPlayMode] = useState('solo');
         const [creating, setCreating] = useState(false);
         const [createError, setCreateError] = useState(null);
@@ -295,7 +261,7 @@
         const toggleDecade = (id) => setEraDecades((previous) => (previous.includes(id) ? previous.filter((item) => item !== id) : [...previous, id]));
 
         const startLeague = async () => {
-            if (createInFlight.current) return;
+            if (step !== 4 || createInFlight.current) return;
             createInFlight.current = true;
             setCreating(true);
             setCreateError(null);
@@ -330,16 +296,34 @@
 
         const selectedEra = ERA_MODE_OPTIONS.find((option) => option.id === eraMode) ?? ERA_MODE_OPTIONS[0];
         const opponentSeats = seats.slice(1);
-        return h('section', { className: 'tl-builder', 'aria-busy': creating },
-            h('div', { className: 'tl-builder-head' },
-                h('div', null, h('span', { className: 'tl-eyebrow' }, 'THE VAULT'), h('h2', null, 'Start your season')),
-                h('div', { className: 'tl-flow-steps', 'aria-label': 'League setup progress' },
-                    ['PLAY', 'DRAFT', 'TEAM'].map((label, index) => h('a', { key: label, href: `#vault-setup-${index}`, className: 'active' }, h('b', null, index + 1), label)))),
-            h('p', { className: 'tl-draft-premise' }, hiddenYears
+        const [step, setStep] = useState(0);
+        const [furthestStep, setFurthestStep] = useState(0);
+        const heading = useRef(null);
+        const body = useRef(null);
+        useEffect(() => {
+            if (!active) return;
+            if (body.current) body.current.scrollTop = 0;
+            body.current?.closest?.('.tl-lobby-wrap')?.scrollIntoView({ block: 'start', behavior: 'auto' });
+            heading.current?.focus({ preventScroll: true });
+        }, [step, active]);
+        const goToStep = next => {
+            if (creating) return;
+            setStep(next);
+            setFurthestStep(previous => Math.max(previous, next));
+        };
+        return h('section', { className: 'tl-builder tl-wizard', 'aria-busy': creating, 'data-setup-step': step },
+            h('header', { className: 'tl-builder-head' },
+                h('div', null, h('span', { className: 'tl-eyebrow' }, `START NEW · STEP ${step + 1} OF ${SETUP_STEPS.length}`),
+                    h('h2', { ref: heading, tabIndex: -1 }, SETUP_STEPS[step] === 'Play' ? 'How will you play?' : SETUP_STEPS[step] === 'Era' ? 'Choose your era' : SETUP_STEPS[step] === 'Draft' ? 'Set your draft' : SETUP_STEPS[step] === 'Team' ? 'Make it your team' : 'Ready for the draft?')),
+                h('nav', { className: 'tl-wizard-progress', 'aria-label': 'League setup progress' },
+                    SETUP_STEPS.map((label, index) => h('button', { key: label, type: 'button', disabled: creating || index > furthestStep,
+                        'aria-current': step === index ? 'step' : undefined, 'aria-label': `Step ${index + 1}: ${label}`, onClick: () => goToStep(index) }, h('b', null, index + 1), h('span', null, label))))),
+            h('p', { className: 'tl-draft-premise', hidden: step !== 0 }, hiddenYears
                 ? 'Draft a player. The Vault assigns one eligible season and keeps its year hidden. Discover it through recorded performances as you build your team.'
                 : 'Draft a player. The Vault assigns one eligible season, revealed after the draft. Set your lineup and compete using recorded historical performances.'),
 
-            h(SetupStep, { id: 'vault-setup-0', title: 'Play mode', summary: playMode === 'friends' ? 'With friends' : 'Solo · AI rivals', first: true },
+            h('div', { className: 'tl-wizard-body', ref: body },
+            h(SetupStep, { id: 'vault-setup-0', active: step === 0 },
                 h('div', { className: 'tl-question' }, h('span', null, '1'), h('div', null, h('h3', null, 'Choose your rivals'), h('p', null, 'A solo season or a private league.'))),
                 h('div', { className: 'tl-play-grid' },
                     h(PlayModeCard, { id: 'solo', selected: playMode === 'solo', onClick: () => choosePlayMode('solo') }),
@@ -349,7 +333,7 @@
                     h('p', null, h('b', null, 'Sign in to host a friends league.'), ' Your league and every move will sync live across devices.'),
                     h('a', { className: 'tl-btn', href: 'login.html?vault=1' }, 'SIGN IN'))),
 
-            h(SetupStep, { id: 'vault-setup-1', title: 'Era & draft', summary: `${selectedEra.label} · ${DRAFT_FORMATS.find(format => format.id === draftFormat).label}`, first: false },
+            h(SetupStep, { id: 'vault-setup-1', active: step === 1 },
                 h('div', { className: 'tl-question' }, h('span', null, '2'), h('div', null, h('h3', null, 'Choose your era'), h('p', null, 'You draft the player. The Vault reveals the season.'))),
                 h('div', { className: 'tl-era-mode-grid' }, ERA_MODE_OPTIONS.map((option) => h(EraModeCard, {
                     key: option.id, option, selected: eraMode === option.id, onClick: () => setEraMode(option.id),
@@ -359,6 +343,12 @@
                     h('div', { className: 'tl-decade-row' }, EraRules.ERA_DECADES.map((decade) => h('button', {
                         key: decade.id, type: 'button', className: eraDecades.includes(decade.id) ? 'selected' : '', onClick: () => toggleDecade(decade.id),
                     }, decade.label)))),
+                h('label', { className: 'tl-field' }, h('span', { className: 'tl-label' }, 'PLAYER YEARS'),
+                    h('select', { className: 'tl-select', 'aria-label': 'Player year visibility', value: hiddenYears ? 'hidden' : 'revealed', onChange: event => setHiddenYears(event.target.value === 'hidden') },
+                        h('option', { value: 'hidden' }, 'Hidden years · investigate the games'), h('option', { value: 'revealed' }, 'Classic · reveal years after the draft')),
+                    h('p', { className: 'tl-hint' }, hiddenYears ? 'Draft a player and decade. One year stays fixed. When one candidate remains, it is identified; the final recap reveals unresolved years. AI managers use the same clues.' : 'The drawn year and current-game star clue become visible when the draft ends.'))),
+
+            h(SetupStep, { id: 'vault-setup-2', active: step === 2 },
                 h('section', { className: 'tl-draft-setup-rules', 'aria-label': 'Draft rules' },
                     h('div', null, h('h4', null, 'How will you draft?'), h('p', { className: 'tl-hint' }, 'Keep the same mystery seasons with any draft format.')),
                     h('div', { className: 'tl-draft-format-options' }, DRAFT_FORMATS.map(option => h('button', {
@@ -394,18 +384,9 @@
                     h('p', { className: 'tl-hint' }, draftFormat === 'auction'
                         ? `Each team starts with $${draftAuctionBudget}. Keep $1 for every unfilled roster spot. Bids restart the clock.`
                         : draftPickSeconds ? 'When time runs out, the next legal pick comes from your queue or the available board.' : 'Make each pick when you are ready.',
-                    playMode === 'solo' ? ' You can pause the countdown and change the AI pace in the draft room.' : 'The commissioner can pause or change the draft clock for the room.')),
-                h('label', { className: 'tl-playoff-setting' }, h('span', { className: 'tl-label' }, 'SEASON FINISH'),
-                    h('select', { className: 'tl-select', value: settings.playoffTeams, onChange: event => setPlayoffTeams(Number(event.target.value)) },
-                        h('option', { value: 0 }, 'Standings champion'), h('option', { value: 2 }, 'Top 2 · Championship final'), h('option', { value: 4, disabled: seats.length < 4 }, 'Top 4 · 12 games + playoffs'), h('option', { value: 8, disabled: seats.length < 8 }, 'Top 8 · 11 games + playoffs')),
-                    h('p', { className: 'tl-hint' }, `${settings.regularSeasonWeeks} regular-season games · 14 weeks total. Higher seed wins a playoff tie. Missing game logs score zero.`)),
-                h('label', { className: 'tl-field' }, h('span', { className: 'tl-label' }, 'PLAYER YEARS'),
-                    h('select', { className: 'tl-select', 'aria-label': 'Player year visibility', value: hiddenYears ? 'hidden' : 'revealed', onChange: event => setHiddenYears(event.target.value === 'hidden') },
-                        h('option', { value: 'hidden' }, 'Hidden years · investigate the games'), h('option', { value: 'revealed' }, 'Classic · reveal years after the draft')),
-                    h('p', { className: 'tl-hint' }, hiddenYears ? 'Draft a player and decade. One year stays fixed. When one candidate remains, it is identified; the final recap reveals unresolved years. AI managers use the same clues.' : 'The drawn year and current-game star clue become visible when the draft ends.')),
-                playMode === 'friends' && h('label', { className: 'tl-field' }, h('span', { className: 'tl-label' }, 'WEEKLY ADVANCEMENT'), h('select', { className: 'tl-select', value: advancementMode, onChange: event => setAdvancementMode(event.target.value) }, h('option', { value: 'commissioner' }, 'Commissioner advances'), h('option', { value: 'majority' }, 'Majority vote'), h('option', { value: 'timed' }, 'Timed gates')), advancementMode === 'timed' && h('input', { className: 'tl-input', type: 'number', min: 1, max: 168, value: gateHours, onChange: event => setGateHours(Math.max(1, Math.min(168, Number(event.target.value) || 24))), 'aria-label': 'Hours per gate' }), h('p', { className: 'tl-hint' }, 'Four stops each week: claims, final roster decisions, game day, and final results. The commissioner can override any gate.', advancementMode === 'timed' && ' Deadlines are checked while a manager has the room open and resume on return.'))),
+                    playMode === 'solo' ? ' You can pause the countdown and change the AI pace in the draft room.' : 'The commissioner can pause or change the draft clock for the room.'))),
 
-            h(SetupStep, { id: 'vault-setup-2', title: 'Your team', summary: seats[0].name || 'Choose a name & helmet', first: false },
+            h(SetupStep, { id: 'vault-setup-3', active: step === 3 },
                 h('div', { className: 'tl-question' }, h('span', null, '3'), h('div', null, h('h3', null, 'Make it your team'), h('p', null, 'Pick a name and helmet. League rules are ready to play.'))),
                 h('div', { className: 'tl-identity-grid' },
                     h('label', null, h('span', { className: 'tl-label' }, 'League name'), h('input', { className: 'tl-input', value: name, maxLength: 80, placeholder: playMode === 'friends' ? 'Sunday Time Machine' : 'My Vault Season', onChange: (event) => setName(event.target.value) })),
@@ -422,6 +403,17 @@
                         h('strong', { className: 'tabular' }, seats.length),
                         h('button', { type: 'button', disabled: seats.length >= 12, 'aria-label': 'Add team', onClick: addSeat }, '+'))))),
 
+            h(SetupStep, { id: 'vault-setup-4', active: step === 4 },
+                h('dl', { className: 'tl-setup-receipt' },
+                    [['League', name.trim() || (playMode === 'friends' ? 'Sunday Time Machine' : 'My Vault Season')],
+                     ['Your team', seats[0].name || 'My Team'], ['Managers', `${seats.length} teams · ${playMode === 'friends' ? 'Friends league' : 'Solo'}`],
+                     ['Era', selectedEra.label], ['Draft', `${DRAFT_FORMATS.find(format => format.id === draftFormat).label} · ${seats.length * capacity} picks`],
+                     ['Roster & scoring', `${customSlots ? 'Custom roster' : rosterOption.label} · ${Object.keys(customStats).length || customExtended || bonuses.some(bonus => bonus.points) ? 'Custom scoring' : scoringOption.label}`]].map(([label, value]) => h('div', { key: label }, h('dt', null, label), h('dd', null, value)))),
+                h('label', { className: 'tl-playoff-setting' }, h('span', { className: 'tl-label' }, 'SEASON FINISH'),
+                    h('select', { className: 'tl-select', value: settings.playoffTeams, onChange: event => setPlayoffTeams(Number(event.target.value)) },
+                        h('option', { value: 0 }, 'Standings champion'), h('option', { value: 2 }, 'Top 2 · Championship final'), h('option', { value: 4, disabled: seats.length < 4 }, 'Top 4 · 12 games + playoffs'), h('option', { value: 8, disabled: seats.length < 8 }, 'Top 8 · 11 games + playoffs')),
+                    h('p', { className: 'tl-hint' }, `${settings.regularSeasonWeeks} regular-season games · 14 weeks total. Higher seed wins a playoff tie. Missing game logs score zero.`)),
+                playMode === 'friends' && h('label', { className: 'tl-field' }, h('span', { className: 'tl-label' }, 'WEEKLY ADVANCEMENT'), h('select', { className: 'tl-select', value: advancementMode, onChange: event => setAdvancementMode(event.target.value) }, h('option', { value: 'commissioner' }, 'Commissioner advances'), h('option', { value: 'majority' }, 'Majority vote'), h('option', { value: 'timed' }, 'Timed gates')), advancementMode === 'timed' && h('input', { className: 'tl-input', type: 'number', min: 1, max: 168, value: gateHours, onChange: event => setGateHours(Math.max(1, Math.min(168, Number(event.target.value) || 24))), 'aria-label': 'Hours per gate' }), h('p', { className: 'tl-hint' }, 'Four stops each week: claims, final roster decisions, game day, and final results. The commissioner can override any gate.', advancementMode === 'timed' && ' Deadlines are checked while a manager has the room open and resume on return.')),
             h('details', { className: 'tl-advanced' },
                 h('summary', null, h('span', null, 'League rules'), h('small', null, 'Managers, scoring, rosters, waivers and trades')),
                 h('div', { className: 'tl-advanced-body' },
@@ -478,23 +470,94 @@
                     waiversEnabled && h('div', { className: 'tl-waiver-options' },
                         h('button', { type: 'button', className: waiverMode === 'priority' ? 'selected' : '', onClick: () => setWaiverMode('priority') }, 'PRIORITY'),
                         h('button', { type: 'button', className: waiverMode === 'faab' ? 'selected' : '', onClick: () => setWaiverMode('faab') }, 'FAAB'),
-                        waiverMode === 'faab' && h('label', null, 'BUDGET $', h('input', { className: 'tl-input', type: 'number', min: 0, max: 1000, value: faabBudget, onChange: (event) => setFaabBudget(Math.max(0, Math.min(1000, Math.round(Number(event.target.value)) || 0))) }))))),
+                        waiverMode === 'faab' && h('label', null, 'BUDGET $', h('input', { className: 'tl-input', type: 'number', min: 0, max: 1000, value: faabBudget, onChange: (event) => setFaabBudget(Math.max(0, Math.min(1000, Math.round(Number(event.target.value)) || 0))) }))))))),
 
             createError && h('div', { role: 'alert', className: 'tl-feedrow caution tl-create-error' }, h('time', null, 'TRY AGAIN'), h('p', null, createError)),
-            h('div', { className: 'tl-launch-bar' },
+            h('div', { className: 'tl-launch-bar', hidden: step !== 4 },
                 h('div', null,
                     h('span', { className: `tl-era-icon ${selectedEra.tone}` }, selectedEra.icon),
                     h('p', null, h('b', null, `${selectedEra.label} · ${seats.length} teams`), h('span', null, `${DRAFT_FORMATS.find(format => format.id === draftFormat).label} · ${seats.length * capacity} players drafted · 14 gameweeks`))),
                 h('button', { type: 'button', className: 'tl-btn primary tl-launch-btn', onClick: startLeague, disabled: creating || capacity === 0 || !Object.entries(settings.rosterSlots).some(([slot,count]) => !['BN','IR','TAXI'].includes(slot) && count > 0) || (origin === 'online' && !signedIn) },
-                    creating ? 'CREATING LEAGUE…' : playMode === 'friends' ? 'CREATE & INVITE →' : 'START SOLO DRAFT →')));
+                    creating ? 'CREATING LEAGUE…' : playMode === 'friends' ? 'CREATE & INVITE →' : 'START SOLO DRAFT →')),
+            h('footer', { className: 'tl-wizard-nav' },
+                h('button', { type: 'button', className: 'tl-btn', disabled: creating, onClick: () => step ? goToStep(step - 1) : onBack?.() }, step ? '← Back' : '← Menu'),
+                h('small', null, `${step + 1} / ${SETUP_STEPS.length}`),
+                step < 4 && h('button', { type: 'button', className: 'tl-btn primary', disabled: creating || (step === 0 && origin === 'online' && !signedIn), onClick: () => goToStep(step + 1) }, 'Next →')));
+
     }
 
-    function WrTimeLeagueSetupPanel({ index, onOpen, onDelete, onCreate, onlineIndex, onlineIndexState, onOpenOnline, onCreateOnline }) {
-        const phone = window.WR?.useViewport ? window.WR.useViewport().isPhone : false;
-        return h('div', { className: 'tl-vault-lobby' },
-            h(LeagueShelf, { index, onlineIndex, onOpen, onDelete, onOpenOnline }),
-            !phone && h(LobbyStory, null),
-            h(LeagueBuilder, { key: window.App.OD?.getCurrentUserId?.() || 'guest', onCreate, onCreateOnline, onOpenOnline, onlineIndexState }), phone && h(LobbyStory, null));
+    function JoinLeague({ onJoinInvite, children }) {
+        const [invitation, setInvitation] = useState('');
+        const [error, setError] = useState('');
+        const submit = event => {
+            event.preventDefault();
+            let code = invitation.trim();
+            if (/^https?:\/\//i.test(code)) {
+                try { code = new URL(code).searchParams.get('tl_invite') || ''; }
+                catch { code = ''; }
+            }
+            if (!code || code.length > 512 || /[\s<>]/.test(code)) {
+                setError('Paste the invitation link or seat code your commissioner sent.');
+                return;
+            }
+            setError('');
+            onJoinInvite?.(code);
+        };
+        return h('div', { className: 'tl-join-menu' },
+            h('form', { onSubmit: submit, className: 'tl-join-form' },
+                h('label', { className: 'tl-field' }, h('span', { className: 'tl-label' }, 'Invitation link or code'),
+                    h('input', { className: 'tl-input', value: invitation, autoComplete: 'off', spellCheck: false, required: true,
+                        placeholder: 'Paste your invitation', onChange: event => { setInvitation(event.target.value); setError(''); } })),
+                h('button', { type: 'submit', className: 'tl-btn primary', disabled: !invitation.trim() }, 'Open invitation →'),
+                error && h('p', { role: 'alert', className: 'tl-hint' }, error)), children);
+    }
+
+    function WrTimeLeagueSetupPanel({ index = [], onOpen, onDelete, onCreate, onlineIndex = [], onlineIndexState, onOpenOnline, onCreateOnline,
+        pendingInvite, joinPanel, settingsPanel, onJoinInvite, guestResume }) {
+        const [view, setView] = useState(pendingInvite ? 'join' : 'menu');
+        const [builderStarted, setBuilderStarted] = useState(false);
+        const title = useRef(null);
+        const entry = useRef(null);
+        useEffect(() => { if (pendingInvite) setView('join'); }, [pendingInvite]);
+        useEffect(() => {
+            entry.current?.closest?.('.tl-lobby-wrap')?.scrollIntoView({ block: 'start', behavior: 'auto' });
+            title.current?.focus({ preventScroll: true });
+        }, [view]);
+        const savedCount = index.length + onlineIndex.length;
+        const openNew = () => { setBuilderStarted(true); setView('new'); };
+        const menu = () => setView('menu');
+        const labels = { resume: 'Resume', join: 'Join league', settings: 'Settings' };
+        const options = [
+            ['new', 'Start new', 'Build your team. Draft the legends.', '↗'],
+            ['resume', 'Resume', savedCount ? `${savedCount} saved ${savedCount === 1 ? 'league' : 'leagues'}` : guestResume ? 'Return to your guest seat' : 'Return to a saved season.', '↩'],
+            ['join', 'Join league', 'Use an invitation or restore a guest seat.', '＋'],
+            ['settings', 'Settings', 'Your team design, profile and community.', '⚙'],
+        ];
+        return h('div', { ref: entry, className: 'tl-vault-lobby tl-entry', 'data-entry-view': view },
+            view === 'menu' && h('section', { className: 'tl-entry-menu', 'aria-label': 'Vault main menu' },
+                h('div', { className: 'tl-entry-intro' }, h('span', { className: 'tl-eyebrow' }, 'FANTASY FOOTBALL THROUGH TIME'),
+                    h('h1', { ref: title, tabIndex: -1 }, 'Draft legends.', h('br'), h('em', null, 'Discover their seasons.')),
+                    h('p', null, 'Your team. A different era. A season to uncover.')),
+                h('nav', { className: 'tl-entry-options', 'aria-label': 'Choose how to play' }, options.map(([id, label, detail, icon], index) =>
+                    h('button', { key: id, type: 'button', className: 'tl-entry-option' + (id === 'new' ? ' primary' : ''), onClick: id === 'new' ? openNew : () => setView(id) },
+                        h('span', { className: 'tl-entry-number', 'aria-hidden': true }, `0${index + 1}`),
+                        h('span', null, h('strong', null, label), h('small', null, detail)), h('span', { className: 'tl-entry-go', 'aria-hidden': true }, icon))))),
+            view !== 'menu' && view !== 'new' && h('header', { className: 'tl-entry-page-head' },
+                h('button', { type: 'button', className: 'tl-btn', onClick: menu }, '← Menu'),
+                h('h1', { ref: title, tabIndex: -1 }, labels[view])),
+            builderStarted && h('div', { hidden: view !== 'new', className: 'tl-entry-builder' },
+                h(LeagueBuilder, { key: window.App.OD?.getCurrentUserId?.() || 'guest', onCreate, onCreateOnline, onOpenOnline, onlineIndexState, onBack: menu, active: view === 'new' })),
+            view === 'resume' && h('div', { className: 'tl-entry-page' },
+                h(LeagueShelf, { index, onlineIndex, onOpen, onDelete, onOpenOnline }),
+                guestResume && !onlineIndex.some(entry => entry.rowId === guestResume.rowId) && h('button', { type: 'button', className: 'tl-btn primary', onClick: guestResume.onResume }, `Resume ${guestResume.name || 'guest seat'} →`),
+                !savedCount && !guestResume && h('div', { className: 'tl-card tl-entry-empty' }, h('h2', null, 'Your next season starts here.'),
+                    h('p', null, onlineIndexState === 'idle' ? 'Checking your friends leagues…' : 'No saved seasons in this browser yet.'),
+                    h('button', { type: 'button', className: 'tl-btn primary', onClick: openNew }, 'Start new')),
+                onlineIndexState === 'signed-out' && h('p', { className: 'tl-hint' }, 'Solo seasons stay in this browser. ', h('a', { href: 'login.html?vault=1' }, 'Sign in'), ' to see your friends leagues.')),
+            view === 'join' && h('section', { className: 'tl-entry-page', 'aria-label': 'Join a Vault league' },
+                h('p', { className: 'tl-hint' }, 'Your commissioner’s invitation reserves a team. A guest pass restores a seat you already joined.'),
+                h(JoinLeague, { onJoinInvite }, joinPanel)),
+            view === 'settings' && h('section', { className: 'tl-entry-page', 'aria-label': 'Vault settings' }, settingsPanel));
     }
 
     window.WrTimeLeagueSetupPanel = WrTimeLeagueSetupPanel;

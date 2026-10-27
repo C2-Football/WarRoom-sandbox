@@ -57,13 +57,14 @@ assert(!text(tree).includes('Recorded season · reference scoring'), 'The stats 
 state = []; cursor = 0; tree = WrTimeLeagueDraftPanel({ league, cards, onUpdate() {} });
 assert(text(tree).includes('Draft complete · hidden-year mode'));
 assert(!text(tree).includes('1993') && !text(tree).includes('Your grade'), 'The draft recap cannot grade or reveal actual editions');
-// The draft's help copy must agree with the configured reveal rule.
+// Scout files retain research without repeating the removed reveal tutorial.
 for (const hiddenYears of [true, false]) {
     state = []; cursor = 0;
     const draft = { ...league, phase: 'draft', seasonsRevealed: false, settings: { ...league.settings, hiddenYears } };
     tree = WrTimeLeagueDraftPanel({ league: draft, cards, onUpdate() {} });
-    assert(text(tree).includes(hiddenYears ? 'one remaining candidate identifies the year' : 'revealed after the draft.'), 'Draft research explains the actual year-reveal rule');
-    assert(!text(tree).includes(hiddenYears ? 'revealed after the draft.' : 'one remaining candidate identifies the year'), 'No conflicting reveal promise is shown');
+    assert(classes(tree, 'tl-scout-season-table').length, 'Removing tutorial copy keeps the candidate-season research usable');
+    assert(!text(tree).includes('One fixed year is drawn') && !text(tree).includes('One of these seasons is drawn'), 'Scout files omit the requested repeated reveal tutorial in both modes');
+    assert(!text(tree).includes('Your edition: 1993'), 'Condensed research never identifies the private assigned year');
 }
 state = []; cursor = 0; tree = WrTimeLeagueGamecastPanel({ league, cards, logIndex: logs, onUpdate() {} });
 assert(text(tree).includes('1990s · hidden year') && !text(tree).includes('1993'), 'Pregame lineups preserve hidden years');

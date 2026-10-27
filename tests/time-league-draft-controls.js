@@ -22,10 +22,12 @@ require('../js/components/time-league-setup-panel.js');
 require('../js/components/time-league-draft-controls.js');
 (async () => {
     let payload, onlinePayload;
-    const setup = WrTimeLeagueSetupPanel({ index: [], onlineIndex: [], onCreate: value => { payload = value; }, onCreateOnline: async value => { onlinePayload = value; return { ok: true, rowId: 'room' }; }, onOpenOnline: () => {}, onlineIndexState: 'ready' });
-    const builder = find(setup, node => node.type?.name === 'LeagueBuilder');
+    const drawSetup = () => render(() => WrTimeLeagueSetupPanel({ index: [], onlineIndex: [], onCreate: value => { payload = value; }, onCreateOnline: async value => { onlinePayload = value; return { ok: true, rowId: 'room' }; }, onOpenOnline: () => {}, onlineIndexState: 'ready' }));
+    reset(); button(drawSetup(), 'Start new').props.onClick();
+    const builder = find(drawSetup(), node => node.type?.name === 'LeagueBuilder');
     const build = () => render(() => builder.type(builder.props));
     reset(); let tree = build();
+    for (let step = 0; step < 4; step++) { button(tree, 'Next →').props.onClick(); tree = build(); }
     const modes = walk(tree).filter(node => node.type?.name === 'EraModeCard');
     assert.equal(modes[0].props.option.id, 'position-roulette'); assert.equal(modes[0].props.selected, true);
     assert.equal(label(tree, 'Draft clock duration').props.value, 60);

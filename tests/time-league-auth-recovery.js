@@ -36,6 +36,7 @@ window.React = {
     useEffect(fn,deps) { const index=cursor++; if(!equal(hooks[index]?.deps,deps)) { hooks[index]?.cleanup?.(); hooks[index]={deps}; queued.push(()=>{hooks[index].cleanup=fn();}); } },
 };
 window.WrTimeLeagueHomePanel = function HomePanel() {};
+window.WrTimeLeagueSetupPanel = function SetupPanel() {};
 require('../js/components/game-room-status.js');
 require('../js/components/time-league-week-gates.js');
 require('../js/tabs/time-league.js');
@@ -44,7 +45,12 @@ const text = node => node == null || typeof node === 'boolean' ? '' : Array.isAr
 const render = () => { cursor=0; const tree=TimeLeague({onClose(){}}); const effects=queued; queued=[]; effects.forEach(fn=>fn()); return tree; };
 const settle = async () => { await new Promise(resolve=>setImmediate(resolve)); return render(); };
 (async()=>{
+    const savedNavigation=disk.get('wr-time-league-ui-v1');
     render(); await settle(); let tree=await settle();
+    assert(!nodes(tree).some(node=>node.type===WrTimeLeagueHomePanel), 'Entry waits for an explicit Resume action');
+    assert.equal(disk.get('wr-time-league-ui-v1'),savedNavigation,'Viewing the menu preserves saved navigation');
+    nodes(tree).find(node=>node.type===WrTimeLeagueSetupPanel).props.onOpenOnline(row.id);
+    render(); tree=await settle();
     assert.equal(nodes(tree).find(node=>node.type===WrTimeLeagueHomePanel).props.league.name,'Saved recovery room');
     const before=disk.get('wr-time-league-ui-v1');
     reject(new Error('Network interrupted'));tree=render();

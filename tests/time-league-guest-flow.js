@@ -69,7 +69,11 @@ const reset = () => { hooks.forEach(hook=>hook?.cleanup?.()); hooks=[]; queued=[
 
 
     reset(); disk.set('wr-time-league-ui-v1',JSON.stringify({onlineRowId:'another-account-room'}));
+    window.WrTimeLeagueSetupPanel = function SetupPanel() {};
     render(); await settle(); tree=await settle();
+    assert.equal(loads.length,0,'Viewing the entry menu does not open or advance a guest room');
+    nodes(tree).find(node=>node.type===WrTimeLeagueSetupPanel).props.guestResume.onResume();
+    render(); tree=await settle();
     assert(loads.length && loads.every(id=>id===row.id),'Returning guests open their scoped room instead of another saved account room');
 
     reset(); actor={ kind:'account', userId:'account-a', token:'account-token' }; pendingInvite='retry-seat'; failLoad=true;

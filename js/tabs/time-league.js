@@ -1193,32 +1193,14 @@
         }, [actorKey]);
 
         useEffect(() => {
-            const prefs = readUiPrefs();
             setIndex(readIndexEntries());
             refreshOnlineIndex();
-            const generation = ++openGeneration.current;
             if (onlineRef.current && onlineRef.current.userId !== actor?.userId) {
+                ++openGeneration.current;
                 onlineRef.current = null; setOnlineMeta(null); setLeague(null); setAuthRequired(false);
             }
-            if (pendingInvite) { setBooted(true); return; }
-            const rowId = actor?.kind === 'guest' ? actor.roomId : prefs.onlineRowId;
-            if (rowId && Remote) {
-                Remote.loadOnlineLeague(rowId).then((row) => {
-                    if (generation !== openGeneration.current) return;
-                    acceptRow(row, true);
-                    setTab(row.state.phase !== 'draft' && prefs.tab === 'draft' ? 'home' : prefs.tab);
-                }).catch(error => { setInviteError(error.message); reportRemoteError(error); }).finally(() => setBooted(true));
-                return;
-            }
-            if (prefs.leagueId) {
-                const stored = readLeague(prefs.leagueId, localSnapshot);
-                if (stored) {
-                    leagueRef.current = stored;
-                    setLeague(stored);
-                    setTab(stored.phase !== 'draft' && prefs.tab === 'draft' ? 'home' : prefs.tab);
-                    if (prefs.teamId) setActiveTeamId(prefs.teamId);
-                }
-            }
+            // Entry is a deliberate menu choice. Merely viewing it must not
+            // open a room, run a draft timer or advance an existing save.
             setBooted(true);
         }, [refreshOnlineIndex]);
 
@@ -1271,7 +1253,7 @@
         }, []);
 
         useEffect(() => {
-            if (!booted) return;
+            if (!booted || !league) return;
             writeUiPrefs({ leagueId: league?.leagueId ?? null, tab, teamId: activeTeamId, onlineRowId: onlineMeta?.rowId ?? null });
         }, [booted, league, tab, activeTeamId, onlineMeta]);
 
@@ -1632,7 +1614,9 @@
             setGamecastStatus(null);
             setScoreRequest(null);
             setLeague(stored);
-            setTab(stored.phase === 'draft' ? 'draft' : 'home');
+            const prefs = readUiPrefs();
+            setTab(stored.phase === 'draft' ? 'draft' : prefs.leagueId === leagueId && !prefs.onlineRowId && prefs.tab !== 'draft' ? prefs.tab : 'home');
+            if (prefs.leagueId === leagueId && !prefs.onlineRowId && prefs.teamId) setActiveTeamId(prefs.teamId);
         }, []);
 
         const openOnlineLeague = useCallback((rowId) => {
@@ -1642,7 +1626,8 @@
             Remote.loadOnlineLeague(rowId).then((row) => {
                 if (generation !== openGeneration.current) return;
                 acceptRow(row, true);
-                setTab(row.state.phase === 'draft' ? 'draft' : 'home');
+                const prefs = readUiPrefs();
+                setTab(row.state.phase === 'draft' ? 'draft' : prefs.onlineRowId === rowId && prefs.tab !== 'draft' ? prefs.tab : 'home');
             }).catch(error => { setInviteError(error.message); reportRemoteError(error); });
         }, []);
 
@@ -1683,6 +1668,7 @@
         const GamecastPanel = window.WrTimeLeagueGamecastPanel;
         const HomePanel = window.WrTimeLeagueHomePanel;
         const CareerView = window.WrTimeLeagueCareerView;
+        const ProfilePanel = window.WrTimeLeagueProfilePanel;
         const CommunityPanel = window.WrTimeLeagueCommunityPanel;
         const RivalsPanel = window.WrTimeLeagueRivalsPanel;
         const reportBug = window.WR?.Feedback?.reportBug ? () => {
@@ -1705,7 +1691,7 @@
         });
         const guestAccess = guestSessionPanel && league && actor?.kind === 'guest' && !pendingInvite && !authRequired
             ? h('details', { className: 'tl-card tl-guest-access' }, h('summary', null, `Playing as ${actor.displayName || 'Guest'} · Save your guest pass`), guestSessionPanel)
-            : guestSessionPanel;
+            : pendingInvite || (actor?.kind === 'guest' && authRequired) ? guestSessionPanel : null;
         const pendingInviteNotice = pendingInvite && actor?.kind !== 'account' && h('section', { className: 'tl-card tl-pending-invite', 'aria-label': 'Join your friends in The Vault' },
             h('h2', null, 'You’re invited to The Vault'),
             h('p', null, 'Take the team your friend reserved for you. Sign in or create a free account to keep your team across devices, or join as a guest below.'),
@@ -1730,8 +1716,6 @@
                         h('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap' } },
                             h('button', { type: 'button', className: 'tl-btn', onClick: onClose }, '← BACK'))),
                     claimingInvite && h('div', { className: 'tl-card', style: { marginBottom: 14 } }, h('p', { className: 'tl-empty' }, 'Claiming your invite…')),
-                    pendingInviteNotice,
-                    guestSessionPanel,
                     dataNotice,
                     signInNotice,
                     inviteError && h('div', { className: 'tl-card', style: { borderColor: 'rgba(240,165,0,0.4)', marginBottom: 14 } },
@@ -1742,7 +1726,17 @@
                     SetupPanel ? h(SetupPanel, {
                         index, onOpen: openLeague, onDelete: deleteLeague, onCreate: createLeague,
                         onlineIndex, onlineIndexState, onOpenOnline: openOnlineLeague, onCreateOnline: createOnlineLeague,
-                    }) : null, lobbyExtras));
+                        pendingInvite,
+                        joinPanel: h(React.Fragment, null, pendingInviteNotice, guestSessionPanel),
+                        settingsPanel: h(React.Fragment, null, ProfilePanel && h(ProfilePanel), lobbyExtras),
+                        guestResume: actor?.kind === 'guest' ? { rowId: actor.roomId, name: actor.displayName, onResume: () => openOnlineLeague(actor.roomId) } : null,
+                        onJoinInvite: code => {
+                            const target = new URL(window.location.href);
+                            target.searchParams.set('vault', '1');
+                            target.searchParams.set('tl_invite', code);
+                            window.location.assign(target.href);
+                        },
+                    }) : h('div', null, pendingInviteNotice, guestSessionPanel, lobbyExtras)));
         }
 
         const tabs = league.phase === 'draft'

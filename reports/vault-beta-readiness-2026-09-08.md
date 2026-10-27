@@ -1,5 +1,100 @@
 # The Vault — beta readiness review
 
+## October 26, 2026 browser feedback pass
+
+Status: VERIFIED locally. Baseline checkpoint: `b3a3ca7`. This finite pass
+implements the 14 marked browser comments in the existing preview. The October
+22 published revision below remains unchanged.
+
+| Requirement | Status | Completion criterion |
+|---|---|---|
+| Entry menu and creation steps (1–2) | VERIFIED | Four working destinations; Play → Era → Draft → Team → Review; Back retains choices; only final Review creates; guest restoration inside Join |
+| Draft density and ticker (3–4, 11–12) | VERIFIED | Compact era rail, filters and metric rows; clock, manager, pick and position run share the primary draft ticker; 44px actions retained |
+| Scout cleanup (5–10) | VERIFIED | Requested prose/placeholders removed; Available years disappears after the committed pick; GP retains its archive meaning through the header title |
+| Draft history and sidebar (13–14) | VERIFIED | Actual recent picks show their public decade; private assigned years are never read for the feed; Opponent intel source/render removed |
+| Integrated verification | VERIFIED | 76-command Vault suite, nine new menu groups, core 97/97, entry 7/7, build and source lint; real isolated creation/pick/scout/reload/Resume and six viewport matrices |
+
+The entry menu will preserve saved progress and open it through Resume. Settings
+reuses the existing team profile/design controls. No new game rules, data source,
+account system, sound settings, or save migration is required.
+
+### Player behavior and compatibility
+
+The Vault now opens at a menu rather than automatically running the most recent
+room. Resume uses the existing saved-league shelf and restores the selected
+league's saved tab/team when applicable. Opening a menu does not start a timer,
+advance a room, clear navigation preferences, or recreate a league. A guest's
+Resume action remains scoped to that guest's room. Pending invitations open
+Join and retain the existing account/guest claim and retry pipeline. Manual
+Join extracts a seat code from an invitation URL and opens it on the current
+trusted app origin; it never follows a pasted destination.
+
+Creation keeps one mounted builder through all five steps and menu returns.
+Only Review offers the create action, with the existing in-flight guard and
+save-error recovery. An interrupted create keeps the edited inputs. The active
+step's inner scroll and document position reset on navigation; screenshot QA
+caught and fixed browser scroll anchoring that could hide a step heading behind
+the sticky header. Settings reuses the existing device/account team profile;
+saved designs continue to apply to new teams, not overwrite existing rosters.
+
+There are no engine, scoring, historical-data, schema or save-format changes.
+Hidden years remain sealed. Recent picks derive era labels from existing public
+decade/eligibility data, with getter-trap tests preventing reads of private
+assigned seasons. The scout file keeps factual biography when present and the
+usable season table; the marked filler and repeated explanations are removed.
+
+### Evidence and reproduction
+
+The updated local preview runs at `http://127.0.0.1:3037/?vault=1`:
+
+```sh
+node scripts/serve-static.cjs --port=3037 --compile
+npm run test:timeleague
+node scripts/build-deploy.cjs
+```
+
+Disposable CUA browser testing used a separate `3038` origin. A real six-team
+Roulette/Hidden Years snake league passed all five setup steps, edited identity,
+Back retention, public era reveal, search, a human draft pick and three normal
+AI picks, then pause, full scouting, reload to Menu, and named Resume. All four
+pick-feed rows, the human roster and the paused turn persisted. The temporary
+New pick highlight clears on reload, as intended. A second trip through all
+five setup steps did not create another save. Join's invalid-input recovery and
+Settings' actual profile controls were also exercised without joining a hosted
+room or saving a profile.
+
+Final IAB Chromium matrices cover 390×844, 430×932, 563×915, 1024×1366,
+1366×1024 and 1440×900 for Menu, Review and Draft. All four menu actions fit;
+there is no horizontal overflow, headings remain below the header, and the
+final create action stays visible with a 48px target. Five separate 563px
+step captures verify exactly one visible setup section and reachable navigation.
+The existing user tabs and progress on `3037` were not used as test fixtures.
+
+[Interactive proof and source hashes](public-readiness/evidence/vault-menu-20261026.json)
+pin the seven changed runtime files and record the matrices and test boundary.
+Full logs and screenshots are in `output/playwright/vault-menu-20261026/`.
+Representative captures:
+[menu](../output/playwright/vault-menu-20261026/menu-final-390x844.png),
+[Review](../output/playwright/vault-menu-20261026/wizard-review-390x844.png),
+[compact draft board](../output/playwright/vault-menu-20261026/draft-board-563.png),
+[drafted scout file](../output/playwright/vault-menu-20261026/scout-drafted-563.png).
+
+The full 76-command Vault suite passes on official Node 20.20.2, including the
+unchanged full-season/data fixtures. The new independent menu test passes nine
+groups. Core 97/97 and first-class entry 7/7 pass. The build compiles 161 JSX scripts
+and minifies 300 modules. Full-source ESLint reports zero errors and 46 warnings
+in unchanged files; the three modified runtime scripts pass without warnings.
+After the final scroll correction, menu/setup tests, runtime lint and all five
+actual step transitions were checked again. The existing minified acceptance
+harness now uses the menu/five steps/named Resume and passes syntax checking;
+it was not browser-executed in this pass.
+
+This is local compiled-preview and responsive-emulation evidence. It does not
+add hosted multiplayer, physical-device, WebKit, profile-sync or production
+deployment proof. Native CUA's invalid DevTools dimensions and the first
+scroll-offset captures remain separately labelled `attempt-*` and are excluded
+from the final matrices. The existing prioritized future-work list is unchanged.
+
 ## October 21, 2026 implementation release
 
 Local branch: `codex/vault-experience-20261021`, reversible baseline `47bb5dd`.

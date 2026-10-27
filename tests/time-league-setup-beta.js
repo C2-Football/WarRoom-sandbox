@@ -24,7 +24,9 @@ const button = (tree, name) => walk(tree).find(node => node.type === 'button' &&
 const field = (tree, label) => walk(tree).find(node => node.props['aria-label'] === label);
 const render = callback => { stateIndex = 0; refIndex = 0; return callback(); };
 const reset = () => { states = []; refs = []; };
-const Setup = WrTimeLeagueSetupPanel({ index: [], onlineIndex: [] });
+let Setup = render(() => WrTimeLeagueSetupPanel({ index: [], onlineIndex: [] }));
+button(Setup, 'Start new').props.onClick();
+Setup = render(() => WrTimeLeagueSetupPanel({ index: [], onlineIndex: [] }));
 const Builder = walk(Setup).find(node => node.type?.name === 'LeagueBuilder').type;
 
 (async () => {
@@ -34,6 +36,7 @@ const Builder = walk(Setup).find(node => node.type?.name === 'LeagueBuilder').ty
         onCreate: () => {}, onCreateOnline: input => { calls++; request = input; return new Promise(resolve => { resolveCreate = resolve; }); },
     };
     const draw = () => render(() => Builder(props));
+    const review = tree => { while (tree.props['data-setup-step'] < 4) { button(tree, 'Next →').props.onClick(); tree = draw(); } return tree; };
     reset(); let tree = draw();
     assert(field(tree, 'Team 2 name'));
     assert(field(tree, 'Team 2 manager type'));
@@ -48,6 +51,7 @@ const Builder = walk(Setup).find(node => node.type?.name === 'LeagueBuilder').ty
     tree = draw();
     field(tree, 'Team 1 name').props.onChange({ target: { value: 'Beta Rockets' } });
     tree = draw();
+    tree = review(tree);
     const submit = button(tree, 'CREATE & INVITE').props.onClick;
     const first = submit(); await submit();
     assert.equal(calls, 1, 'Rapid repeated taps must create only one room');
@@ -72,7 +76,7 @@ const Builder = walk(Setup).find(node => node.type?.name === 'LeagueBuilder').ty
 
     reset(); tree = draw();
     props.onCreate = () => { throw new Error('Unable to save this season.'); };
-    tree = draw(); await button(tree, 'START SOLO DRAFT').props.onClick();
+    tree = review(draw()); await button(tree, 'START SOLO DRAFT').props.onClick();
     tree = draw(); assert(!button(tree, 'START SOLO DRAFT').props.disabled);
     assert(text(walk(tree).find(node => node.props.role === 'alert')).includes('Unable to save'));
     console.log('ok local creation errors also recover');

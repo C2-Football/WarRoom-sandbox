@@ -60,3 +60,13 @@
 .tl-room-order-moves { display:flex;gap:5px; }.tl-room-order-moves .tl-btn { min-width:44px;min-height:44px;padding:6px;font-size:18px; }
 .tl-room-order-save { display:flex;align-items:center;justify-content:space-between;gap:12px; }.tl-room-order-save .tl-hint { margin:0; }.tl-room-order-save .tl-btn { flex:0 0 auto;min-height:44px; }
 @media(max-width:480px) { .tl-room-order summary { flex-wrap:wrap;gap:8px; }.tl-room-order-save { flex-direction:column;align-items:stretch; }.tl-room-order-body>.tl-field { max-width:none; } }
+
+/* The draft clock sits in the single turn bug; settings keep their own disclosure. */
+.tl-root.tl-play .tl-on-clock .tl-draft-clock { margin-bottom:6px; padding-bottom:7px; }
+.tl-root.tl-play .tl-on-clock .tl-draft-clock-tools .tl-btn { min-width:44px; min-height:44px; }
+.tl-root.tl-play .tl-vault-draft-table .game-draft-tools { gap:6px 8px; }
+.tl-root.tl-play .tl-vault-draft-table .game-draft-visibility { gap:5px 6px; margin-top:7px; }
+.tl-root.tl-play .tl-vault-draft-table .game-draft-visibility :is(button,summary) { min-height:44px; padding:7px 9px; }
+.tl-root.tl-play .tl-vault-draft-table .game-draft-visibility > span { display:none; }
+.tl-root.tl-play .tl-vault-draft-table .game-draft-context { margin:6px 0; }
+.tl-root.tl-play .tl-vault-draft-table .game-draft-preferences > div { z-index:8; }

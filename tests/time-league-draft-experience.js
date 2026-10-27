@@ -3,7 +3,7 @@
 const assert = require('assert');
 global.window = globalThis;
 window.App = {};
-for (const name of ['roster', 'rules', 'draft-room', 'era-rules', 'season', 'helmet', 'engine', 'ai']) require(`../js/shared/time-league-${name}.js`);
+for (const name of ['roster', 'rules', 'draft-room', 'era-rules', 'season', 'helmet', 'engine', 'ai', 'hidden-years']) require(`../js/shared/time-league-${name}.js`);
 
 // A stateful component harness tests the reveal-to-scout path without a browser.
 let hooks; let cursor; let effects;
@@ -75,6 +75,10 @@ for (let i = 0; i < 3; i++) {
     assert(text(banner).includes('On the clock · #' + seat.overall));
     assert(text(banner).includes(manager.name));
     assert(!text(banner).includes('Just picked'));
+    const mainDraftBug = find(turnTree, node => node.props['aria-label'] === 'Draft room')[0];
+    assert(find(mainDraftBug, node => node.props['aria-label'] === 'Current draft turn').includes(banner), 'The main draft bug owns the current turn and manager');
+    assert.equal(find(turnTree, node => node.props.className === 'tl-draft-live-room').length, 0, 'There is no duplicate Room watch panel');
+    assert.equal(find(turnTree, node => node.type?.name === 'OpponentIntel').length, 0, 'Opponent intel is removed rather than hidden behind disclosure');
     const helmet = find(banner, node => node.props.helmet)[0];
     assert.deepEqual(helmet.props.helmet, manager.helmet);
     turnLeague = Engine.applyDraftPick(turnLeague, [...cards.values()][i], { madeBy: 'human', createdAt: '2026-01-01T00:00:01.000Z' });
@@ -155,6 +159,7 @@ assert(text(roomActivity(livePage)).includes('No position run'), 'Runs disappear
 const feedRows = page => find(page, node => node.type === 'li' && node.props.className?.startsWith('tl-draft-feed-pick'));
 assert.equal(feedRows(livePage).length, 6);
 assert(text(feedRows(livePage)[0]).includes('QB Legend live6'), 'Feed sorts by pick number rather than storage order');
+assert(feedRows(livePage).every(row => text(find(row, node => node.props.className === 'tl-draft-feed-era')[0]) === '2000s'), 'Each recorded pick shows its allowed public era');
 button(livePage, 'Show earlier picks (1)').props.onClick(); livePage = liveRender();
 assert.equal(feedRows(livePage).length, 7, 'Earlier picks remain accessible');
 window.DraftCC = { DraftGridPanel: SharedGrid };
@@ -162,6 +167,16 @@ const completedFromLive = liveRender({ league });
 assert(find(completedFromLive, node => node.type === SharedGrid).length, 'Completing a draft restores the colorful recap grid by default');
 assert.equal(roomActivity(completedFromLive), undefined, 'Completed recaps do not show a stale live-run banner');
 delete window.DraftCC;
+const privateEraLeague = { ...liveLeague, settings: { ...liveLeague.settings, hiddenYears: true }, publicSnapshotVersion: 1,
+    teams: liveLeague.teams.map(team => ({ ...team, roster: team.roster.map(entry => {
+        const publicEntry = { ...entry, hiddenDecade: '2000s' };
+        Object.defineProperty(publicEntry, 'drawnSeason', { get() { throw new Error('Recent picks consulted a hidden assigned year'); } });
+        return publicEntry;
+    }) })) };
+for (const field of ['seed', 'hiddenYearAssignments', 'gameAssignments']) Object.defineProperty(privateEraLeague, field, { enumerable: false, get() { throw new Error('Recent picks consulted private assignments'); } });
+const privateEraPage = mount({ league: privateEraLeague, cards: liveCards, onUpdate() { throw new Error('Reading a pick feed must not save'); } })();
+assert(feedRows(privateEraPage).every(row => text(find(row, node => node.props.className === 'tl-draft-feed-era')[0]) === '2000s'));
+assert(!feedRows(privateEraPage).some(row => /\b2000\b/.test(text(row))), 'The public decade never becomes the assigned season');
 
 const rouletteCards = new Map([
     ...Array.from({ length: 5 }, (_, i) => [`q${i}`, makeCard(`q${i}`, 'QB', [1977, 1980, 1982], 200 - i)]),
@@ -201,13 +216,17 @@ const dialog = find(tree, node => node.props.role === 'dialog')[0];
 assert.ok(dialog, 'Reveal headliner opens an accessible career dialog');
 assert.equal(dialog.props['aria-modal'], true);
 assert.ok(text(dialog).includes('Archive College'));
-assert.ok(text(dialog).includes('Archive totals · Weeks 1–14 · reference scoring'), 'Scouting distinguishes the archive window and reference points from full NFL season totals');
+assert.ok(!text(dialog).includes('Archive totals · Weeks 1–14 · reference scoring'), 'The redundant scoring footer is removed');
+assert.ok(text(dialog).includes('Available years: 1980, 1982'), 'An undrafted player keeps its public available years');
+assert.ok(!text(dialog).includes('One of these seasons is drawn'), 'The fixed-year explanation no longer fills the scout card');
 const seasonTable = find(dialog, node => node.props.className === 'tl-scout-seasons')[0];
 assert.ok(text(seasonTable).includes('1980') && text(seasonTable).includes('1982'));
 assert.ok(!text(seasonTable).includes('1977'), 'Scouting only shows seasons that can be drawn');
 const scoutHeaders = find(seasonTable, node => node.type === 'th');
 assert.deepEqual(scoutHeaders.slice(0, 2).map(text), ['FPTS', 'Year'], 'Fantasy points lead the scouting table, beside the year');
-assert.equal(text(scoutHeaders[2]), 'Recorded GP', 'Archive records are not mislabeled as official NFL appearances');
+assert.equal(text(scoutHeaders[2]), 'GP');
+assert(scoutHeaders[2].props.title.includes('archive weeks 1–14'), 'GP keeps its precise archive definition accessible');
+assert(scoutHeaders[0].props.title.includes('reference scoring'), 'The concise points header retains its scoring basis');
 const scoutRows = find(seasonTable, node => node.type === 'tbody')[0].children;
 assert.deepEqual(scoutRows.map(row => Number(text(row.children[1]))), [1982, 1980], 'Scouting seasons run newest first');
 assert.deepEqual(scoutRows.map(row => text(row.children[0])), ['192.0', '196.0'], 'Points stay paired with the correct season');
@@ -215,14 +234,16 @@ assert.deepEqual(rouletteCards.get('q0').seasons.map(row => row.season), [1977, 
 const originalScoutCard = rouletteCards.get('q0');
 rouletteCards.set('q0', { ...originalScoutCard, seasons: originalScoutCard.seasons.map(season => ({ ...season, sourceWeekKind: 'nfl-week', recordedGames: 16, games: 16, scheduledGames: 16 })) });
 let fullSeasonDialog = find(render(), node => node.props.role === 'dialog')[0];
-assert(text(fullSeasonDialog).includes('NFL regular-season records') && text(fullSeasonDialog).includes(`The Vault plays ${Engine.seasonEndWeek(roulette)} weeks`), 'Full historical records are distinguished from the configured Vault schedule');
+assert(find(fullSeasonDialog, node => node.type === 'th')[0].props.title.includes('NFL regular-season'), 'The full-season scope remains attached to its points header');
 assert(!text(fullSeasonDialog).includes('Archive totals · Weeks 1–14'));
-assert(text(fullSeasonDialog).includes('not verified official appearances'));
+assert(!text(fullSeasonDialog).includes('not verified official appearances'));
+assert(find(fullSeasonDialog, node => node.type === 'th')[2].props.title.includes('archived records'), 'GP denotes archive coverage rather than claiming official appearances');
 rouletteCards.legacyCards = new Map(rouletteCards);
 rouletteCards.legacyCards.set('q0', originalScoutCard);
 rouletteCards.set('q0', { ...rouletteCards.get('q0'), seasons: rouletteCards.get('q0').seasons.map(season => ({ ...season, points: season.points + 100 })) });
 const legacyDialog = find(render({ league: { ...roulette, settings: { ...roulette.settings, gameDeckVersion: 0 } } }), node => node.props.role === 'dialog')[0];
-assert(text(legacyDialog).includes('Full NFL season stats are shown for scouting.') && text(legacyDialog).includes('Legacy Vault W1–14'));
+assert(!text(legacyDialog).includes('Full NFL season stats are shown for scouting.'));
+assert(text(legacyDialog).includes('Vault W1–14'), 'The legacy scoring column stays explicit without its repeated footer');
 const legacyScoutRows = find(find(legacyDialog, node => node.props.className === 'tl-scout-seasons')[0], node => node.type === 'tbody')[0].children;
 assert.deepEqual(legacyScoutRows.map(row => text(row.children[0])), ['292.0', '296.0'], 'Historical full-season points remain available to legacy saves');
 assert.deepEqual(legacyScoutRows.map(row => text(row.children[2])), ['16', '16'], 'Historical full-season game counts are not replaced by the legacy archive');
@@ -245,7 +266,8 @@ rouletteCards.set('q0', { ...completeScoutCard, seasons: completeScoutCard.seaso
 const fallbackDialog = find(render(), node => node.props.role === 'dialog')[0];
 const fallbackTable = find(fallbackDialog, node => node.props.className === 'tl-scout-seasons')[0];
 assert.deepEqual(find(fallbackTable, node => node.type === 'tbody')[0].children.map(row => Number(text(row.children[1]))), [1982, 1980]);
-assert.equal(text(find(fallbackTable, node => node.type === 'th')[2]), 'Vault GP', 'Legacy-only scouting never claims full historical game counts');
+assert.equal(text(find(fallbackTable, node => node.type === 'th')[2]), 'GP');
+assert(find(fallbackTable, node => node.type === 'th')[2].props.title.includes('archive weeks 1–14'), 'Legacy-only GP never claims full historical game counts');
 assert(!text(fallbackDialog).includes('nothing here can be drawn'), 'The old league still has a legal edition to draw');
 rouletteCards.set('q0', completeScoutCard);
 delete rouletteCards.legacyCards;
@@ -289,6 +311,27 @@ assert.equal(outsidePeakDesktop.children.length, 6, 'The board omits ambiguous m
 assert(!find(drawDesktop, node => node.type === 'th').some(node => text(node) === 'G'));
 const freshBoard = mount({ league: roulette, cards: rouletteCards, onUpdate() {} })();
 assert.equal(text(find(freshBoard, node => node.props.className === 'tl-dock-player')[0]).includes('RB Legend r0'), true, 'The default draft dock selects the same in-era board leader');
+{
+    let scoutWrites = 0;
+    const drawPickedScout = mount({ league: roulette, cards: rouletteCards, onUpdate() { scoutWrites++; } });
+    let page = drawPickedScout(); button(page, 'Scout RB Legend r0').props.onClick(); page = drawPickedScout();
+    assert(text(find(page, node => node.props.role === 'dialog')[0]).includes('Available years: 1993, 1995'));
+    const pickedLeague = Engine.applyDraftPick(roulette, rouletteCards.get('r0'), { madeBy: 'human', createdAt: '2026-01-01T00:00:01.000Z' });
+    assert(pickedLeague.draftPicks.some(pick => pick.identity === 'r0'));
+    const snapshot = JSON.stringify(pickedLeague);
+    page = drawPickedScout({ league: pickedLeague });
+    const pickedDialog = find(page, node => node.props.role === 'dialog')[0];
+    assert(pickedDialog && !text(pickedDialog).includes('Available years:'), 'A committed identity no longer presents years as available to draft');
+    assert(text(pickedDialog).includes('1993') && text(pickedDialog).includes('1995'), 'The public historical table remains inspectable after the pick');
+    assert.equal(text(find(pickedDialog, node => node.type === 'th')[2]), 'GP');
+    const withBio = rouletteCards.get('r0'); rouletteCards.set('r0', { ...withBio, bio: null });
+    const noBioDialog = find(drawPickedScout(), node => node.props.role === 'dialog')[0];
+    assert(!text(noBioDialog).includes('Biography is not available'));
+    assert.equal(find(noBioDialog, node => node.props.className === 'tl-scout-bio').length, 0, 'Missing biography creates no empty placeholder panel');
+    rouletteCards.set('r0', withBio);
+    assert.equal(scoutWrites, 0, 'Scouting before and after a saved pick performs no game write');
+    assert.equal(JSON.stringify(pickedLeague), snapshot);
+}
 const anyEraBoard = mount({ league: { ...roulette, leagueId: `${roulette.leagueId}-any-era`, settings: { ...roulette.settings, eraRules: { mode: 'any-era', decades: [] } } }, cards: rouletteCards, onUpdate() {} })();
 const anyEraLeader = find(anyEraBoard, node => node.props.className === 'tl-mobile-player-list')[0].children[0];
 assert(text(anyEraLeader).includes('QB Legend q4') && text(anyEraLeader).includes('9999 PEAK'), 'Any-era drafting still uses the complete eligible career');
