@@ -112,6 +112,7 @@
         const [pinnedRosterId, setPinnedRosterId] = useState(null);
         const [note, setNote] = useState('');
         const [pickReceipt, setPickReceipt] = useState(null);
+        const [savingDraftLeague, setSavingDraftLeague] = useState(null);
         const draftAttemptRef = useRef(null);
         const activeLeagueRef = useRef(league.leagueId);
         activeLeagueRef.current = league.leagueId;
@@ -381,7 +382,7 @@
         }, [cards, league]);
 
         function draftBlockReason(card) {
-            if (draftAttemptRef.current?.leagueId === league.leagueId) return 'Saving your selection…';
+            if (savingDraftLeague === league.leagueId || draftAttemptRef.current?.leagueId === league.leagueId) return 'Saving your selection…';
             if (!revealReady) return 'Open every position archive before the draft begins';
             if (!seat || !onClockTeam) return 'Draft complete';
             if (!clockReady) return league.draftClock.status === 'paused' ? 'Draft paused' : 'Start the draft to make picks';
@@ -404,10 +405,11 @@
         };
 
         async function draftCard(card, madeBy) {
-            if (draftBlockReason(card)) return;
+            if (activeLeagueRef.current !== league.leagueId || draftBlockReason(card)) return;
             if (isAuction && !onDraftAction) return;
             const attempt = { leagueId: league.leagueId, identity: card.identity, name: card.name };
             draftAttemptRef.current = attempt;
+            setSavingDraftLeague(league.leagueId);
             setSelectedIdentity(card.identity);
             setNote('');
             setPickReceipt({ ...attempt, status: 'saving', message: `${isAuction ? 'Nominating' : 'Drafting'} ${card.name}…` });
@@ -430,7 +432,10 @@
             } catch {
                 if (current()) setPickReceipt({ ...attempt, status: 'rejected', message: `${card.name} could not be confirmed. Your selection and filters are kept; reconnect and check the roster before trying again.` });
             } finally {
-                if (draftAttemptRef.current === attempt) draftAttemptRef.current = null;
+                if (draftAttemptRef.current === attempt) {
+                    draftAttemptRef.current = null;
+                    setSavingDraftLeague(currentLeague => currentLeague === attempt.leagueId ? null : currentLeague);
+                }
             }
         }
 
@@ -533,7 +538,7 @@
             const block = !myTurn && !drafted.has(card.identity) ? `${onClockTeam?.name || 'Another manager'} is on the clock` : draftBlockReason(card);
             return {
                 id: card.identity, name: card.name, position: card.position, card, rank,
-                detail: `${seasons.length} eligible season${seasons.length === 1 ? '' : 's'} · ${league.settings.hiddenYears ? 'Hidden year' : 'Season drawn after draft'}`,
+                detail: `${seasons.length} season${seasons.length === 1 ? '' : 's'} · ${league.settings.hiddenYears ? 'Hidden year' : 'Year drawn after draft'}`,
                 years: availableYears(seasons), firstYear: Math.min(...seasons.map(season => season.season)),
                 peak, ppg, seasons, drafted: Boolean(pick), draftedBy: pick ? teamName(pick.teamId) : null,
                 canDraft: myTurn && !draftBlockReason(card), draftDisabledReason: block,
@@ -552,21 +557,24 @@
             const games = seasons.reduce((total, season) => total + (Number.isFinite(season.games) && season.games > 0 ? season.games : 0), 0);
             const points = seasons.map(season => season.points).filter(Number.isFinite);
             const low = points.length ? Math.min(...points) : null, high = points.length ? Math.max(...points) : null;
+            const seasonCount = `${seasons.length} eligible season${seasons.length === 1 ? '' : 's'}`;
+            const totalRange = low === high ? low?.toFixed(1) : `${low?.toFixed(1)}–${high?.toFixed(1)}`;
+            const summary = !points.length ? `${seasonCount} · Reference points unavailable.`
+                : `${seasonCount} · ${totalRange} reference points${points.length === seasons.length && seasons.length > 1 && low === high ? ' each' : ''}.${points.length < seasons.length ? ` ${points.length} of ${seasons.length} totals available.` : ''}`;
             const opening = humanTeam ? DraftRoom.findOpenRosterSlot(row.position, humanTeam.roster.map(entry => entry.slot), league.settings.rosterSlots,
                 league.settings.maxQuarterbacks, humanTeam.roster.map(entry => entry.position)) : null;
             const slot = opening?.slot || null;
             const label = slot === 'BN' ? 'bench' : slot === 'SUPER_FLEX' ? 'superflex' : slot === 'FLEX' ? 'flex' : slot;
             const owned = humanTeam?.roster.filter(entry => entry.position === row.position).length || 0;
-            const reason = row.drafted ? `Already drafted by ${row.draftedBy || 'another team'}. You can still compare the public archive.`
+            const reason = row.drafted ? `Drafted by ${row.draftedBy || 'another team'}.`
                 : !humanTeam ? 'Choose your seat to see roster fit.'
                     : !slot ? `Your roster has no legal opening for another ${row.position}.`
-                        : slot === 'BN' ? `Adds ${row.position} depth on the bench. You already have ${owned} at this position.`
-                            : `Fills an open ${label} slot. You currently have ${owned} ${row.position}${owned === 1 ? '' : 's'}.`;
+                        : slot === 'BN' ? `Fits your bench · ${owned} ${row.position} rostered.`
+                            : `Fits your open ${label} slot · ${owned} ${row.position} rostered.`;
             return {
                 subtitle: `${row.position} · ${availableYears(seasons)} · ${league.settings.gameDeckVersion === 1 ? 'NFL regular-season archive' : 'Legacy archive · W1–14'}`,
-                summary: points.length ? `${seasons.length} eligible season${seasons.length === 1 ? '' : 's'} range from ${low.toFixed(1)} to ${high.toFixed(1)} reference points.` : 'Eligible archive totals are unavailable.',
+                summary,
                 reason,
-                confidence: `${seasons.length === 1 ? 'One eligible season' : `${seasons.length} possible seasons`}; the drawn edition is sealed. Archive values are reference scoring, not a weekly forecast.`,
                 metrics: [
                     { label: 'Eligible archive PPG', value: row.ppg == null ? '—' : row.ppg.toFixed(1) },
                     { label: 'Peak season pts', value: high == null ? '—' : high.toFixed(1) },

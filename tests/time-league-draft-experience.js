@@ -6,7 +6,7 @@ window.App = {};
 for (const name of ['roster', 'rules', 'draft-room', 'era-rules', 'season', 'helmet', 'engine', 'ai', 'hidden-years']) require(`../js/shared/time-league-${name}.js`);
 
 // A stateful component harness tests the reveal-to-scout path without a browser.
-let hooks; let cursor; let effects;
+let hooks; let cursor; let effects; let stateObserver = null;
 const focused = [];
 global.React = {
     createElement: (type, props, ...children) => {
@@ -17,7 +17,12 @@ global.React = {
     useState(initial) {
         const index = cursor++;
         if (!(index in hooks)) hooks[index] = typeof initial === 'function' ? initial() : initial;
-        return [hooks[index], (value) => { hooks[index] = typeof value === 'function' ? value(hooks[index]) : value; }];
+        return [hooks[index], (value) => {
+            const next = typeof value === 'function' ? value(hooks[index]) : value;
+            const changed = !Object.is(hooks[index], next);
+            hooks[index] = next;
+            if (changed) stateObserver?.();
+        }];
     },
     useRef(initial) {
         const index = cursor++;
@@ -555,7 +560,15 @@ assert(table.workspaceKey.includes(tableLeague.leagueId) && table.workspaceKey.e
 const archiveRead = table.scoutingForRow(table.rows[1]);
 assert(archiveRead.reason.includes('open QB slot') && archiveRead.summary.includes('180.0'), 'Quick scout explains the legal roster fit and actual eligible archive');
 assert(!JSON.stringify(archiveRead).includes('9999') && !JSON.stringify(archiveRead).includes('2004'), 'Quick scout never consults an out-of-era peak');
-assert(archiveRead.confidence.includes('sealed') && archiveRead.confidence.includes('not a weekly forecast'));
+assert.equal(archiveRead.summary, '1 eligible season · 180.0 reference points.', 'A single edition is not described as a range');
+assert.equal(archiveRead.confidence, undefined, 'Vault quick scout no longer requests the repeated Evidence paragraph');
+assert.equal(table.scoutingForRow(table.rows[0]).summary, '2 eligible seasons · 196.0–200.0 reference points.');
+const equalSeasons = table.rows[0].seasons.map(season => ({ ...season, points: 100 }));
+assert.equal(table.scoutingForRow({ ...table.rows[0], seasons: equalSeasons }).summary, '2 eligible seasons · 100.0 reference points each.', 'Equal totals are described once without a false range');
+assert.equal(table.scoutingForRow({ ...table.rows[0], seasons: equalSeasons.map((season, index) => index ? { ...season, points: null } : season) }).summary,
+    '2 eligible seasons · 100.0 reference points. 1 of 2 totals available.', 'Missing totals never become zero or a claim about every season');
+assert.equal(table.scoutingForRow({ ...table.rows[1], seasons: [{ ...table.rows[1].seasons[0], points: null }] }).summary,
+    '1 eligible season · Reference points unavailable.');
 const legacyRead = tableOf(mount({ league: { ...tableLeague, settings: { ...tableLeague.settings, gameDeckVersion: 0 } }, cards: tableCards, onUpdate() {} })()).props.scoutingForRow(table.rows[1]);
 assert(legacyRead.subtitle.includes('W1–14'), 'Legacy archive comparisons retain their scoring period');
 assert.equal(table.restoreQuery, true, 'Reconnect restores the scoped query and keeps the mobile pick dock aligned');
@@ -599,6 +612,7 @@ const withTaken = Engine.applyDraftPick(tableLeague, tableCards.get('taken-rb'),
 table = tableOf(tableRender({ league: withTaken })).props;
 const takenRow = table.rows.find(row => row.id === 'taken-rb');
 assert(takenRow.drafted && !takenRow.canDraft && takenRow.draftedBy === 'My desk', 'Show-drafted rows retain owner and cannot be selected again');
+assert.equal(table.scoutingForRow(takenRow).reason, 'Drafted by My desk.', 'A drafted scout names its saved owner instead of suggesting an available roster fit');
 const queuedWrites = tableWrites.length;
 table.onToggleQueue(takenRow);
 assert.equal(tableWrites.length, queuedWrites, 'Drafted players cannot re-enter the queue');
@@ -651,6 +665,27 @@ const oldRequest = oldRoomTable.onDraft(oldRoomTable.rows[0]);
 oldRoomRender({ league: { ...tableLeague, leagueId: 'different-room' } });
 finishOld(true); await oldRequest;
 assert.equal(find(oldRoomRender(), node => node.props.className === 'tl-draft-receipt').length, 0, 'A late response from a departed room never announces a pick in the new room');
+// Reproduce the browser race: parent state can confirm a pick and advance the
+// room before the request finally settles. Render state updates immediately so
+// a ref-only unlock cannot be hidden by an extra manual render after completion.
+const nextTurnCards = new Map([...tableCards, ['next-rb', makeCard('next-rb', 'RB', [1986], 160)]]);
+let finishNextTurn;
+const nextTurnRender = mount({ league: tableLeague, cards: nextTurnCards, onlineMeta: { seatTeamId: 't1', role: 'member' }, onUpdate() {},
+    onDraftAction: () => new Promise(resolve => { finishNextTurn = resolve; }) });
+const nextTurnTable = tableOf(nextTurnRender()).props;
+const firstPending = nextTurnTable.onDraft(nextTurnTable.rows.find(row => row.id === 'archive-rb'));
+let nextTurnLeague = tableLeague;
+for (const identity of ['archive-rb', 'archive-qb', 'taken-rb']) nextTurnLeague = Engine.applyDraftPick(nextTurnLeague, nextTurnCards.get(identity), { madeBy: 'human', createdAt: '2026-01-01T00:00:01.000Z' });
+assert.equal(Engine.currentDraftSeat(nextTurnLeague).teamId, 't1');
+nextTurnRender({ league: nextTurnLeague });
+assert(tableOf(nextTurnRender()).props.rows.every(row => !row.canDraft), 'The next turn remains locked while the request is genuinely pending');
+let lastPaint;
+stateObserver = () => { lastPaint = nextTurnRender(); };
+try { finishNextTurn(true); await firstPending; }
+finally { stateObserver = null; }
+assert(lastPaint, 'Settling a pending selection schedules its own final render');
+const unlockedRow = tableOf(lastPaint).props.rows.find(row => row.id === 'next-rb');
+assert(unlockedRow.canDraft && !unlockedRow.draftDisabledReason, 'The painted next human turn is enabled without a reload or unrelated render');
 delete App.GameDraftTable;
 console.log('Vault draft experience: sealed reveals, scouting, recap grids, filters, shared draft table authority, queues and snake/linear/auction turn countdowns passed');
 

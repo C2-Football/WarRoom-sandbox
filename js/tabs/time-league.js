@@ -31,7 +31,7 @@
     const REGULAR_SEASON_WEEKS = 14;
     const MAX_QUARTERBACKS = 2;
 
-    const TAB_IDS = ['home', 'draft', 'gameday', 'roster', 'waivers', 'stats', 'trades', 'achievements', 'messages', 'career', 'community', 'activity'];
+    const TAB_IDS = ['home', 'draft', 'gameday', 'roster', 'waivers', 'trades', 'stats', 'achievements', 'messages', 'career', 'community', 'activity'];
     const TAB_LABELS = {
         home: 'HOME', draft: 'DRAFT', gameday: 'GAMEDAY', roster: 'ROSTER', waivers: 'WAIVERS', stats: 'PLAYER STATS',
         trades: 'TRADES', achievements: 'ACHIEVEMENTS', messages: 'MESSAGES', career: 'MY PROFILE', community: 'COMMUNITY', standings: 'COMMAND CENTRAL', activity: 'ACTIVITY',
@@ -43,6 +43,19 @@
     const gateWorkspace = league => league.weekStage === 'claims'
         ? league.settings.waiversEnabled ? 'waivers' : league.settings.tradesEnabled ? 'trades' : 'roster'
         : ({ lineup: 'roster', ready: 'gameday', postgame: 'gameday' })[league.weekStage] || 'home';
+
+    function LeagueEraSummary({ league }) {
+        // The local canonical save also contains sealed editions. Only the
+        // already-public decade may contribute while their years are hidden.
+        const hidden = league.settings.hiddenYears && !league.yearsRevealed;
+        const present = new Set(league.teams.flatMap(team => team.roster || []).map(entry =>
+            hidden ? entry.hiddenDecade : EraRules.decadeOf(entry.drawnSeason)).filter(Boolean));
+        const decades = EraRules.ERA_DECADES.filter(decade => present.has(decade.id));
+        if (!decades.length) return null;
+        return h('div', { className: 'tl-league-eras', role: 'group', 'aria-label': 'Eras on the field' },
+            h('span', { className: 'tl-league-eras-label' }, 'Eras'),
+            decades.map(decade => h('span', { key: decade.id, title: `${decade.from}–${decade.to}` }, decade.label)));
+    }
 
     const PERSONA_IDS = Engine.AI_PERSONA_IDS;
     // Helmet defaults are deterministic per name (see time-league-helmet.js) so
@@ -1031,6 +1044,12 @@
             setTab(nextTab === 'standings' ? 'home' : nextTab);
             window.requestAnimationFrame(() => document.querySelector('.tl-root')?.scrollIntoView({ block: 'start', behavior: 'auto' }));
         }, []);
+        // Automatic handoffs (including the final saved pick) set the tab
+        // directly. Give them the same entry position as an explicit nav click.
+        useEffect(() => {
+            if (!league) return;
+            window.requestAnimationFrame?.(() => window.document?.querySelector('.tl-root')?.scrollIntoView?.({ block: 'start', behavior: 'auto' }));
+        }, [league?.leagueId, tab]);
         const [activeTeamId, setActiveTeamId] = useState('');
         const [cards, setCards] = useState(null);
         const [loadedLogIndex, setLogIndex] = useState(null);
@@ -1741,7 +1760,7 @@
 
         const tabs = league.phase === 'draft'
             ? ['draft', 'messages', 'career', 'community', 'activity']
-            : ['home', 'gameday', 'roster', 'waivers', 'stats', 'trades', 'achievements', 'draft', 'messages', 'career', 'community', 'activity'];
+            : ['home', 'gameday', 'roster', 'waivers', 'trades', 'stats', 'achievements', 'draft', 'messages', 'career', 'community', 'activity'];
         const activeTab = tabs.includes(tab) ? tab : tabs[0];
         const addPlayoffCounts = league.phase === 'complete' && !league.seasonExtensionLocked && !league.yearsRevealed && !Object.values(league.yearReveals || {}).some(Boolean) && !Engine.playoffCount(league)
             ? [2, 4].filter(count => league.teams.length >= count && league.settings.regularSeasonWeeks + (count === 4 ? 2 : 1) <= 14) : [];
@@ -1797,6 +1816,7 @@
                     h('div', { className: 'tl-league-heading' },
                         h('span', { className: 'tl-league-name' }, league.name),
                         h('strong', null, activeTab === 'draft' && league.phase !== 'draft' ? 'Draft recap' : TAB_LABELS[activeTab])),
+                    league.phase !== 'draft' && h(LeagueEraSummary, { league }),
                     h('div', { className: 'tl-league-context' },
                         !(activeTab === 'draft' && league.phase === 'draft') && h('span', { className: `tl-pill ${phaseTone}` }, watching ? `${playback.replay ? 'REPLAY' : playback.playing ? 'PLAYING' : 'PAUSED'} · WEEK ${playback.week}` : league.phase === 'draft' ? 'DRAFT' : league.phase === 'complete' ? 'COMPLETE' : `${league.weekStage === 'postgame' ? 'FINAL · ' : ''}WEEK ${Math.min(league.weekStage === 'postgame' ? league.currentWeek - 1 : league.currentWeek, Engine.seasonEndWeek(league))}`),
                         onlineMeta && h('button', { type: 'button', className: 'tl-btn tl-invite-trigger', onClick: openFriends, 'aria-controls': 'vault-friends-room', 'aria-expanded': showFriends || !onlineMeta.draftStarted }, onlineMeta.role === 'commissioner' ? 'Invite' : 'Managers'),
@@ -1846,7 +1866,6 @@
                     : activeTab === 'home' && HomePanel ? h(HomePanel, { league, onNavigate: navigateTab,
                         onInspectScore: week => { setScoreRequest(previous => ({ leagueId: league.leagueId, week, requestId: (previous?.requestId || 0) + 1 })); navigateTab('gameday'); },
                         seatTeamId: responseTeam, cards, logIndex, eraFactors, throughWeek: mailThroughWeek }) : null,
-                activeTab === 'home' && RivalsPanel ? h(RivalsPanel, { key: `${league.leagueId}:${responseTeam}`, league, teamId: responseTeam, compact: true, throughWeek: mailThroughWeek, onOpenThread: openMail, isPrivate: Boolean(onlineMeta), onSend: sendRivalMessage, onNavigate: navigateTab }) : null,
                 activeTab === 'draft' ? (cardsReady && DraftPanel ? h(DraftPanel, {
                     key: league.leagueId, league, cards, logIndex, eraFactors, throughWeek: mailThroughWeek, onUpdate: (next, action) => handleUpdate(next, action, { base: league }), onlineMeta, onRevealReadyChange: onDraftRevealReady, onDraftAction: dispatchDraft, onRevealEra: onlineMeta ? revealOnlineEra : undefined,
                     draftControls: league.phase === 'draft' && DraftClock && h(DraftClock, { league, onlineMeta, saving, onAction: dispatchDraft }),

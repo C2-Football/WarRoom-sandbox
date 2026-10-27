@@ -1,0 +1,1284 @@
+{
+  "date": "2026-10-27",
+  "origin": "http://127.0.0.1:3038/?vault=1",
+  "baseline": "9f7e5d5",
+  "journey": "Resumed isolated six-team save at4picks; completed72-pickdraft using publicfilters/legalpickbuttons andnormalAI; Home/Reviewlineup/Messages/More; reload and namedResume preserved12player roster. Separate 2team1QBfixture created through normal wizard verified automaticfinalpick Home headerTop22.",
+  "draftActions": [
+    {
+      "phase": "draft",
+      "pick": "Draft Lamar Jackson",
+      "visibleTurn": "Pick 14 of 72 \u00b7 R3.02 \u00b7 Picking now"
+    },
+    {
+      "phase": "draft",
+      "receipt": "Confirmed\nLamar Jackson is drafted. The saved roster confirms your pick."
+    },
+    {
+      "pick": "Draft Larry Johnson"
+    },
+    {
+      "pick": "Draft Ricky Williams"
+    },
+    {
+      "pick": "Draft Jamal Lewis",
+      "turn": "PICK CLOCK\nOFF\nUntimed\n\u2161\n1\u00d7\n\u2304\n\u2699\nYOUR PICK\nChoose a player to lock in your pick.\nOn the clock \u00b7 #36\nArchive Owls\nPick 36 of 72 \u00b7 R6.06 \u00b7 Your turn\nRB run\n5 straight picks"
+    },
+    {
+      "pick": "Draft Charlie Garner"
+    },
+    {
+      "pick": "Draft Stefon Diggs",
+      "turn": "PICK CLOCK\nOFF\nUntimed\n\u2161\n1\u00d7\n\u2304\n\u2699\nYOUR PICK\nChoose a player to lock in your pick.\nOn the clock \u00b7 #48\nArchive Owls\nPick 48 of 72 \u00b7 R8.06 \u00b7 Your turn\nNo position run"
+    },
+    {
+      "pick": "Draft A.J. Brown",
+      "turn": "PICK CLOCK\nOFF\nUntimed\n\u2161\n1\u00d7\n\u2304\n\u2699\nYOUR PICK\nChoose a player to lock in your pick.\nOn the clock \u00b7 #49\nArchive Owls\nPick 49 of 72 \u00b7 R9.01 \u00b7 Your turn\nNo position run"
+    },
+    {
+      "pick": "Draft Ted Kwalick",
+      "turn": "PICK CLOCK\nOFF\nUntimed\n\u2161\n1\u00d7\n\u2304\n\u2699\nYOUR PICK\nChoose a player to lock in your pick.\nOn the clock \u00b7 #60\nArchive Owls\nPick 60 of 72 \u00b7 R10.06 \u00b7 Your turn\nQB run\n5 straight picks"
+    },
+    {
+      "pick": "Draft Greg Zuerlein",
+      "turn": "PICK CLOCK\nOFF\nUntimed\n\u2161\n1\u00d7\n\u2304\n\u2699\nYOUR PICK\nChoose a player to lock in your pick.\nOn the clock \u00b7 #61\nArchive Owls\nPick 61 of 72 \u00b7 R11.01 \u00b7 Your turn\nQB run\n5 of the last 6"
+    },
+    {
+      "pick": "Draft BAL Defense",
+      "turn": "PICK CLOCK\nOFF\nUntimed\n\u2161\n1\u00d7\n\u2304\n\u2699\nYOUR PICK\nChoose a player to lock in your pick.\nOn the clock \u00b7 #72\nArchive Owls\nPick 72 of 72 \u00b7 R12.06 \u00b7 Your turn\nRB run\n4 straight picks"
+    }
+  ],
+  "draftMatrix": [
+    {
+      "firstRows": [
+        {
+          "buttons": [
+            {
+              "h": 44,
+              "text": "Quick scout",
+              "w": 94.8359375,
+              "x": 80.34375,
+              "y": 857.015625
+            },
+            {
+              "h": 44,
+              "text": "Compare",
+              "w": 76.8203125,
+              "x": 179.1796875,
+              "y": 857.015625
+            },
+            {
+              "h": 44,
+              "text": "\u2606",
+              "w": 44,
+              "x": 260,
+              "y": 857.015625
+            },
+            {
+              "h": 44,
+              "text": "Draft",
+              "w": 70,
+              "x": 308,
+              "y": 857.015625
+            }
+          ],
+          "h": 190.6875
+        },
+        {
+          "buttons": [
+            {
+              "h": 44,
+              "text": "Quick scout",
+              "w": 94.8359375,
+              "x": 80.34375,
+              "y": 1026.90625
+            },
+            {
+              "h": 44,
+              "text": "Compare",
+              "w": 76.8203125,
+              "x": 179.1796875,
+              "y": 1026.90625
+            },
+            {
+              "h": 44,
+              "text": "\u2606",
+              "w": 44,
+              "x": 260,
+              "y": 1026.90625
+            },
+            {
+              "h": 44,
+              "text": "Draft",
+              "w": 70,
+              "x": 308,
+              "y": 1026.90625
+            }
+          ],
+          "h": 169.890625
+        },
+        {
+          "buttons": [
+            {
+              "h": 44,
+              "text": "Quick scout",
+              "w": 94.8359375,
+              "x": 80.34375,
+              "y": 1196.796875
+            },
+            {
+              "h": 44,
+              "text": "Compare",
+              "w": 76.8203125,
+              "x": 179.1796875,
+              "y": 1196.796875
+            },
+            {
+              "h": 44,
+              "text": "\u2606",
+              "w": 44,
+              "x": 260,
+              "y": 1196.796875
+            },
+            {
+              "h": 44,
+              "text": "Draft",
+              "w": 70,
+              "x": 308,
+              "y": 1196.796875
+            }
+          ],
+          "h": 169.890625
+        }
+      ],
+      "pageOverflow": false,
+      "table": [
+        {
+          "content": 366,
+          "width": 366
+        }
+      ],
+      "viewport": [
+        390,
+        844
+      ]
+    },
+    {
+      "firstRows": [
+        {
+          "buttons": [
+            {
+              "h": 44,
+              "text": "Quick scout",
+              "w": 94.8359375,
+              "x": 120.34375,
+              "y": 901.015625
+            },
+            {
+              "h": 44,
+              "text": "Compare",
+              "w": 76.8203125,
+              "x": 219.1796875,
+              "y": 901.015625
+            },
+            {
+              "h": 44,
+              "text": "\u2606",
+              "w": 44,
+              "x": 300,
+              "y": 901.015625
+            },
+            {
+              "h": 44,
+              "text": "Draft",
+              "w": 70,
+              "x": 348,
+              "y": 901.015625
+            }
+          ],
+          "h": 190.6875
+        },
+        {
+          "buttons": [
+            {
+              "h": 44,
+              "text": "Quick scout",
+              "w": 94.8359375,
+              "x": 120.34375,
+              "y": 1070.90625
+            },
+            {
+              "h": 44,
+              "text": "Compare",
+              "w": 76.8203125,
+              "x": 219.1796875,
+              "y": 1070.90625
+            },
+            {
+              "h": 44,
+              "text": "\u2606",
+              "w": 44,
+              "x": 300,
+              "y": 1070.90625
+            },
+            {
+              "h": 44,
+              "text": "Draft",
+              "w": 70,
+              "x": 348,
+              "y": 1070.90625
+            }
+          ],
+          "h": 169.890625
+        },
+        {
+          "buttons": [
+            {
+              "h": 44,
+              "text": "Quick scout",
+              "w": 94.8359375,
+              "x": 120.34375,
+              "y": 1240.796875
+            },
+            {
+              "h": 44,
+              "text": "Compare",
+              "w": 76.8203125,
+              "x": 219.1796875,
+              "y": 1240.796875
+            },
+            {
+              "h": 44,
+              "text": "\u2606",
+              "w": 44,
+              "x": 300,
+              "y": 1240.796875
+            },
+            {
+              "h": 44,
+              "text": "Draft",
+              "w": 70,
+              "x": 348,
+              "y": 1240.796875
+            }
+          ],
+          "h": 169.890625
+        }
+      ],
+      "pageOverflow": false,
+      "table": [
+        {
+          "content": 406,
+          "width": 406
+        }
+      ],
+      "viewport": [
+        430,
+        932
+      ]
+    },
+    {
+      "firstRows": [
+        {
+          "buttons": [
+            {
+              "h": 44,
+              "text": "Quick scout",
+              "w": 85.28125,
+              "x": 726,
+              "y": 605.453125
+            },
+            {
+              "h": 44,
+              "text": "Compare",
+              "w": 69.3203125,
+              "x": 814.28125,
+              "y": 605.453125
+            },
+            {
+              "h": 44,
+              "text": "\u2606",
+              "w": 44,
+              "x": 886.6015625,
+              "y": 605.453125
+            },
+            {
+              "h": 44,
+              "text": "Draft",
+              "w": 58,
+              "x": 933.6015625,
+              "y": 605.453125
+            }
+          ],
+          "h": 59.84375
+        },
+        {
+          "buttons": [
+            {
+              "h": 44,
+              "text": "Quick scout",
+              "w": 85.28125,
+              "x": 726,
+              "y": 665.296875
+            },
+            {
+              "h": 44,
+              "text": "Compare",
+              "w": 69.3203125,
+              "x": 814.28125,
+              "y": 665.296875
+            },
+            {
+              "h": 44,
+              "text": "\u2606",
+              "w": 44,
+              "x": 886.6015625,
+              "y": 665.296875
+            },
+            {
+              "h": 44,
+              "text": "Draft",
+              "w": 58,
+              "x": 933.6015625,
+              "y": 665.296875
+            }
+          ],
+          "h": 59.84375
+        },
+        {
+          "buttons": [
+            {
+              "h": 44,
+              "text": "Quick scout",
+              "w": 85.28125,
+              "x": 726,
+              "y": 725.140625
+            },
+            {
+              "h": 44,
+              "text": "Compare",
+              "w": 69.3203125,
+              "x": 814.28125,
+              "y": 725.140625
+            },
+            {
+              "h": 44,
+              "text": "\u2606",
+              "w": 44,
+              "x": 886.6015625,
+              "y": 725.140625
+            },
+            {
+              "h": 44,
+              "text": "Draft",
+              "w": 58,
+              "x": 933.6015625,
+              "y": 725.140625
+            }
+          ],
+          "h": 59.84375
+        }
+      ],
+      "pageOverflow": false,
+      "table": [
+        {
+          "content": 778,
+          "width": 778
+        }
+      ],
+      "viewport": [
+        1024,
+        1366
+      ]
+    },
+    {
+      "firstRows": [
+        {
+          "buttons": [
+            {
+              "h": 44,
+              "text": "Quick scout",
+              "w": 85.28125,
+              "x": 814,
+              "y": 616.25
+            },
+            {
+              "h": 44,
+              "text": "Compare",
+              "w": 69.3203125,
+              "x": 902.28125,
+              "y": 616.25
+            },
+            {
+              "h": 44,
+              "text": "\u2606",
+              "w": 44,
+              "x": 974.6015625,
+              "y": 616.25
+            },
+            {
+              "h": 44,
+              "text": "Draft",
+              "w": 58,
+              "x": 1021.6015625,
+              "y": 616.25
+            }
+          ],
+          "h": 59.84375
+        },
+        {
+          "buttons": [
+            {
+              "h": 44,
+              "text": "Quick scout",
+              "w": 85.28125,
+              "x": 814,
+              "y": 676.09375
+            },
+            {
+              "h": 44,
+              "text": "Compare",
+              "w": 69.3203125,
+              "x": 902.28125,
+              "y": 676.09375
+            },
+            {
+              "h": 44,
+              "text": "\u2606",
+              "w": 44,
+              "x": 974.6015625,
+              "y": 676.09375
+            },
+            {
+              "h": 44,
+              "text": "Draft",
+              "w": 58,
+              "x": 1021.6015625,
+              "y": 676.09375
+            }
+          ],
+          "h": 59.84375
+        },
+        {
+          "buttons": [
+            {
+              "h": 44,
+              "text": "Quick scout",
+              "w": 85.28125,
+              "x": 814,
+              "y": 735.9375
+            },
+            {
+              "h": 44,
+              "text": "Compare",
+              "w": 69.3203125,
+              "x": 902.28125,
+              "y": 735.9375
+            },
+            {
+              "h": 44,
+              "text": "\u2606",
+              "w": 44,
+              "x": 974.6015625,
+              "y": 735.9375
+            },
+            {
+              "h": 44,
+              "text": "Draft",
+              "w": 58,
+              "x": 1021.6015625,
+              "y": 735.9375
+            }
+          ],
+          "h": 59.84375
+        }
+      ],
+      "pageOverflow": false,
+      "table": [
+        {
+          "content": 866,
+          "width": 866
+        }
+      ],
+      "viewport": [
+        1366,
+        1024
+      ]
+    },
+    {
+      "firstRows": [
+        {
+          "buttons": [
+            {
+              "h": 44,
+              "text": "Quick scout",
+              "w": 85.28125,
+              "x": 888,
+              "y": 616.25
+            },
+            {
+              "h": 44,
+              "text": "Compare",
+              "w": 69.3203125,
+              "x": 976.28125,
+              "y": 616.25
+            },
+            {
+              "h": 44,
+              "text": "\u2606",
+              "w": 44,
+              "x": 1048.6015625,
+              "y": 616.25
+            },
+            {
+              "h": 44,
+              "text": "Draft",
+              "w": 58,
+              "x": 1095.6015625,
+              "y": 616.25
+            }
+          ],
+          "h": 59.84375
+        },
+        {
+          "buttons": [
+            {
+              "h": 44,
+              "text": "Quick scout",
+              "w": 85.28125,
+              "x": 888,
+              "y": 676.09375
+            },
+            {
+              "h": 44,
+              "text": "Compare",
+              "w": 69.3203125,
+              "x": 976.28125,
+              "y": 676.09375
+            },
+            {
+              "h": 44,
+              "text": "\u2606",
+              "w": 44,
+              "x": 1048.6015625,
+              "y": 676.09375
+            },
+            {
+              "h": 44,
+              "text": "Draft",
+              "w": 58,
+              "x": 1095.6015625,
+              "y": 676.09375
+            }
+          ],
+          "h": 59.84375
+        },
+        {
+          "buttons": [
+            {
+              "h": 44,
+              "text": "Quick scout",
+              "w": 85.28125,
+              "x": 888,
+              "y": 735.9375
+            },
+            {
+              "h": 44,
+              "text": "Compare",
+              "w": 69.3203125,
+              "x": 976.28125,
+              "y": 735.9375
+            },
+            {
+              "h": 44,
+              "text": "\u2606",
+              "w": 44,
+              "x": 1048.6015625,
+              "y": 735.9375
+            },
+            {
+              "h": 44,
+              "text": "Draft",
+              "w": 58,
+              "x": 1095.6015625,
+              "y": 735.9375
+            }
+          ],
+          "h": 59.84375
+        }
+      ],
+      "pageOverflow": false,
+      "table": [
+        {
+          "content": 940,
+          "width": 940
+        }
+      ],
+      "viewport": [
+        1440,
+        900
+      ]
+    },
+    {
+      "firstRows": [
+        {
+          "buttons": [
+            {
+              "h": 44,
+              "text": "Quick scout",
+              "w": 85.28125,
+              "x": 787,
+              "y": 616.25
+            },
+            {
+              "h": 44,
+              "text": "Compare",
+              "w": 69.3203125,
+              "x": 875.28125,
+              "y": 616.25
+            },
+            {
+              "h": 44,
+              "text": "\u2606",
+              "w": 44,
+              "x": 947.6015625,
+              "y": 616.25
+            },
+            {
+              "h": 44,
+              "text": "Draft",
+              "w": 58,
+              "x": 994.6015625,
+              "y": 616.25
+            }
+          ],
+          "h": 59.84375
+        },
+        {
+          "buttons": [
+            {
+              "h": 44,
+              "text": "Quick scout",
+              "w": 85.28125,
+              "x": 787,
+              "y": 676.09375
+            },
+            {
+              "h": 44,
+              "text": "Compare",
+              "w": 69.3203125,
+              "x": 875.28125,
+              "y": 676.09375
+            },
+            {
+              "h": 44,
+              "text": "\u2606",
+              "w": 44,
+              "x": 947.6015625,
+              "y": 676.09375
+            },
+            {
+              "h": 44,
+              "text": "Draft",
+              "w": 58,
+              "x": 994.6015625,
+              "y": 676.09375
+            }
+          ],
+          "h": 59.84375
+        },
+        {
+          "buttons": [
+            {
+              "h": 44,
+              "text": "Quick scout",
+              "w": 85.28125,
+              "x": 787,
+              "y": 735.9375
+            },
+            {
+              "h": 44,
+              "text": "Compare",
+              "w": 69.3203125,
+              "x": 875.28125,
+              "y": 735.9375
+            },
+            {
+              "h": 44,
+              "text": "\u2606",
+              "w": 44,
+              "x": 947.6015625,
+              "y": 735.9375
+            },
+            {
+              "h": 44,
+              "text": "Draft",
+              "w": 58,
+              "x": 994.6015625,
+              "y": 735.9375
+            }
+          ],
+          "h": 59.84375
+        }
+      ],
+      "pageOverflow": false,
+      "table": [
+        {
+          "content": 839,
+          "width": 839
+        }
+      ],
+      "viewport": [
+        1339,
+        892
+      ]
+    }
+  ],
+  "homeMatrix": [
+    {
+      "bounds": [
+        {
+          "bottom": 81,
+          "name": "tl-league-bar",
+          "top": 22
+        },
+        {
+          "bottom": 298.4921875,
+          "name": "tl-home-hero",
+          "top": 97
+        },
+        {
+          "bottom": 816.625,
+          "name": "tl-home-dashboard-grid",
+          "top": 407.6875
+        },
+        {
+          "bottom": 892,
+          "name": "tl-week-action-row",
+          "top": 827
+        }
+      ],
+      "era": "ERAS\n1970s\n2000s\n2010s\n2020s",
+      "heroActions": [
+        {
+          "height": 44,
+          "text": "REVIEW WAIVER CLAIMS \u2192"
+        },
+        {
+          "height": 44,
+          "text": "REVIEW LINEUP"
+        }
+      ],
+      "homeMail": 0,
+      "nav": [
+        "\u2302\nHOME",
+        "\u25b6\nGAMEDAY",
+        "\u2659\nROSTER",
+        "+\nWAIVERS",
+        "\u21c4\nTRADES",
+        "\u25a5\nPLAYER STATS",
+        "\u265b\nACHIEVEMENTS",
+        "\u25a4\nDRAFT RECAP",
+        "\u2709\nMESSAGES",
+        "\u2605\nMY PROFILE",
+        "\u25ce\nCOMMUNITY",
+        "\u25f7\nACTIVITY"
+      ],
+      "overflow": false,
+      "standingsRows": [
+        {
+          "bottom": 547.625,
+          "text": "1\t\nArchive Owls\nHUM\n0\t0\t0\t\u2014\t0-0\t0.0\t0.0"
+        },
+        {
+          "bottom": 598.625,
+          "text": "2\t\nWarlord Kade\nAI\n0\t0\t0\t\u2014\t0-0\t0.0\t0.0"
+        },
+        {
+          "bottom": 649.625,
+          "text": "3\t\nThe Archivist\nAI\n0\t0\t0\t\u2014\t0-0\t0.0\t0.0"
+        },
+        {
+          "bottom": 700.625,
+          "text": "4\t\nRiverboat Sol\nAI\n0\t0\t0\t\u2014\t0-0\t0.0\t0.0"
+        },
+        {
+          "bottom": 751.625,
+          "text": "5\t\nSteward Vance\nAI\n0\t0\t0\t\u2014\t0-0\t0.0\t0.0"
+        },
+        {
+          "bottom": 801.625,
+          "text": "6\t\nFrankie Deals\nAI\n0\t0\t0\t\u2014\t0-0\t0.0\t0.0"
+        }
+      ],
+      "updateActions": [
+        {
+          "bottom": 782.75,
+          "text": "REVIEW DRAFT \u2192"
+        },
+        {
+          "bottom": 782.75,
+          "text": "ALL ACTIVITY \u2192"
+        },
+        {
+          "bottom": 782.75,
+          "text": "TROPHY CASE \u2192"
+        }
+      ],
+      "viewport": [
+        1339,
+        892
+      ]
+    },
+    {
+      "bounds": [
+        {
+          "bottom": 81,
+          "name": "tl-league-bar",
+          "top": 22
+        },
+        {
+          "bottom": 298.4921875,
+          "name": "tl-home-hero",
+          "top": 97
+        },
+        {
+          "bottom": 816.625,
+          "name": "tl-home-dashboard-grid",
+          "top": 407.6875
+        },
+        {
+          "bottom": 900,
+          "name": "tl-week-action-row",
+          "top": 835
+        }
+      ],
+      "era": "ERAS\n1970s\n2000s\n2010s\n2020s",
+      "heroActions": [
+        {
+          "height": 44,
+          "text": "REVIEW WAIVER CLAIMS \u2192"
+        },
+        {
+          "height": 44,
+          "text": "REVIEW LINEUP"
+        }
+      ],
+      "homeMail": 0,
+      "nav": [
+        "\u2302\nHOME",
+        "\u25b6\nGAMEDAY",
+        "\u2659\nROSTER",
+        "+\nWAIVERS",
+        "\u21c4\nTRADES",
+        "\u25a5\nPLAYER STATS",
+        "\u265b\nACHIEVEMENTS",
+        "\u25a4\nDRAFT RECAP",
+        "\u2709\nMESSAGES",
+        "\u2605\nMY PROFILE",
+        "\u25ce\nCOMMUNITY",
+        "\u25f7\nACTIVITY"
+      ],
+      "overflow": false,
+      "standingsRows": [
+        {
+          "bottom": 547.625,
+          "text": "1\t\nArchive Owls\nHUM\n0\t0\t0\t\u2014\t0-0\t0.0\t0.0"
+        },
+        {
+          "bottom": 598.625,
+          "text": "2\t\nWarlord Kade\nAI\n0\t0\t0\t\u2014\t0-0\t0.0\t0.0"
+        },
+        {
+          "bottom": 649.625,
+          "text": "3\t\nThe Archivist\nAI\n0\t0\t0\t\u2014\t0-0\t0.0\t0.0"
+        },
+        {
+          "bottom": 700.625,
+          "text": "4\t\nRiverboat Sol\nAI\n0\t0\t0\t\u2014\t0-0\t0.0\t0.0"
+        },
+        {
+          "bottom": 751.625,
+          "text": "5\t\nSteward Vance\nAI\n0\t0\t0\t\u2014\t0-0\t0.0\t0.0"
+        },
+        {
+          "bottom": 801.625,
+          "text": "6\t\nFrankie Deals\nAI\n0\t0\t0\t\u2014\t0-0\t0.0\t0.0"
+        }
+      ],
+      "updateActions": [
+        {
+          "bottom": 782.75,
+          "text": "REVIEW DRAFT \u2192"
+        },
+        {
+          "bottom": 782.75,
+          "text": "ALL ACTIVITY \u2192"
+        },
+        {
+          "bottom": 782.75,
+          "text": "TROPHY CASE \u2192"
+        }
+      ],
+      "viewport": [
+        1440,
+        900
+      ]
+    },
+    {
+      "bounds": [
+        {
+          "bottom": 81,
+          "name": "tl-league-bar",
+          "top": 22
+        },
+        {
+          "bottom": 298.4921875,
+          "name": "tl-home-hero",
+          "top": 97
+        },
+        {
+          "bottom": 816.625,
+          "name": "tl-home-dashboard-grid",
+          "top": 407.6875
+        },
+        {
+          "bottom": 1024,
+          "name": "tl-week-action-row",
+          "top": 959
+        }
+      ],
+      "era": "ERAS\n1970s\n2000s\n2010s\n2020s",
+      "heroActions": [
+        {
+          "height": 44,
+          "text": "REVIEW WAIVER CLAIMS \u2192"
+        },
+        {
+          "height": 44,
+          "text": "REVIEW LINEUP"
+        }
+      ],
+      "homeMail": 0,
+      "nav": [
+        "\u2302\nHOME",
+        "\u25b6\nGAMEDAY",
+        "\u2659\nROSTER",
+        "+\nWAIVERS",
+        "\u21c4\nTRADES",
+        "\u25a5\nPLAYER STATS",
+        "\u265b\nACHIEVEMENTS",
+        "\u25a4\nDRAFT RECAP",
+        "\u2709\nMESSAGES",
+        "\u2605\nMY PROFILE",
+        "\u25ce\nCOMMUNITY",
+        "\u25f7\nACTIVITY"
+      ],
+      "overflow": false,
+      "standingsRows": [
+        {
+          "bottom": 547.625,
+          "text": "1\t\nArchive Owls\nHUM\n0\t0\t0\t\u2014\t0-0\t0.0\t0.0"
+        },
+        {
+          "bottom": 598.625,
+          "text": "2\t\nWarlord Kade\nAI\n0\t0\t0\t\u2014\t0-0\t0.0\t0.0"
+        },
+        {
+          "bottom": 649.625,
+          "text": "3\t\nThe Archivist\nAI\n0\t0\t0\t\u2014\t0-0\t0.0\t0.0"
+        },
+        {
+          "bottom": 700.625,
+          "text": "4\t\nRiverboat Sol\nAI\n0\t0\t0\t\u2014\t0-0\t0.0\t0.0"
+        },
+        {
+          "bottom": 751.625,
+          "text": "5\t\nSteward Vance\nAI\n0\t0\t0\t\u2014\t0-0\t0.0\t0.0"
+        },
+        {
+          "bottom": 801.625,
+          "text": "6\t\nFrankie Deals\nAI\n0\t0\t0\t\u2014\t0-0\t0.0\t0.0"
+        }
+      ],
+      "updateActions": [
+        {
+          "bottom": 782.75,
+          "text": "REVIEW DRAFT \u2192"
+        },
+        {
+          "bottom": 782.75,
+          "text": "ALL ACTIVITY \u2192"
+        },
+        {
+          "bottom": 782.75,
+          "text": "TROPHY CASE \u2192"
+        }
+      ],
+      "viewport": [
+        1366,
+        1024
+      ]
+    },
+    {
+      "bounds": [
+        {
+          "bottom": 114.046875,
+          "name": "tl-league-bar",
+          "top": 22
+        },
+        {
+          "bottom": 429.140625,
+          "name": "tl-home-hero",
+          "top": 130.046875
+        },
+        {
+          "bottom": 1405.1875,
+          "name": "tl-home-dashboard-grid",
+          "top": 568.6328125
+        },
+        {
+          "bottom": 1366,
+          "name": "tl-week-action-row",
+          "top": 1301
+        }
+      ],
+      "era": "ERAS\n1970s\n2000s\n2010s\n2020s",
+      "heroActions": [
+        {
+          "height": 40,
+          "text": "REVIEW WAIVER CLAIMS \u2192"
+        },
+        {
+          "height": 40,
+          "text": "REVIEW LINEUP"
+        }
+      ],
+      "homeMail": 0,
+      "nav": [
+        "\u2302\nHOME",
+        "\u25b6\nGAMEDAY",
+        "\u2659\nROSTER",
+        "+\nWAIVERS",
+        "\u21c4\nTRADES",
+        "\u25a5\nPLAYER STATS",
+        "\u265b\nACHIEVEMENTS",
+        "\u25a4\nDRAFT RECAP",
+        "\u2709\nMESSAGES",
+        "\u2605\nMY PROFILE",
+        "\u25ce\nCOMMUNITY",
+        "\u25f7\nACTIVITY"
+      ],
+      "overflow": false,
+      "standingsRows": [
+        {
+          "bottom": 706.8515625,
+          "text": "1\t\nArchive Owls\nHUM\n0\t0\t0\t\u2014\t0-0\t0.0\t0.0"
+        },
+        {
+          "bottom": 763.2265625,
+          "text": "2\t\nWarlord Kade\nAI\n0\t0\t0\t\u2014\t0-0\t0.0\t0.0"
+        },
+        {
+          "bottom": 819.6015625,
+          "text": "3\t\nThe Archivist\nAI\n0\t0\t0\t\u2014\t0-0\t0.0\t0.0"
+        },
+        {
+          "bottom": 875.9765625,
+          "text": "4\t\nRiverboat Sol\nAI\n0\t0\t0\t\u2014\t0-0\t0.0\t0.0"
+        },
+        {
+          "bottom": 932.3515625,
+          "text": "5\t\nSteward Vance\nAI\n0\t0\t0\t\u2014\t0-0\t0.0\t0.0"
+        },
+        {
+          "bottom": 987.7265625,
+          "text": "6\t\nFrankie Deals\nAI\n0\t0\t0\t\u2014\t0-0\t0.0\t0.0"
+        }
+      ],
+      "updateActions": [
+        {
+          "bottom": 1386.1875,
+          "text": "REVIEW DRAFT \u2192"
+        },
+        {
+          "bottom": 1386.1875,
+          "text": "ALL ACTIVITY \u2192"
+        },
+        {
+          "bottom": 1386.1875,
+          "text": "TROPHY CASE \u2192"
+        }
+      ],
+      "viewport": [
+        1024,
+        1366
+      ]
+    },
+    {
+      "bounds": [
+        {
+          "bottom": 103.7421875,
+          "name": "tl-league-bar",
+          "top": 12
+        },
+        {
+          "bottom": 502.0234375,
+          "name": "tl-home-hero",
+          "top": 113.7421875
+        },
+        {
+          "bottom": 1184.5546875,
+          "name": "tl-home-dashboard-grid",
+          "top": 700.3984375
+        },
+        {
+          "bottom": 857,
+          "name": "tl-week-action-row",
+          "top": 766.703125
+        }
+      ],
+      "era": "ERAS\n1970s\n2000s\n2010s\n2020s",
+      "heroActions": [
+        {
+          "height": 55.59375,
+          "text": "REVIEW WAIVER CLAIMS \u2192"
+        },
+        {
+          "height": 55.59375,
+          "text": "REVIEW LINEUP"
+        }
+      ],
+      "homeMail": 0,
+      "nav": [
+        "\u2302\nHome",
+        "\u2659\nMy team",
+        "\u25b6\nGame day",
+        "+\nPlayers",
+        "\u2022\u2022\u2022\nMore"
+      ],
+      "overflow": false,
+      "updateActions": [
+        {
+          "bottom": 1169.5546875,
+          "text": "REVIEW DRAFT \u2192"
+        },
+        {
+          "bottom": 1169.5546875,
+          "text": "ALL ACTIVITY \u2192"
+        },
+        {
+          "bottom": 1169.5546875,
+          "text": "TROPHY CASE \u2192"
+        }
+      ],
+      "viewport": [
+        430,
+        932
+      ]
+    },
+    {
+      "bounds": [
+        {
+          "bottom": 103.7421875,
+          "name": "tl-league-bar",
+          "top": 12
+        },
+        {
+          "bottom": 502.0234375,
+          "name": "tl-home-hero",
+          "top": 113.7421875
+        },
+        {
+          "bottom": 1221.6484375,
+          "name": "tl-home-dashboard-grid",
+          "top": 700.3984375
+        },
+        {
+          "bottom": 769,
+          "name": "tl-week-action-row",
+          "top": 678.703125
+        }
+      ],
+      "era": "ERAS\n1970s\n2000s\n2010s\n2020s",
+      "heroActions": [
+        {
+          "height": 55.59375,
+          "text": "REVIEW WAIVER CLAIMS \u2192"
+        },
+        {
+          "height": 55.59375,
+          "text": "REVIEW LINEUP"
+        }
+      ],
+      "homeMail": 0,
+      "nav": [
+        "\u2302\nHome",
+        "\u2659\nMy team",
+        "\u25b6\nGame day",
+        "+\nPlayers",
+        "\u2022\u2022\u2022\nMore"
+      ],
+      "overflow": false,
+      "updateActions": [
+        {
+          "bottom": 1206.6484375,
+          "text": "REVIEW DRAFT \u2192"
+        },
+        {
+          "bottom": 1206.6484375,
+          "text": "ALL ACTIVITY \u2192"
+        },
+        {
+          "bottom": 1206.6484375,
+          "text": "TROPHY CASE \u2192"
+        }
+      ],
+      "viewport": [
+        390,
+        844
+      ]
+    }
+  ],
+  "handoff": {
+    "headerTop": 22,
+    "heroTitle": "Commander vs. Warlord Kade",
+    "heroTop": 97,
+    "mailCards": 0,
+    "phase": "season",
+    "roster": "Your roster\n1 players\nStarting lineup\nLegal\nYour desk\n0 claims \u00b7 0 offers",
+    "tab": "home"
+  },
+  "resume": {
+    "headerTop": 22,
+    "league": "Menu QA \u00b7 October 26",
+    "roster": "Your roster\n12 players\nStarting lineup\nLegal\nYour desk\n0 claims \u00b7 0 offers",
+    "tab": "home"
+  },
+  "boundaries": [
+    "CUA IAB Chromium viewport emulation",
+    "Local-only test leagues on3038",
+    "3037 progress not used for test actions",
+    "No online room, profile save, message send, production deploy, WebKit or physical-device proof"
+  ],
+  "sourceSha256": {
+    "index.html": "88eca3ab62fd00f16f8f5d956cefcfa6ba8142efc2f7bf2aac02bcd89344ed98",
+    "js/tabs/time-league.js": "a82b17b9e9e6c26311a759739d2cc9d7eabb4ef51a89668e9234f48d40475b18",
+    "js/components/time-league-home-panel.js": "fd180ed2c323ac1fab7c1a3fc930d4f69a0e8213518aa625cfecb0c668332b56",
+    "js/components/time-league-draft-panel.js": "754e32ec052201bcb4c109315e9b9d776f0eda12317ccbb419d79f28bcec4005",
+    "time-league-focus.css": "c506d2e45af95c0755253f87903bb3a33695f49200170fe09d1741d3259f26ef",
+    "time-league-draft-experience.css": "4e57fc1b1a0213a134e4cf4566be60d90d85bc7c0e6c5f6a22e0e9d842845c6c",
+    "time-league-home-layout.css": "e6b44c03a7b64f6cc974cbbd6417d64173b0b2ad25f238a1adc9aacc853cee32"
+  },
+  "checks": {
+    "vaultSuite": "77 commands passed; Node20.20.2",
+    "core": "97/97",
+    "firstClass": "7/7",
+    "sharedDraft": "passed",
+    "newBrowserContext": "8 groups passed",
+    "draftExperience": "passed including async final repaint race",
+    "changedRuntimeLint": "0 errors, 0 warnings",
+    "build": "161 JSX / 300 minified modules",
+    "browserCapturedErrors": []
+  },
+  "visualScope": "Six-team planning Home fits above the dock at1339x892; phone/tabletportrait/largerleagues/expandedrecords scroll naturally."
+}

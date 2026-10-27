@@ -1,5 +1,73 @@
 # The Vault — beta readiness review
 
+## October 27, 2026 desktop feedback pass
+
+Status: VERIFIED locally. Baseline: `9f7e5d5`. Scope: the nine new annotated
+draft/Home comments. No rules, historical data, save format or hosted publication
+changes were made. The previous published release below remains unchanged.
+
+| Requirement | Status | Completion criterion |
+|---|---|---|
+| Compact draft rows/actions (1–2) | VERIFIED | Desktop rows measured 59.84px versus 103.98px baseline; four aligned 44px actions; no horizontal table overflow at the six checked sizes |
+| Concise quick scout (3–5) | VERIFIED | No Evidence paragraph; correct singular/equal/missing/range/ownership copy; public information preserved |
+| Desktop Home composition (6) | VERIFIED | Six-team planning dashboard ends at 816.63px, above the 827px action dock at 1339×892; next actions and full standings retained |
+| League eras and mail (7–8) | VERIFIED | Rostered public decades in league header; no bottom Home mail card; actual Messages route and unread actions retained |
+| Navigation order (9) | VERIFIED | Actual desktop and phone More place Trades before Player stats; eight new regression groups cover phase/privacy/navigation cases |
+| Integration and responsive verification | VERIFIED | 77-command Vault suite, shared draft checks, core 97/97, first-class 7/7, source lint/build; real isolated draft completion, final-pick handoff and named Resume |
+
+Desktop Home now puts standings beside League update and uses a smaller matchup
+and action row. The opener update reports saved draft, roster, lineup, claim and
+offer state plus actual recent activity. Replays, activity and Trophy case remain
+reachable. Larger leagues, expanded details, recap/completion and phone/tablet
+portrait content retain natural scrolling; the one-view fit claim applies to the
+marked six-team planning dashboard, not every possible game state.
+
+Draft density is scoped to the Vault adapter. Shared Dynasty HQ draft controls
+are unchanged. Reference-scoring context remains in the metric labels/help and
+the board note. Quick scout no longer renders the requested Evidence paragraph;
+a single eligible edition reports one total, equal editions do not invent a
+range, and missing totals remain unavailable. Header era summaries use only
+`hiddenDecade` while years are sealed; getter-trap tests verify zero reads of
+private assigned years. Save compatibility requires no migration.
+
+Interactive QA found and repaired two connected defects: a ref-only pending-pick
+lock could leave the next turn disabled after a successful save, and automatic
+final-pick navigation could retain the draft's scroll position. Pending state now
+repaints when the request settles, retaining duplicate-action protection. Both
+manual navigation and automatic tab handoffs enter at the top. The draft test
+reproduces the parent-confirmation/request-completion race; the actual browser
+completed later consecutive human picks without a reload.
+
+CUA/IAB testing used only disposable `3038` data: an existing six-team save at
+four picks continued through all 72 picks into Home, then reloaded and resumed
+the same 12-player roster. A separate two-team/one-QB league was created through
+the real wizard; its final human pick opened Home with the header at 22px and a
+working Review lineup action. Phone More → Messages opened real conversations
+without sending a message. No user gameplay actions on `3037` were used as tests.
+
+Draft and Home screenshots/geometry cover 390×844, 430×932, 1024×1366,
+1366×1024, 1339×892 and 1440×900. Tablet QA caught and repaired a 42px internal
+draft-table overflow; the final capture measures 778px content in 778px space.
+The desktop inspector also retains a full-width table beside its compact 240px
+panel. The QA tab's captured error log was empty. This is local Chromium viewport
+emulation, not physical-device, WebKit, hosted multiplayer or deployment proof.
+
+Evidence: [source hashes and interactive results](public-readiness/evidence/vault-desktop-20261027.json).
+Logs and captures: `output/playwright/vault-desktop-20261027/`.
+Representative [Home](../output/playwright/vault-desktop-20261027/home-1339x892.png),
+[draft and scout](../output/playwright/vault-desktop-20261027/draft-inspector-1339x892.png),
+[tablet draft](../output/playwright/vault-desktop-20261027/draft-1024x1366.png),
+[phone More](../output/playwright/vault-desktop-20261027/more-390x844.png).
+The `attempt-*` captures document earlier scroll/overflow findings and are
+excluded from final visual evidence. Build compiles 161 JSX / minifies 300 modules;
+the three changed runtime scripts pass ESLint without warnings. The full Vault
+suite passes on Node 20.20.2; focused checks pass again after the final Home
+handoff/copy corrections. Existing future-work priorities below are unchanged.
+
+The updated preview runs with `node scripts/serve-static.cjs --port=3037 --compile`
+at `http://127.0.0.1:3037/?vault=1`. No push, backend update or deployment was
+performed in this feedback pass.
+
 ## October 26, 2026 browser feedback pass
 
 Status: VERIFIED locally. Baseline checkpoint: `b3a3ca7`. This finite pass

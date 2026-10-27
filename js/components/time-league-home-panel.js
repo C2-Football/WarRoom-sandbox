@@ -9,19 +9,6 @@
     const h = React.createElement;
 
     const Engine = window.App.TimeLeagueEngine;
-    const EraRules = window.App.TimeLeagueEraRules;
-
-    function computeEraSpread(league) {
-        const entries = league.teams.flatMap((team) => team.roster);
-        const decades = new Set();
-        let oldest = null;
-        for (const entry of entries) {
-            const decade = league.settings.hiddenYears && !league.yearsRevealed ? entry.hiddenDecade : EraRules.decadeOf(entry.drawnSeason);
-            if (decade) decades.add(decade);
-            if (!oldest || String(decade) < String(oldest.hiddenDecade || EraRules.decadeOf(oldest.drawnSeason))) oldest = entry;
-        }
-        return { decades: [...decades].sort(), oldest };
-    }
 
     function TeamLockup({ team, standing, side, score, scoreDigits = 1, emptyLabel = 'No matchup' }) {
         if (!team) return h('div', { className: `tl-home-team ${side}` }, h('div', { className: 'tl-home-bye' }, emptyLabel));
@@ -89,8 +76,8 @@
         const lastFinalized = league.finalizedWeeks[league.finalizedWeeks.length - 1] ?? null;
         const lastMatchup = lastFinalized?.matchups.find((matchup) => matchup.home === myTeam.teamId || matchup.away === myTeam.teamId) ?? null;
         const lastResult = lastMatchup ? (lastMatchup.winner === null ? 'T' : lastMatchup.winner === myTeam.teamId ? 'W' : 'L') : null;
-        const eraSpread = useMemo(() => computeEraSpread(league), [league]);
         const recentActivity = [...league.activity].reverse().filter(event => event.week >= (lastFinalized?.week ?? league.currentWeek) && event.kind !== 'draft' && event.kind !== 'reveal').slice(0, 3);
+        const recentMoves = recentActivity.filter(event => event.kind === 'waiver' || event.kind === 'trade').slice(0, 2);
         const champion = league.championTeamId ? teamOf(league.championTeamId) : null;
 
         const weeklyLeaders = useMemo(() => {
@@ -169,7 +156,7 @@
                     h('p', null, playoffObserver ? 'Your playoff run is complete. End week when you are ready, then follow the remaining games from game day.' : league.settings.waiversEnabled ? 'End week opens the next waiver window. Submit claims, resolve waivers, then set your lineup for kickoff.' : 'End week opens the next planning window. Review trades and set your lineup for kickoff.')));
         }
 
-        return h('div', { className: 'tl-home' },
+        return h('div', { className: `tl-home${league.phase === 'season' ? ' tl-home-dashboard' : ''}` },
             league.phase === 'complete' && window.WrTimeLeagueCeremony && h(window.WrTimeLeagueCeremony, { key: league.leagueId || league.id || league.name, league, onNavigate, cards, logIndex, eraFactors, throughWeek }),
             (league.phase !== 'complete' || !window.WrTimeLeagueCeremony) && h('section', { className: `tl-home-hero${league.phase === 'complete' ? ' champion' : ''}` },
                 h('div', { className: 'tl-home-hero-copy' },
@@ -215,8 +202,9 @@
                     onClick: () => onNavigate('trades'),
                 })),
 
-            playoffHunt,
-            (showHunt || phone) ? h('details', { className: 'tl-home-secondary' }, h('summary', null, 'Full standings & team details'), h(window.WrTimeLeagueStandingsPanel, { league, onNavigate, embedded: true })) : h(window.WrTimeLeagueStandingsPanel, { league, onNavigate, embedded: true }),
+            h('div', { className: 'tl-home-dashboard-grid' },
+            h('div', { className: 'tl-home-standings-workspace' }, playoffHunt,
+                (showHunt || phone) ? h('details', { className: 'tl-home-secondary' }, h('summary', null, 'Full standings & team details'), h(window.WrTimeLeagueStandingsPanel, { league, onNavigate, embedded: true })) : h(window.WrTimeLeagueStandingsPanel, { league, onNavigate, embedded: true })),
             h('section', { className: 'tl-home-recap-grid' },
                 h('article', { className: 'tl-card tl-league-update' },
                     h('header', { className: 'tl-league-update-heading' }, h('h2', null, 'League update'),
@@ -230,19 +218,22 @@
                             h('small', null, 'FINAL'),
                             [[match.home,match.homePoints],[match.away,match.awayPoints]].map(([id,points]) => h('div', { key: id, className: match.winner === id ? 'winner' : '' },
                                 h('span', null, teamName(id)), h('strong', null, points.toFixed(2)))))))
-                        : h('p', { className: 'tl-update-empty' }, 'Week 1 results and standout performances will appear here after game day.'),
-                    recentActivity.length > 0 && h('details', { className: 'tl-update-activity' }, h('summary', null, 'Recent league activity'),
+                        : h('div', { className: 'tl-home-opener-update' },
+                            h('h3', null, 'Your draft is saved.'),
+                            h('p', null, `${league.teams.length} teams · ${league.draftPicks.length} draft picks saved. Your next result comes from the starting lineup you choose.`),
+                            h('dl', { className: 'tl-home-readiness' },
+                                h('div', null, h('dt', null, 'Your roster'), h('dd', null, `${myTeam.roster.length} player${myTeam.roster.length === 1 ? '' : 's'}`)),
+                                h('div', null, h('dt', null, 'Starting lineup'), h('dd', null, ready ? 'Legal' : `${lineupProblems.length} issue${lineupProblems.length === 1 ? '' : 's'}`)),
+                                h('div', null, h('dt', null, 'Your desk'), h('dd', null, `${pendingWaivers} claim${pendingWaivers === 1 ? '' : 's'} · ${openTrades} offer${openTrades === 1 ? '' : 's'}`))),
+                            recentMoves.length > 0 && h('div', { className: 'tl-home-recent-moves', 'aria-label': 'Recent activity' },
+                                recentMoves.map(event => h('p', { key: event.id }, event.message)))),
+                    lastFinalized && recentActivity.length > 0 && h('details', { className: 'tl-update-activity' }, h('summary', null, 'Recent league activity'),
                         recentActivity.map(event => h('div', { key: event.id }, h('span', null, `W${event.week}`), h('p', null, event.message)))),
                     h('footer', { className: 'tl-update-links' },
                         lastFinalized && h('button', { type: 'button', className: 'tl-btn', onClick: () => onNavigate('gameday') }, 'Replays & box scores →'),
-                        h('button', { type: 'button', className: 'tl-btn', onClick: () => onNavigate('activity') }, 'All activity →')))),
-
-            h('section', { className: 'tl-home-era-strip' },
-                h('div', null, h('span', { className: 'tl-eyebrow' }, 'IN YOUR LEAGUE'), h('strong', null, 'The eras on the field')),
-                h('div', { className: 'tl-home-era-line' }, EraRules.ERA_DECADES.map((decade) => h('span', {
-                    key: decade.id, className: eraSpread.decades.includes(decade.id) ? 'live' : '',
-                }, h('b', null, decade.label), h('small', null, `${decade.from}–${decade.to}`)))),
-                h('button', { type: 'button', className: 'tl-btn', onClick: () => onNavigate('achievements') }, 'VIEW TROPHY CASE →')));
+                        !lastFinalized && h('button', { type: 'button', className: 'tl-btn', onClick: () => onNavigate('draft') }, 'Review draft →'),
+                        h('button', { type: 'button', className: 'tl-btn', onClick: () => onNavigate('activity') }, 'All activity →'),
+                        h('button', { type: 'button', className: 'tl-btn', onClick: () => onNavigate('achievements') }, 'Trophy case →'))))));
     }
 
     window.WrTimeLeagueHomePanel = WrTimeLeagueHomePanel;

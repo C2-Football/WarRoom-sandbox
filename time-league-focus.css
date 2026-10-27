@@ -4,6 +4,15 @@
 .tl-league-name { color:var(--text-muted); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .tl-league-heading > strong { font-family:var(--font-title); font-size:23px; line-height:1.15; }
 .tl-league-context { display:flex; align-items:center; gap:10px; flex-shrink:0; }
+.tl-league-eras { display:flex; align-items:center; justify-content:center; flex-wrap:wrap; gap:5px 9px; min-width:0; margin-left:auto; color:var(--text-secondary); font-size:11px; font-variant-numeric:tabular-nums; }
+.tl-league-eras > span:not(.tl-league-eras-label) { white-space:nowrap; }
+.tl-league-eras > span:not(.tl-league-eras-label)::before { content:'•'; margin-right:4px; color:var(--gold); }
+.tl-league-eras-label { color:var(--text-muted); text-transform:uppercase; font-size:10px; letter-spacing:.06em; }
+@media(max-width:1100px) {
+  .tl-league-bar:has(.tl-league-eras) { flex-wrap:wrap; }
+  .tl-league-eras { order:3; flex-basis:100%; justify-content:flex-start; margin:0; }
+  .tl-league-bar:has(.tl-league-eras) .tl-league-context { margin-left:auto; }
+}
 .tl-connection-dot { color:var(--good); font-size:12px; }
 .tl-league-menu { position:relative; }
 .tl-league-menu > summary { display:grid; place-items:center; width:44px; height:44px; border:1px solid var(--charcoal); border-radius:12px; cursor:pointer; list-style:none; font-size:19px; letter-spacing:2px; background:var(--black); }

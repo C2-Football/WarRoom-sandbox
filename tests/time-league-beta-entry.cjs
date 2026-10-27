@@ -123,6 +123,10 @@ async function login({ search = '', local = {}, pendingInvite = null, oauth = nu
     cast.props.onPlaybackChange({ ...playback, replay: false });
     assert.equal(nodes(render()).find(node => node.type === window.WrTimeLeagueRivalsPanel).props.throughWeek, 0, 'First-time live playback still hides the final outcome');
     cast.props.onPlaybackChange({ ...playback, replay: false, done: true });
+    tree = render();
+    assert.equal(states[4], 'home');
+    assert(!nodes(tree).some(node => node.type === window.WrTimeLeagueRivalsPanel), 'The completed playback returns to Home without remounting a compact inbox');
+    states[4] = 'messages';
     assert.equal(nodes(render()).find(node => node.type === window.WrTimeLeagueRivalsPanel).props.throughWeek, undefined);
 
     states[4] = 'home'; states[1] = { ...states[1], phase: 'complete', settings: { ...states[1].settings, regularSeasonWeeks: 14, playoffTeams: 0 } };

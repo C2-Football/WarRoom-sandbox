@@ -1,0 +1,70 @@
+/* Home keeps the next decision, table and league news together on desktop. */
+.tl-root.tl-play .tl-home-dashboard-grid { display:grid; grid-template-columns:minmax(0,1fr); gap:14px; }
+.tl-root.tl-play .tl-home-standings-workspace,
+.tl-root.tl-play .tl-home-dashboard-grid > .tl-home-recap-grid { min-width:0; }
+.tl-root.tl-play .tl-home-standings-workspace { display:flex; flex-direction:column; gap:12px; }
+.tl-root.tl-play .tl-home-standings-workspace > .tl-home-secondary { margin:0; }
+.tl-root.tl-play .tl-home-opener-update h3 { margin:0 0 8px; font:600 20px/1.2 var(--font-title); }
+.tl-root.tl-play .tl-home-opener-update > p { margin:0; color:var(--text-secondary); font-size:14px; line-height:1.5; }
+.tl-root.tl-play .tl-home-readiness { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:18px 0 0; }
+.tl-root.tl-play .tl-home-readiness > div { min-width:0; }
+.tl-root.tl-play .tl-home-readiness > div:last-child { grid-column:1 / -1; }
+.tl-root.tl-play .tl-home-readiness dt { margin:0 0 4px; color:var(--text-secondary); font-size:12px; }
+.tl-root.tl-play .tl-home-readiness dd { margin:0; font-size:16px; font-weight:600; line-height:1.35; }
+.tl-root.tl-play .tl-home-recent-moves { border-top:1px solid var(--charcoal); margin-top:16px; padding-top:12px; }
+.tl-root.tl-play .tl-home-recent-moves p { margin:0 0 8px; color:var(--text-secondary); font-size:13px; line-height:1.45; overflow-wrap:anywhere; }
+
+@media (min-width:1100px) {
+  .tl-root.tl-play .tl-home-dashboard { gap:12px; }
+  .tl-root.tl-play .tl-home-dashboard > .tl-home-hero { min-height:180px; margin-bottom:0; padding:20px 24px; gap:24px; grid-template-columns:minmax(0,1fr) minmax(360px,.9fr); }
+  .tl-root.tl-play .tl-home-dashboard .tl-home-hero-copy h1 { margin:7px 0 8px; font-size:30px; line-height:1.08; }
+  .tl-root.tl-play .tl-home-dashboard .tl-home-hero-copy > p { max-width:56ch; font-size:14px; line-height:1.45; }
+  .tl-root.tl-play .tl-home-dashboard .tl-home-hero-actions { margin-top:12px; flex-wrap:wrap; }
+  .tl-root.tl-play .tl-home-dashboard .tl-home-hero-actions .tl-btn { min-height:44px; }
+  .tl-root.tl-play .tl-home-dashboard .tl-home-team .tl-matchup-helmet,
+  .tl-root.tl-play .tl-home-dashboard .tl-home-team .tl-helmet { width:66px; height:66px; }
+  .tl-root.tl-play .tl-home-dashboard .tl-home-team > strong { margin-top:5px; font-size:15px; line-height:1.25; }
+  .tl-root.tl-play .tl-home-dashboard .tl-home-team > span:not(.tl-matchup-helmet) { font-size:11px; letter-spacing:0; }
+  .tl-root.tl-play .tl-home-dashboard .tl-home-vs > :is(span,small) { font-size:11px; letter-spacing:.04em; }
+  .tl-root.tl-play .tl-home-dashboard > .tl-home-action-grid { gap:12px; }
+  .tl-root.tl-play .tl-home-dashboard .tl-home-action { min-height:78px; padding:12px 16px; grid-template-columns:36px minmax(0,1fr) 18px; gap:10px; }
+  .tl-root.tl-play .tl-home-dashboard .tl-home-action-copy { gap:2px; }
+  .tl-root.tl-play .tl-home-dashboard .tl-home-action-copy > small { font-size:10px; letter-spacing:.08em; }
+  .tl-root.tl-play .tl-home-dashboard .tl-home-action-copy > strong { font-size:20px; }
+  .tl-root.tl-play .tl-home-dashboard .tl-home-action-copy > span { font-size:13px; margin:0; }
+  .tl-root.tl-play .tl-home-dashboard-grid { grid-template-columns:minmax(0,1.5fr) minmax(340px,1fr); align-items:start; gap:12px; }
+  .tl-root.tl-play .tl-home-dashboard .tl-command-center > .tl-card { padding:14px 16px; }
+  .tl-root.tl-play .tl-home-dashboard .tl-command-center .tl-card-title { margin-bottom:10px; }
+  .tl-root.tl-play .tl-home-dashboard .tl-command-center .tl-card-title > span { font-size:17px; }
+  .tl-root.tl-play .tl-home-dashboard .tl-command-center .tl-card-title > small { font-size:11px; }
+  .tl-root.tl-play .tl-home-dashboard .tl-command-center .tl-tbl { min-width:0; width:100%; }
+  .tl-root.tl-play .tl-home-dashboard .tl-tbl :is(th,td) { padding:9px 5px; font-size:12px; }
+  .tl-root.tl-play .tl-home-dashboard .tl-command-center .tl-tbl td { padding-top:3px; padding-bottom:3px; }
+  .tl-root.tl-play .tl-home-dashboard .tl-command-team { min-width:0; max-width:170px; min-height:44px; white-space:normal; overflow-wrap:anywhere; font-size:13px; line-height:1.3; text-align:left; }
+  .tl-root.tl-play .tl-home-dashboard .tl-standings-desktop .tl-pill { padding:3px 5px; font-size:10px; }
+  .tl-root.tl-play .tl-home-dashboard .tl-standings-desktop td:nth-child(2) { gap:5px!important; }
+  .tl-root.tl-play .tl-home-dashboard .tl-league-update { padding:14px 16px; }
+  .tl-root.tl-play .tl-home-dashboard .tl-league-update-heading { margin-bottom:12px; }
+  .tl-root.tl-play .tl-home-dashboard .tl-league-update-heading h2 { font-size:20px; }
+  .tl-root.tl-play .tl-home-dashboard .tl-league-update-heading .tl-pill { font-size:10px; }
+  .tl-root.tl-play .tl-home-dashboard .tl-home-readiness { gap:12px; margin-top:16px; }
+  .tl-root.tl-play .tl-home-dashboard .tl-update-highlights { gap:10px; padding-bottom:12px; margin-bottom:12px; }
+  .tl-root.tl-play .tl-home-dashboard .tl-update-highlights strong { font-size:15px; }
+  .tl-root.tl-play .tl-home-dashboard .tl-update-highlights :is(small,span) { font-size:11px; line-height:1.4; }
+  .tl-root.tl-play .tl-home-dashboard .tl-update-results { grid-template-columns:minmax(0,1fr); gap:6px; }
+  .tl-root.tl-play .tl-home-dashboard .tl-update-match { display:grid; grid-template-columns:40px minmax(0,1fr); column-gap:8px; padding:8px 10px; }
+  .tl-root.tl-play .tl-home-dashboard .tl-update-match > small { grid-row:1 / 3; margin:0; align-self:center; font-size:10px; }
+  .tl-root.tl-play .tl-home-dashboard .tl-update-match > div { padding:2px 0; gap:8px; }
+  .tl-root.tl-play .tl-home-dashboard .tl-update-match :is(span,strong) { font-size:12px; }
+  .tl-root.tl-play .tl-home-dashboard .tl-update-activity { margin-top:10px; }
+  .tl-root.tl-play .tl-home-dashboard .tl-update-links { gap:8px; margin-top:12px; }
+  .tl-root.tl-play .tl-home-dashboard .tl-update-links .tl-btn { font-size:12px; padding:8px 10px; min-height:44px; }
+  .tl-root.tl-play .tl-home-dashboard .tl-playoff-hunt { padding:14px 16px; }
+  .tl-root.tl-play .tl-home-dashboard .tl-hunt-team { padding:8px; }
+  .tl-root.tl-play .tl-home-dashboard .tl-hunt-team :is(strong,span) { font-size:12px; }
+}
+
+@media (max-width:700px) {
+  .tl-root.tl-play .tl-home-readiness { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .tl-root.tl-play .tl-home-opener-update > p { font-size:14px; }
+}

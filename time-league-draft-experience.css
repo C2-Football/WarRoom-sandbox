@@ -157,3 +157,39 @@
   .tl-root.tl-play .tl-era-review > summary { padding-block:7px; min-height:44px; gap:8px 12px; }
   .tl-root.tl-play .tl-era-review-chips { gap:4px 10px; }
 }
+
+/* Desktop draft rows keep the four distinct actions together. */
+@media(min-width:768px) {
+  .tl-root.tl-play .tl-vault-draft-table .game-draft-table { table-layout:fixed; min-width:820px; }
+  .tl-root.tl-play .tl-vault-draft-table .game-draft-table :is(th,td) { box-sizing:border-box; padding:5px; }
+  .tl-root.tl-play .tl-vault-draft-table .game-draft-col-rank { width:34px; }
+  .tl-root.tl-play .tl-vault-draft-table .game-draft-col-name { width:auto; min-width:140px; }
+  .tl-root.tl-play .tl-vault-draft-table .game-draft-col-position { width:46px; }
+  .tl-root.tl-play .tl-vault-draft-table .game-draft-col-years { width:110px; white-space:normal; overflow-wrap:anywhere; }
+  .tl-root.tl-play .tl-vault-draft-table .game-draft-col-ppg { width:85px; }
+  .tl-root.tl-play .tl-vault-draft-table .game-draft-col-peak { width:75px; }
+  .tl-root.tl-play .tl-vault-draft-table :is(.game-draft-col-actions,.game-draft-row-actions) { width:278px; min-width:278px; max-width:none; white-space:nowrap; }
+  .tl-root.tl-play .tl-vault-draft-table .game-draft-row-actions button { display:inline-flex; align-items:center; justify-content:center; vertical-align:middle; min-height:44px; margin:0 3px 0 0!important; padding:6px 8px; font-size:12px; white-space:nowrap; }
+  .tl-root.tl-play .tl-vault-draft-table .game-draft-row-actions .game-draft-queue { min-width:44px; font-size:19px; }
+  .tl-root.tl-play .tl-vault-draft-table .game-draft-row-actions .game-draft-pick { min-width:58px; }
+  .tl-root.tl-play .tl-vault-draft-table .game-draft-player-link { display:flex; align-items:flex-start; min-height:44px; box-sizing:border-box; padding:3px 0 16px; font-size:14px; line-height:1.3; white-space:normal; overflow-wrap:anywhere; }
+  .tl-root.tl-play .tl-vault-draft-table .game-draft-col-name > small { margin-top:-10px; font-size:11px; line-height:1.35; pointer-events:none; max-width:none; }
+  .tl-root.tl-play .tl-vault-draft-table .is-drafted .game-draft-col-name > small:not(.game-draft-drafted-label) { display:none; }
+}
+@media(min-width:1100px) and (max-width:1599px) {
+  .tl-root.tl-play .tl-grid-2.tl-draft-grid:has(.tl-vault-draft-table) { grid-template-columns:minmax(0,1fr) 240px; gap:14px; }
+  .tl-root.tl-play .tl-draft-grid:has(.tl-vault-draft-table) .tl-draft-sidebar { display:flex; flex-direction:column; gap:12px; }
+  .tl-root.tl-play .tl-grid-2.tl-draft-grid:has(.game-draft-workspace.has-inspector) { grid-template-columns:minmax(0,1fr); }
+}
+@media(min-width:1100px) {
+  .tl-root.tl-play .tl-vault-draft-table .game-draft-workspace.has-inspector { grid-template-columns:minmax(0,1fr) 240px; }
+  .tl-root.tl-play .tl-vault-draft-table .game-draft-inspector { grid-row:auto; }
+}
+@media(min-width:768px) and (max-width:1099px) {
+  .tl-root.tl-play .tl-vault-draft-table .game-draft-table { min-width:760px; }
+  .tl-root.tl-play .tl-vault-draft-table .game-draft-col-rank { width:30px; }
+  .tl-root.tl-play .tl-vault-draft-table .game-draft-col-position { width:40px; }
+  .tl-root.tl-play .tl-vault-draft-table .game-draft-col-years { width:100px; }
+  .tl-root.tl-play .tl-vault-draft-table .game-draft-col-ppg { width:80px; }
+  .tl-root.tl-play .tl-vault-draft-table .game-draft-col-peak { width:70px; }
+}
