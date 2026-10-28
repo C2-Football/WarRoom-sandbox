@@ -1,10 +1,10 @@
-# CBS redraft market integration — local implementation
+# CBS redraft market integration
 
 This adds CBS to **trade price**, not fantasy-point projections, roster-benefit estimates, or acceptance probabilities. The current code applies the combined market adapter only to the `redraft` skin. Dynasty, keeper, Chopped, and other formats retain their existing pricing behavior.
 
 ## Activation status and source access
 
-**Not live. No CBS snapshot has been activated or published by this change. No scheduler, deployment, repository variable, or remote branch has been enabled/changed.**
+**CBS automation is not live. No CBS snapshot has been activated or published by this integration. The daily CBS job remains disabled; no CBS permission agreement or activation variables are configured. App deployment is separate from data-source activation.**
 
 A public CBS article and its fantasy sitemap were accessible in a local read on 2026-10-27. The article's QB / RB / WR / TE tables matched the parser (142 rows). That is an access/structure check, not an authorized production feed or a successful scheduled import. CBS's [Terms of Use, section 10](https://www.viacomcbs.legal/us/en/cbsi/terms-of-use) prohibit unauthorized automated data collection. No permission agreement is present in this repository. The automated importer therefore stops **before network access** unless `CBS_PERMISSION_REFERENCE` identifies an actual permission/source agreement. Do not use that setting merely to bypass the restriction.
 
@@ -86,12 +86,12 @@ JSON structure: `{sourceUrl, attribution, season, week, publishedAt:null|ISO, up
 Before activation:
 
 1. Obtain CBS permission/an authorized source agreement; adapt transport if the approved source differs.
-2. Publish canonical shared commit `a3b99522da9a6086385c26841e6c6dfecdeb1cb5` on `feature/cbs-redraft-market-20261027`, verify the actual commit is remotely accessible, then apply `docs/cbs-market-shared-pin.patch`. This patch is prepared but **not applied**. Do not deploy using an unpublished local SHA. If the shared commit changes during review/merge, regenerate the patch with the real published SHA.
-3. Sync canonical code, run the tests/builds below, then release the app/workflow only with separate authorization. The current deployment pin deliberately remains the previously published reliability commit; it cannot deploy these new shared changes until coordinated release.
+2. Publish canonical shared commit `a3b99522da9a6086385c26841e6c6dfecdeb1cb5` on `feature/cbs-redraft-market-20261027`, verify the actual commit is remotely accessible, then apply `docs/cbs-market-shared-pin.patch`. The shared branch has been published, and its raw source bytes verified publicly against the local canonical files. This patch is now **applied** to the app workflow; retain it as a release record, not a patch to apply again. Do not deploy using an unpublished local SHA. If the shared commit changes during review/merge, regenerate the patch with the real published SHA.
+3. Sync canonical code, run the tests/builds below, then release the app/workflow only with separate authorization. The deployment pin now targets the verified published CBS/reliability shared commit above.
 4. On the intended repository, enable Actions with data-branch write permission, set `CBS_PERMISSION_REFERENCE` to the real non-sensitive agreement reference (never an access token), and `CBS_UPDATES_ENABLED=true`. Ensure the data branch can publish. The checked-in reader URL targets **WarRoom-sandbox**. A production release must explicitly configure its own approved dataset URL/CORS/access; do not silently share a sandbox feed.
 5. Manually run the job, inspect validation/health and exact raw snapshot bytes from an unauthenticated browser, then verify the next scheduled run. Only after this may automatic updates be described as live. A private/inaccessible raw GitHub branch needs an authorized public static/object-store endpoint; do not expose tokens in the browser or change repository visibility.
 
-No step above was performed remotely in this implementation turn.
+Release preparation: the shared feature branch was published and verified, and the app dependency pin updated for the requested WarRoom-sandbox deployment. CBS automation activation steps remain outstanding; no retrieval permission, scheduler activation variable, or data branch was configured.
 
 ## Verification and proof limits
 
