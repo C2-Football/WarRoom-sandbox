@@ -3,7 +3,8 @@
 This pass preserves the existing app layout and uses its current forecast,
 roster-lens, trade-season and shared-engine paths. It adds stricter evidence gates,
 correct scoring, scoped refresh behavior and explanations at the decision point.
-No league transactions, pushes, merges or deployments were performed.
+The initial pass was local. The subsequent authorized branch push and dependency
+pin are recorded below. No league transactions, merges or deployments were performed.
 
 ## Checkouts and scope
 
@@ -115,33 +116,36 @@ provenance fields without rewriting earlier entries.
   baseline. Acceptance and bid outcomes need a separate prospective calibration
   dataset before any probability claims can return.
 
-## Coordinated release — prepared, not executed
+## Coordinated branch publication — authorized push
 
 Shared changes are canonical in `dhq-shared`, including the forecast/context twins.
 The app sync process copies those modules and verifies `player-value.js` byte
 identity. App-only eligibility, roster decision, hydration, widget and explanation
 changes remain in WarRoom-sandbox.
 
-The active `.github/workflows/deploy.yml` still pins the accessible audited shared
-revision. **Do not deploy this app candidate alone:** its new twin check requires
-the coordinated shared release. The unapplied
-[`redraft-reliability-pin.patch`](redraft-reliability-pin.patch) contains the exact
-local shared SHA above plus CI regression/artifact checks; `git apply --check`
-passes. It is documentation for the authorized release handoff, not an active pin.
+On the user's subsequent "Push" instruction, the shared feature branch was
+published first. Its remote head was verified as
+`877d59df32de7bf49ee3d944b8c09e5472feebd7`. The repository is public, and an
+unauthenticated download of `player-value.js` at that exact revision matched the
+local canonical file. No repository visibility was changed.
 
-After explicit release authorization:
+The prepared [`redraft-reliability-pin.patch`](redraft-reliability-pin.patch) has
+now been applied: `.github/workflows/deploy.yml` pins that accessible shared
+commit and includes the reliability regression and production-artifact checks.
+The patch remains as a record; do not apply it a second time. The app feature
+branch is published to `C2-Football/WarRoom-sandbox`, not the production remote.
 
-1. Review and publish the shared candidate. Verify that the deploy account can
-   fetch the exact final commit. If review/squash changes its SHA, regenerate the
-   pending patch with the real published SHA; do not invent or guess a revision.
-2. Apply the pending app pin patch only after that verification. Commit the pin
-   together with these app changes. Do not widen repository visibility.
-3. Set `SHARED_SOURCE` to that verified checkout, run `npm run sync:shared`, then
-   the focused suites, core tests and production build. Run
-   `npm run test:redraft-reliability:build` against the same checkout.
-4. Review the app changes and publish/deploy only when authorized. Verify deployed
-   source revisions and served asset bytes independently; a push/build alone is
-   not release proof. Other shared consumers need their own compatibility checks.
+Both repositories use `fix/redraft-reliability-20261027`. Publication does not
+merge either branch or authorize deployment. Before an authorized merge/release:
+
+1. Review both branches. If the shared changes are squashed or revised, pin the
+   actual final published shared SHA and verify it is accessible; never guess.
+2. Set `SHARED_SOURCE` to that exact checkout and run `npm run sync:shared`, the
+   focused suites, core tests, production build, and
+   `npm run test:redraft-reliability:build`.
+3. Merge/deploy only when authorized. Independently verify deployed revisions and
+   served asset bytes. A branch push or local build is not deployment proof.
+   Other shared consumers need their own compatibility checks.
 
 For a local browser rerun, build the preview, run
 `node scripts/serve-static.cjs --port=3517`, then
