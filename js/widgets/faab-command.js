@@ -1,18 +1,5 @@
-// ══════════════════════════════════════════════════════════════════
-// js/widgets/faab-command.js — FAAB Command widget (v3 dashboard)
-//
-// Surfaces the league-aware FAAB bid plan on Home, auto-picking the top
-// unrostered add (same relevance floor as Market Radar's waiver-target
-// list — DHQ > 1500, not on any roster) and running it through
-// App.Faab.analyze — the same engine the Free Agency tab's FaabCommandCard
-// uses for a hand-picked target. This is that same intelligence, surfaced
-// without requiring a visit to the FA tab first.
-//
-// sizes: sm (hero bid + win%) · md/lg (+ pacing verdict + contested read)
-// Depends on: theme.js, faab-engine.js (App.Faab), txns-fetch.js (WrTxns)
-// Exposes:    window.FaabCommandWidget
-// ══════════════════════════════════════════════════════════════════
-
+// Home waiver preview: legal add/drop evidence and descriptive completed bids.
+// Missing evidence produces a hold state, never an estimated winning chance.
 (function () {
     'use strict';
 
@@ -29,20 +16,17 @@
         // waiverTargets (js/widgets/market-radar.js) so the two surfaces agree
         // on what counts as a real add, minus the optional GM Strategy filters
         // (this tile is a single auto-picked headline, not a browsable list).
-        const target = React.useMemo(() => {
-            const scores = window.App?.PlayerValue?.valueMap ? window.App.PlayerValue.valueMap() : (window.App?.LI?.playerScores || {});
-            const rostered = new Set();
-            (currentLeague?.rosters || []).forEach(r => (r.players || []).concat(r.taxi || [], r.reserve || []).forEach(pid => rostered.add(String(pid))));
-            let best = null;
-            for (const pid in scores) {
-                const dhq = scores[pid];
-                if (!(dhq > 1500) || rostered.has(String(pid))) continue;
-                if (best && dhq <= best.dhq) continue;
-                const p = playersData?.[pid] || {};
-                best = { pid, name: p.full_name || pid, pos: window.App?.normPos?.(p.position) || p.position || '?', dhq };
-            }
-            return best;
-        }, [currentLeague, playersData]);
+        const [preview, setPreview] = React.useState(null);
+        React.useEffect(() => {
+            let active = true; setPreview(null);
+            Promise.resolve(window.App?.RosterWaiverLens?.load?.({ league: currentLeague, roster: myRoster,
+                rosters: currentLeague?.rosters, players: playersData, userId: window.S?.user?.user_id,
+                statsData: window.S?.statsData, priorData: window.S?.priorData, projectionsData: window.S?.projectionsData }))
+                .then(result => { if (active) setPreview(result || null); }).catch(() => { if (active) setPreview(null); });
+            return () => { active = false; };
+        }, [currentLeague, myRoster, playersData]);
+        const candidate = preview?.candidates?.find(c => c.weekly?.delta > 0 && !c.cautions?.some(t => /injury/i.test(t)));
+        const target = candidate ? { pid: candidate.pid, name: candidate.incoming[0].name, pos: candidate.incoming[0].position, dhq: window.App?.PlayerValue?.getValue?.(candidate.pid) ?? null } : null;
 
         const [plan, setPlan] = React.useState(null); // null | {loading} | {a} | {err}
         React.useEffect(() => {
@@ -67,7 +51,7 @@
                 } catch (e) { if (alive) setPlan({ err: true }); }
             })();
             return () => { alive = false; };
-        }, [lid, target?.pid]);
+        }, [lid, target?.pid, currentLeague, myRoster, playersData]);
 
         const GOLD = 'var(--gold, #d4af37)', SILVER = 'var(--silver, #bdb8ad)', WARN = 'var(--warn, #f0a500)', WHITE = 'var(--white, #f5f2ea)';
         const monoFont = 'var(--font-mono, monospace)';
@@ -88,7 +72,7 @@
             return (
                 <div style={base} onClick={go}>
                     <div style={{ fontSize: '0.7rem', letterSpacing: '0.07em', color: SILVER, fontWeight: 700 }}>FAAB COMMAND</div>
-                    <div style={{ marginTop: 'auto', color: SILVER, opacity: 0.7, fontSize: '0.8rem' }}>No FAAB targets clear the wire right now.</div>
+                    <div style={{ marginTop: 'auto', color: SILVER, opacity: 0.7, fontSize: '0.8rem' }}>{preview?.reason || 'No supported waiver upgrade. Open Waivers to review evidence.'}</div>
                 </div>
             );
         }
@@ -110,16 +94,14 @@
                 </div>
             );
         }
-        const engaged = a.rivals.filter(r => r.engaged);
-        const uncontested = !engaged.length;
-
+        if (!a.rec) return <div style={base} onClick={go}><strong>FAAB COMMAND</strong><p>{a.reason || 'No supported bid recommendation.'}</p><small>Winning bids are descriptive history; no winning probability is estimated.</small></div>;
         if (size === 'sm') {
             return (
                 <div style={base} onClick={go}>
                     <div style={{ fontSize: '0.64rem', letterSpacing: '0.06em', color: SILVER, fontWeight: 700 }}>FAAB COMMAND</div>
                     <div style={{ marginTop: 'auto' }}>
                         <div style={{ fontFamily: monoFont, fontSize: '1.9rem', fontWeight: 700, color: GOLD, lineHeight: 1 }}>${a.rec.bid}</div>
-                        <div style={{ fontSize: '0.7rem', color: SILVER, marginTop: '2px' }}>{uncontested ? 'uncontested' : Math.round(a.rec.winPct * 100) + '% to win'} · {target.name}</div>
+                        <div style={{ fontSize: '0.7rem', color: SILVER, marginTop: '2px' }}>{'History-based bid'} · {target.name}</div>
                     </div>
                 </div>
             );
@@ -136,9 +118,8 @@
                     <span style={{ fontSize: '0.78rem', color: SILVER }}>on {target.name} ({target.pos})</span>
                 </div>
                 <div style={{ marginTop: '6px', fontSize: '0.78rem', color: SILVER }}>
-                    {uncontested
-                        ? 'No rival has both a need and the budget to chase him — the league minimum should land him.'
-                        : Math.round(a.rec.winPct * 100) + '% to win' + (a.rec.capped ? ' (capped by your remaining budget)' : '') + ' · ' + engaged.length + ' rival' + (engaged.length === 1 ? '' : 's') + ' in the market'}
+                    {a.rec.basis} {a.sampleSize} completed bids at this position. Lineup {candidate?.weekly.before} → {candidate?.weekly.after}. {candidate?.dropPid ? 'Drop ' + candidate.outgoing[0].name + '.' : 'Uses an open roster spot.'} Verify player locks on your platform.
+
                 </div>
                 {a.pacing && a.pacing.verdict === 'hoarding' ? (
                     <div style={{ marginTop: '10px', fontSize: '0.76rem', color: WARN }}>

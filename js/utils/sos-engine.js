@@ -26,7 +26,7 @@
 (function () {
     const SLEEPER_BASE  = 'https://api.sleeper.app/v1';
     const NFL_WEEKS     = 18;
-    const CACHE_TTL_MS  = 24 * 60 * 60 * 1000; // 24 hours
+    const CACHE_TTL_MS  = 60 * 60 * 1000; // matchup evidence refreshes hourly
 
     // Fantasy positions we compute SOS for (K excluded — rarely dynasty-relevant)
     const SOS_POSITIONS = ['QB', 'RB', 'WR', 'TE'];
@@ -191,6 +191,12 @@
     let _schedule        = null;          // { week: { TEAM: oppTEAM, ... } }
     let _initSeason      = null;
     let _initPromise     = null;
+    let _generation = 0, _initializedAt = 0;
+    function invalidate() {
+        _generation++; _initPromise = null; _defenseRankings = null; _schedule = null; _initSeason = null; _initializedAt = 0;
+        window.App.SOS.ready = false;
+        try { Object.keys(sessionStorage).filter(k => k.startsWith('wr_sos_')).forEach(k => sessionStorage.removeItem(k)); } catch (_) { /* no storage */ }
+    }
 
     // ── initialize ────────────────────────────────────────────────────────────
     // Fetches 18 weeks of stats in parallel, derives schedule, computes rankings.
@@ -198,25 +204,29 @@
     // onReady: optional callback fired when data is available (for React re-renders)
     async function initialize(season, playersData, onReady) {
         // If already initialised for this season, just fire callback and return
-        if (_defenseRankings && _schedule && _initSeason === season) {
+        if (_defenseRankings && _schedule && _initSeason === season && Date.now() - _initializedAt < CACHE_TTL_MS) {
             onReady?.();
             return;
         }
         // Deduplicate concurrent calls
         if (_initPromise) { await _initPromise; onReady?.(); return; }
 
-        _initPromise = _doInitialize(season, playersData).then(() => {
+        const generation = ++_generation;
+        const request = _initPromise = _doInitialize(season, playersData, generation).then(() => {
+            if (generation !== _generation) return;
+            _initializedAt = Date.now();
             _initPromise = null;
             onReady?.();
         }).catch(e => {
+            if (generation !== _generation) return;
             _initPromise = null;
             window.wrLog?.('sos.initialize', e);
         });
 
-        await _initPromise;
+        await request;
     }
 
-    async function _doInitialize(season, playersData) {
+    async function _doInitialize(season, playersData, generation) {
         const defCacheKey  = `wr_sos_def_${season}`;
         const schCacheKey  = `wr_sos_sch_${season}`;
 
@@ -244,6 +254,7 @@
             );
         }
 
+        if (generation !== _generation) return;
         // Build schedule + accumulate defense points
         const fullSchedule = {};
         const defAllowed   = {};
@@ -328,7 +339,7 @@
     window.App = window.App || {};
     window.App.SOS = {
         ready: false,
-        initialize,
+        initialize, invalidate,
         getPlayerSOS,
         getTeamSOS,
         getWeekStats: fetchWeeklyStats,   // public accessor over the cached weekly stats (reused by the game-log engine)

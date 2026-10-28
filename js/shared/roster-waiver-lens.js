@@ -105,6 +105,8 @@
         const args={...input,priorData:input.priorData || input.priorStatsData || {}};
         const blocked=restrictions(args);
         if (blocked) return result(args,...blocked);
+        const common = App.RecommendationEligibility?.check({ ...args.league, rosters: args.rosters }, args.roster);
+        if (common && !common.ok) return result(args, 'unavailable', common.reason);
         const basis=basisOf(args), week=number(args.week) || App.WeeklyProj?.currentWeek?.() || null;
         if (basis !== 'projected' && !App.RosterLensBasis) return result(args,'unavailable','The current-season average comparison service has not loaded.');
         if (basis !== 'projected') args.projectionsByPid=App.RosterLensBasis.adapt(args);
@@ -116,7 +118,7 @@
         const protectedPids=[...(effects.untouchable || []),...(gm.untouchables || []),...(args.protectedPids || [])].map(String);
         const valueOf=pid => own(args.valuesByPid,pid) ? number(args.valuesByPid[pid]) : null;
         const options={week,protectedPids,project,rosProject:ros};
-        const reads=['week','season'].map(horizon => App.buildFaRosterRead(args.roster,args.league,players,valueOf,{...options,horizon}));
+        const reads=['week','season'].map(horizon => App.buildFaRosterRead(args.roster,{...args.league,rosters:args.rosters},players,valueOf,{...options,horizon}));
         const read=reads[0];
         if (!read.known) return result(args,'unavailable','The legal starting lineup could not be verified.');
         const copies=Math.max(1,number(args.league.settings?.player_copies) || 1), counts={};
@@ -176,6 +178,8 @@
         args.week=number(args.week) || App.WeeklyProj?.currentWeek?.();
         const blocked=restrictions(args);
         if (blocked) return result(args,...blocked);
+        const common = App.RecommendationEligibility?.check({ ...args.league, rosters: args.rosters }, args.roster);
+        if (common && !common.ok) return result(args, 'unavailable', common.reason);
         const seasonal=['redraft','keeper','chopped','best_ball'].includes(typeOf(args));
         const leagueScores=App.LI_LOADED === true && String(App.LI?.sourceLeagueId || '') === idOf(args.league)
             ? App.LI?.playerScores : null;
@@ -227,7 +231,7 @@
         }
         return evaluate(args);
     }
-    const api={load,evaluate,rank,scope};
+    const api={load,evaluate,rank,scope,restrictions};
     App.RosterWaiverLens=api;
     root.WR=root.WR || {}; root.WR.RosterWaiverLens=api;
     if (typeof module !== 'undefined' && module.exports) module.exports=api;

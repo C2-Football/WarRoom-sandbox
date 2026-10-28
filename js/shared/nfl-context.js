@@ -12,6 +12,7 @@
 (function (root) {
     'use strict';
     const App = root.App = root.App || {};
+    let generation = 0;
     const _done = {}; // `${season}|${week}` already loaded
 
     // ESPN uses a few abbreviations that differ from Sleeper/MFL — normalize so
@@ -74,7 +75,7 @@
                 const vegas = impliedTotal != null
                     ? { impliedTotal: Math.round(impliedTotal * 10) / 10, spread: spread, opp: oppAbbr }
                     : (oppAbbr ? { opp: oppAbbr } : null);
-                return { opp: oppAbbr, home: isHome, vegas: vegas, weather: weather };
+                return { opp: oppAbbr, home: isHome, vegas, weather, week, kickoff: comp.date || ev.date, state: (comp.status || ev.status)?.type?.state, completed: (comp.status || ev.status)?.type?.completed, statusName: (comp.status || ev.status)?.type?.name };
             }
             out[hAbbr + '|' + week] = teamCtx(hAbbr, aAbbr, true);
             out[aAbbr + '|' + week] = teamCtx(aAbbr, hAbbr, false);
@@ -159,7 +160,7 @@
         const promise = fetchWeek(week, season, seasontype, controller.signal).then(data => {
             if (!Array.isArray(data?.events)) throw new Error('Invalid NFL scoreboard');
             return parseScores(data);
-        }).catch(error => { scoreCache.delete(key); throw error; }).finally(() => clearTimeout(timeout));
+        }).catch(error => { if (scoreCache.get(key)?.promise === promise) scoreCache.delete(key); throw error; }).finally(() => clearTimeout(timeout));
         scoreCache.set(key, { at: Date.now(), promise });
         // Only a few recent weeks need to remain in memory.
         if (scoreCache.size > 8) scoreCache.delete(scoreCache.keys().next().value);
@@ -200,13 +201,15 @@
         season = Number(season || (root.S && root.S.season) || (root.S && root.S.nflState && root.S.nflState.season) || 0) || 0;
         const list = (Array.isArray(weeks) ? weeks : [weeks]).map(Number).filter(w => w > 0 && w <= 18);
         const byTeamWeek = {};
+        const startedGeneration = generation, startedLeague = root.S?.currentLeagueId;
         for (const wk of list) {
             const key = season + '|' + wk;
-            if (_done[key]) continue;
+            if (_done[key] && Date.now() - _done[key] < 60000) continue;
             try {
                 const espn = await fetchWeek(wk, season);
+                if (startedGeneration !== generation || startedLeague !== root.S?.currentLeagueId) return {};
                 Object.assign(byTeamWeek, parse(espn, wk));
-                _done[key] = true;
+                _done[key] = Date.now();
             } catch (e) { if (root.wrLog) root.wrLog('nflContext.load', e); }
         }
         if (Object.keys(byTeamWeek).length && WP.setContext) WP.setContext({ byTeamWeek });
@@ -219,5 +222,5 @@
         return load([wk], season);
     }
 
-    App.NflContext = App.NflContext || { load, loadCurrent, parse, parseScores, loadScores, loadScoreboard, gameStatus, currentPhase, previousPhase, endpoint, _done };
+    App.NflContext = App.NflContext || { invalidate: () => { generation++; scoreCache.clear(); Object.keys(_done).forEach(k => delete _done[k]); }, load, loadCurrent, parse, parseScores, loadScores, loadScoreboard, gameStatus, currentPhase, previousPhase, endpoint, _done };
 })(typeof window !== 'undefined' ? window : globalThis);

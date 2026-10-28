@@ -23,6 +23,16 @@
         const leagueSkin = window.App?.LeagueSkin?.build?.({ league: currentLeague, rosters: currentLeague?.rosters || [] });
         const isChopped = window.App?.Chopped?.isChopped?.(currentLeague) || leagueSkin?.type === 'chopped';
 
+        const seasonal = leagueSkin?.type === 'redraft';
+        const [legalPreview, setLegalPreview] = React.useState({ waivers: null, trades: null });
+        React.useEffect(() => {
+            let active = true; setLegalPreview({ waivers: null, trades: null });
+            const options = { league: currentLeague, roster: myRoster, rosters: currentLeague?.rosters, players: playersData,
+                userId: sleeperUserId, accountKey: 'sleeper:' + sleeperUserId, statsData: window.S?.statsData, priorData: window.S?.priorData, projectionsData: window.S?.projectionsData, skin: leagueSkin };
+            Promise.all([window.App?.RosterWaiverLens?.load?.(options), seasonal ? window.App?.RosterTradeLens?.load?.(options) : null])
+                .then(([waivers, trades]) => { if (active) setLegalPreview({ waivers, trades }); }).catch(() => {});
+            return () => { active = false; };
+        }, [currentLeague, myRoster, playersData, sleeperUserId, seasonal]);
         // ── GM Strategy (single source of truth) ──
         const gm = window.WR.GmMode.useGmEffects(currentLeague);
         const gmTargets = isChopped ? new Set() : (gm.targetPositions || new Set()); // positions to pursue
@@ -60,6 +70,8 @@
         // ── Trade partners: owners with surplus at positions you need ──
         const tradeTargets = React.useMemo(() => {
             if (!rosterState.isUsable) return [];
+            if (!window.App?.RecommendationEligibility?.check(currentLeague, myRoster, 'trade')?.ok) return [];
+            if (seasonal) return (legalPreview.trades?.candidates || []).map(c => ({ rosterId: c.partner.rosterId, name: c.partner.name, compat: 0, postureFit: 0, theySurplus: c.incoming.map(a => a.pos), myOffers: c.outgoing.map(a => a.pos), theirNeeds: c.outgoing.map(a => a.pos), theirStrengths: c.incoming.map(a => a.pos), reason: c.reason }));
             if (!myAssess || !allAssess.length) return [];
             return allAssess
                 .filter(a => a.rosterId !== myRoster?.roster_id)
@@ -95,7 +107,7 @@
                 .filter(a => a.compat > 0)
                 .sort((a, b) => (b.compat + b.postureFit * 8) - (a.compat + a.postureFit * 8) || b.compat - a.compat)
                 .slice(0, 8);
-        }, [rosterState.isUsable, myAssess, allAssess, myRoster?.roster_id, posture]);
+        }, [rosterState.isUsable, myAssess, allAssess, myRoster?.roster_id, posture, seasonal, legalPreview, currentLeague]);
 
         const dealCount = tradeTargets.length;
         const topTarget = tradeTargets[0];
@@ -103,9 +115,9 @@
 
         // FAAB
         const faab = React.useMemo(() => {
-            const budget = currentLeague?.settings?.waiver_budget || 100;
-            const used = myRoster?.settings?.waiver_budget_used || 0;
-            const remaining = Math.max(0, budget - used);
+            const budget = currentLeague?.settings?.waiver_budget ?? null;
+            const used = myRoster?.settings?.waiver_budget_used ?? null;
+            const remaining = budget == null || used == null ? null : Math.max(0, budget - used);
             const pct = (remaining / Math.max(budget, 1)) * 100;
             return { remaining, budget, pct };
         }, [currentLeague, myRoster]);
@@ -113,42 +125,11 @@
         // Waiver targets (un-rostered, DHQ > threshold)
         // GM faFilters (minDhq/maxAge/requirePrimeYears/excludePositions) are applied
         // so this list matches the Free Agency tab's recommendation surface.
-        const waiverTargets = React.useMemo(() => {
-            if (!rosterState.isUsable) return [];
-            const scores = window.App?.PlayerValue?.valueMap ? window.App.PlayerValue.valueMap() : (window.App?.LI?.playerScores || {});
-            const rostered = new Set();
-            (currentLeague?.rosters || []).forEach(r => (r.players || []).concat(r.taxi || [], r.reserve || []).forEach(pid => rostered.add(String(pid))));
-            const f = gmFa || {};
-            const exclude = (Array.isArray(f.excludePositions) ? f.excludePositions : [])
-                .map(p => String((window.App?.normPos?.(p)) || p || '').toUpperCase()).filter(Boolean);
-            const minDhq = Number(f.minDhq) || 0;
-            const maxAge = Number(f.maxAge) || 0;
-            const requirePrime = !!f.requirePrimeYears;
-            return Object.entries(scores)
-                .filter(([pid]) => !rostered.has(pid) && scores[pid] > 1500)
-                .map(([pid, dhq]) => {
-                    const p = playersData?.[pid] || {};
-                    return {
-                        pid, name: p.full_name || pid,
-                        pos: window.App?.normPos?.(p.position) || p.position || '?',
-                        age: Number(p.age) || 0,
-                        dhq, team: p.team || 'FA',
-                    };
-                })
-                .filter(x => {
-                    if (minDhq && (Number(x.dhq) || 0) < minDhq) return false;
-                    if (exclude.includes(String(x.pos).toUpperCase())) return false;
-                    if (maxAge && x.age && x.age > maxAge) return false;
-                    if (requirePrime && !(gmFaPeakYears(x.pos, x.age) > 0)) return false;
-                    return true;
-                })
-                .sort((a, b) => b.dhq - a.dhq)
-                .slice(0, 12);
-        }, [rosterState.isUsable, currentLeague, playersData, gmFa]);
+        const waiverTargets = (legalPreview.waivers?.candidates || []).filter(c => c.weekly?.delta > 0).slice(0,12).map(c => ({ pid: c.pid, name: c.incoming[0].name, pos: c.incoming[0].position, team: c.incoming[0].team, dhq: window.App?.PlayerValue?.getValue?.(c.pid) ?? null, dropPid: c.dropPid }));
 
         // Find a specific player from your surplus that fills their need
         const swapSuggestions = React.useMemo(() => {
-            if (!rosterState.isUsable) return {};
+            if (!rosterState.isUsable || seasonal) return {};
             const scores = window.App?.PlayerValue?.valueMap ? window.App.PlayerValue.valueMap() : (window.App?.LI?.playerScores || {});
             const myPlayers = (myRoster?.players || []);
             const out = {};
@@ -172,7 +153,7 @@
         // pay up for win-now help and overpay with picks for youth.
         // Sellers: rebuilders hoarding picks — they move vets for futures.
         const leverage = React.useMemo(() => {
-            if (!rosterState.isUsable || !allAssess.length || size !== 'xxl') return { buyers: [], sellers: [] };
+            if (seasonal || !rosterState.isUsable || !allAssess.length || size !== 'xxl') return { buyers: [], sellers: [] };
             const scores = window.App?.PlayerValue?.valueMap ? window.App.PlayerValue.valueMap() : (window.App?.LI?.playerScores || {});
             const withAge = allAssess.filter(a => a.rosterId !== myRoster?.roster_id).map(a => {
                 const roster = (currentLeague?.rosters || []).find(r => r.roster_id === a.rosterId);
@@ -283,7 +264,7 @@
                         color: dealCol, lineHeight: 1,
                     }} className="wr-data-value">{dealCount}</div>
                     <div style={{ fontSize: fs(0.7), color: colors.textMuted, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: fonts.ui }}>
-                        TRADE TARGETS
+                        {seasonal ? 'WEEKLY LINEUP FITS' : 'TRADE TARGETS'}
                     </div>
                     {topTarget ? (
                         <div style={{
@@ -299,7 +280,7 @@
                         </div>
                     ) : (
                         <div style={{ marginTop: '4px', fontSize: fs(0.58), color: colors.textFaint, fontStyle: 'italic' }}>
-                            No matches yet
+                            {seasonal ? legalPreview.trades?.reason || 'No supported weekly trade improvement.' : 'No matches yet'}
                         </div>
                     )}
                 </div>

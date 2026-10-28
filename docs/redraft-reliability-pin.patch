@@ -1,0 +1,23 @@
+--- a/.github/workflows/deploy.yml
++++ b/.github/workflows/deploy.yml
+@@ -37,7 +37,7 @@
+           repository: C2-Football/dhq-shared
+           path: shared-src
+           # Explicit dependency revision: releases do not change under the same app commit.
+-          ref: 74d6369224db5b814a9f3fdeff8fb7d60735aa81
++          ref: 877d59df32de7bf49ee3d944b8c09e5472feebd7
+ 
+       - name: Setup Node
+         uses: actions/setup-node@v4
+@@ -64,6 +64,11 @@
+         run: |
+           node scripts/build-time-league-helmet-sources.cjs --check
+           node scripts/build-deploy.cjs
++
++      - name: Verify redraft forecast release
++        run: |
++          SHARED_SOURCE="$GITHUB_WORKSPACE/shared-src" npm run test:redraft-reliability
++          SHARED_SOURCE="$GITHUB_WORKSPACE/shared-src" npm run test:redraft-reliability:build
+ 
+       - name: Build Pages artifact
+         run: |

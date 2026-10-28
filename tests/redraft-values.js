@@ -20,12 +20,7 @@ const WeeklyProj = require('../js/shared/weekly-proj.js');
 window.App.StartSit = window.App.StartSit || StartSit;
 window.App.WeeklyProj = window.App.WeeklyProj || WeeklyProj;
 window.App.normPos = p => String(p || '').toUpperCase();
-// Plain league-scoring core: Σ scoring[k] × line[k] — enough for these tests.
-window.calcFantasyPts = (line, sc) => {
-    let t = 0;
-    for (const k in (sc || {})) if (typeof sc[k] === 'number' && line && line[k] != null) t += line[k] * sc[k];
-    return t;
-};
+require('./helpers/production-scorer.cjs')();
 require('../js/utils/player-value.js');
 const PV = window.App.PlayerValue;
 
@@ -46,11 +41,11 @@ const LEAGUE = {
   roster_positions: ['QB', 'RB', 'RB', 'WR', 'WR', 'TE', 'FLEX', 'BN'],
 };
 const PLAYERS = {
-  vet:    { position: 'WR', full_name: 'Vet Wideout' },
-  rook:   { position: 'RB', full_name: 'Rookie Back' },
-  ghost:  { position: 'WR', full_name: 'Ghost Shell' },
-  stash:  { position: 'WR', full_name: 'Dynasty Stash' },
-  wr2:    { position: 'WR', full_name: 'Second Wideout' },
+  vet:    { position: 'WR', team: 'BUF', full_name: 'Vet Wideout' },
+  rook:   { position: 'RB', team: 'KC', full_name: 'Rookie Back' },
+  ghost:  { position: 'WR', team: 'BUF', full_name: 'Ghost Shell' },
+  stash:  { position: 'WR', team: 'BUF', full_name: 'Dynasty Stash' },
+  wr2:    { position: 'WR', team: 'BUF', full_name: 'Second Wideout' },
 };
 // Vet: real 2025 history. Stash: dynasty-scored but no data at all.
 const PRIOR = { vet: { gp: 17, rec: 100, rec_yd: 1400, rec_td: 8 }, wr2: { gp: 17, rec: 70, rec_yd: 900, rec_td: 5 } };
@@ -111,10 +106,10 @@ test('universe union: a projected rookie the dynasty engine never scored gets a 
   assert.ok(ros.values.rook > 0, 'rookie priced: ' + ros.values.rook);
   assert.ok(ros.points.rook > 0, 'rookie ROS points shown');
 });
-test('zero-pin intact: dynasty-scored player with no data prices at exactly 0', () => {
+test('missing seasonal evidence is absent, never zero-pinned', () => {
   const ros = build();
-  assert.strictEqual(ros.values.stash, 0, 'stash value pinned');
-  assert.strictEqual(ros.points.stash, 0, 'stash points pinned');
+  assert.strictEqual(ros.values.stash, undefined, 'stash value unavailable');
+  assert.strictEqual(ros.points.stash, undefined, 'stash points unavailable');
 });
 test('empty projection shells stay out of the universe', () => {
   const ros = build();
@@ -133,11 +128,11 @@ test('horizon runs through the fantasy playoffs: week 15 still builds (old model
   window.S.currentWeek = 15;
   const ros = PV.ensureRos(freshCtx({ leagueId: 'L' + lid, league: Object.assign({}, LEAGUE, { league_id: 'L' + lid }) }));
   assert.ok(ros, 'built during fantasy playoffs');
-  assert.strictEqual(ros.remainingWeeks, 2, 'weeks 16-17 remain');
+  assert.strictEqual(ros.remainingWeeks, 3, 'upcoming current week 15 plus weeks 16-17 remain');
 });
-test('horizon: season truly over (week 17) → null, no fabricated values', () => {
+test('horizon: season truly over (week 18) → null, no fabricated values', () => {
   resetState(); lid++;
-  window.S.currentWeek = 17;
+  window.S.currentWeek = 18;
   const ros = PV.ensureRos(freshCtx({ leagueId: 'L' + lid, league: Object.assign({}, LEAGUE, { league_id: 'L' + lid }) }));
   assert.strictEqual(ros, null);
 });
@@ -181,12 +176,12 @@ test('seasonal skins use current ROS values, including projection-only players, 
     assert.strictEqual(PV.getValue('rook', { skin }), ros.values.rook, skin.type + ': explicit skin reads ROS');
     assert.strictEqual(PV.valueMap({ skin }).rook, ros.values.rook, skin.type + ': value map reads ROS');
     assert.ok(Object.keys(PV.valueMap({ skin })).includes('rook'), skin.type + ': projection-only ids enumerate');
-    assert.strictEqual(PV.getValue('stash'), 0, skin.type + ': missing seasonal production cannot expose 8000 dynasty value');
+    assert.strictEqual(PV.getValue('stash'), null, skin.type + ': missing seasonal production cannot expose 8000 dynasty value');
     assert.strictEqual(PV.getValue('missing'), null, skin.type + ': missing evidence is unavailable');
     assert.strictEqual(PV.isRedraftActive(), true, skin.type + ': current seasonal map is active');
     window.S.currentLeagueId = 'other';
     assert.strictEqual(PV.getValue('vet', { skin }), null, skin.type + ': another league cannot use the cached values');
-    assert.strictEqual(PV.isRedraftActive(), false);
+    assert.strictEqual(PV.isRedraftActive(), true, 'seasonal format still forbids dynasty fallback');
     delete window.App.LeagueSkin;
   }
 });
@@ -202,7 +197,7 @@ test('keeper stays on its explicit blend when age curves are hidden', () => {
   assert.ok(!Object.keys(PV.valueMap({ skin })).includes('rook'), 'ordinary keeper map keeps its dynasty universe');
   delete window.App.LeagueSkin;
 });
-test('isRedraftActive: true only when the CURRENT league has a built redraft map', () => {
+test('isRedraftActive gates the format even when the current league has no values', () => {
   resetState(); lid++;
   const id = 'L' + lid;
   window.S.currentLeagueId = id;
@@ -210,7 +205,8 @@ test('isRedraftActive: true only when the CURRENT league has a built redraft map
   PV.ensureRos(freshCtx({ leagueId: id, league: Object.assign({}, LEAGUE, { league_id: id }) }));
   assert.strictEqual(PV.isRedraftActive(), true, 'active for current league');
   window.S.currentLeagueId = 'someOtherLeague';
-  assert.strictEqual(PV.isRedraftActive(), false, 'stale map for another league does not count');
+  assert.strictEqual(PV.isRedraftActive(), true, 'missing current league prices must not activate dynasty callers');
+  assert.equal(PV.getValue('vet'), null);
   delete window.App.LeagueSkin;
 });
 test('league scoring is the differentiator: doubling PPR moves the WR/RB ratio', () => {
@@ -225,7 +221,7 @@ test('missing, stale and zero seasonal values never become dynasty scores', () =
   build();
   window.S.currentLeagueId = 'L' + lid;
   window.App.LeagueSkin = {getCurrent: () => ({type:'redraft'})};
-  assert.strictEqual(PV.getValue('stash'), 0);
+  assert.strictEqual(PV.getValue('stash'), null);
   assert.strictEqual(PV.getValue('missing'), null);
   assert.ok(Object.keys(PV.valueMap()).includes('rook'), 'projection-only player remains enumerable');
   window.S.currentLeagueId = 'another';

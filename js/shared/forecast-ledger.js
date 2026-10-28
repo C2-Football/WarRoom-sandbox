@@ -3,7 +3,7 @@
 (function(root) {
     'use strict';
     const SCHEMA_VERSION = 1;
-    const BASELINE_VERSION = 'ros-v2-availability-shadow-20260906';
+    const BASELINE_VERSION = 'ros-v3-availability-conditional-20261027';
     const DB_NAME = 'dhq-forecast-ledger-v1';
     const clone = value => JSON.parse(JSON.stringify(value));
     function canonical(value) {
@@ -62,22 +62,23 @@
                 const week = Number(result.week);
                 const type = ctx.skin?.type || root.App?.LeagueSkin?.getCurrent?.()?.type;
                 const isCurrentLeague = String(ctx.leagueId) === String(root.S?.currentLeagueId);
-                if (!root.App?.AvailabilityForecast || !isCurrentLeague || !season || season !== liveSeason || !['dynasty', 'redraft', 'keeper'].includes(type) || !Number.isInteger(week) || week < 1 || week >= 18 || ctx.horizonWeeks != null) {
+                if (!root.App?.AvailabilityForecast || !isCurrentLeague || !season || season !== liveSeason || !['dynasty', 'redraft', 'keeper'].includes(type) || !Number.isInteger(week) || week < 1 || week > 18 || ctx.horizonWeeks != null) {
                     status.skipped = 'unsupported_or_nonlive_context'; return null;
                 }
                 if (Number(root.S?.season || season) !== season) {status.skipped = 'historical_stats'; return null;}
                 // Chopped's survival horizon and time-travel are deliberately not
                 // treated as standard ROS. Reject projected player inputs too.
                 if (Object.values(ctx.playersData || {}).some(p => p?._projected)) {status.skipped = 'time_travel'; return null;}
-                const endWeek = Number(ctx.league?.settings?.playoff_week_start) >= 16 ? 18 : 17;
-                if (result.remainingWeeks !== endWeek - week) {status.skipped = 'noncalendar_horizon'; return null;}
-                const weeks = Array.from({length: endWeek - week}, (_,i) => week + i + 1);
+                const endWeek = result.horizon?.endWeek ?? (Number(ctx.league?.settings?.playoff_week_start) >= 16 ? 18 : 17);
+                const startWeek = result.horizon?.fromWeek ?? week + 1;
+                if (result.remainingWeeks !== endWeek - startWeek + 1) {status.skipped = 'noncalendar_horizon'; return null;}
+                const weeks = Array.from({length: endWeek - startWeek + 1}, (_,i) => startWeek + i);
                 const config = clone({scoring: ctx.scoring || ctx.league.scoring_settings || {}, rosterPositions: ctx.league.roster_positions || [], totalTeams: ctx.totalTeams || ctx.league.total_rosters || null, leagueType: type, endWeek});
-                const provenance = clone({provider: Object.keys(ctx.projectionsData || {}).length ? 'season_projection_rows_present' : 'history_fallback', sourceAsOf: ctx.sourceAsOf || null, sourceTimestampsVerified: false, dataObservedAt: capturedAt});
+                const provenance = clone({provider: Object.keys(ctx.projectionsData || {}).length ? 'season_projection_rows_present' : 'history_fallback', sourceAsOf: ctx.sourceAsOf || null, sourceTimestampsVerified: false, dataObservedAt: capturedAt, fetchedAt: result.fetchedAt ?? null, providerAsOf: result.providerAsOf ?? null, calculatedAt: result.calculatedAt ?? null});
                 const models = {baseline: BASELINE_VERSION, challenger: root.App.AvailabilityForecast.VERSION};
                 const eliteSnapshot = type !== 'redraft' && typeof root.App.createElitePlayerSnapshot === 'function'
                     ? root.App.createElitePlayerSnapshot() : root.App.isElitePlayer;
-                const rows = Object.keys(result.points).sort().map(pid => {
+                const rows = Object.keys({...result.healthyPoints, ...result.points}).sort().map(pid => {
                     const p = ctx.playersData?.[pid] || {};
                     const inputs = clone({player: {position: p.position || null, team: p.team ?? null, injury_status: p.injury_status ?? null, status: p.status ?? null, bye_week: p.bye_week ?? null}, currentStats: ctx.statsData?.[pid] || null, priorStats: ctx.priorData?.[pid] || null, seasonProjection: ctx.projectionsData?.[pid] || null, availabilityEvidence: ctx.availabilityEvidence?.[pid] || null, recentWeeklyPoints: Object.fromEntries(Object.entries(root.S?.weeklyPlayerPoints || {}).filter(([w]) => Number(w) <= week).map(([w,map]) => [w, map?.[pid] ?? null]))});
                     inputs.player.age = p.age ?? null;
@@ -93,13 +94,13 @@
                         inputs.elite = typeof eliteSnapshot === 'function' ? !!eliteSnapshot(pid) : currentDynastyValue >= 7000;
                         dynastyScenario = {modelVersion: 'current-age-scenario-20260906', kind: 'uncalibrated_value_scenario', valuesBySeason: Object.fromEntries([1,2,3].map(delta => [season + delta, root.App.PlayerValue.projectPlayerValue(pid, currentDynastyValue, p.age || 0, p.position || '', delta, {trend, elite: inputs.elite})]))};
                     }
-                    return {pid, inputs, baseline: {healthyPerWeek: healthyPerWeek[pid] ?? null, points: result.points[pid], rosValue: result.values[pid] ?? null, currentDynastyValue}, dynastyScenario, challenger: root.App.AvailabilityForecast.forecast({player: inputs.player, season, weeks, healthyPerWeek: healthyPerWeek[pid] ?? null, capturedAt, evidence: inputs.availabilityEvidence})};
+                    return {pid, inputs, baseline: {healthyPerWeek: healthyPerWeek[pid] ?? null, points: result.points[pid] ?? null, rosValue: result.values[pid] ?? null, currentDynastyValue}, dynastyScenario, challenger: root.App.AvailabilityForecast.forecast({player: inputs.player, season, weeks, healthyPerWeek: healthyPerWeek[pid] ?? null, capturedAt, evidence: inputs.availabilityEvidence})};
                 });
-                const frozen = {schemaVersion: SCHEMA_VERSION, leagueId: String(ctx.leagueId), season, decisionWeek: week, startWeek: week + 1, endWeek, config, models, rows, sourceAsOf: provenance.sourceAsOf, dynastyModelInputs: clone({ageCurves: root.App.ageCurveWindows || null, decayRates: root.App.decayRates || null})};
+                const frozen = {schemaVersion: SCHEMA_VERSION, leagueId: String(ctx.leagueId), season, decisionWeek: week, startWeek, endWeek, config, models, rows, sourceAsOf: provenance.sourceAsOf, dynastyModelInputs: clone({ageCurves: root.App.ageCurveWindows || null, decayRates: root.App.decayRates || null})};
                 // Runtime signatures identify actual loaded implementations rather
                 // than a git SHA that may not match cached browser code.
                 const wp = root.App.WeeklyProj, ss = root.App.StartSit;
-                const runtime = clone({price: String(root.App.PlayerValue?.computePrices), baseline: String(wp?.buildBaseline), seasonBaseline: String(wp?.buildSeasonBaseline), project: String(ss?.projectPlayerWeek), score: String(ss?.scoreProjection), availability: String(root.App.AvailabilityForecast.forecast), dynasty: String(root.App.PlayerValue?.projectPlayerValue)});
+                const runtime = clone({price: String(root.App.PlayerValue?.computePrices), baseline: String(wp?.buildBaseline), seasonBaseline: String(wp?.buildSeasonBaseline), project: String(ss?.projectPlayerWeek), score: String(ss?.scoreProjection), canonicalScorer: String(root.calcFantasyPts), scoringRules: String(root.calcFantasyPts?.detailed), availability: String(root.App.AvailabilityForecast.forecast), dynasty: String(root.App.PlayerValue?.projectPlayerValue)});
                 const inputHash = await hash(frozen);
                 const runtimeHash = await hash(runtime);
                 const configHash = await hash(config);

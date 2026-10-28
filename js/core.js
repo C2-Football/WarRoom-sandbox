@@ -252,35 +252,43 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
     })();
 
     let _wrPlayersCache = null;
+    let _wrPlayersFetchedAt = 0, _wrDataGeneration = 0;
     let _wrPlayersInflight = null;
-    const PLAYERS_TTL_MS = 43200000; // 12h — player data barely changes intra-day
+    const PLAYERS_TTL_MS = 15 * 60 * 1000; // Injury and team status are recommendation inputs.
     async function fetchAllPlayers() {
-        if (_wrPlayersCache) return _wrPlayersCache;
+        if (_wrPlayersCache && Date.now() - _wrPlayersFetchedAt < PLAYERS_TTL_MS) return _wrPlayersCache;
         // Dedup concurrent callers (app hub + league detail both request on boot) so
         // the ~15MB /players/nfl payload is fetched at most once.
         if (_wrPlayersInflight) return _wrPlayersInflight;
-        _wrPlayersInflight = (async () => {
+        const generation = _wrDataGeneration;
+        const request = _wrPlayersInflight = (async () => {
             // Persist the players map in IndexedDB, NOT sessionStorage: at ~15MB it far
             // exceeds the ~5MB Web Storage quota, so the old sessionStorage write always
             // threw QuotaExceededError and the cache never survived a reload — forcing a
             // full re-download on every load. IndexedDB has ample quota.
             try {
-                const cached = await WrIDB.get(WR_KEYS.PLAYERS_CACHE);
+                const cached = generation === 0 ? await WrIDB.get(WR_KEYS.PLAYERS_CACHE) : null;
                 if (cached && cached.data && Date.now() - cached.ts < PLAYERS_TTL_MS) {
+                    if (generation !== _wrDataGeneration) return null;
+                    _wrPlayersFetchedAt = cached.ts;
+                    window.App.playerFreshness = { fetchedAt: cached.ts, providerAsOf: null };
                     _wrPlayersCache = cached.data;
                     return cached.data;
                 }
             } catch (e) { wrLog('players.cacheRead', e); }
             const data = await fetchJSON(`${SLEEPER_BASE_URL}/players/nfl`);
+            if (generation !== _wrDataGeneration) return null;
+            _wrPlayersFetchedAt = Date.now();
             _wrPlayersCache = data;
+            window.App.playerFreshness = { fetchedAt: _wrPlayersFetchedAt, providerAsOf: null };
             // Fire-and-forget persist — never block returning data on the IDB write.
             WrIDB.set(WR_KEYS.PLAYERS_CACHE, { data, ts: Date.now() }).catch(e => wrLog('players.cacheWrite', e));
             return data;
         })();
         try {
-            return await _wrPlayersInflight;
+            return await request;
         } finally {
-            _wrPlayersInflight = null;
+            if (_wrPlayersInflight === request) _wrPlayersInflight = null;
         }
     }
 
@@ -664,6 +672,13 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
     // (sidebar "Refresh Data") should also call window.Sleeper.clearSeasonCaches()
     // to flush the shared season/players caches.
     window.App.clearDataCaches = function clearDataCaches() {
+        _wrDataGeneration++; _wrPlayersInflight = null; _wrPlayersFetchedAt = 0;
+        window.App.WeeklyProj?.invalidate?.();
+        window.App.PlayerValue?.invalidate?.();
+        window.App.NflContext?.invalidate?.();
+        window.App.SOS?.invalidate?.();
+        window.Sleeper?.clearSeasonCaches?.();
+        window.App.playerFreshness = null;
         _wrPlayersCache = null;
         _wrStatsCache = {};
         _projectionsCache = {};

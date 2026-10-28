@@ -33,6 +33,7 @@ function fixture(edit) {
         fetch: async () => ({ ok: false }), calcFantasyPts: (line, scoring) => Object.entries(scoring).reduce((sum, [stat, amount]) => sum + Number(line[stat] || 0) * amount, 0),
         fetchMatchups: async (_lid, week) => (pairs[week] || []).flatMap((pair, i) => pair.map(id => ({ roster_id: id, matchup_id: i + 1, points: week < 3 ? 140 - id * 10 : 0 }))),
     };
+    require('./helpers/production-scorer.cjs')(sandbox);
     sandbox.globalThis = sandbox;
     vm.createContext(sandbox);
     for (const file of ['shared/startsit-engine.js', 'shared/weekly-proj.js', 'shared/luck-engine.js', 'shared/playoff-odds.js', 'shared/matchup.js', 'shared/trade-season-impact.js'])
@@ -112,12 +113,12 @@ test('an already final current week is not simulated a second time', async () =>
     assert(!context.assumptions.some(s => s.includes('live scores')));
 });
 
-test('NFL byes replace unavailable starters, preserving fixed injury caveats', async () => {
+test('NFL byes replace starters; unresolved future injuries withhold central estimates', async () => {
     const f = fixture(f => { f.playersData['1-0'].bye_week = 4; f.playersData['1-0'].injury_status = 'Q'; });
     const { result } = await analyze(f);
     assert(!result.weeks[0].afterStarters.some(s => s.pid === '1-0'));
-    assert(result.weeks[1].afterStarters.some(s => s.pid === '1-0'));
-    assert(result.warnings.some(s => s.includes('today’s status')));
+    assert.equal(result.weeks[1].afterPoints, null);
+    assert(result.warnings.some(s => s.includes('availability')));
 });
 
 test('reserve and taxi players are excluded until received; roster capacity does not count them twice', async () => {
@@ -232,7 +233,7 @@ test('official records with inconsistent completed-week coverage suppress final 
     assert.match(result.playoffs.reason, /Official records/);
 });
 
-test('isolated weekly provider snapshots use the shared league scoring without warming live caches or emitting events', async () => {
+test('weekly snapshots reuse the shared expiring cache without replacing other weeks', async () => {
     const f = fixture(), fetched = [], events = [];
     f.sandbox.dispatchEvent = event => events.push(event);
     f.sandbox.CustomEvent = function (type) { this.type = type; };
@@ -246,9 +247,9 @@ test('isolated weekly provider snapshots use the shared league scoring without w
     const cachedCurrent = JSON.stringify(wp.providerLine('1-0', 3));
     events.length = 0;
     const { context, result } = await analyze(f);
-    assert.equal(events.length, 0, 'preparing scenarios emits no shared refresh events');
+    assert.equal(events.length, 2, 'new future snapshots publish scoped refresh events');
     assert.equal(JSON.stringify(wp.providerLine('1-0', 3)), cachedCurrent);
-    assert.equal(fetched.length, 4, 'one live-cache warm plus three isolated weekly snapshots');
+    assert.equal(fetched.length, 3, 'current-week snapshot is deduplicated; two future weeks load');
     assert.equal(context.projectionsByWeek[4]['1-0'].points.median, 16);
     assert.equal(context.projectionsByWeek[5]['1-0'].points.median, 20);
     assert(result.weeks[0].afterPoints !== result.weeks[1].afterPoints);
@@ -272,14 +273,14 @@ test('league scoring honors tight-end reception premium in the same projection p
 
 test('exact standings ties share qualification chances instead of favoring low roster IDs', async () => {
     const f = fixture(f => {
-        Object.values(f.playersData).forEach(p => p.injury_status = 'OUT');
+        f.league.scoring_settings = { pass_yd: 0, rec: 0, rec_yd: 0, rush_yd: 0, rec_td: 0 }; // real known zero scoring, not an assumed season-long OUT
         f.league.rosters.forEach(r => { r.settings.wins = 1; r.settings.losses = 1; r.settings.fpts = 200; });
     });
     const { result } = await analyze(f, { givePlayerIds: [], receivePlayerIds: [], sims: 4000 });
     assert.equal(result.playoffs.available, true);
     assert(result.playoffs.beforePct > 45 && result.playoffs.beforePct < 55, 'highest roster ID receives about half the two-of-four slots');
     assert.equal(result.playoffs.delta, 0, 'common tiebreak draws preserve zero-trade identity');
-    assert.equal(result.wins.beforeRemaining, 1, 'two tied future games count as one win');
+    assert(Math.abs(result.wins.beforeRemaining - 1) < .1, 'symmetric zero-scoring teams have approximately one expected win; modeled score variance remains explicit');
     assert(result.assumptions.some(s => s.includes('further official tiebreakers')));
 });
 

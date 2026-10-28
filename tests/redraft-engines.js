@@ -147,43 +147,41 @@ const faabPlayers = {
   rb3: { position: 'RB', injury_status: 'OUT' },
 };
 function bidTxn(rosterId, bid, week, failed) {
+  faabPlayers['p' + week + rosterId] = {position:'RB'};
   return { type: 'waiver', status: failed ? 'failed' : 'complete', leg: week, settings: { waiver_bid: bid }, roster_ids: [rosterId], adds: { ['p' + week + rosterId]: rosterId } };
 }
 
-test('faab: cold start flags small samples and still produces a legal plan', () => {
+test('faab: cold start withholds bid advice and probabilities', () => {
   const a = Faab.analyze({ league: faabLeague(), myRosterId: 1, txns: [bidTxn(2, 10, 3)], playersData: faabPlayers, targetPos: 'RB', targetStrength: 0.6 });
   assert.ok(a.coldStart, 'under MIN_SAMPLE → coldStart');
-  assert.ok(a.rec.bid >= a.minBid && a.rec.bid <= a.myLeft, 'rec within legal range');
-  assert.ok(a.ladder.length >= 3, 'ladder has rungs');
+  assert.equal(a.rec, null, 'insufficient history');
+  assert.equal(a.ladder.length, 0);
 });
 
-test('faab: ladder win probabilities are monotonic and rivals respect budgets', () => {
+test('faab: descriptive bid ladder respects budgets without probabilities', () => {
   const txns = [];
   for (let w = 1; w <= 6; w++) { txns.push(bidTxn(2, 8 + w, w), bidTxn(3, 20 + w, w), bidTxn(4, 5, w, true)); }
   const a = Faab.analyze({ league: faabLeague(), myRosterId: 1, txns, playersData: faabPlayers, targetPos: 'RB', targetStrength: 0.7 });
   assert.ok(!a.coldStart, '18 bids clears MIN_SAMPLE');
   for (let i = 1; i < a.ladder.length; i++) {
-    assert.ok(a.ladder[i].winPct >= a.ladder[i - 1].winPct, 'bigger bid never lowers win odds');
+    assert.equal(a.ladder[i].winPct, undefined, 'no uncalibrated probability');
+    assert.ok(a.ladder[i].bid >= a.ladder[i - 1].bid);
   }
   for (const r of a.rivals) assert.ok(r.estBid <= r.faabLeft, 'no rival bids money they do not have');
   const thin = a.rivals.find(r => r.rosterId === 3);
   assert.strictEqual(thin.need, 'HIGH', 'team 3 (one healthy RB, two RB slots) reads HIGH need');
 });
 
-test('faab: failed claims count as bid evidence', () => {
+test('faab: only completed claims count as descriptive winning-bid evidence', () => {
   const txns = [];
   for (let w = 1; w <= 5; w++) { txns.push(bidTxn(2, 10, w), bidTxn(3, 12, w), bidTxn(4, 30, w, true)); }
   const a = Faab.analyze({ league: faabLeague(), myRosterId: 1, txns, playersData: faabPlayers, targetPos: 'RB', targetStrength: 0.5 });
-  assert.strictEqual(a.sampleSize, 15, 'winning AND losing bids are all evidence');
+  assert.strictEqual(a.sampleSize, 10, 'only completed same-position winning bids');
   assert.ok(a.comps.every(c => c.bid !== 30), 'comps show WINNING bids only');
 });
 
 // ── Why-this-number ledger ──────────────────────────────────────────
-const calc = (line, scoring) => {
-  let pts = 0;
-  for (const k of Object.keys(line || {})) pts += (Number(scoring[k]) || 0) * (Number(line[k]) || 0);
-  return pts;
-};
+const calc = require('./helpers/production-scorer.cjs')();
 
 test('explain: stages reconcile to the final league-scored number', () => {
   const App = globalThis.App;

@@ -105,8 +105,9 @@ await test('Evaluation requires completed, correctly-scored outcomes and reports
 await test('Shadow capture failure leaves public prices byte-for-byte unchanged',()=>{
     const {e,ctx}=setup();const pv=e.App.PlayerValue;
     const input={...ctx,week:1,scoring:{rec:1},playerScores:{a:5000},projectionsData:{a:{gp:17,rec:170}}};
-    const before=JSON.stringify(pv.computePrices(input));let calls=0;e.App.ForecastLedger.capture=()=>{calls++;throw Error('failure');};
-    assert.equal(JSON.stringify(pv.computePrices({...input,_captureForecast:true})),before);assert.equal(calls,1);
+    const pricesOnly = result => JSON.stringify({ ...result, calculatedAt: null });
+    const before=pricesOnly(pv.computePrices(input));let calls=0;e.App.ForecastLedger.capture=()=>{calls++;throw Error('failure');};
+    assert.equal(pricesOnly(pv.computePrices({...input,_captureForecast:true})),before);assert.equal(calls,1);
 });
 await test('Changed availability is compared on the same sample, without promotion',async()=>{
     const {e,journal,ctx,result,healthy}=setup();ctx.availabilityEvidence={a:{season:2026,source:'synthetic comparison fixture',asOf:'2026-09-05',probabilityByWeek:Object.fromEntries(Array.from({length:16},(_,i)=>[i+2,.5]))}};

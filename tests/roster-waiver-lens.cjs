@@ -49,7 +49,7 @@ assert(Lens.evaluate({...args,league:{...league,settings:{...league.settings,pla
 out=Lens.evaluate({...args,roster:{...roster,players:['w','r'],reserve:['b']},rosters:[{...roster,players:['w','r'],reserve:['b']},rosters[1]]});
 pick=out.candidates.find(x=>x.pid==='add');assert.equal(pick.dropPid,null,'Reserve players do not consume active slots');
 assert.equal(pick.outgoing.length,0);
-const one={league:{...league,roster_positions:['QB','BN']},roster:{roster_id:1,owner_id:'owner',players:['q1','q2']},players:{q1:player('Strong week','QB',{depth_chart_order:1}),q2:player('Strong season','QB',{depth_chart_order:1}),add:player('New QB','QB',{depth_chart_order:1}),backup:players.backup},valuesByPid:{q1:5000,q2:3000,add:6000,backup:6000},projectionsByPid:{q1:22,q2:18,add:25,backup:40},rosState:{leagueId:'league-a',season:2026,week:6,points:{q1:200,q2:250,add:210,backup:500}}};
+const one={league:{...league,roster_positions:['QB','BN']},roster:{roster_id:1,owner_id:'owner',players:['q1','q2'],settings:{waiver_budget_used:0}},players:{q1:player('Strong week','QB',{depth_chart_order:1}),q2:player('Strong season','QB',{depth_chart_order:1}),add:player('New QB','QB',{depth_chart_order:1}),backup:players.backup},valuesByPid:{q1:5000,q2:3000,add:6000,backup:6000},projectionsByPid:{q1:22,q2:18,add:25,backup:40},rosState:{leagueId:'league-a',season:2026,week:6,points:{q1:200,q2:250,add:210,backup:500}}};
 one.rosters=[one.roster,rosters[1]];
 out=Lens.evaluate({...args,...one});pick=out.candidates.find(x=>x.pid==='add');
 assert.equal(pick.dropPid,'q2');assert.equal(pick.weekly.delta,3);assert.equal(pick.season.delta,-40,'The exact week-selected drop exposes its ROS tradeoff');

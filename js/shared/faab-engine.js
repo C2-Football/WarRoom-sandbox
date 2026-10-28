@@ -1,49 +1,12 @@
-// ══════════════════════════════════════════════════════════════════
-// js/shared/faab-engine.js — window.App.Faab
-// League-aware FAAB bidding: what THIS league pays, who else is bidding, and
-// the smallest bid that clears them. The redraft application of the Owner-DNA
-// idea — model the opponents, not the market.
-//
-//   analyze({ league, myRosterId, txns, playersData, targetPid,
-//             targetPos, targetStrength })
-//     → { coldStart, sampleSize, budget, minBid, myLeft, mySpentPct,
-//         leagueSpentPct, marketBid, medianBid,
-//         ladder: [{ bid, winPct }], rec: { bid, winPct, capped },
-//         rivals: [{ rosterId, name, faabLeft, need, aggr, estBid, engaged }],
-//         comps:  [{ week, pid, bid, rosterId }] }        // newest first
-//
-// The model, stated plainly (all tunables are const-hoisted):
-//  · Evidence = every FAAB bid this season, WINNING AND LOSING (failed claims
-//    carry real willingness-to-pay — WrTxns.getFailedWaivers). Bids normalize
-//    to % of starting budget so $200-budget leagues compare to $100 ones.
-//  · Market price = a quantile of that bid history, slid by targetStrength
-//    (0..1, caller-supplied — e.g. DHQ percentile of the FA pool): a hot add
-//    clears the 65th–90th percentile of what this league has ever paid.
-//  · Rivals = rosters with a positional need and legal budget. Each gets an
-//    estimated bid: market price × their historical aggression (their median
-//    bid vs the league's) × need heat, capped by their remaining budget.
-//  · winPct(B) = Π over rivals of P(that rival stays under B), a logistic
-//    around their estimate, discounted by the chance they sit the claim out.
-//  · COLD START: under MIN_SAMPLE bids the league medians are replaced by
-//    league-size-agnostic defaults and coldStart=true — the UI must say it is
-//    showing league-median guidance, not per-rival reads (same honesty rule
-//    as Owner DNA's ≥3-trade gate).
-//
-// Pure compute (fetch via WrTxns at the call site); Node-testable.
-// Warroom-local (direct <script> tag), no vendored mirror.
-// ══════════════════════════════════════════════════════════════════
+// Descriptive completed same-position bid history, not winning probabilities.
+// A bid requires five observations, verified eligibility and an affordable minimum.
+// Rival need/aggression fields are comparative heuristics only.
 (function (root) {
     'use strict';
     const App = root.App = root.App || {};
 
-    const MIN_SAMPLE = 15;         // bids needed before per-league medians engage
     const DEFAULT_PCTS = { p25: 4, p50: 8, p75: 15, p90: 25 }; // % of budget, league-agnostic
-    const ENGAGE_HIGH = 0.85;      // P(a HIGH-need rival actually bids)
-    const ENGAGE_MED = 0.5;
-    const LADDER_STEPS = [0.5, 0.75, 1, 1.35, 1.75];
-    const WIN_TARGET = 0.6;        // rec = smallest bid clearing this
     const SPEND_CAP = 0.65;        // of my remaining, unless strength ≥ CAP_LIFT
-    const CAP_LIFT = 0.8;
 
     function quantile(sorted, q) {
         if (!sorted.length) return null;
@@ -72,7 +35,9 @@
     // add (or exactly fills them — one injury from a hole), MED = one deep.
     const OUT = new Set(['OUT', 'IR', 'PUP', 'SUS', 'NA', 'COV', 'DOUBTFUL']);
     function needAt(roster, pos, league, playersData) {
-        const slots = ((league && league.roster_positions) || []).filter(s => String(s).toUpperCase() === pos).length;
+        const demand = App.PlayerValue?.slotsFromRoster?.(league?.roster_positions) || {};
+        const eligible = { FLEX:['RB','WR','TE'], SUPER_FLEX:['QB','RB','WR','TE'], QB_FLEX:['QB','RB','WR','TE'], OP:['QB','RB','WR','TE'] };
+        const slots = demand[pos] ?? ((league?.roster_positions || []).reduce((n,s) => n + (s === pos ? 1 : eligible[s]?.includes(pos) ? (s === 'FLEX' ? 1/3 : pos === 'QB' ? .75 : 1/12) : 0), 0));
         if (!slots) return 'LOW';
         let healthy = 0;
         const res = new Set((roster.reserve || []).concat(roster.taxi || []));
@@ -88,13 +53,13 @@
         return 'LOW';
     }
 
-    // All FAAB bids from a transaction list (winning + losing), % of budget.
+    // Completed winning bids only, as a percent of this league budget.
     function extractBids(txns, budget) {
         const out = [];
         for (const t of (txns || [])) {
-            if (!t || t.type !== 'waiver') continue;
+            if (!t || t.type !== 'waiver' || t.status !== 'complete') continue;
             const bid = Number(t.settings && t.settings.waiver_bid);
-            if (!(bid > 0) || !(budget > 0)) continue;
+            if (!Number.isFinite(bid) || bid < 0 || bid > budget || !(budget > 0)) continue;
             const rosterId = (t.roster_ids && t.roster_ids[0]) != null ? t.roster_ids[0]
                 : (t.adds ? Object.values(t.adds)[0] : null);
             out.push({
@@ -123,15 +88,23 @@
         // imported platform value — some leagues/platforms don't expose the
         // real waiver_budget_min reliably.
         const override = Number(opts && opts.minBidOverride);
-        const minBid = override > 0 ? Math.max(1, Math.round(override)) : Math.max(1, Number(st.waiver_budget_min) || 1);
+        const minBid = override > 0 ? Math.round(override) : st.waiver_budget_min == null ? 1 : Math.max(0, Number(st.waiver_budget_min));
 
         const rosters = league.rosters || [];
         const mine = rosters.find(r => String(r.roster_id) === myId);
         const leftOf = r => Math.max(0, budget - (Number(r.settings && r.settings.waiver_budget_used) || 0));
-        const myLeft = mine ? leftOf(mine) : budget;
+        const myLeft = mine?.settings?.waiver_budget_used != null ? leftOf(mine) : null;
+        const eligibility = App.RecommendationEligibility?.check(league, mine);
+        const blocked = eligibility?.ok === false ? eligibility.reason : myLeft == null ? 'Remaining FAAB is unavailable.' : myLeft < minBid ? 'Remaining FAAB is below the minimum bid.' : null;
 
-        const bids = extractBids(opts && opts.txns, budget);
-        const coldStart = bids.length < MIN_SAMPLE;
+        const seen = new Set();
+        const txns = (opts?.txns || []).filter(t => {
+            const ids = Object.keys(t.adds || {}), key = t.transaction_id || JSON.stringify([ids,t.roster_ids,t.created,t.leg,t.settings?.waiver_bid]);
+            if (seen.has(key) || ids.length !== 1 || playersData?.[ids[0]]?.position !== pos || t.league_id && String(t.league_id) !== String(league.league_id || league.id)) return false;
+            seen.add(key); return true;
+        });
+        const bids = extractBids(txns, budget);
+        const coldStart = bids.length < 5;
         const pctsSorted = bids.map(b => b.pct).sort((a, b) => a - b);
         const P = coldStart ? DEFAULT_PCTS : {
             p25: quantile(pctsSorted, 0.25), p50: quantile(pctsSorted, 0.5),
@@ -175,28 +148,8 @@
             })
             .sort((a, b) => b.estBid - a.estBid);
 
-        // P(win at bid B): each engaged rival stays under B with logistic prob
-        // around their estimate; they also might not bid at all.
-        const winPct = B => {
-            if (B < minBid) return 0;
-            let p = 1;
-            for (const r of rivals) {
-                if (!r.engaged) continue;
-                const sigma = Math.max(2, 0.25 * r.estBid, 0.12 * marketBid);
-                const under = 1 / (1 + Math.exp(-(B - r.estBid) / sigma));
-                const pEngage = r.need === 'HIGH' ? ENGAGE_HIGH : ENGAGE_MED;
-                p *= (1 - pEngage) + pEngage * under;
-            }
-            return Math.min(0.97, Math.round(p * 100) / 100);
-        };
-
-        const ladder = [];
-        for (const step of LADDER_STEPS) {
-            const bid = Math.max(minBid, Math.min(myLeft, Math.round(marketBid * step)));
-            if (!ladder.some(l => l.bid === bid)) ladder.push({ bid, winPct: winPct(bid) });
-        }
-        ladder.sort((a, b) => a.bid - b.bid);
-
+        // Descriptive history only: no calibrated bidding/participation model.
+        const ladder = !blocked && !coldStart ? [...new Set([P.p25,P.p50,P.p75].map(p => Math.min(myLeft, Math.max(minBid, Math.round(p * budget / 100)))))].map(bid => ({ bid, basis: 'historical winning bids' })) : [];
         // ── Horizon-aware spend cap ──────────────────────────────────
         // Holding budget back only makes sense if you will be alive to spend
         // it. In a CHOPPED league the survival horizon is short and shrinking,
@@ -213,13 +166,8 @@
             if (horizonWeeks <= 5) return 0.8;
             return SPEND_CAP;
         })();
-        // Recommendation: smallest whole bid clearing WIN_TARGET, spend-capped.
-        const cap = strength >= CAP_LIFT ? myLeft : Math.max(minBid, Math.round(myLeft * horizonCap));
-        let rec = null;
-        for (let B = minBid; B <= cap; B++) {
-            if (winPct(B) >= WIN_TARGET) { rec = { bid: B, winPct: winPct(B), capped: false }; break; }
-        }
-        if (!rec) rec = { bid: Math.min(cap, myLeft), winPct: winPct(Math.min(cap, myLeft)), capped: true };
+        const cap = myLeft == null ? null : Math.min(myLeft, Math.max(minBid, Math.round(myLeft * horizonCap)));
+        const rec = !blocked && !coldStart ? { bid: Math.min(cap, Math.max(minBid, Math.round(P.p50 * budget / 100))), capped: P.p50 * budget / 100 > cap, basis: 'Budget-limited historical median; not a prediction of a winning bid.' } : null;
 
         const spentPct = r => budget ? Math.round(((budget - leftOf(r)) / budget) * 100) : 0;
         // Average over LIVE teams only — a chopped team's spend is frozen, so
@@ -254,6 +202,7 @@
         })() : null;
 
         return {
+            status: blocked ? 'unavailable' : coldStart ? 'insufficient-history' : 'ready', reason: blocked || (coldStart ? 'At least five completed same-position bids are needed for a descriptive range.' : null), probabilityCalibrated: false,
             coldStart, sampleSize: bids.length,
             budget, minBid, myLeft, pacing,
             mySpentPct: mine ? spentPct(mine) : 0,

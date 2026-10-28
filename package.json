@@ -1,7 +1,7 @@
 {
   "name": "fantasy-war-room",
   "version": "1.0.0",
-  "description": "Fantasy football owner dashboard \u2014 draft war room, earnings tracking, free agent targets",
+  "description": "Fantasy football owner dashboard — draft war room, earnings tracking, free agent targets",
   "main": "index.html",
   "scripts": {
     "test": "node scripts/run-tests.cjs",
@@ -82,7 +82,10 @@
     "test:account-deletion": "node tests/account-deletion-recovery.cjs && node tests/account-deletion-sql.cjs && node tests/account-deletion-billing-integration.cjs && node tests/account-deletion-checkouts.cjs && node tests/account-deletion-checkouts-sql.cjs",
     "test:c2-release": "python3 tests/c2-edge-release.py && node tests/c2-edge-release-schema.cjs && node tests/edge-source-recovery.mjs && node tests/game-runtime-artifacts.cjs",
     "test:commish-tasks-browser": "node tests/commish-task-browser.cjs",
-    "build:lens-visuals": "node scripts/build-lens-visuals.cjs"
+    "build:lens-visuals": "node scripts/build-lens-visuals.cjs",
+    "test:redraft-reliability": "node scripts/test-redraft-reliability.cjs",
+    "test:redraft-reliability:browser": "node tests/redraft-reliability-browser.cjs",
+    "test:redraft-reliability:build": "node tests/redraft-reliability-build.cjs"
   },
   "keywords": [
     "fantasy",

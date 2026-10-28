@@ -177,7 +177,7 @@ const controller = data => ({ enabled: true, key: '2026-league-a', status: 'read
   };
   ui = harness({ root: 'TcVerdictPanel' });
   tree = ui.render(verdictProps); text = copy(tree);
-  assert.match(text, /Calculating/); assert.match(text, /Deal value/); assert.match(text, /67\s*% estimate/, 'The deal price and acceptance remain available while season data loads');
+  assert.match(text, /Calculating/); assert.match(text, /Deal value/); assert.match(text, /67\s*\/100 score/, 'The deal price and acceptance remain available while season data loads');
   await turn(); tree = ui.render(verdictProps); text = copy(tree);
   assert.equal(tree.props.id, 'wr-export-trade');
   assert.equal(tree.children[0].props.className, 'tc-section-hdr', 'Trade Analysis is the first content in the unified card');
@@ -188,20 +188,20 @@ const controller = data => ({ enabled: true, key: '2026-league-a', status: 'read
   assert(!text.includes('Pick Capital')); assert(!text.includes('Roster Impact'));
   assert(text.indexOf('TRADE ANALYSIS') < text.indexOf('Helps your season'));
   assert(text.indexOf('Deal value') < text.indexOf('Remaining games'));
-  assert(text.indexOf('Owner acceptance') < text.indexOf('Remaining games'));
+  assert(text.indexOf('Negotiation context') < text.indexOf('Remaining games'));
   assert.match(text, /Review your untouchable player/);
   assert.equal(walk(tree).filter(node => node.props.className === 'tc-trade-second-opinion').length, 1);
   assert.match(copy(walk(tree).find(node => node.props.className === 'tc-trade-second-opinion')), /Alex second opinion fixture/); ui.dispose();
 
   ui = harness({ root: 'TcVerdictPanel', pro: false });
   tree = ui.render(verdictProps); text = copy(tree);
-  assert.match(text, /Deal value/); assert.match(text, /B value grade/); assert.match(text, /Owner acceptance Pro/);
-  assert(!/67\s*%/.test(text), 'Owner acceptance stays gated on the free seasonal card');
+  assert.match(text, /Deal value/); assert.match(text, /B value grade/); assert.match(text, /Negotiation context Pro/);
+  assert(!/67\s*\/100/.test(text), 'Negotiation context stays gated on the free seasonal card');
   assert.match(text, /Review your untouchable player/, 'Free strategy warnings remain visible'); ui.dispose();
 
   ui = harness({ root: 'TcVerdictPanel' });
   tree = ui.render({ ...verdictProps, seasonImpactController: { enabled: true, key: 'missing', status: 'unavailable', reason: 'Season data unavailable.' } });
-  text = copy(tree); assert.match(text, /Season data unavailable/); assert.match(text, /B value grade/); assert.match(text, /67\s*% estimate/); assert(!text.includes('Remaining games')); ui.dispose();
+  text = copy(tree); assert.match(text, /Season data unavailable/); assert.match(text, /B value grade/); assert.match(text, /67\s*\/100 score/); assert(!text.includes('Remaining games')); ui.dispose();
 
   for (const pro of [false, true]) {
     ui = harness({ root: 'TcVerdictPanel', pro });
@@ -209,7 +209,7 @@ const controller = data => ({ enabled: true, key: '2026-league-a', status: 'read
     assert.match(text, /Roster Impact/); assert.match(text, /Pick Capital/); assert.match(text, /FAAB/);
     assert.equal(walk(tree).filter(node => node.props.className === 'tc-ta-impact-grid').length, 1);
     assert(!text.includes('Projected power rank')); assert(!text.includes('Helps your season'));
-    assert.equal(/67\s*%/.test(text), pro, 'Legacy acceptance gating remains unchanged'); ui.dispose();
+    assert.equal(/67\s*\/100/.test(text), pro, 'Legacy acceptance gating remains unchanged'); ui.dispose();
   }
 
   console.log('PASS season-impact UI: season estimates, unified Trade Analysis composition, price/acceptance ordering, free/Pro gates, legacy layout, cache identity and stale-response isolation');

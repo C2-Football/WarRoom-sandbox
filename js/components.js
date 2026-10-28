@@ -33,7 +33,7 @@
         // is the ROS value (matching the 'ROS' label the skin vocabulary
         // renders) — never the raw dynasty number under a redraft label.
         const isRedraftCard = !!window.App?.PlayerValue?.isRedraftActive?.();
-        const dhq = (isRedraftCard ? window.App.PlayerValue.getValue(pid) : window.App?.LI?.playerScores?.[pid]) || 0;
+        const dhq = (isRedraftCard ? window.App.PlayerValue.getValue(pid) : window.App?.LI?.playerScores?.[pid]) ?? null;
         const meta = window.App?.LI?.playerMeta?.[pid] || {};
         const leagueSkin = window.App?.LeagueSkin?.getCurrent?.() || null;
         const valueShortLabel = leagueSkin?.vocabulary?.valueShortLabel || 'DHQ';
@@ -88,7 +88,7 @@
             // Stats row \u2014 ACTION verdict cell is Pro; free gets the raw 3-cell row.
             React.createElement('div', { style:{ display:'grid', gridTemplateColumns:'repeat('+(inlinePro?4:3)+',1fr)', gap:'4px', padding:'10px 16px', borderBottom:'1px solid var(--ov-4, rgba(255,255,255,0.06))' } },
                 ...[
-                    { val:dhq>0?dhq.toLocaleString():'\u2014', lbl:valueShortLabel, col:dhqCol, gauge:true },
+                    { val:dhq!=null?dhq.toLocaleString():'\u2014', lbl:valueShortLabel, col:dhqCol, gauge:true },
                     { val:ppg||'\u2014', lbl:'PPG', col:ppg>=10?'var(--k-2ecc71, #2ecc71)':'var(--k-d0d0d0, #d0d0d0)' },
                     { val:!age?'—':peakYrs>0?peakYrs+'yr':valueYrs+'yr', lbl:peakYrs>0?'PEAK':'VALUE', col:peakCol },
                     ...(inlinePro ? [{ val:rec, lbl:'ACTION', col:recCol }] : [])

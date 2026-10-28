@@ -59,7 +59,7 @@
 
     function currentWeek() {
         const s = root.S || {};
-        const w = Number(s.currentWeek || s.nflState?.display_week || s.nflState?.week || 0);
+        const w = Number(s.nflState?.week || s.currentWeek || s.nflState?.display_week || 0);
         return w > 0 ? w : 1;
     }
 
@@ -72,43 +72,78 @@
     // (owner ask 2026-07-12: "projected should look at the upcoming week").
     // Lazily fetched once per (season, week), cached in-module; consumers
     // hear 'wr:projections-loaded' and recompute.
-    const _prov = { key: null, byPid: null, fetching: null };
+    // Raw provider snapshots: 15 minute success TTL, 30 second failure backoff.
+    // Failures are retryable; request identity prevents pre-refresh completions
+    // from replacing a fresh snapshot. No calculation timestamp is a fetch time.
+    const PROJECTION_TTL_MS = 15 * 60 * 1000, RETRY_MS = 30 * 1000;
+    const _providers = new Map(); let _generation = 0;
     function providerSeason() {
         const s = root.S || {};
-        const lg = (s.leagues || []).find(l => l.league_id === s.currentLeagueId) || s.league;
-        return String(s.nflState?.season || (lg && lg.season) || new Date().getFullYear());
+        const lg = (s.leagues || []).find(l => String(l.league_id || l.id) === String(s.currentLeagueId)) || s.league;
+        return String(lg?.season || s.nflState?.season || new Date().getFullYear());
     }
-    function ensureWeekProjections(week) {
-        const w = Number(week) || currentWeek();
-        const season = providerSeason();
-        const key = season + '|' + w;
-        if (_prov.key === key && (_prov.byPid || _prov.fetching)) return _prov.fetching || Promise.resolve(_prov.byPid);
-        if (typeof fetch !== 'function') return Promise.resolve(null);
-        _prov.key = key; _prov.byPid = null;
-        _prov.fetching = fetch('https://api.sleeper.app/v1/projections/nfl/regular/' + season + '/' + w)
-            .then(r => (r && r.ok ? r.json() : null))
+    function providerKey(season, week) { return String(root.S?.currentLeagueId || '') + '|' + season + '|' + week; }
+    function invalidate() { _generation++; _providers.clear(); _ctx.byTeamWeek = {}; _ctx.byPid = {}; }
+    function freshness(week, season = providerSeason()) {
+        const row = _providers.get(providerKey(season, week));
+        return { fetchedAt: row?.fetchedAt ?? null, providerAsOf: row?.providerAsOf ?? null,
+            expiresAt: row?.fetchedAt ? row.fetchedAt + PROJECTION_TTL_MS : null, error: row?.error || null };
+    }
+    function ensureWeekProjections(week, options = {}) {
+        const w = Number(week) || currentWeek(), season = String(options.season || providerSeason());
+        const key = providerKey(season, w), now = Date.now(), old = _providers.get(key);
+        if (old?.fetching) return old.fetching;
+        if (!options.force && old?.byPid && now - old.fetchedAt < PROJECTION_TTL_MS) return Promise.resolve(old.byPid);
+        if (!options.force && old?.retryAt > now) return Promise.resolve(null);
+        if (typeof root.fetch !== 'function') return Promise.resolve(null);
+        const generation = _generation, leagueId = String(root.S?.currentLeagueId || '');
+        const row = { byPid: null, fetchedAt: null, providerAsOf: null };
+        _providers.set(key, row);
+        row.fetching = Promise.resolve().then(() => root.fetch('https://api.sleeper.app/v1/projections/nfl/regular/' + season + '/' + w))
+            .then(r => { if (!r?.ok) throw new Error('Projection fetch failed'); return r.json(); })
             .then(map => {
-                if (_prov.key !== key) return null;
-                _prov.byPid = map || {};
-                _prov.fetching = null;
-                try { root.dispatchEvent(new CustomEvent('wr:projections-loaded', { detail: { season, week: w } })); } catch (e) { /* headless */ }
-                return _prov.byPid;
-            })
-            .catch(() => { if (_prov.key === key) { _prov.byPid = {}; _prov.fetching = null; } return null; });
-        return _prov.fetching;
+                if (!map || Array.isArray(map) || typeof map !== 'object' || !Object.keys(map).length) throw new Error('Projections not published');
+                if (generation !== _generation || _providers.get(key) !== row) return null;
+                row.byPid = map; row.fetchedAt = Date.now();
+                if (leagueId === String(root.S?.currentLeagueId || '')) {
+                    try { root.dispatchEvent(new CustomEvent('wr:projections-loaded', { detail: { leagueId, season, week: w } })); } catch (_) { /* headless */ }
+                }
+                return map;
+            }).catch(error => { if (_providers.get(key) === row) { row.error = error.message; row.retryAt = Date.now() + RETRY_MS; } return null; })
+            .finally(() => { row.fetching = null; });
+        return row.fetching;
+    }
+    function decisionHorizon(league, options = {}) {
+        const week = Number(options.week) || currentWeek(), settings = league?.settings || {};
+        const playoffStart = Number(settings.playoff_week_start) || 15;
+        const rounds = Number(settings.playoff_teams) > 1 ? Math.ceil(Math.log2(Number(settings.playoff_teams))) : null;
+        const explicitEnd = Number(settings.playoff_end_week || settings.end_week);
+        const end = Math.min(18, explicitEnd || (rounds ? playoffStart + rounds - 1 : 17));
+        const games = options.games || Object.values(_ctx.byTeamWeek).filter(g => Number(g.week) === week);
+        const states = games.map(g => App.NflContext?.gameStatus?.(g) || 'unknown');
+        const completed = states.length > 0 && states.every(state => state === 'final');
+        const upcoming = states.length > 0 && states.every(state => state === 'upcoming');
+        const offseason = league?.status === 'complete' || root.S?.nflState?.season_type === 'post';
+        const from = offseason ? end + 1 : week + (completed ? 1 : 0);
+        return { week, fromWeek: from, endWeek: end, regularEnd: playoffStart - 1,
+            tradeFromWeek: upcoming && Number(settings.trade_review_days ?? 0) === 0 ? from : Math.max(from, week + 1),
+            weeks: Array.from({length: Math.max(0, end - from + 1)}, (_,i) => from + i),
+            timingKnown: states.length > 0 && states.every(state => state !== 'unknown'),
+            assumption: explicitEnd ? null : rounds ? 'Championship cutoff assumes one-week playoff rounds from the configured playoff start and team count.' : 'Fantasy season end assumed Week 17; no verified championship cutoff supplied.' };
     }
     // Published provider line for a pid, or null. Pre-season most rows are
     // all-zero shells until analysts publish — only trust lines with real
     // projected volume. A cold cache self-warms (fire-and-forget fetch).
     function meaningfulProviderLine(line) {
         if (!line || typeof line !== 'object') return null;
-        const vol = Number(line.pts_ppr) || Number(line.pts_std) || Number(line.pass_att) || Number(line.rush_att) || Number(line.rec_tgt) || Number(line.rec) || Number(line.idp_tkl) || Number(line.fga) || Number(line.xpm) || 0;
+        const vol = Number(line.pts_ppr) || Number(line.pts_std) || Number(line.pass_att) || Number(line.rush_att) || Number(line.rec_tgt) || Number(line.rec) || Number(line.idp_tkl) || Number(line.sack) || Number(line.int) || Number(line.fga) || Number(line.xpm) || 0;
         return vol > 0 ? line : null;
     }
     function providerLine(pid, week) {
         const w = Number(week) || currentWeek();
-        if (_prov.key !== (providerSeason() + '|' + w) || !_prov.byPid) { ensureWeekProjections(w); return null; }
-        return meaningfulProviderLine(_prov.byPid[pid]);
+        const row = _providers.get(providerKey(providerSeason(), w));
+        if (!row?.byPid || Date.now() - row.fetchedAt >= PROJECTION_TTL_MS) { ensureWeekProjections(w); return null; }
+        return meaningfulProviderLine(row.byPid[pid]);
     }
 
     // Build league-scored histories independently of fantasy roster ownership.
@@ -147,7 +182,7 @@
                 if (!matchupReady && Number.isFinite(previousPoints[week]?.[pid])) return;
                 // Raw stat keys match the league's scoring keys, including return
                 // yards, first downs and position bonuses. Keep full precision.
-                const total = Object.entries(scoring).reduce((sum, [key, weight]) => sum + (Number.isFinite(Number(line[key])) && Number.isFinite(Number(weight)) ? Number(line[key]) * Number(weight) : 0), 0);
+                const total = root.calcFantasyPts?.(line, scoring, root.S?.players?.[pid]?.position);
                 if (Number.isFinite(total)) wk[pid] = Math.round(total * 100) / 100;
             });
             if (matchupReady) matchups.forEach(row => Object.entries(row?.players_points || {}).forEach(([pid, value]) => {
@@ -468,9 +503,10 @@
     }
 
     App.WeeklyProj = App.WeeklyProj || {
+        gameStatusFor: (team, week) => App.NflContext?.gameStatus?.(teamWeekCtx(team, week)) || 'unknown',
         setContext, currentWeek, recentPPG, weeklyHistory, formStats, loadWeeklyPoints, weeklyPointsScope, buildBaseline, buildSeasonBaseline,
         projectPlayer, projectRoster, optimalForRoster, explainPlayer,
-        ensureWeekProjections, providerLine,
+        ensureWeekProjections, providerLine, freshness, invalidate, decisionHorizon, PROJECTION_TTL_MS, RETRY_MS,
         objectiveForMode, modeFor,
         _ctx,
     };

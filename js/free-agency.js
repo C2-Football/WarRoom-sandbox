@@ -300,6 +300,8 @@
         const _valueShortLabel = leagueSkin?.vocabulary?.valueShortLabel || 'DHQ';
         const rosterState = args.rosterState || window.App?.getRosterDataState?.({ roster: myRoster, currentLeague, rosters: currentLeague?.rosters, leagueSkin }) || { isUsable: true };
         if (!rosterState.isUsable) return { priorityAdds: [], actionBoardPlayers: [], availablePlayers: [], rosterRead: null };
+        const eligibility = window.App?.RecommendationEligibility?.check(currentLeague, myRoster);
+        if (!eligibility?.ok) return { priorityAdds: [], actionBoardPlayers: [], availablePlayers: [], rosterRead: null, reason: eligibility?.reason || 'Eligibility service is loading.' };
         // Free/Pro: FAAB bids stay null and nothing is published to the shared
         // Intelligence rec stream for free users; consumers (brief, HQ, craze)
         // gate their own display, this nulls the rec payloads at the source.
@@ -610,6 +612,7 @@
             gmStrategy:window.WR?.GmMode?.promptBlock?.(currentLeague?.league_id || currentLeague?.id) || null,
             budget:{total:budget,spent,remaining:budget!=null && spent!=null ? Math.max(0,Number(budget)-Number(spent)) : null,minimum:currentLeague?.settings?.waiver_budget_min ?? null},
             roster:rosterRead?.owned || [], rosterPlayerIds:myRoster?.players || [], starters:myRoster?.starters || [], reserve:myRoster?.reserve || [], taxi:myRoster?.taxi || [],
+            evidencePolicy:'Explain only supplied calculations. Preserve nulls, negative weekly effects, required drops and availability assumptions. Do not assert current news without a dated supplied source. Never turn bid history or negotiation scores into probabilities.',
             lineupBefore:{weekly:rosterRead?.beforeWeekly || null,season:rosterRead?.beforeSeason || null},
             evidence:{source:'Imported league/player data and league-scored projection model',sourceUpdatedAt:null,liveNewsVerified:false,bidHistoryIncluded:false,playerLocksVerified:false},
             instruction:'Explain only the supplied add/drop plans. Separate this-week projected points from ROS starter value. Do not invent news, player availability, retention costs, bids, or winning probabilities. A missing price is unknown, not a recommendation to bid zero. Confirm lineup/transaction locks before submitting. Return an empty recommendations array when no plan improves the roster.',
@@ -1045,7 +1048,7 @@
         }, [currentLeague]);
 
         const availablePlayers = useMemo(() => {
-            if (!rosterState.isUsable) return [];
+            if (!rosterState.isUsable || !window.App?.RecommendationEligibility?.check(currentLeague,myRoster,'ownership')?.ok) return [];
             return Object.entries(playersData)
                 .filter(([pid, p]) => !rostered.has(pid) && p.team && p.status !== 'Inactive' && p.status !== 'Retired' && p.active !== false && !isDraftProspect(pid, p)
                     && (p.full_name || p.first_name || p.last_name)
@@ -1286,7 +1289,7 @@
         const selPlayer = faSelectedPid ? playersData[faSelectedPid] : null;
         const selStats = faSelectedPid ? statsData[faSelectedPid] || {} : {};
         const selPrevStats = faSelectedPid ? (prevStatsData || {})[faSelectedPid] || {} : {};
-        const selDhq = faSelectedPid ? (window.App?.PlayerValue?.getValue ? window.App.PlayerValue.getValue(faSelectedPid, { skin: resolvedLeagueSkin }) : (window.App?.LI?.playerScores?.[faSelectedPid] || 0)) : 0;
+        const selDhq = faSelectedPid ? waiverValue(faSelectedPid,currentLeague,resolvedLeagueSkin) : null;
         const selPpg = selStats.gp > 0 ? +(calcRawPts(selStats) / selStats.gp).toFixed(1) : (selPrevStats.gp > 0 ? +(calcRawPts(selPrevStats) / selPrevStats.gp).toFixed(1) : 0);
         const selPos = selPlayer ? normPos(selPlayer.position) : '';
         const selPeakYrs = selPlayer ? peakYearsFor(selPos, selPlayer.age) : 0;
@@ -1368,7 +1371,7 @@
                     if (t.type !== 'free_agent' && t.type !== 'waiver') return;
                     Object.keys(t.drops || {}).forEach(pid => {
                         const p = playersData[pid];
-                        const dhq = window.App?.PlayerValue?.getValue ? window.App.PlayerValue.getValue(pid, { skin: resolvedLeagueSkin }) : window.App?.LI?.playerScores?.[pid] || 0;
+                        const dhq = waiverValue(pid,currentLeague,resolvedLeagueSkin);
                         if (!p || dhq < 1500 || rostered.has(String(pid))) return;
                         out.push({ pid, name: playerName(p), pos: normPos(p.position) || p.position, dhq, week: w });
                     });
@@ -1427,12 +1430,20 @@
             return label + (samePosition.length ? ' · Same bye as ' + samePosition.map(p => playerName(p)).join(', ') : '');
         }
 
+        function recommendationBasis(fit) {
+            const fresh = window.App?.WeeklyProj?.freshness?.(marketWeek, currentLeague.season);
+            const before = fit?.beforeWeekly, after = fit?.afterWeekly;
+            return 'Lineup ' + (before == null ? 'unknown' : before.toFixed(1)) + ' → ' + (after == null ? 'unknown' : after.toFixed(1))
+                + '. ' + (fresh?.fetchedAt ? 'Weekly input fetched ' + new Date(fresh.fetchedAt).toLocaleTimeString() : 'Season/history fallback; weekly fetch unavailable')
+                + '; provider as-of unavailable. Verify platform locks.';
+        }
+
         function renderCandidateRow(x, i, isPrimary) {
             const dhqCol = x.dhq >= 4000 ? 'var(--k-3498db, #3498db)' : x.dhq >= 2000 ? 'var(--silver)' : 'var(--ov-8, rgba(255,255,255,0.45))';
             if (_faPhone) return <button key={x.pid} type="button" className={'fa-mobile-candidate' + (isPrimary ? ' is-primary' : '')} aria-label={'Plan a waiver claim for ' + playerName(x.p)} onClick={() => window.WR?.openAcquisition ? window.WR.openAcquisition({ pid: x.pid, position: x.pos, leagueId: acquisitionLeagueId, source: 'ranked-waiver-plan', dropPid: x.fit.dropPid, reason: x.fit.label + ' · ' + x.windowLabel }) : openFaPlayer(x.pid)}>
-                <span className="fa-mobile-candidate-head"><PlayerAvatar pid={x.pid} p={x.p} size={34} /><span><strong>{playerName(x.p)}</strong><small>{x.pos} · {x.p.team || 'FA'} · {x.windowLabel}</small></span><span className="fa-mobile-candidate-value"><strong>{x.dhq ? x.dhq.toLocaleString() : '—'}</strong><small>{valueShortLabel}</small></span></span>
+                <span className="fa-mobile-candidate-head"><PlayerAvatar pid={x.pid} p={x.p} size={34} /><span><strong>{playerName(x.p)}</strong><small>{x.pos} · {x.p.team || 'FA'} · {x.windowLabel}</small></span><span className="fa-mobile-candidate-value"><strong>{x.dhq != null ? x.dhq.toLocaleString() : '—'}</strong><small>{valueShortLabel}</small></span></span>
                 <span className="fa-mobile-candidate-reason">{x.fit.label}</span>
-                <small className="fa-mobile-candidate-bye">{byeRead(x.p)}</small>
+                <small className="fa-mobile-candidate-bye">{byeRead(x.p)} · {recommendationBasis(x.fit)}</small>
                 <span className="fa-mobile-candidate-action">{x.faab ? '$' + x.faab.lo + '–' + x.faab.hi + ' · ' : ''}Plan claim <span aria-hidden="true">›</span></span>
             </button>;
             return (
@@ -1442,14 +1453,14 @@
                     <span className="fa-hq-player-main">
                         <strong>{playerName(x.p)} <em className="fa-hq-cand-pos" style={{ color: posColors[x.pos] || 'var(--silver)' }}>{x.pos}</em></strong>
                         <span className="fa-hq-cand-badge" style={{ color: x.fit.color, borderColor: x.fit.color }}>{x.fit.label}</span>
-                        <small style={{ display: 'block', color: 'var(--gold)', whiteSpace: 'normal', lineHeight: 1.4 }}>{byeRead(x.p)}</small>
+                        <small style={{ display: 'block', color: 'var(--gold)', whiteSpace: 'normal', lineHeight: 1.4 }}>{byeRead(x.p)} · {recommendationBasis(x.fit)}</small>
                     </span>
                     <span className="fa-hq-cand-window">
                         <FaTrendSpark pid={x.pid} color={x.windowColor} />
                         <i>{x.p.team || 'FA'} · {x.windowLabel}</i>
                     </span>
                     <span className="fa-hq-player-value">
-                        <strong style={{ color: dhqCol }}>{x.dhq ? x.dhq.toLocaleString() : '—'}</strong>
+                        <strong style={{ color: dhqCol }}>{x.dhq != null ? x.dhq.toLocaleString() : '—'}</strong>
                     </span>
                     <span className="fa-hq-cand-bid">
                         <b>{x.faab ? '$' + x.faab.lo + '-' + x.faab.hi : 'Review bids'}</b>
@@ -1473,7 +1484,7 @@
                     <main className="fa-hq-panel fa-hq-board" style={{ order: -1 }}>
                         <div className="fa-hq-panel-head"><span>Ranked action plan</span><em>Select a player to plan the claim</em></div>
                         <div className="fa-hq-board-head"><span>Rank</span><span /><span>Player</span><span>Window</span><span>Score</span><span>Bid planning</span></div>
-                        <div className="fa-hq-board-list">{boardRows.length ? <>{(_faPhone ? boardRows.slice(0, 3) : boardRows).map((x, i) => renderCandidateRow(x, i, i === 0))}{_faPhone && boardRows.length > 3 && <window.WR.MobileSection phone={true} title="More recommendations" summary={(boardRows.length - 3) + ' other options'}>{boardRows.slice(3).map((x, i) => renderCandidateRow(x, i + 3, false))}</window.WR.MobileSection>}</> : <p className="fa-hq-empty">{rosterRead.known ? 'No clear roster upgrade meets your filters. Holding your roster is a valid move.' : 'Roster details are incomplete. Recommendations resume when player details are available.'}</p>}</div>
+                        <div className="fa-hq-board-list">{boardRows.length ? <>{(_faPhone ? boardRows.slice(0, 3) : boardRows).map((x, i) => renderCandidateRow(x, i, i === 0))}{_faPhone && boardRows.length > 3 && <window.WR.MobileSection phone={true} title="More recommendations" summary={(boardRows.length - 3) + ' other options'}>{boardRows.slice(3).map((x, i) => renderCandidateRow(x, i + 3, false))}</window.WR.MobileSection>}</> : <p className="fa-hq-empty">{rosterRead.known ? 'No clear roster upgrade meets your filters. Holding your roster is a valid move.' : rosterRead.reason || 'Roster details are incomplete. Recommendations resume when player details are available.'}</p>}</div>
                         <div className="fa-hq-board-foot"><span>Ranked for your scoring, roster, and strategy.</span><button type="button" onClick={() => setFaSection('market')}>Explore all available players →</button></div>
                         {gmFiltersOn && <p style={{ color: 'var(--silver)', fontSize: '.76rem' }}>Your strategy filters apply{gmHiddenCount ? ' · ' + gmHiddenCount + ' players hidden' : ''}. <button type="button" onClick={() => window.wrNavigateTab?.('alex')}>Edit strategy</button></p>}
                     </main>
@@ -1597,7 +1608,7 @@
 
         function renderMissionWaiverBoard() {
             if (!isPro) return renderActionHqTeaser();
-            const seasonRows = streamCandidates.filter(row => row.rosGain > 0).map(row => ({ ...row.fa, fit: { weeklyGain: row.delta, rosGain: row.rosGain, dropPid: row.dropPid, dropName: row.dropName }, basis: 'ROS lineup points', gain: row.rosGain }));
+            const seasonRows = streamCandidates.filter(row => row.rosGain > 0).map(row => ({ ...row.fa, fit: { beforeWeekly: row.worstProj, afterWeekly: row.delta == null ? null : row.worstProj + row.delta, weeklyGain: row.delta, rosGain: row.rosGain, dropPid: row.dropPid, dropName: row.dropName }, basis: 'ROS lineup points', gain: row.rosGain }));
             const rows = streamHorizon === 'week'
                 ? actionBoardPlayers.filter(row => row.fit.weeklyGain > 0).map(row => ({ ...row, basis: 'lineup points this week', gain: row.fit.weeklyGain }))
                 : seasonRows.length ? seasonRows : resolvedLeagueSkin?.type === 'dynasty' ? actionBoardPlayers.filter(row => row.fit.seasonGain > 0 || row.fit.benchGain > 0).map(row => ({ ...row, basis: row.fit.seasonGain > 0 ? 'starter dynasty value' : 'bench dynasty value', gain: row.fit.seasonGain > 0 ? row.fit.seasonGain : row.fit.benchGain })) : [];
@@ -1619,16 +1630,16 @@
                     const risk = row.p.injury_status ? 'Injury: ' + row.p.injury_status : Number(row.p.depth_chart_order) > 1 ? 'Depth-chart role may limit opportunity.' : null;
                     const compactBasis = row.basis === 'lineup points this week' ? 'lineup pts · week' : row.basis === 'ROS lineup points' ? 'ROS lineup pts' : row.basis === 'starter dynasty value' ? 'starter value' : 'bench value';
                     return <article key={row.pid} className="mc-waiver-pick"><div className="mc-waiver-pick-head"><span className="mc-pick-rank">{index + 1}</span><button type="button" onClick={() => openFaPlayer(row.pid)}><strong>{playerName(row.p)}</strong><small>{row.pos} · {row.p.team || 'FA'} · {byeRead(row.p)}</small></button><div className="mc-waiver-gain"><b>+{row.gain.toLocaleString(undefined, { maximumFractionDigits: 1 })}</b><small><span className="mc-waiver-basis-full">{row.basis}</span><span className="mc-waiver-basis-short" aria-hidden="true">{compactBasis}</span></small></div></div>
-                        <div className="mc-waiver-pick-details"><p>{row.fit.dropName ? 'Possible drop: ' + row.fit.dropName : 'Uses an open roster spot'}{streamHorizon === 'season' && row.fit.weeklyGain != null ? ' · This week ' + (row.fit.weeklyGain > 0 ? '+' : '') + row.fit.weeklyGain.toFixed(1) : ''}</p>
+                        <div className="mc-waiver-pick-details"><p>{row.fit.dropName ? 'Possible drop: ' + row.fit.dropName : 'Uses an open roster spot'}{streamHorizon === 'season' ? row.fit.weeklyGain == null ? ' · This-week effect unknown; conditional scenario' : ' · This week ' + (row.fit.weeklyGain > 0 ? '+' : '') + row.fit.weeklyGain.toFixed(1) : ''}</p>
                         {hasFAAB && <small className="mc-bid-read">{evidence.low == null ? 'Bid range unavailable' : 'Past ' + row.pos + ' bids: $' + evidence.low + '–$' + evidence.high + ' · historical'}</small>}</div>
-                        {risk && <p className="mc-risk">{risk}</p>}
+                        <p className="mc-risk">{risk ? risk + '. ' : ''}{recommendationBasis(row.fit)}</p>
                         <div className="mc-waiver-pick-actions"><button type="button" className="mc-primary-action" onClick={() => { window.WR?.openAcquisition?.({ pid: row.pid, dropPid: row.fit.dropPid, position: row.pos, leagueId: acquisitionLeagueId, source: 'mission-waiver-board', reason: '+' + row.gain + ' ' + row.basis }); setFaSection('claims'); }}>Plan add</button><button type="button" onClick={() => chat(row)}>Why this move?</button><span className="mc-feedback"><button type="button" aria-label={'Useful suggestion for ' + playerName(row.p)} aria-pressed={vote === 'up'} onClick={() => feedback(row, 'up')}><svg aria-hidden="true" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M7 10v11H3V10zm0 0 5-8a3 3 0 0 1 2 3l-1 5h6a2 2 0 0 1 2 2l-2 7a2 2 0 0 1-2 2H7"/></svg></button><button type="button" aria-label={'Unhelpful suggestion for ' + playerName(row.p)} aria-pressed={vote === 'down'} onClick={() => feedback(row, 'down')}><svg aria-hidden="true" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M7 14V3H3v11zm0 0 5 8a3 3 0 0 0 2-3l-1-5h6a2 2 0 0 0 2-2l-2-7a2 2 0 0 0-2-2H7"/></svg></button></span></div>
                     </article>;
             };
             return <section className="mc-waiver-board" aria-label="Alex’s waiver board">
                 <header><div><span className="mc-eyebrow">ALEX · YOUR NEXT MOVE</span><h2>Waiver board</h2></div><button type="button" onClick={() => chat(null)}>Chat with Alex ↗</button></header>
                 <div className="mc-horizon" role="group" aria-label="Waiver outlook">{[['week','Win this week'],['season','Season outlook']].map(([key,label]) => <button type="button" key={key} aria-pressed={streamHorizon === key} onClick={() => setStreamHorizon(key)}>{label}</button>)}</div>
-                {boardRows.length ? <>{(_faPhone ? boardRows.slice(0, 1) : boardRows).map(renderPick)}{_faPhone && boardRows.length > 1 && <details className="mc-waiver-more-ideas"><summary>{boardRows.length - 1} more waiver {boardRows.length === 2 ? 'idea' : 'ideas'}</summary>{boardRows.slice(1).map((row, index) => renderPick(row, index + 1))}</details>}</> : <div className="mc-waiver-hold"><strong>{rosterRead.known ? 'No confirmed upgrade in this outlook.' : 'Roster evidence is incomplete.'}</strong><p>{streamHorizon === 'week' ? 'The board compares additions against your best projected lineup. Missing projections stay unknown; you can still review every available player below.' : 'A season scoring gain needs a current rest-of-season forecast. Dynasty value is shown separately when available.'}</p><button type="button" onClick={() => window.wrNavigateTab?.('lineup')}>Review your best lineup →</button></div>}
+                {boardRows.length ? <>{(_faPhone ? boardRows.slice(0, 1) : boardRows).map(renderPick)}{_faPhone && boardRows.length > 1 && <details className="mc-waiver-more-ideas"><summary>{boardRows.length - 1} more waiver {boardRows.length === 2 ? 'idea' : 'ideas'}</summary>{boardRows.slice(1).map((row, index) => renderPick(row, index + 1))}</details>}</> : <div className="mc-waiver-hold"><strong>{rosterRead.known ? 'No confirmed upgrade in this outlook.' : rosterRead.reason || waiverBoard.reason || 'Roster evidence is incomplete.'}</strong><p>{streamHorizon === 'week' ? 'The board compares additions against your best projected lineup. Missing projections stay unknown; you can still review every available player below.' : 'A season scoring gain needs a current rest-of-season forecast. Dynasty value is shown separately when available.'}</p><button type="button" onClick={() => window.wrNavigateTab?.('lineup')}>Review your best lineup →</button></div>}
                 {missionNotice && <p className="mc-board-notice" role="status">{missionNotice}</p>}
                 <details className="mc-board-method"><summary>How this board works</summary><p>Each move compares a legal add/drop against your best lineup, protecting marked players and roster coverage. Projections vary with role and game script. Gains are separate alternatives and cannot be added together. Season scoring is a fixed-roster estimate; dynasty value is not a scoring forecast. League bid ranges describe completed transactions. Player locks and claims are confirmed on your league platform.</p></details>
             </section>;

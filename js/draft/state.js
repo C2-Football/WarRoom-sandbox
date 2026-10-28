@@ -528,8 +528,8 @@
         // season" and the position-baseline fallback fills the deep pool.
         const PV = window.App?.PlayerValue;
         if (pid != null && PV?.isRedraftActive?.()) {
-            const ros = Number(PV.getValue(pid) || 0);
-            return ros > 0 ? { value: Math.round(ros), source: 'PlayerValue.ros' } : { value: 0, source: 'ros-zero' };
+            const ros = PV.getValue(pid);
+            return ros == null ? { value: null, source: 'ros-unavailable' } : { value: Math.round(ros), source: 'PlayerValue.ros' };
         }
         if (pid != null) {
             const engine = Number(window.App?.LI?.playerScores?.[pid] || 0);

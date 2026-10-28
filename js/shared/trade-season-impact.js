@@ -40,13 +40,8 @@
     }
     async function providerSnapshots(league, from, to) {
         const maps = {};
-        const weeks = Array.from({ length: to - from + 1 }, (_, i) => from + i);
-        await Promise.all(weeks.map(async week => {
-            try {
-                const response = await root.fetch('https://api.sleeper.app/v1/projections/nfl/regular/' + league.season + '/' + week);
-                const raw = response?.ok ? await response.json() : null;
-                maps[week] = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
-            } catch (_) { maps[week] = {}; }
+        await Promise.all(Array.from({length: Math.max(0,to-from+1)}, (_,i)=>from+i).map(async week => {
+            maps[week] = await App.WeeklyProj.ensureWeekProjections(week, { season: league.season }) || {};
         }));
         return maps;
     }
@@ -54,8 +49,10 @@
         opts = opts || {};
         const WP = App.WeeklyProj, SS = App.StartSit, M = App.Matchup, PO = App.PlayoffOdds;
         const league = clone(opts.league || {}), currentWeek = Number(WP?.currentWeek?.()) || 1;
-        const fromWeek = opts.fromWeek == null ? currentWeek + 1 : Number(opts.fromWeek);
-        const extra = { version: VERSION, fromWeek, currentWeek, excludedCurrentWeek: true };
+        const games = opts.games || await App.NflContext?.loadScores?.(currentWeek, league.season) || [];
+        const horizon = WP?.decisionHorizon?.(league, { games }) || { tradeFromWeek: currentWeek + 1, endWeek: 17 };
+        const fromWeek = opts.fromWeek == null ? horizon.tradeFromWeek : Number(opts.fromWeek);
+        const extra = { version: VERSION, fromWeek, currentWeek, excludedCurrentWeek: fromWeek > currentWeek, horizon, calculatedAt: Date.now() };
         if (!WP || !SS || !M?.dist || !PO?.fetchFuturePairs) return unavailable('The season projection engines have not loaded.', extra);
         const liveSeason = root.S?.nflState?.season;
         if (!league.season || liveSeason == null || str(liveSeason) !== str(league.season))
@@ -68,23 +65,28 @@
         const start = Number(league.settings?.start_week || 1), pws = Number(league.settings?.playoff_week_start);
         if (!Number.isInteger(pws) || pws < 2 || pws > 19 || !Number.isInteger(start) || start < 1 || start >= pws)
             return unavailable('The regular-season cutoff has not been verified.', extra);
-        const lastReg = pws - 1;
-        if (!Number.isInteger(fromWeek) || fromWeek <= currentWeek || fromWeek > lastReg)
+        const regularEnd = pws - 1;
+        const lastReg = opts.horizon === 'season' || currentWeek >= pws ? horizon.endWeek : regularEnd;
+        if (!Number.isInteger(fromWeek) || fromWeek < currentWeek || fromWeek === currentWeek && horizon.tradeFromWeek !== currentWeek || fromWeek > lastReg)
             return unavailable(fromWeek > lastReg ? 'No full regular-season weeks remain after this week.' : 'Trade effects begin with a full week after the current week.', { ...extra, lastReg });
         const si = slotInfo(league);
         if (si.reason || !si.starters) return unavailable(si.reason || 'The league has no supported starting slots.', { ...extra, lastReg });
         const rosters = league.rosters || [];
+        const eligibility = App.RecommendationEligibility?.check(league, rosters[0], 'trade');
+        if (eligibility && !eligibility.ok) return unavailable(eligibility.reason, extra);
+        if (Number(league.total_rosters) > rosters.length) return unavailable('Complete league rosters are required.', extra);
         if (rosters.length < 2 || !unique(rosters.map(r => r.roster_id)) || rosters.some(r => !Array.isArray(r.players) || !unique(r.players)))
             return unavailable('Complete, unique league rosters are required.', { ...extra, lastReg });
         const pidList = [...new Set(rosters.flatMap(r => (r.players || []).map(str)))];
-        const ctx = { ...extra, lastReg, startWeek: start, league, slotInfo: si,
+        const ctx = { ...extra, lastReg, regularEnd, startWeek: start, league, slotInfo: si,
             playersData: pickPlayers(opts.playersData, pidList), statsData: pickPlayers(opts.statsData, pidList),
             priorData: pickPlayers(opts.priorData || root.S?.priorData, pidList),
             projectionsData: pickPlayers(opts.projectionsData || root.S?.projectionsData, pidList),
             assumptions: [
-                'Trade begins in Week ' + fromWeek + '; current-week lineups do not change.',
+                ...(horizon.assumption ? [horizon.assumption] : []),
+                'Trade begins in Week ' + fromWeek + (fromWeek > currentWeek ? '; current-week lineups do not change.' : '; verified upcoming games and zero review delay.'),
                 'Each future week uses the best legal projected lineup under this league scoring.',
-                'Current rosters and injury status stay fixed; no waiver moves, new injuries or return dates are forecast.',
+                'Current rosters stay fixed; no free-agent replacements, new injuries or return dates are forecast. Unresolved availability has no central estimate.',
                 'Published weekly projections are used when available, with season projections and current/prior production as the fallback.',
                 'Score uncertainty is approximate; player and weekly scores are treated independently.',
             ], warnings: [], projectionsByWeek: {}, records: {} };
@@ -99,8 +101,18 @@
         const providerMaps = settled[2].status === 'fulfilled' ? settled[2].value : {};
         for (let w = currentWeek; w <= lastReg; w++) {
             const map = {};
-            for (const pid of pidList) map[pid] = WP.projectPlayer(pid, { playersData: ctx.playersData, statsData: ctx.statsData, priorData: ctx.priorData,
-                scoring: league.scoring_settings, week: w, providerProjections: providerMaps[w] || {}, projectionsData: ctx.projectionsData });
+            for (const pid of pidList) {
+                map[pid] = WP.projectPlayer(pid, { playersData: ctx.playersData, statsData: ctx.statsData, priorData: ctx.priorData,
+                    scoring: league.scoring_settings, week: w, providerProjections: providerMaps[w] || {}, projectionsData: ctx.projectionsData });
+                const player = ctx.playersData[pid];
+                // Today's designation is neither a return date nor a season-long absence.
+                if (w >= fromWeek && (player?.injury_status || !player?.team || player.active === false || ['Inactive','Retired','IR','PUP','Suspended'].includes(player?.status))) {
+                    const evidence = opts.availabilityByWeek?.[pid]?.[w];
+                    const verified = evidence && ['available','out'].includes(evidence.status) && evidence.source && evidence.season === Number(league.season) && Number.isFinite(Date.parse(evidence.asOf)) && Date.now() - Date.parse(evidence.asOf) >= 0 && Date.now() - Date.parse(evidence.asOf) < 24 * 60 * 60 * 1000;
+                    if (!verified) map[pid] = { ...map[pid], available: false, availabilityUnknown: true, points: { median: null, floor: null, ceiling: null }, unavailableReason: 'Future availability is unresolved; no return date assumed.' };
+                    else map[pid] = WP.projectPlayer(pid, { playersData: { ...ctx.playersData, [pid]: { ...player, injury_status: evidence.status === 'out' ? 'OUT' : '' } }, statsData: ctx.statsData, priorData: ctx.priorData, scoring: league.scoring_settings, week: w, providerProjections: providerMaps[w] || {}, projectionsData: ctx.projectionsData });
+                }
+            }
             ctx.projectionsByWeek[w] = map;
         }
         rosters.forEach(r => { ctx.records[str(r.roster_id)] = recordOf(r); });
@@ -112,6 +124,7 @@
             ctx.assumptions.push('The current week is held unchanged by the trade and simulated as a full week; live scores and player locks are not included.');
         } else if (counts.every(n => n === (expectedPrior + 1) * (1 + median))) ctx.simulationStart = currentWeek + 1;
         else ctx.recordReason = 'Official records do not cover the same verified completed weeks for every team.';
+        ctx.freshness = Object.fromEntries(Object.keys(ctx.projectionsByWeek).map(w => [w, WP.freshness?.(Number(w), league.season) || { fetchedAt: null, providerAsOf: null }]));
         ctx.status = 'ready';
         return ctx;
     }
@@ -239,10 +252,14 @@
         const owners = {};
         rosters.forEach(r => (r.players || []).forEach(pid => { (owners[str(pid)] = owners[str(pid)] || []).push(str(r.roster_id)); }));
         if ([...give, ...receive].some(pid => !ctx.playersData[pid] || owners[pid]?.length !== 1)) return no('Traded-player data or unique ownership is unavailable.');
+        const protectedIds = roster => new Set([...(roster.locked_players || []), ...(roster.keepers || []), ...(roster.reserve || []), ...(roster.taxi || []), ...(opts.protectedPlayerIds || [])].map(str));
+        if (give.some(pid => protectedIds(mine).has(pid)) || receive.some(pid => protectedIds(partner).has(pid))) return no('This trade includes a protected or locked player.');
+        const drops = (opts.dropPlayerIds || []).map(str), partnerDrops = (opts.partnerDropPlayerIds || []).map(str);
+        if (!unique([...give,...drops]) || !unique([...receive,...partnerDrops]) || drops.some(pid => !activeIds(mine).includes(pid) || protectedIds(mine).has(pid)) || partnerDrops.some(pid => !activeIds(partner).includes(pid) || protectedIds(partner).has(pid))) return no('A required drop is invalid or protected.');
         const move = (roster, outgoing, incoming) => ({ ...roster, players: [...roster.players.map(str).filter(pid => !outgoing.includes(pid)), ...incoming],
             reserve: (roster.reserve || []).map(str).filter(pid => !outgoing.includes(pid)), taxi: (roster.taxi || []).map(str).filter(pid => !outgoing.includes(pid)),
             starters: (roster.starters || []).map(str).filter(pid => !outgoing.includes(pid)) });
-        const changedMine = move(mine, give, receive), changedPartner = move(partner, receive, give);
+        const changedMine = move(mine, [...give,...drops], receive), changedPartner = move(partner, [...receive,...partnerDrops], give);
         if ([changedMine, changedPartner].some(r => activeIds(r).length > ctx.slotInfo.capacity)) return no('This trade exceeds a team’s active roster capacity. Choose the required drop before evaluating it.');
         const ids = rosters.map(r => str(r.roster_id)), tradeWeeks = [];
         for (let w = ctx.fromWeek; w <= ctx.lastReg; w++) tradeWeeks.push(w);
@@ -266,27 +283,32 @@
                 beforePoints: b.points, afterPoints: a.points, opponentBeforePoints: ob?.points ?? null, opponentAfterPoints: oa?.points ?? null,
                 beforeWinPct, afterWinPct, winDelta: beforeWinPct == null || afterWinPct == null ? null : round(afterWinPct - beforeWinPct),
                 pointsDelta: b.points == null || a.points == null ? null : round(a.points - b.points), beforeStarters: b.starters, afterStarters: a.starters,
-                unfilledBefore: b.unfilled, unfilledAfter: a.unfilled, missingPlayerIds: [...new Set([...b.missing, ...a.missing, ...(ob?.missing || []), ...(oa?.missing || [])])] };
+                unfilledBefore: b.unfilled, unfilledAfter: a.unfilled, partnerUnfilledBefore: before[week][partnerId].unfilled, partnerUnfilledAfter: after[week][partnerId].unfilled, missingPlayerIds: [...new Set([...b.missing, ...a.missing, ...(ob?.missing || []), ...(oa?.missing || [])])] };
         });
         // Roster previews need deterministic legal-lineup points, not a season
         // Monte Carlo run. Both modes share the ownership/capacity checks and
         // the exact same before/after lineups above. The default Builder path
         // below is unchanged, including all wins and qualification estimates.
         if (opts.pointsOnly === true) {
-            const complete = weekly.every(w => finite(w.beforePoints) && finite(w.afterPoints));
+            const complete = weekly.length > 0 && weekly.every(w => finite(w.beforePoints) && finite(w.afterPoints));
             const beforePoints = complete ? round(weekly.reduce((sum, w) => sum + w.beforePoints, 0)) : null;
             const afterPoints = complete ? round(weekly.reduce((sum, w) => sum + w.afterPoints, 0)) : null;
             const warnings = [];
             if (!complete) warnings.push('Some remaining weeks have incomplete lineup projections; missing production is not counted as zero.');
+            if (weekly.some(w => w.partnerUnfilledAfter > w.partnerUnfilledBefore)) warnings.push('The other roster loses legal starting-slot coverage; no replacement is assumed.');
             if (weekly.some(w => w.unfilledAfter > 0)) warnings.push('The projected roster leaves starting slots empty in some weeks; no free-agent replacement is assumed.');
-            if ([...give, ...receive].some(pid => ctx.playersData[pid]?.injury_status)) warnings.push('An injured traded player is projected with today’s status held fixed; return timing can change the result.');
+            if ([...give, ...receive].some(pid => ctx.playersData[pid]?.injury_status)) warnings.push('Future availability needs explicit evidence; unresolved return timing has no central estimate.');
             return { version: VERSION, status: complete ? (warnings.length ? 'limited' : 'ready') : 'unavailable',
-                reason: complete ? null : warnings[0], pointsOnly: true, effectiveWeek: ctx.fromWeek, remainingWeeks: tradeWeeks.length,
+                reason: complete ? null : warnings[0], pointsOnly: true, drops, partnerDrops, calculatedAt: ctx.calculatedAt, freshness: ctx.freshness,
+                regularSeasonDelta: weekly.filter(w => w.week <= (ctx.regularEnd ?? ctx.lastReg)).every(w => w.pointsDelta != null) ? round(weekly.filter(w => w.week <= (ctx.regularEnd ?? ctx.lastReg)).reduce((n,w)=>n+w.pointsDelta,0)) : null,
+                playoffDelta: weekly.filter(w => w.week > (ctx.regularEnd ?? ctx.lastReg)).every(w => w.pointsDelta != null) ? round(weekly.filter(w => w.week > (ctx.regularEnd ?? ctx.lastReg)).reduce((n,w)=>n+w.pointsDelta,0)) : null,
+                partnerDelta: tradeWeeks.every(w => before[w][partnerId].known && after[w][partnerId].known) ? round(tradeWeeks.reduce((n,w)=>n+after[w][partnerId].points-before[w][partnerId].points,0)) : null, effectiveWeek: ctx.fromWeek, remainingWeeks: tradeWeeks.length,
                 before: beforePoints, after: afterPoints, delta: complete ? round(afterPoints - beforePoints) : null, unit: 'ROS lineup points',
                 coverage: { total: tradeWeeks.length, projected: weekly.filter(w => finite(w.beforePoints) && finite(w.afterPoints)).length },
-                assumptions: ctx.assumptions.filter(line => /^(Trade begins|Each future week|Current rosters|Published weekly)/.test(line)), warnings, weeks: weekly };
+                assumptions: ctx.assumptions.filter(line => /^(Trade begins|Each future week|Current rosters|Published weekly|Championship cutoff|Fantasy season)/.test(line)), warnings, weeks: weekly };
         }
-        const bp = powerRank(before, tradeWeeks, ids, myId), ap = powerRank(after, tradeWeeks, ids, myId);
+        const regularWeeks = tradeWeeks.filter(w => w <= (ctx.regularEnd ?? ctx.lastReg));
+        const bp = regularWeeks.length ? powerRank(before, regularWeeks, ids, myId) : null, ap = regularWeeks.length ? powerRank(after, regularWeeks, ids, myId) : null;
         const power = { before: bp?.rank ?? null, after: ap?.rank ?? null, total: ids.length, beforePoints: bp?.points ?? null, afterPoints: ap?.points ?? null,
             delta: bp && ap ? bp.rank - ap.rank : null };
         let simulationReason = ctx.recordReason || null;
@@ -297,6 +319,7 @@
             }
         }
         const qReason = qualificationReason(ctx), sims = Math.max(500, Math.min(10000, Math.floor(Number(opts.sims) || 4000))), seed = opts.seed == null ? 12026 : Number(opts.seed);
+        if (ctx.lastReg > ctx.regularEnd) simulationReason = 'Fantasy playoff lineup points are shown separately; qualification simulation is unavailable for this horizon.';
         const outcomes = !simulationReason ? pairedSimulation(ctx, before, after, myId, sims, seed, !qReason) : null;
         const medianEnabled = Number(ctx.league.settings.league_average_match || 0) === 1;
         const h2hKnown = weekly.every(w => w.beforeWinPct != null && w.afterWinPct != null);
@@ -316,13 +339,13 @@
         const warnings = [...ctx.warnings];
         if (!bp || !ap) warnings.push('Remaining-season power rank needs complete league projections.');
         if (weekly.some(w => w.unfilledAfter > 0)) warnings.push('The projected roster leaves starting slots empty in some weeks; no free-agent replacement is assumed.');
-        if ([...give, ...receive].some(pid => ctx.playersData[pid]?.injury_status)) warnings.push('An injured traded player is projected with today’s status held fixed; return timing can change the result.');
+        if ([...give, ...receive].some(pid => ctx.playersData[pid]?.injury_status)) warnings.push('Future availability needs explicit evidence; unresolved return timing has no central estimate.');
         if (!playoff.available) warnings.push(playoff.reason);
         const coverage = { scheduled: weekly.filter(w => w.opponentRosterId != null).length, total: tradeWeeks.length,
             projected: weekly.filter(w => w.beforeWinPct != null && w.afterWinPct != null).length,
             missing: [...new Set(weekly.flatMap(w => w.missingPlayerIds))].length };
         return { version: VERSION, status: warnings.length ? 'limited' : 'ready', reason: null, effectiveWeek: ctx.fromWeek, remainingWeeks: tradeWeeks.length,
-            coverage, assumptions: [...ctx.assumptions, 'Ties count as half a win. Playoff seeding uses record, then points scored.',
+            coverage, calculatedAt: ctx.calculatedAt, freshness: ctx.freshness, assumptions: [...ctx.assumptions, 'Ties count as half a win. Playoff seeding uses record, then points scored.',
                 'Exact record and points ties are shared using common random tiebreak draws; further official tiebreakers may differ.',
                 ...(medianEnabled ? ['This league awards a head-to-head and median standings decision each week; expected wins include both.'] : [])], warnings,
             powerRank: power, wins, playoffs: playoff, weeks: weekly };

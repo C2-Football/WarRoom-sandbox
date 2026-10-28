@@ -523,7 +523,7 @@
             let cancelled = false;
             const scoring = currentLeague?.scoring_settings || {};
             const rosterPositions = currentLeague?.roster_positions || [];
-            const isSF = rosterPositions.some(slot => ['SUPER_FLEX', 'QB_FLEX', 'OP'].includes(String(slot).toUpperCase()));
+            const isSF = rosterPositions.filter(slot => String(slot).toUpperCase() === 'QB').length >= 2 || rosterPositions.some(slot => ['SUPER_FLEX', 'QB_FLEX', 'OP'].includes(String(slot).toUpperCase()));
             const pprVal = scoring.rec != null && scoring.rec >= 0.9 ? 1 : scoring.rec != null && scoring.rec >= 0.4 ? 0.5 : 0;
             const totalTeams = currentLeague?.rosters?.length || window.S?.rosters?.length || 12;
             // Market mode follows the LEAGUE: redraft leagues price against the

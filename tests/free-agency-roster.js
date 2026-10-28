@@ -11,7 +11,7 @@ const values={q1:5000,q2:3000,backupUpgrade:4000,starterUpgrade:6000};
 const projection={q1:22,q2:18,backupUpgrade:20,starterUpgrade:25};
 const league={settings:{type:0},roster_positions:['QB','BN']};
 const roster={players:['q1','q2']};
-const read=(r=roster, l=league, opts={})=>ctx.buildFaRosterRead(r,l,players,pid=>values[pid],{week:3,project:pid=>projection[pid],...opts});
+const read=(r=roster, l=league, opts={})=>ctx.buildFaRosterRead({...r,roster_id:1},{total_rosters:1,scoring_settings:{pass_yd:.04},...l,rosters:[{...r,roster_id:1}]},players,pid=>values[pid],{week:3,project:pid=>projection[pid],...opts});
 let r=read();
 assert.equal(r.coverage,1);
 assert.equal(r.fit('QB',4000,{pid:'backupUpgrade'}).score,0,'beating the backup is not a starting lineup upgrade');

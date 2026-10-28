@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const ctx = { window: { App: {}, S: {} } };
+require('./helpers/production-scorer.cjs')(ctx.window);
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync('js/shared/weekly-proj.js', 'utf8'), ctx);
 const W = ctx.window.App.WeeklyProj;

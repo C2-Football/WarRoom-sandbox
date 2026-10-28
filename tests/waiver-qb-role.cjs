@@ -15,8 +15,8 @@ const players = {
   starter: { full_name: 'Available Starter', position: 'QB', team: 'OTHER', depth_chart_order: 1 },
   unknown: { full_name: 'Unknown Role', position: 'QB', team: 'OTHER' },
 };
-const roster = { players: ['mahomes','stafford'], settings: {} };
-const league = { league_id: '1356311207652360192', settings: { type: 0, max_keepers: 1, waiver_budget: 100 }, roster_positions: ['QB','BN','BN'], rosters: [roster] };
+const roster = { roster_id: 1, players: ['mahomes','stafford'], settings: { waiver_budget_used: 0 } };
+const league = { league_id: '1356311207652360192', total_rosters: 1, scoring_settings: { pass_yd: 0.04 }, settings: { type: 0, max_keepers: 1, waiver_budget: 100 }, roster_positions: ['QB','BN','BN'], rosters: [roster] };
 const build = type => c.buildFreeAgencyActionBoard({ currentLeague: { ...league, settings: { ...league.settings, type } }, leagueSkin: { type: type === 2 ? 'dynasty' : 'redraft' }, myRoster: roster, playersData: players });
 let board = build(0);
 assert(board.availablePlayers.some(p => p.pid === 'mendoza'), 'backup remains searchable');

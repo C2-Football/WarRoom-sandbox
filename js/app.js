@@ -234,7 +234,7 @@
                 const [rosters, users] = await Promise.all([read('league/' + encodeURIComponent(id) + '/rosters'), read('league/' + encodeURIComponent(id) + '/users')]);
                 if (!Array.isArray(rosters) || !Array.isArray(users) || rosters.some(roster => !roster || roster.roster_id == null || (roster.players != null && !Array.isArray(roster.players)))) throw new Error('Invalid league details');
                 const mine = rosters.find(roster => String(roster.owner_id) === String(user.user_id));
-                fresh.set(id, { id, name: league.name, status: league.status || '', season: String(season),
+                fresh.set(id, { id, total_rosters: league.total_rosters, name: league.name, status: league.status || '', season: String(season),
                     wins: mine?.settings?.wins || 0, losses: mine?.settings?.losses || 0, ties: mine?.settings?.ties || 0,
                     scoring_settings: league.scoring_settings || {}, roster_positions: league.roster_positions || [],
                     settings: league.settings || {}, rosters, users, _portfolioStale: false });
@@ -1216,7 +1216,7 @@
                         const rep = allLeaguesList.find(l => (l.rosters || []).length && (l.id || l.league_id)) || allLeaguesList[0];
                         if (rep) {
                             const repId = rep.id || rep.league_id;
-                            window.S.leagues = [{ league_id: repId, name: rep.name, scoring_settings: rep.scoring_settings, roster_positions: rep.roster_positions, settings: rep.settings }];
+                            window.S.leagues = [{ ...rep, league_id: repId }];
                             window.S.currentLeagueId = repId;
                             window.S.season = window.S.season || rep.season || String(new Date().getFullYear());
                             // loadLeagueIntel reads S.rosters for the rep league's team count / starter pool.

@@ -809,7 +809,6 @@
         // ── SOS engine init — fires once playersData is populated ──
         useEffect(() => {
             if (Object.keys(playersData).length < 100) return;
-            if (window.App.SOS?.ready) return;
             const season = String(parseInt(currentLeague?.season) || new Date().getFullYear());
             window.App.SOS?.initialize(season, playersData, () => {
                 setTimeRecomputeTs(Date.now()); // trigger KPI + roster re-render
@@ -1907,7 +1906,7 @@
                     fetchAllPlayers().catch(() => ({})),
                     fetchJSON(`${SLEEPER_BASE_URL}/state/nfl`).catch(() => ({})),
                 ]);
-                const currentWeek = nflState?.display_week || nflState?.week || (currentLeague.settings?.leg || 1);
+                const currentWeek = nflState?.week || nflState?.display_week || (currentLeague.settings?.leg || 1);
 
                 // Hydrate the league through the provider — single call
                 // that replaces the old per-platform fetch pipelines.
@@ -1919,6 +1918,7 @@
                     nflState,
                 });
 
+                if (loadSeq !== loadSeqRef.current) return;
                 applyHydrated(hydrated, { provider, sleeperPlayers, nflState, currentWeek, myRosterData, background: false });
 
                 // Register the background revalidator (audit:refresh-stale step 4).
@@ -1938,7 +1938,7 @@
                             fetchJSON(`${SLEEPER_BASE_URL}/state/nfl`).catch(() => ({})),  // always fresh — week-rollover source
                         ]);
                         const bgNfl = (bgStateRaw && Object.keys(bgStateRaw).length) ? bgStateRaw : (window.S?.nflState || nflState);
-                        const bgWeek = bgNfl?.display_week || bgNfl?.week || window.S?.currentWeek || currentWeek;
+                        const bgWeek = bgNfl?.week || bgNfl?.display_week || window.S?.currentWeek || currentWeek;
                         const bgHydrated = await provider.hydrate(currentLeague, {
                             sleeperPlayers: bgPlayers,
                             currentWeek: bgWeek,
@@ -1999,6 +1999,7 @@
                 // Load player tags (syncs with ReconAI)
                 if (window.OD?.loadPlayerTags) {
                     window.OD.loadPlayerTags(currentLeague.id || currentLeague.league_id).then(tags => {
+                        if (loadSeq !== loadSeqRef.current) return;
                         window._playerTags = tags || {};
                         setTimeRecomputeTs(Date.now()); // force re-render to show tags
                     }).catch(err => window.wrLog('tags.load', err));
@@ -2016,6 +2017,7 @@
                 }
 
             } catch (err) {
+                if (loadSeq !== loadSeqRef.current) return;
                 console.error('Failed to load league details:', err);
                 setError(err.message || 'Failed to load league details');
                 setLoading(false);
@@ -2091,7 +2093,7 @@
                 window.S.projectionsData = projections;
                 window.S.rosters = rosters;
                 window.S.leagueUsers = leagueUsers;
-                window.S.leagues = [{ league_id: currentLeague.id, name: currentLeague.name, scoring_settings: currentLeague.scoring_settings, roster_positions: currentLeague.roster_positions, settings: currentLeague.settings }];
+                window.S.leagues = [{ ...currentLeague, league_id: currentLeague.league_id || currentLeague.id }];
                 const pointsLeagueId = currentLeague.id || currentLeague.league_id;
                 const pointsScope = window.App.WeeklyProj.weeklyPointsScope(pointsLeagueId, activeYear, currentLeague.scoring_settings);
                 if (window.S.weeklyPlayerPointsScope !== pointsScope) {
@@ -2346,6 +2348,8 @@
                 setViewingOwnerId(sleeperUserId);
                 setCurrentLeague({
                     id: targetLeagueId,
+                    total_rosters: leagueInfo.total_rosters,
+                    status: leagueInfo.status,
                     name: leagueInfo.name,
                     season: year,
                     scoring_settings: leagueInfo.scoring_settings || {},
@@ -2603,8 +2607,8 @@
                     {/* Format-aware value (ROS in redraft, DHQ dynasty value elsewhere) */}
                     {(() => {
                       const pv = window.App?.PlayerValue;
-                      const dhq = (pv?.isRedraftActive?.() ? pv.getValue(playerId) : window.App?.LI?.playerScores?.[playerId]) || 0;
-                      if (!dhq) return <span style={{ ...statColStyle, color: 'var(--silver)', opacity: 0.6, fontSize: 'var(--text-body, 1rem)' }}>—</span>;
+                      const dhq = (pv?.isRedraftActive?.() ? pv.getValue(playerId) : window.App?.LI?.playerScores?.[playerId]) ?? null;
+                      if (dhq == null) return <span style={{ ...statColStyle, color: 'var(--silver)', opacity: 0.6, fontSize: 'var(--text-body, 1rem)' }}>—</span>;
                       const col = dhq >= 7000 ? 'var(--k-2ecc71, #2ecc71)' : dhq >= 4000 ? 'var(--k-d4af37, #d4af37)' : dhq >= 2000 ? 'var(--silver)' : 'var(--ov-8, rgba(255,255,255,0.4))';
                       return <span style={{ ...statColStyle, color: col, fontWeight: '700', fontFamily: 'var(--font-body)', fontSize: 'var(--text-label, 0.75rem)', minWidth: '42px' }}>{dhq.toLocaleString()}</span>;
                     })()}

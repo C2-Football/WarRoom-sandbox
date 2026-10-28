@@ -377,7 +377,7 @@
         const playoffDelta = playoffs?.available && playoffs.beforePct != null && playoffs.afterPct != null ? Math.round(playoffs.afterPct) - Math.round(playoffs.beforePct) : null;
         return <section className={'mc-trade-builder-summary' + (season ? ' has-season' : '')} aria-label="Trade summary" aria-live="polite">
             <div className="mc-trade-summary-grade"><span>Value grade</span><div className="mc-trade-summary-value"><strong style={{ color: verdict.verdictColor }}>{verdict.grade?.grade || '--'}</strong><small><span className="mc-trade-sr-only">Value difference </span>{verdict.diffDisplay}</small></div></div>
-            <div className="mc-trade-summary-acceptance" aria-label="Owner acceptance estimate"><span>Acceptance estimate</span><div className="mc-trade-summary-value"><strong style={{ color: pro ? verdict.likelihoodColor : undefined }}>{pro ? verdict.likelihood + '%' : 'Pro'}</strong></div></div>
+            <div className="mc-trade-summary-acceptance" aria-label="Comparative negotiation score"><span>Negotiation score</span><div className="mc-trade-summary-value"><strong style={{ color: pro ? verdict.likelihoodColor : undefined }}>{pro ? (verdict.likelihood == null ? '—' : verdict.likelihood + '/100') : 'Pro'}</strong></div></div>
             {season && <div className={'mc-trade-summary-season is-' + season.tone}><span>Season outlook</span><strong>{season.ready ? season.headline : season.message?.startsWith('Calculating') ? 'Calculating…' : 'Unavailable'}</strong><small>{season.ready ? wins || 'Impact incomplete' : 'See analysis below'}</small>{playoffDelta != null && <small>{playoffDelta > 0 ? '+' : ''}{playoffDelta} pp playoff chance</small>}</div>}
             {season && <p>{season.data?.status === 'limited' ? 'Partial model estimate' : 'Model estimate'}{season.effectiveWeek ? ' · Starts Week ' + season.effectiveWeek : ''} · This week's roster unchanged</p>}
         </section>;
@@ -419,9 +419,9 @@
             <div className={'tc-ta-verdict' + (mobileDetails ? ' mc-trade-analysis-card' : ' tc-ta-sticky-summary') + (seasonal ? ' tc-unified-analysis' : '')} id="wr-export-trade">
                 <div className="tc-section-hdr" style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}><span>{mobileDetails ? 'Trade analysis' : 'TRADE ANALYSIS'}</span><button onClick={() => window.wrExport?.capture(document.getElementById('wr-export-trade'), 'trade-analysis', mobileDetails ? { prependSelector: '.mc-trade-builder-summary', expandDetails: true } : undefined)} style={{ background:'none', border:'1px solid var(--acc-line1, rgba(212,175,55,0.25))', borderRadius:'var(--card-radius-xs, 5px)', padding:'2px 8px', color:'var(--gold)', fontSize:'var(--text-micro, 0.6875rem)', cursor:'pointer', fontFamily: 'var(--font-body)', minHeight:'44px', display:'inline-flex', alignItems:'center', justifyContent:'center' }}>Snapshot</button></div>
                 {seasonal && (seasonImpactContent || <TcSeasonImpact controller={seasonImpactController} deal={seasonImpactDeal} detailed embedded compact={mobileDetails}>
-                    {!mobileDetails && <div className="tc-season-deal-summary" aria-label="Deal value and owner acceptance">
-                        <div><span>Deal value</span><strong style={{ color: verdictColor }}>{grade?.grade || '--'} value grade · {diffDisplay}</strong><small>You send {totalA.toLocaleString()} / receive {totalB.toLocaleString()} season value</small>{faabDelta !== 0 && <small>FAAB {faabDelta > 0 ? '+' : ''}${faabDelta}</small>}</div>
-                        <div><span>Owner acceptance</span>{_pro ? <><strong style={{ color: likelihoodColor }}>{likelihood}% estimate</strong><small>Based on deal price, roster fit and owner history.</small></> : <><strong>Pro</strong><small>Owner acceptance and negotiation reads.</small></>}</div>
+                    {!mobileDetails && <div className="tc-season-deal-summary" aria-label="Deal value and negotiation context">
+                        <div><span>Deal value</span><strong style={{ color: verdictColor }}>{grade?.grade || '--'} value grade · {diffDisplay}</strong><small>You send {totalA?.toLocaleString() ?? 'unknown'} / receive {totalB?.toLocaleString() ?? 'unknown'} season value</small>{faabDelta !== 0 && <small>FAAB {faabDelta > 0 ? '+' : ''}${faabDelta}</small>}</div>
+                        <div><span>Negotiation context</span>{_pro ? <><strong style={{ color: likelihoodColor }}>{likelihood == null ? 'Unknown' : likelihood + '/100 score'}</strong><small>Hand-set price, fit and owner-context comparison. Not a probability or data-quality rating.</small></> : <><strong>Pro</strong><small>Negotiation context and negotiation reads.</small></>}</div>
                         <p>Deal value measures the price. The season verdict measures the projected effect on your games.</p>
                     </div>}
                 </TcSeasonImpact>)}
@@ -430,7 +430,7 @@
                     <span className="tc-verdict-diff" style={{ color: verdictColor }}>{grade?.grade || '--'}</span>
                     <span style={{ fontFamily:'var(--font-title)', fontSize:'1.1rem', color: verdictColor }}>{(grade?.label || '').toUpperCase()}</span>
                     <span style={{ fontFamily:'var(--font-mono)', fontSize:'1.05rem', fontWeight:600, color: verdictColor }}>{diffDisplay}</span>
-                    <span style={{ fontSize:'0.74rem', color:'var(--silver)', opacity:0.655 }}>(gave {totalA.toLocaleString()} / received {totalB.toLocaleString()})</span>
+                    <span style={{ fontSize:'0.74rem', color:'var(--silver)', opacity:0.655 }}>(gave {totalA?.toLocaleString() ?? 'unknown'} / received {totalB?.toLocaleString() ?? 'unknown'})</span>
                 </div>}
                 {mobileDetails ? <dl className="tc-trade-value-rows">
                     <div data-trend={valueTrend(starterValueDelta)}><dt>Player value</dt><dd><strong style={{ color: changeColor(starterValueDelta) }}>{valueChange(starterValueDelta, ' DHQ')}</strong><small>{rosterImpactLabel || 'Impact unavailable'}</small></dd></div>
@@ -454,21 +454,21 @@
                     </div>
                     {!mobileDetails && (_pro ? (
                         <div>
-                            <span>Acceptance</span>
-                            <strong style={{ color: likelihoodColor }}>{likelihood}%</strong>
-                            <em>{netTaxTotal >= 0 ? '+' : ''}{netTaxTotal}% psych · {manualBehaviorFit ? `${manualBehaviorFit.acceptanceDelta >= 0 ? '+' : ''}${manualBehaviorFit.acceptanceDelta}% behavior` : '0% behavior'}</em>
+                            <span>Negotiation score</span>
+                            <strong style={{ color: likelihoodColor }}>{likelihood == null ? '—' : likelihood + '/100'}</strong>
+                            <em>{netTaxTotal >= 0 ? '+' : ''}{netTaxTotal} pts psych · {manualBehaviorFit ? `${manualBehaviorFit.acceptanceDelta >= 0 ? '+' : ''}${manualBehaviorFit.acceptanceDelta} pts behavior` : '0 pts behavior'}</em>
                         </div>
                     ) : (
                         <div>
-                            <span>Acceptance</span>
+                            <span>Negotiation score</span>
                             <strong style={{ color: 'var(--gold)' }}>{'🔒'} Pro</strong>
-                            <em>psych-modeled odds</em>
+                            <em>Uncalibrated comparison</em>
                         </div>
                     ))}
                 </div>}
                 </>}
                 <OwnerReadout {...ownerReadoutProps}>
-                {ownerFold && <summary>{mobileDetails ? 'Owner fit & acceptance' : 'Owner fit and negotiation details'}</summary>}
+                {ownerFold && <summary>{mobileDetails ? 'Owner fit & negotiation' : 'Owner fit and negotiation details'}</summary>}
                 {_pro && otherOwnerId && (
                     <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', flexWrap:'wrap' }}>
                         <span style={{ fontSize:'0.72rem', color:'var(--silver)', opacity:0.65 }}>Their posture:</span>
@@ -478,41 +478,41 @@
                     </div>
                 )}
                 {!_pro && typeof window.WrGatedMoreRow === 'function' && (
-                    React.createElement(window.WrGatedMoreRow, { title: 'Acceptance odds & trade psychology', sub: 'Accept %, the 8-factor psych-tax breakdown, and posture, DNA, and behavior reads are Pro.', feature: 'trade-psychology' })
+                    React.createElement(window.WrGatedMoreRow, { title: 'Negotiation context & trade psychology', sub: 'Negotiation score, the 8-factor psych-tax breakdown, and posture, DNA, and behavior reads are Pro.', feature: 'trade-psychology' })
                 )}
                 {_pro && <div>
                     {!mobileDetails && <button type="button" className="tc-dhq-detail-toggle" onClick={() => setWhyOpen(v => !v)}>
-                        {whyOpen ? 'Hide why ▴' : seasonal ? 'Acceptance factors ▾' : 'Why? ▾'}
+                        {whyOpen ? 'Hide why ▴' : seasonal ? 'Negotiation factors ▾' : 'Why? ▾'}
                     </button>}
                     {(mobileDetails || whyOpen) && <div style={{ marginTop:'0.45rem', display:'flex', flexDirection:'column', gap:'0.5rem' }}>
                     <div>
-                    <div style={{ fontSize:'0.72rem', color:'var(--silver)', opacity:0.65, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:'0.35rem' }}>Psychological Tax Breakdown {React.createElement(Tip, null, 'Each owner\'s DNA type creates percentage-point acceptance modifiers beyond pure value. Taxes reduce likelihood, bonuses increase it. Factors: endowment effect, panic premium, status tax, loss aversion, rebuilding discount, need fulfillment, window alignment, and posture.')}</div>
+                    <div style={{ fontSize:'0.72rem', color:'var(--silver)', opacity:0.65, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:'0.35rem' }}>Psychological Tax Breakdown {React.createElement(Tip, null, 'Each owner\'s DNA type creates comparative score adjustments beyond pure value. Taxes reduce the comparison score, bonuses increase it. Factors: endowment effect, panic premium, status tax, loss aversion, rebuilding discount, need fulfillment, window alignment, and posture.')}</div>
                     <div className="tc-tax-table">
                         {psychTaxes.map((t,i) => (
                             <div key={i} className={`tc-tax-table-row ${t.type === 'BONUS' ? 'tc-bonus' : 'tc-tax'}`}>
                                 <span className="tc-tax-name">{t.name}</span>
                                 <span className="tc-tax-desc">{t.desc}</span>
-                                <span className="tc-tax-val" style={{ color: t.impact > 0 ? 'var(--win-green)' : 'var(--loss-red)' }}>{t.impact > 0 ? '+' : ''}{t.impact}%</span>
+                                <span className="tc-tax-val" style={{ color: t.impact > 0 ? 'var(--win-green)' : 'var(--loss-red)' }}>{t.impact > 0 ? '+' : ''}{t.impact} pts</span>
                             </div>
                         ))}
                         {grudgeTax.total !== 0 && (
                             <div className={`tc-tax-table-row ${grudgeTax.total < 0 ? 'tc-tax' : 'tc-bonus'}`}>
                                 <span className="tc-tax-name">Grudge Tax</span>
                                 <span className="tc-tax-desc">{grudgeTax.entries.length} logged interaction{grudgeTax.entries.length!==1?'s':''}</span>
-                                <span className="tc-tax-val" style={{ color: grudgeTax.total < 0 ? 'var(--loss-red)' : 'var(--win-green)' }}>{grudgeTax.total > 0 ? '+' : ''}{grudgeTax.total}%</span>
+                                <span className="tc-tax-val" style={{ color: grudgeTax.total < 0 ? 'var(--loss-red)' : 'var(--win-green)' }}>{grudgeTax.total > 0 ? '+' : ''}{grudgeTax.total} pts</span>
                             </div>
                         )}
                         {manualBehaviorFit && (
                             <div className={`tc-tax-table-row ${manualBehaviorFit.acceptanceDelta >= 0 ? 'tc-bonus' : 'tc-tax'}`}>
                                 <span className="tc-tax-name">Observed Behavior</span>
-                                <span className="tc-tax-desc">{manualBehaviorFit.framing || 'Trade history adjusted acceptance odds.'}</span>
-                                <span className="tc-tax-val" style={{ color: manualBehaviorFit.acceptanceDelta >= 0 ? 'var(--win-green)' : 'var(--loss-red)' }}>{manualBehaviorFit.acceptanceDelta >= 0 ? '+' : ''}{manualBehaviorFit.acceptanceDelta}%</span>
+                                <span className="tc-tax-desc">{manualBehaviorFit.framing || 'Trade-history comparison; not acceptance odds.'}</span>
+                                <span className="tc-tax-val" style={{ color: manualBehaviorFit.acceptanceDelta >= 0 ? 'var(--win-green)' : 'var(--loss-red)' }}>{manualBehaviorFit.acceptanceDelta >= 0 ? '+' : ''}{manualBehaviorFit.acceptanceDelta} pts</span>
                             </div>
                         )}
                         <div className="tc-tax-table-row tc-total">
                             <span className="tc-tax-name">NET MODIFIER</span>
                             <span className="tc-tax-desc">Folded into effective surplus</span>
-                            <span className="tc-tax-val" style={{ color: netTaxTotal > 0 ? 'var(--win-green)' : netTaxTotal < 0 ? 'var(--loss-red)' : 'var(--silver)' }}>{netTaxTotal > 0 ? '+' : ''}{netTaxTotal}%</span>
+                            <span className="tc-tax-val" style={{ color: netTaxTotal > 0 ? 'var(--win-green)' : netTaxTotal < 0 ? 'var(--loss-red)' : 'var(--silver)' }}>{netTaxTotal > 0 ? '+' : ''}{netTaxTotal} pts</span>
                         </div>
                     </div>
                     </div>
@@ -523,13 +523,13 @@
                 </div>}
                 {_pro && <div>
                     <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.3rem' }}>
-                        <span style={{ fontSize:'0.76rem', color:'var(--silver)', opacity:0.7, textTransform:'uppercase', letterSpacing:'0.06em' }}>Likelihood of Acceptance {React.createElement(Tip, null, 'Their chance to accept — starts at 50%, then value difference plus psychological modifiers from DNA, posture, needs, window, and history. This is the OTHER owner\'s odds, not your bar to act.')}</span>
-                        <span style={{ fontFamily:'var(--font-mono)', fontSize:'1.4rem', fontWeight:600, color: likelihoodColor }}>{likelihood}%</span>
+                        <span style={{ fontSize:'0.76rem', color:'var(--silver)', opacity:0.7, textTransform:'uppercase', letterSpacing:'0.06em' }}>Negotiation score {React.createElement(Tip, null, 'Hand-set comparison of price, positional fit and owner context. This score is not a calibrated acceptance probability or a measure of data quality.')}</span>
+                        <span style={{ fontFamily:'var(--font-mono)', fontSize:'1.4rem', fontWeight:600, color: likelihoodColor }}>{likelihood == null ? '—' : likelihood + '/100'}</span>
                     </div>
                     <div className="tc-likelihood-bar-wrap" style={{ position:'relative' }}>
                         <div className="tc-likelihood-bar-fill" style={{ width:`${likelihood}%`, background: likelihoodColor }} />
                         {typeof gmFloor === 'number' && (
-                            <div title={`Your GM bar to act: ${gmFloor}%`} style={{ position:'absolute', top:'-2px', bottom:'-2px', left:`${gmFloor}%`, width:'2px', background:'var(--gold)', boxShadow:'0 0 0 1px rgba(0,0,0,0.45)' }} />
+                            <div title={`Your GM comparison threshold: ${gmFloor}/100`} style={{ position:'absolute', top:'-2px', bottom:'-2px', left:`${gmFloor}%`, width:'2px', background:'var(--gold)', boxShadow:'0 0 0 1px rgba(0,0,0,0.45)' }} />
                         )}
                     </div>
                     {(gmModeLabel || gmViability) && (
@@ -596,8 +596,8 @@
                             <strong style={{ color:deal.gradeColor }}>{deal.grade}</strong>
                         </div>
                         <div className="tc-dhq-decision">
-                            <span>Accept %</span>
-                            <strong style={{ color:likelihoodColor2 }}>{deal.likelihood}%</strong>
+                            <span>Negotiation score</span>
+                            <strong style={{ color:likelihoodColor2 }}>{deal.likelihood}/100</strong>
                         </div>
                         <div className="tc-dhq-decision">
                             <span>{seasonImpactController?.enabled ? 'Season value Δ' : 'DHQ Delta'}</span>
@@ -682,7 +682,7 @@
                                     <span style={{ flex:1, fontSize:'0.82rem', fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.first_name} {p.last_name}</span>
                                     <div className="tc-ta-val-col" style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:2 }}>
                                         <div className="tc-ta-val-bar-wrap"><div className="tc-ta-val-bar-fill" style={{ width:`${pct}%`, background: color }} /></div>
-                                        <span style={{ fontSize:'0.7rem', fontWeight:700, color }}>{v.value > 0 ? v.value.toLocaleString() : '--'}</span>
+                                        <span style={{ fontSize:'0.7rem', fontWeight:700, color }}>{v.value != null ? v.value.toLocaleString() : 'Unknown'}</span>
                                     </div>
                                 </div>
                             );
@@ -728,7 +728,7 @@
                                                         <div key={r.id} className={`tc-ta-roster-item${added?' tc-added':''}`} role="button" tabIndex={added ? -1 : 0} aria-disabled={added} aria-label={'Add ' + r.name + ' to ' + label.toLowerCase()} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (!added) addPlayer(side, r.id); } }} onClick={() => !added && addPlayer(side, r.id)}>
                                                             <span className="tc-ta-pos-dot" style={{ background: posColor(r.pos) }} />
                                                             <span className="tc-ta-asset-name" style={{ flex:1, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.name}</span>
-                                                            {playerMetrics ? <span className="mc-trade-row-metrics">{playerMetrics(r.id).map(m => <span key={m.key} title={m.label}><small>{m.label}</small><b>{m.value}</b></span>)}</span> : <><span className="tc-ta-player-meta">{r.team}{r.usage ? ' · ' + r.usage : ''}</span><span className="tc-ta-player-val">{r.value > 0 ? r.value.toLocaleString() : '--'}</span></>}
+                                                            {playerMetrics ? <span className="mc-trade-row-metrics">{playerMetrics(r.id).map(m => <span key={m.key} title={m.label}><small>{m.label}</small><b>{m.value}</b></span>)}</span> : <><span className="tc-ta-player-meta">{r.team}{r.usage ? ' · ' + r.usage : ''}</span><span className="tc-ta-player-val">{r.value != null ? r.value.toLocaleString() : 'Unknown'}</span></>}
                                                         </div>
                                                     );
                                                 })}
@@ -907,6 +907,10 @@
 
         function getPlayerValue(pid) {
             const PV = window.App?.PlayerValue;
+            if (resolvedLeagueSkin?.type === 'redraft') {
+                const value = PV?.getValue?.(pid, { skin: resolvedLeagueSkin }) ?? null;
+                return { value, source: value == null ? 'unavailable' : 'ros' };
+            }
             if (PV?.getValue) {
                 const v = PV.getValue(pid, { skin: resolvedLeagueSkin });
                 if (v > 0) {
@@ -1412,9 +1416,9 @@
             }
             // Hydration can publish several real inputs in one burst. Let that
             // burst settle before reading every future projection week.
-            const prepareTimer = window.setTimeout(() => Promise.resolve().then(() => engine.prepare({ league: currentLeague, playersData, statsData, priorData: window.S?.priorData })).then(context => {
+            const prepareTimer = window.setTimeout(() => Promise.resolve().then(() => engine.prepare({ league: currentLeague, playersData, statsData, priorData: window.S?.priorData, horizon: 'season' })).then(context => {
                 if (!active) return;
-                const prepared = { key: seasonalScope, status: context?.status === 'ready' ? 'ready' : 'unavailable', reason: context?.reason, fromWeek: context?.fromWeek, context, fetchedAt: Date.now() };
+                const prepared = { key: seasonalScope, status: context?.status === 'ready' ? 'ready' : 'unavailable', reason: context?.reason, fromWeek: context?.fromWeek, context, calculatedAt: Date.now() };
                 seasonalContextRef.current = prepared;
                 setSeasonalPrepared(prepared);
             }).catch(() => {
@@ -1425,8 +1429,8 @@
             return () => { active = false; window.clearTimeout(prepareTimer); if (seasonalLoadingRef.current === seasonalScope) seasonalLoadingRef.current = null; };
         }, [seasonalEnabled, seasonalActive, seasonalScope]);
         useEffect(() => {
-            if (!seasonalEnabled || !seasonalActive || seasonalPrepared.key !== seasonalScope || !seasonalPrepared.fetchedAt) return;
-            const timer = window.setTimeout(() => setSeasonalRefreshTick(tick => tick + 1), Math.max(1000, seasonalPrepared.fetchedAt + 5 * 60 * 1000 - Date.now()));
+            if (!seasonalEnabled || !seasonalActive || seasonalPrepared.key !== seasonalScope || !seasonalPrepared.calculatedAt) return;
+            const timer = window.setTimeout(() => setSeasonalRefreshTick(tick => tick + 1), Math.max(1000, seasonalPrepared.calculatedAt + 5 * 60 * 1000 - Date.now()));
             return () => window.clearTimeout(timer);
         }, [seasonalEnabled, seasonalActive, seasonalPrepared, seasonalScope]);
         const seasonImpactController = useMemo(() => {
@@ -1439,16 +1443,16 @@
                 fromWeek: prepared.fromWeek || ((window.App?.WeeklyProj?.currentWeek?.() || 1) + 1),
                 playerName: pid => playersData[pid]?.full_name || playersData[pid]?.name || String(pid),
                 refresh: () => setSeasonalRefreshTick(tick => tick + 1),
-                analyze: deal => {
+                analyze: (deal, pointsOnly = false) => {
                     const myId = deal?.myRosterId ?? myRoster?.roster_id;
                     const partnerId = deal?.partnerRosterId;
                     const give = (deal?.givePlayerIds || (deal?.givePlayers || []).map(player => player.pid)).map(String).sort();
                     const receive = (deal?.receivePlayerIds || (deal?.receivePlayers || []).map(player => player.pid)).map(String).sort();
-                    const signature = JSON.stringify([myId, partnerId, give, receive]);
+                    const signature = JSON.stringify([myId, partnerId, give, receive, pointsOnly]);
                     const cache = seasonalAnalysisCache.current;
                     if (cache.key !== seasonalScope) { cache.key = seasonalScope; cache.results.clear(); }
                     if (!cache.results.has(signature)) {
-                        const result = window.App.TradeSeasonImpact.analyze({ context: prepared.context, myRosterId: myId, partnerRosterId: partnerId, givePlayerIds: give, receivePlayerIds: receive, sims: 3000, seed: 42 });
+                        const result = window.App.TradeSeasonImpact.analyze({ context: prepared.context, myRosterId: myId, partnerRosterId: partnerId, givePlayerIds: give, receivePlayerIds: receive, pointsOnly, protectedPlayerIds: [...(window.WR?.GmMode?.effects?.(leagueId)?.untouchable || [])], sims: 3000, seed: 42 });
                         if (cache.results.size >= 64) cache.results.delete(cache.results.keys().next().value);
                         cache.results.set(signature, result);
                     }
@@ -1861,7 +1865,7 @@
             const p = playersData[pid];
             if (!p) return null;
             const pos = normPos(p.position) || p.position || '?';
-            const value = getPlayerValue(pid).value || 0;
+            const value = getPlayerValue(pid).value ?? null;
             return {
                 type: 'player',
                 id: String(pid),
@@ -2188,13 +2192,13 @@
             const fit = myAssessment ? calcComplementarity(myAssessment, partner) : 0;
             const valueScore = Math.max(0, Math.min(100, 50 + (userGain / Math.max(give.total, receive.total, 1)) * 120));
             const confidenceScore = Math.round(Math.max(0, Math.min(100, likelihood * 0.45 + fit * 0.25 + valueScore * 0.30 + (behaviorFit?.scoreDelta || 0))));
-            const confidence = confidenceScore >= 72 ? 'High' : confidenceScore >= 50 ? 'Medium' : 'Low';
+            const confidence = 'Uncalibrated comparison';
             const windowImpact = dealWindowImpact(givePlayers, receivePlayers);
             const swing = explainRosterSwing(partner, givePlayers, receivePlayers);
             const formatReadout = formatReadoutForDeal(givePlayers, receivePlayers);
             const behaviorReadout = behaviorFit?.framing || behaviorProfile?.observedFacts?.[0]?.detail || '';
             const caution = [];
-            if (likelihood < 40) caution.push('Low acceptance odds');
+            if (likelihood < 40) caution.push('Low comparative negotiation score');
             if (posture.key === 'LOCKED') caution.push('Locked roster');
             if (userGain < -Math.max(500, receive.total * 0.12)) caution.push('Meaningful overpay');
             if (!swing.includes('need') && !swing.includes('gap')) caution.push('Weak roster-fit signal');
@@ -2598,9 +2602,21 @@
 
             const ranked = candidates
                 .map(deal => {
+                    if (resolvedLeagueSkin?.type === 'redraft') {
+                        if (!seasonImpactController.enabled || seasonImpactController.status !== 'ready') return null;
+                        if ([...(deal.givePlayers || []), ...(deal.receivePlayers || [])].some(p => getPlayerValue(p.pid).value == null)) return null;
+                        const eligibility = window.App?.RecommendationEligibility?.check(currentLeague, myRoster, 'trade');
+                        if (!eligibility?.ok) return null;
+                        const impact = seasonImpactController.analyze(deal, true);
+                        if (impact.status !== 'ready' || !(impact.delta > 0) || impact.weeks.some(w => w.unfilledAfter > w.unfilledBefore)) return null;
+                        return { ...deal, rosterBenefit: impact, rank: impact.delta, recommendationScore: impact.delta,
+                            confidence: 'Scenario', confidenceScore: null, viability: 'Projected lineup gain',
+                            caution: [...(deal.caution || []), ...impact.warnings, ...(impact.weeks.some(w => w.pointsDelta < 0) ? ['Some weeks lose projected points; review the weekly tradeoff.'] : [])] };
+                    }
                     const rank = scoreDealRecommendation(deal, tuning);
                     return { ...deal, rank, recommendationScore: rank, viability: dealViability(deal, tuning) };
                 })
+                .filter(Boolean)
                 .sort((a, b) => b.rank - a.rank || b.likelihood - a.likelihood || b.fit - a.fit)
                 .slice(0, 8);
             // keepSig: the league-wide pool (Phase 4b) dedupes across modes/partners by
@@ -2843,7 +2859,7 @@
                         pid,
                         name: p.full_name || `${p.first_name || ''} ${p.last_name || ''}`.trim() || pid,
                         team: p.team || 'FA',
-                        value: getPlayerValue(pid).value || 0,
+                        value: getPlayerValue(pid).value ?? null,
                     };
                 });
                 const needGap = Math.max(0, (data.startingReq || 1) - (data.nflStarters || 0));
@@ -3073,7 +3089,7 @@
                                         </div>
                                         <div className="tc-owner-pos-count">{row.data.nflStarters}/{row.data.startingReq} starters · {row.data.actual}/{row.data.ideal} total</div>
                                         <div className="tc-owner-pos-leaders">
-                                            {row.leaders.length ? row.leaders.map(p => <span key={p.pid}>{p.name} <em>{p.value ? p.value.toLocaleString() : '--'}</em></span>) : <span>No assets</span>}
+                                            {row.leaders.length ? row.leaders.map(p => <span key={p.pid}>{p.name} <em>{p.value != null ? p.value.toLocaleString() : 'unknown'}</em></span>) : <span>No assets</span>}
                                         </div>
                                     </div>;
                                 })}
@@ -3086,7 +3102,7 @@
                                 <em>{a.faabRemaining || 0} FAAB · {ownerPickAssets.length} picks</em>
                             </div>
                             <div className="tc-owner-asset-cloud">
-                                {rosterAssets.map(asset => <span key={asset.pid} style={{ borderColor: posColor(asset.pos) + '66' }}>{asset.name}<em>{asset.pos} · {asset.value.toLocaleString()}</em></span>)}
+                                {rosterAssets.map(asset => <span key={asset.pid} style={{ borderColor: posColor(asset.pos) + '66' }}>{asset.name}<em>{asset.pos} · {(asset.value == null ? 'unknown' : asset.value.toLocaleString())}</em></span>)}
                                 {ownerPickAssets.slice(0, 5).map(pick => <span key={pick.id} style={{ borderColor: (PICK_COLORS[pick.round] || 'var(--gold)') + '66' }}>{pick.label}<em>{pick.value.toLocaleString()}</em></span>)}
                             </div>
                         </section>
@@ -3218,7 +3234,7 @@
         const finderDealsCacheRef = useRef({ version: '', map: new Map() });
         function evalPartnerDeals(partner, mode, focusPid, focusPick) {
             const cache = finderDealsCacheRef.current;
-            const version = `${finderDataEpoch}|${finderTuningHash}`;
+            const version = `${finderDataEpoch}|${finderTuningHash}|${seasonImpactController.key}|${seasonImpactController.status}`;
             if (cache.version !== version) { cache.version = version; cache.map.clear(); }
             const key = `${partner.ownerId}|${mode}|${focusPid ?? ''}|${focusPick?.id ?? ''}`;
             if (!cache.map.has(key)) cache.map.set(key, generateDealsForPartner(partner, mode, focusPid, { keepSig: true, focusPick: focusPick || null }));
@@ -3326,7 +3342,7 @@
             };
             schedule(step);
             return () => { cancelled = true; };
-        }, [finderLoopKey, scanArmed]);
+        }, [finderLoopKey, scanArmed, seasonImpactController.key, seasonImpactController.status]);
         const finderPoolOn = finderLoopKey != null;
         // Pooled ranking: per-deal recommendation score (likelihood/fit/value, GM-band
         // penalized) + a small partner-board term, grade letter then accept % as ties.
@@ -3336,15 +3352,15 @@
             if (finderPoolOn) {
                 return finderPool.deals
                     .map(({ _sig, ...deal }) => deal)
-                    .sort((a, b) => (b.rank + (b.partnerScore || 0) * 0.2) - (a.rank + (a.partnerScore || 0) * 0.2)
+                    .sort((a, b) => (b.rank + (seasonalEnabled ? 0 : (b.partnerScore || 0) * 0.2)) - (a.rank + (seasonalEnabled ? 0 : (a.partnerScore || 0) * 0.2))
                         || (FINDER_GRADE_RANK[b.grade] || 0) - (FINDER_GRADE_RANK[a.grade] || 0)
                         || b.likelihood - a.likelihood)
                     .slice(0, 24);
             }
             if (!selectedPartner) return [];
             return evalPartnerDeals(selectedPartner, effMode, focusPlayerPid, focusPickR).map(({ _sig, ...deal }) => deal);
-        }, [finderActive, finderPoolOn, finderPool, selectedPartner, effMode, focusPlayerPid, focusPickR?.id, finderDataEpoch, finderTuningHash]);
-        const finderActionable = finderDeals.filter(deal => deal.likelihood >= finderActionFloor);
+        }, [finderActive, finderPoolOn, finderPool, selectedPartner, effMode, focusPlayerPid, focusPickR?.id, finderDataEpoch, finderTuningHash, seasonImpactController.key, seasonImpactController.status]);
+        const finderActionable = finderDeals.filter(deal => seasonalEnabled ? deal.rosterBenefit?.delta > 0 : deal.likelihood >= finderActionFloor);
         const finderMoonshotCount = Math.max(0, finderDeals.length - finderActionable.length);
         const finderVisibleDeals = showAllDeals ? finderDeals : finderActionable.slice(0, finderPoolOn ? 8 : 6);
         // Alex rec feed — once per finder-result change (pooled scans publish on
@@ -3539,7 +3555,7 @@
 
         function saveManualTrade() {
             const verdict = computeManualVerdict();
-            const players = side => tradeIds[side].map(pid => ({ pid, name: playersData[pid]?.full_name || [playersData[pid]?.first_name, playersData[pid]?.last_name].filter(Boolean).join(' ') || String(pid), pos: normPos(playersData[pid]?.position), value: getPlayerValue(pid)?.value || 0 }));
+            const players = side => tradeIds[side].map(pid => ({ pid, name: playersData[pid]?.full_name || [playersData[pid]?.first_name, playersData[pid]?.last_name].filter(Boolean).join(' ') || String(pid), pos: normPos(playersData[pid]?.position), value: getPlayerValue(pid)?.value ?? null }));
             const picks = side => tradePickIds[side].map(id => { const p = id.split('-'), slot = p[4]?.startsWith('s') ? Number(p[4].slice(1)) : null; return { id, label: formatPickLabel(p[1], Number(p[2]), p[3], slot), value: pickValueForParts(p[1], Number(p[2]), p[3], slot) }; });
             saveDeal({ partnerOwnerId: tradeOwner.B, partnerName: assessments.find(a => String(a.ownerId) === String(tradeOwner.B))?.ownerName || '',
                 givePlayers: players('A'), receivePlayers: players('B'), givePicks: picks('A'), receivePicks: picks('B'), giveFaab: tradeFaab.A, receiveFaab: tradeFaab.B,
@@ -3759,13 +3775,13 @@
                     return <div key={asset.id} className="tc-dhq-asset">
                         <span className="tc-dhq-asset-dot" style={{ background:PICK_COLORS[asset.round] || 'var(--gold)' }} />
                         <span>{asset.label}{asset.via ? <em> via {asset.via}</em> : null}</span>
-                        <strong>{asset.value.toLocaleString()}</strong>
+                        <strong>{(asset.value == null ? 'unknown' : asset.value.toLocaleString())}</strong>
                     </div>;
                 }
                 return <div key={asset.pid || asset.id} className="tc-dhq-asset">
                     <span className="tc-dhq-asset-dot" style={{ background:posColor(asset.pos) }} />
                     <span>{asset.name} <em>{asset.pos} {asset.team}</em></span>
-                    <strong>{asset.value.toLocaleString()}</strong>
+                    <strong>{(asset.value == null ? 'unknown' : asset.value.toLocaleString())}</strong>
                 </div>;
             }
 
@@ -3899,10 +3915,10 @@
                             {finderPoolOn && <button type="button" className="tc-center-primary" disabled={scanArmed} onClick={() => setScanForKey(finderLoopKey)}>{!scanArmed ? 'Find trade ideas' : finderPool.done ? 'Ideas up to date' : `Searching ${finderPool.scanned}/${finderPool.total}…`}</button>}
                         </div>
                         <details className="tc-finder-method"><summary>How these ideas are ranked <span>· {focusTuning.modeLabel}</span></summary>
-                            <p>Using your {focusTuning.modeLabel.toLowerCase()} strategy, roster needs, player values, and manager tendencies. The default list shows ideas with at least {actionFloor}% estimated acceptance. {focusTuning.untouchable.size ? `${focusTuning.untouchable.size} protected player${focusTuning.untouchable.size === 1 ? ' is' : 's are'} excluded from offers.` : 'You can protect players from your roster.'}</p>
+                            <p>{seasonalEnabled ? 'Redraft ideas rank by projected legal-lineup benefit over the remaining fantasy season. Prices and negotiation context are separate; unknown values or unresolved availability pause recommendations.' : 'Using roster needs, package prices and manager-context comparisons.'} Negotiation scores are uncalibrated comparisons, never acceptance odds. {seasonalEnabled ? 'The default list requires positive projected roster benefit.' : 'The default list uses at least ' + actionFloor + '/100 negotiation score.'} {focusTuning.untouchable.size ? `${focusTuning.untouchable.size} protected player${focusTuning.untouchable.size === 1 ? ' is' : 's are'} excluded from offers.` : 'You can protect players from your roster.'}</p>
                         </details>
                         {(scanArmed || !finderPoolOn) && <div className="tc-finder-status" role="status">
-                            {scanArmed && !finderPool.done ? `Searching teams ${finderPool.scanned} of ${finderPool.total}…` : deals.length ? `${actionableDeals.length} recommended trade idea${actionableDeals.length === 1 ? '' : 's'}${moonshotCount ? ` · ${moonshotCount} lower-confidence ideas available` : ''}` : 'No matching deals yet. Try another player or trade partner, or build your own trade.'}
+                            {scanArmed && !finderPool.done ? `Searching teams ${finderPool.scanned} of ${finderPool.total}…` : deals.length ? `${actionableDeals.length} recommended trade idea${actionableDeals.length === 1 ? '' : 's'}${moonshotCount ? ` · ${moonshotCount} lower-score ideas available` : ''}` : 'No matching deals yet. Try another player or trade partner, or build your own trade.'}
                         </div>}
                     </div>
                 </section>
@@ -4026,9 +4042,9 @@
                         <div className="tc-dhq-deal-stage-body">
                             {visibleDeals.length
                                 ? visibleDeals.map((deal, idx) => <TcDealCard key={deal.id} deal={deal} idx={idx} actionFloor={actionFloor} expandedDealId={expandedDealId} setExpandedDealId={setExpandedDealId} loadDealIntoBuilder={loadDealIntoBuilder} saveDeal={saveDeal} sideSummary={sideSummary} seasonImpactController={seasonImpactController} />)
-                                : <div className="tc-dhq-empty">No ideas meet the {actionFloor}% estimated acceptance threshold. You can still explore the lower-confidence ideas below.</div>}
+                                : <div className="tc-dhq-empty">No ideas meet the {actionFloor}/100 negotiation score threshold. You can still explore the lower-score ideas below.</div>}
                         </div>
-                        {(deals.length > visibleDeals.length || showAllDeals) && <button className="tc-dhq-show-more" onClick={() => setShowAllDeals(!showAllDeals)}>{showAllDeals ? 'Show recommended ideas' : moonshotCount ? `Explore ${moonshotCount} lower-confidence idea${moonshotCount === 1 ? '' : 's'}` : `Show ${deals.length - visibleDeals.length} more`}</button>}
+                        {(deals.length > visibleDeals.length || showAllDeals) && <button className="tc-dhq-show-more" onClick={() => setShowAllDeals(!showAllDeals)}>{showAllDeals ? 'Show recommended ideas' : moonshotCount ? `Explore ${moonshotCount} lower-score idea${moonshotCount === 1 ? '' : 's'}` : `Show ${deals.length - visibleDeals.length} more`}</button>}
                     </section>
                 )}
 
@@ -4147,7 +4163,7 @@
             } else if (!_pro) {
                 // TRADE DESK, free: the finder region is Pro; the persistent builder
                 // strip below stays the full free experience (manual builder + raw verdict).
-                body = React.createElement(TcProTeaser, { label: 'Trade Finder', feature: 'trade-finder', sub: 'Auto-generate deals every owner in your league would actually consider — ranked by acceptance odds, owner psychology, and roster fit.' });
+                body = React.createElement(TcProTeaser, { label: 'Trade Finder', feature: 'trade-finder', sub: 'Compare trades using projected roster benefit, package price, and clearly labeled negotiation context.' });
             } else {
                 body = renderDealHQ();
             }
@@ -4177,8 +4193,8 @@
                                 {_verdict.hasTrade ? (
                                     <>
                                         <strong style={{ fontFamily: 'var(--font-title)', fontSize: '0.95rem', color: _verdict.verdictColor }}>{_verdict.verdictText} {_verdict.diffDisplay}</strong>
-                                        <span style={{ fontSize: '0.74rem', color: 'var(--silver)' }}>Sending {_verdict.totalA.toLocaleString()} / receiving {_verdict.totalB.toLocaleString()}</span>
-                                        {_pro && <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: '0.82rem', fontWeight: 700, color: _verdict.likelihoodColor }}>{_verdict.likelihood}% accept</span>}
+                                        <span style={{ fontSize: '0.74rem', color: 'var(--silver)' }}>Sending {(_verdict.totalA == null ? 'unknown' : _verdict.totalA.toLocaleString())} / receiving {(_verdict.totalB == null ? 'unknown' : _verdict.totalB.toLocaleString())}</span>
+                                        {_pro && <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: '0.82rem', fontWeight: 700, color: _verdict.likelihoodColor }}>{_verdict.likelihood}/100 accept</span>}
                                     </>
                                 ) : (
                                     <span style={{ fontSize: '0.8rem', color: 'var(--silver)' }}>Build or tweak a trade without leaving this view.</span>
@@ -4312,8 +4328,8 @@
             if (manualBehaviorFit) likelihood = Math.round(Math.max(5, Math.min(95, likelihood + (manualBehaviorFit.acceptanceDelta || 0))));
             const likelihoodColor = likelihood >= 70 ? 'var(--win-green)' : likelihood >= 45 ? 'var(--warn)' : 'var(--loss-red)';
             // Letter grade + label + numeric diff are FREE (Scout parity) — no gate on these fields.
-            const verdictColor = grade.color || grade.col || 'var(--gold)';
-            const verdictText = `${grade.grade}${grade.label ? ' · ' + grade.label.toUpperCase() : ''}`;
+            let verdictColor = grade.color || grade.col || 'var(--gold)';
+            let verdictText = `${grade.grade}${grade.label ? ' · ' + grade.label.toUpperCase() : ''}`;
             const diffDisplay = userGain > 0 ? `+${absDiff.toLocaleString()}` : userGain < 0 ? `-${absDiff.toLocaleString()}` : '+/-0';
             const sentPositions = [...new Set(tradeIds.A.map(pid => normPos(playersData[pid]?.position)).filter(Boolean))];
             const receivedPositions = [...new Set(tradeIds.B.map(pid => normPos(playersData[pid]?.position)).filter(Boolean))];
@@ -4349,7 +4365,15 @@
                 givePlayerIds: tradeIds.A,
                 receivePlayerIds: tradeIds.B,
             };
-            return { totalA, totalB, hasTrade, grade, userGain, otherOwnerId, otherDnaKey, otherDna, theirPosture, psychTaxes, grudgeTax, netTaxTotal, likelihood, manualBehaviorProfile, manualBehaviorFit, likelihoodColor, verdictColor, verdictText, diffDisplay, rosterImpactLabel, starterValueDelta, pickCapitalDelta, pickQuantityDelta, faabDelta, gmFloor, gmModeLabel, gmViability, gmWarnings, seasonImpactController, seasonImpactDeal };
+            if (seasonalEnabled && hasTrade) {
+                const impact = seasonImpactController.status === 'ready' ? seasonImpactController.analyze(seasonImpactDeal, true) : null;
+                verdictText = impact?.delta == null ? 'Roster benefit unavailable: ' + (impact?.reason || seasonImpactController.reason || 'season evidence is loading')
+                    : (impact.delta > 0 ? '+' : '') + impact.delta + ' projected lineup points over the remaining fantasy season';
+                verdictColor = impact?.delta > 0 ? 'var(--good)' : impact?.delta < 0 ? 'var(--bad)' : 'var(--silver)';
+            }
+            const missingSeasonValues = resolvedLeagueSkin?.type === 'redraft' && [...tradeIds.A, ...tradeIds.B].some(pid => getPlayerValue(pid).value == null);
+
+            return { totalA, totalB, hasTrade, grade, userGain, otherOwnerId, otherDnaKey, otherDna, theirPosture, psychTaxes, grudgeTax, netTaxTotal, likelihood, manualBehaviorProfile, manualBehaviorFit, likelihoodColor, verdictColor, verdictText, diffDisplay, rosterImpactLabel, starterValueDelta, pickCapitalDelta, pickQuantityDelta, faabDelta, gmFloor, gmModeLabel, gmViability, gmWarnings, seasonImpactController, seasonImpactDeal, ...(missingSeasonValues ? { totalA: null, totalB: null, grade: { grade: '—', label: 'Seasonal evidence unavailable' }, userGain: null, diffDisplay: 'unknown', likelihood: null, verdictText: 'Recommendation paused: seasonal values are unavailable.', verdictColor: 'var(--silver)' } : {}) };
         }
 
         // ── Alex second opinion on the builder deal ──────────────────────────
@@ -4403,7 +4427,9 @@
                 verdict: {
                     verdictText: v.verdictText,
                     diffDisplay: v.diffDisplay,
-                    likelihood: `${v.likelihood}%`,
+                    negotiationScore: v.likelihood == null ? null : `${v.likelihood}/100`,
+                    negotiationBasis: 'Hand-set comparative score; not calibrated acceptance odds or confidence.',
+                    evidencePolicy: 'Explain only supplied calculations. Preserve unknown values, required drops and weekly downside. Do not present unverified news as current fact.',
                     psychNotes,
                 },
             };
@@ -4575,7 +4601,7 @@
                         <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', flexWrap: 'wrap' }}>
                             {s.grade && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem', fontWeight: 700, color: tcGradeColor(s.grade) }}>{s.grade}</span>}
                             <strong style={{ color: 'var(--white)', fontSize: '0.8rem', fontFamily: 'var(--font-title)' }}>{row.partnerName || 'Unknown partner'}</strong>
-                            {s.likelihood != null && <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.65 }}>{s.likelihood}% @ save</span>}
+                            {s.likelihood != null && <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.65 }}>{s.likelihood}/100 @ save</span>}
                             {row.source === 'alex-chat' && <span style={{ fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--gold)', opacity: 0.7 }}>Alex</span>}
                         </div>
                         <div style={{ fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pipelineRowSummary(row)}</div>
@@ -4602,7 +4628,7 @@
         function renderTradePipeline(_pro) {
             let body;
             if (!_pro) {
-                body = React.createElement(TcProTeaser, { label: 'Trade Pipeline', feature: 'trade-pipeline', sub: 'Track every deal from idea to proposed to done — logged outcomes teach Alex each owner\'s real trading psychology and sharpen future acceptance odds.' });
+                body = React.createElement(TcProTeaser, { label: 'Trade Pipeline', feature: 'trade-pipeline', sub: 'Track every deal from idea to proposed to done — logged outcomes teach Alex each owner\'s real trading psychology and inform future negotiation comparisons.' });
             } else if (!savedDeals.length) {
                 body = <div className="tc-dhq-empty">No tracked deals yet — Save a finder row or an Alex trade card and it lands here.</div>;
             } else {
@@ -4627,7 +4653,7 @@
                 <section className="tc-dhq-panel" style={{ marginBottom: '12px' }}>
                     <div className="tc-dhq-panel-head">
                         <span>My Pipeline</span>
-                        <em>{savedDeals.length ? `${savedDeals.length} tracked deal${savedDeals.length === 1 ? '' : 's'} — logged outcomes sharpen acceptance odds` : 'Saved and proposed deals live here'}</em>
+                        <em>{savedDeals.length ? `${savedDeals.length} tracked deal${savedDeals.length === 1 ? '' : 's'} — logged outcomes inform negotiation comparisons` : 'Saved and proposed deals live here'}</em>
                     </div>
                     {body}
                 </section>
@@ -5003,13 +5029,13 @@
                 return (
                     <div key={isPick ? asset.id : (asset.pid || asset.id)} className="mc-trade-value-asset">
                         <strong>{isPick ? asset.label : asset.name}</strong>
-                        <small>{isPick ? 'Pick' : asset.pos} · {asset.value.toLocaleString()} {seasonalEnabled ? 'season value' : 'DHQ'}</small>
+                        <small>{isPick ? 'Pick' : asset.pos} · {(asset.value == null ? 'unknown' : asset.value.toLocaleString())} {seasonalEnabled ? 'season value' : 'DHQ'}</small>
                     </div>
                 );
             };
             const phDealSide = (label, players, picks, faab, total) => (
                 <div>
-                    <header>{label}<b>{total.toLocaleString()} {seasonalEnabled ? 'season value' : 'DHQ'}</b></header>
+                    <header>{label}<b>{total == null ? 'unknown' : total.toLocaleString()} {seasonalEnabled ? 'season value' : 'DHQ'}</b></header>
                     {(players || []).map(phAssetLine)}
                     {(picks || []).map(phAssetLine)}
                     {faab > 0 ? (
@@ -5037,9 +5063,10 @@
                                 <small>{[receivePositions || ((deal.receivePicks || []).length ? 'Draft picks' : 'FAAB'), deal.partnerName].filter(Boolean).join(' · ')}</small>
                             </div>
                             <b className="mc-trade-grade" style={{ color: deal.gradeColor || 'var(--gold)' }}><span className="mc-trade-sr-only">{seasonalEnabled ? 'Value grade ' : 'Grade '}</span>{deal.grade}</b>
-                            <b style={{ color: likeColor }}><span className="mc-trade-sr-only">Estimated acceptance </span>{deal.likelihood}%</b>
+                            <b style={{ color: likeColor }}><span className="mc-trade-sr-only">Negotiation score </span>{deal.likelihood}/100</b>
                             <b style={{ color: deltaColor }}><span className="mc-trade-sr-only">Value change </span>{(deal.userGain >= 0 ? '+' : '') + Math.round(deal.userGain).toLocaleString()}<span className="mc-trade-sr-only"> DHQ</span></b>
                         </div>
+                        {deal.rosterBenefit && <p className="tc-season-method">Legal lineup points: {deal.rosterBenefit.before} → {deal.rosterBenefit.after} (+{deal.rosterBenefit.delta}). Regular season: {deal.rosterBenefit.regularSeasonDelta ?? 'unknown'}; playoffs: {deal.rosterBenefit.playoffDelta ?? 'unknown'}. Other roster: {deal.rosterBenefit.partnerDelta ?? 'unknown'}. No replacement adds assumed. {deal.rosterBenefit.weeks.some(w => w.pointsDelta < 0) ? 'Downside: some weeks lose points.' : 'No projected weekly loss in this scenario.'} Player/package price is separate. {Object.values(deal.rosterBenefit.freshness || {}).some(f => f.fetchedAt) ? 'Weekly inputs fetched ' + new Date(Math.min(...Object.values(deal.rosterBenefit.freshness).filter(f => f.fetchedAt).map(f => f.fetchedAt))).toLocaleTimeString() + '; missing weeks use season/history fallback.' : 'Season/history fallback; weekly fetch unavailable.'} Provider as-of time unavailable; calculated {new Date(deal.rosterBenefit.calculatedAt).toLocaleTimeString()}.</p>}
                         <p className="mc-trade-send-line"><span>You send</span> {phPackageNames(deal.givePlayers, deal.givePicks, deal.giveFaab)}</p>
                         {seasonImpactController.enabled && <TcSeasonImpact controller={seasonImpactController} deal={deal} detailed={expanded} />}
                         <div className="mc-trade-idea-actions">
@@ -5057,7 +5084,7 @@
                                     {phDealSide('You send', deal.givePlayers, deal.givePicks, deal.giveFaab, deal.totals.give.total)}
                                 </div>
                                 {(deal.caution || []).length > 0 && <p className="mc-trade-caution">{deal.caution.slice(0, 3).join(' · ')}</p>}
-                                <small>Acceptance is an estimate based on roster fit and owner history.</small>
+                                <small>Negotiation score is a hand-set comparison, not a calibrated probability.</small>
                             </div>
                         )}
                     </article>
@@ -5079,7 +5106,7 @@
                 heroEl = (
                     <HeroCard kicker={liveDealPartner ? 'Live deal · vs ' + liveDealPartner.ownerName : 'Live deal'}
                         headline={_verdict.verdictText + ' · ' + _verdict.diffDisplay}
-                        facts={'gave ' + _verdict.totalA.toLocaleString() + ' / received ' + _verdict.totalB.toLocaleString() + (_pro ? ' · accept ' + _verdict.likelihood + '%' : '')}
+                        facts={'gave ' + (_verdict.totalA == null ? 'unknown' : _verdict.totalA.toLocaleString()) + ' / received ' + (_verdict.totalB == null ? 'unknown' : _verdict.totalB.toLocaleString()) + (_pro ? ' · negotiation ' + (_verdict.likelihood == null ? '—' : _verdict.likelihood + '/100') : '')}
                         cta="BUILDER" onCta={() => setPhBuilderOpen(true)} />
                 );
             }
@@ -5196,7 +5223,7 @@
             const builderSheetEl = (
                 <TcMobileTradeAnalysis verdict={_verdict} FAAB_RATE={FAAB_RATE} secondOpinion={_verdict.hasTrade ? renderAlexVerdict() : null} onSave={saveManualTrade}>
                         {builderPlayerContext && <button className="mc-trade-player-back" type="button" onClick={() => { window.wrNavigateTab?.(builderPlayerContext.returnTab || 'myteam'); window.setTimeout(() => (window._wrSelectPlayer || window.openPlayerModal)?.(builderPlayerContext.pid), 100); }}>‹ {playersData[builderPlayerContext.pid]?.full_name || 'Player details'}</button>}
-                        <div className="mc-trade-packages">{['A', 'B'].map(side => <div key={side}><header><span>{side === 'A' ? 'YOU SEND' : 'YOU GET'}</span><b>{(side === 'A' ? _verdict.totalA : _verdict.totalB).toLocaleString()}</b></header>{tradeIds[side].map(pid => <div key={pid}><span>{playersData[pid]?.full_name || String(pid)}</span><button type="button" aria-label={'Remove ' + (playersData[pid]?.full_name || pid) + ' from ' + side} onClick={() => _tsDeps.removePlayer(side, pid)}>×</button></div>)}{tradePickIds[side].map(id => { const p = id.split('-'); return <div key={id}><span>{formatPickLabel(p[1], Number(p[2]), p[3], p[4]?.startsWith('s') ? Number(p[4].slice(1)) : null)}</span><button type="button" aria-label={'Remove pick from ' + side} onClick={() => _tsDeps.removePick(side, id)}>×</button></div>; })}{tradeFaab[side] > 0 && <p>${tradeFaab[side]} FAAB</p>}{!tradeIds[side].length && !tradePickIds[side].length && !tradeFaab[side] && <p>Add players, picks or FAAB</p>}</div>)}</div>
+                        <div className="mc-trade-packages">{['A', 'B'].map(side => <div key={side}><header><span>{side === 'A' ? 'YOU SEND' : 'YOU GET'}</span><b>{(side === 'A' ? _verdict.totalA : _verdict.totalB)?.toLocaleString() ?? 'unknown'}</b></header>{tradeIds[side].map(pid => <div key={pid}><span>{playersData[pid]?.full_name || String(pid)}</span><button type="button" aria-label={'Remove ' + (playersData[pid]?.full_name || pid) + ' from ' + side} onClick={() => _tsDeps.removePlayer(side, pid)}>×</button></div>)}{tradePickIds[side].map(id => { const p = id.split('-'); return <div key={id}><span>{formatPickLabel(p[1], Number(p[2]), p[3], p[4]?.startsWith('s') ? Number(p[4].slice(1)) : null)}</span><button type="button" aria-label={'Remove pick from ' + side} onClick={() => _tsDeps.removePick(side, id)}>×</button></div>; })}{tradeFaab[side] > 0 && <p>${tradeFaab[side]} FAAB</p>}{!tradeIds[side].length && !tradePickIds[side].length && !tradeFaab[side] && <p>Add players, picks or FAAB</p>}</div>)}</div>
                         <div className="mc-trade-builder-toolbar">
                             {window.WR?.PlayerMetrics?.Picker && <window.WR.PlayerMetrics.Picker preference={metricPreference} />}
                             <small><strong>{skinVocabulary.valueShortLabel || 'DHQ'} Engine</strong> · {valueSourceLabel}</small>
@@ -5275,16 +5302,16 @@
                                 </React.Fragment>
                                 : (scanArmed && !finderPool.done
                                     ? <div style={{ fontFamily: MONO, fontSize: MICRO, color: 'var(--silver)', opacity: 0.7 }}>Scanning partner {finderPool.scanned}/{finderPool.total} — moves appear as the league scan runs.</div>
-                                    : <div className="tc-dhq-empty">No package found for this intent — change the partner or focus in the finder controls.</div>)
+                                    : <div className="tc-dhq-empty">{seasonalEnabled ? 'No supported roster improvement for this horizon. ' + (seasonImpactController.reason || 'Hold, or review the partner and available evidence.') : 'No package found for this intent — change the partner or focus in the finder controls.'}</div>)
                         )}
                         {_pro && rosterState.isUsable && finderVisibleDeals.length > 0 && <div className="mc-trade-board" aria-label="Trade ideas">
-                            <div className="mc-trade-target-grid mc-trade-board-head" aria-hidden="true"><span>You receive</span><span>{seasonalEnabled ? 'Value grade' : 'Grade'}</span><span>Est.<br />accept</span><span>{seasonalEnabled ? 'Δ value' : 'Δ DHQ'}</span></div>
+                            <div className="mc-trade-target-grid mc-trade-board-head" aria-hidden="true"><span>You receive</span><span>{seasonalEnabled ? 'Value grade' : 'Grade'}</span><span>Negotiation<br />score</span><span>{seasonalEnabled ? 'Δ value' : 'Δ DHQ'}</span></div>
                             {finderVisibleDeals.map(phDealCard)}
                         </div>}
                         {_pro && rosterState.isUsable && (finderDeals.length > finderVisibleDeals.length || showAllDeals) && (
                             <button type="button" style={{ ...actBtn(false), width: '100%' }} onClick={() => setShowAllDeals(!showAllDeals)}>{showAllDeals ? 'Hide moonshots' : finderMoonshotCount ? `Show ${finderMoonshotCount} moonshot${finderMoonshotCount === 1 ? '' : 's'}` : `Show ${finderDeals.length - finderVisibleDeals.length} more`}</button>
                         )}
-                        {!_pro && React.createElement(TcProTeaser, { label: 'Trade Finder', feature: 'trade-finder', sub: 'Auto-generate deals every owner in your league would actually consider — ranked by acceptance odds, owner psychology, and roster fit.' })}
+                        {!_pro && React.createElement(TcProTeaser, { label: 'Trade Finder', feature: 'trade-finder', sub: 'Compare trades using projected roster benefit, package price, and clearly labeled negotiation context.' })}
                         {/* Intent=Picks → a draft-pick board with an Owned/League scope toggle. */}
                         {_pro && rosterState.isUsable && phPicksMode && (
                             <React.Fragment>
@@ -5388,7 +5415,7 @@
                                     ? React.createElement(CardList, { groups: laneGroups })
                                     : <div className="tc-dhq-empty">No tracked deals yet — Save a finder row or an Alex trade card and it lands here.</div>}
                             </React.Fragment>
-                        ) : React.createElement(TcProTeaser, { label: 'Trade Pipeline', feature: 'trade-pipeline', sub: 'Track every deal from idea to proposed to done — logged outcomes teach Alex each owner\'s real trading psychology and sharpen future acceptance odds.' })}
+                        ) : React.createElement(TcProTeaser, { label: 'Trade Pipeline', feature: 'trade-pipeline', sub: 'Track every deal from idea to proposed to done — logged outcomes teach Alex each owner\'s real trading psychology and inform future negotiation comparisons.' })}
                         {renderTradeLedger()}
                         {_pro && dnaMiniEl}
                     </React.Fragment>
@@ -5407,7 +5434,7 @@
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '8px 14px 4px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                                 {phLogRow.snapshot?.grade ? chip(phLogRow.snapshot.grade, tcGradeColor(phLogRow.snapshot.grade)) : null}
-                                {phLogRow.snapshot?.likelihood != null && <span style={{ fontFamily: MONO, fontSize: MICRO, color: 'var(--silver)', opacity: 0.65 }}>{phLogRow.snapshot.likelihood}% @ save</span>}
+                                {phLogRow.snapshot?.likelihood != null && <span style={{ fontFamily: MONO, fontSize: MICRO, color: 'var(--silver)', opacity: 0.65 }}>{phLogRow.snapshot.likelihood}/100 @ save</span>}
                                 {phLogRow.source === 'alex-chat' && <span style={{ fontFamily: MONO, fontSize: MICRO, color: 'var(--gold)', opacity: 0.7 }}>Alex</span>}
                             </div>
                             <div style={{ fontSize: '0.8rem', color: 'var(--silver)', lineHeight: 1.55 }}>{pipelineRowSummary(phLogRow)}</div>
@@ -5492,7 +5519,7 @@
                 return React.createElement(UpgradeGate, {
                     feature: 'intelligence-full',
                     title: 'UNLOCK TRADE CENTER',
-                    description: 'See trades your leaguemates are actually likely to accept. Owner DNA profiles every manager\'s trading psychology — Fleecer, Dominator, Stalwart, Acceptor, or Desperate — then calculates acceptance likelihood.',
+                    description: 'Compare trade packages and their roster consequences. Owner DNA profiles every manager\'s trading psychology — Fleecer, Dominator, Stalwart, Acceptor, or Desperate — then supplies uncalibrated negotiation context.',
                     targetTier: 'warroom'
                 });
             }

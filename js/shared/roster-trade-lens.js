@@ -165,6 +165,8 @@
             week, timing: week ? 'First full week after a trade · Week ' + week : 'Trade timing unavailable', candidates: [], before: null,
             notice: 'Possible packages, not agreed prices. One preview at a time; live rosters and your saved GM plan stay unchanged.' };
         const no = (status, reason) => ({ ...base, status, reason });
+        const common = App.RecommendationEligibility?.check({ ...league, rosters }, roster, 'trade');
+        if (common && !common.ok) return no('unavailable', common.reason);
         const blocked = restriction(opts, skin, currentWeek);
         if (blocked) return no(...blocked);
         if (!['dynasty', 'keeper', 'redraft'].includes(type)) return no('unavailable', 'This league format does not have verified trade-lens support yet.');
@@ -265,17 +267,17 @@
         // A supplied projection snapshot is isolated; otherwise verify the NFL season before fetching.
         if (basisOf(args) !== 'projected') args = await (App.RosterLensBasis?.prepare?.(args) || args);
         if (basisOf(args) !== 'average' && !args.projectionsByPid && App.WeeklyProj?.projectPlayer && str(root.S?.nflState?.season) === str(league.season) && week > currentWeek && week <= 18) {
-            let provider = {};
-            try {
-                const fetcher = opts.fetcher || root.fetch;
-                if (typeof fetcher === 'function') { const response = await fetcher('https://api.sleeper.app/v1/projections/nfl/regular/' + league.season + '/' + week); provider = response?.ok ? await response.json() : {}; }
-            } catch (_) { /* published data may be absent; known season/prior data remains explicit fallback */ }
+            const provider = await App.WeeklyProj.ensureWeekProjections?.(week, { season: league.season }) || {};
             args.projectionsByPid = {};
             [...new Set(rosters.flatMap(ids))].forEach(pid => { args.projectionsByPid[pid] = App.WeeklyProj.projectPlayer(pid, { playersData: players, statsData: opts.statsData || {},
                 priorData: opts.priorData || opts.priorStatsData || {}, scoring: league.scoring_settings, week, providerProjections: provider || {}, projectionsData: opts.projectionsData || {} }); });
         }
         if (skin.type === 'redraft' && str(root.S?.currentLeagueId) === str(league.league_id || league.id)) {
             try { App.PlayerValue?.ensureRos?.({ league, leagueId: league.league_id || league.id, skin, playersData: players, statsData: opts.statsData || {}, priorData: opts.priorData || opts.priorStatsData || {}, projectionsData: opts.projectionsData || {} }); } catch (_) { /* unavailable values stay unavailable */ }
+        }
+        if (args.projectionsByPid && basisOf(args) === 'projected') {
+            args.projectionsByPid = { ...args.projectionsByPid };
+            for (const pid of Object.keys(args.projectionsByPid)) if (players[pid]?.injury_status) args.projectionsByPid[pid] = { ...args.projectionsByPid[pid], available: false, points: { median: null }, availabilityUnknown: true };
         }
         // Weekly results never prepare or simulate the rest of the season.
         // The selected preserved package opts into loadSeason explicitly.

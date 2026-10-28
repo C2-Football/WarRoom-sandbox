@@ -9,10 +9,8 @@
 // yardage bonuses) for free. The AI never invents numbers — it narrates
 // this deterministic output only.
 //
-// NOTE: warroom-local copy (loaded via a direct <script> tag). The dev
-// server regenerates warroom/reconai-shared/, so this engine lives under
-// js/shared/ (hand-authored, persistent). Canonical twin for Node tests:
-// reconai/shared/startsit-engine.js — keep them in sync.
+// Canonical source: C2-Football/dhq-shared. WarRoom sync copies this file
+// to js/shared/startsit-engine.js before building production entrypoints.
 (function (root) {
     'use strict';
     const App = root.App = root.App || {};
@@ -20,7 +18,7 @@
     // Production stat categories that scale with matchup/usage. Negative
     // events (INTs, fumbles) and binary kicker/DEF events are NOT scaled by
     // DvP/Vegas — only volume/efficiency is.
-    const PASS_FIELDS = ['pass_yd', 'pass_td', 'pass_2pt', 'pass_cmp', 'pass_att'];
+    const PASS_FIELDS = ['pass_yd', 'pass_td', 'pass_2pt', 'pass_cmp', 'pass_att', 'pass_fd'];
     const RUSH_FIELDS = ['rush_yd', 'rush_td', 'rush_2pt', 'rush_att', 'rush_fd'];
     const RECV_FIELDS = ['rec', 'rec_yd', 'rec_td', 'rec_2pt', 'rec_tgt', 'rec_fd'];
     const PRODUCTION_FIELDS = new Set([].concat(PASS_FIELDS, RUSH_FIELDS, RECV_FIELDS));
@@ -148,9 +146,8 @@
         const s = String(injuryStatus || '').trim().toUpperCase();
         if (!s) return { available: true, mult: 1, floorPenalty: 0 };
         if (OUT_STATUSES.has(s)) return { available: false, mult: 0, floorPenalty: 0 };
-        if (s === 'D' || s === 'DOUBTFUL') return { available: true, mult: 0.6, floorPenalty: 0.15 };
-        if (s === 'Q' || s === 'QUESTIONABLE') return { available: true, mult: 0.92, floorPenalty: 0.1 };
-        return { available: true, mult: 1, floorPenalty: 0 };
+        if (s === 'HEALTHY' || s === 'ACTIVE') return { available: true, mult: 1, floorPenalty: 0 };
+        return { available: false, mult: 1, floorPenalty: 0, unknown: true };
     }
 
     function matchupGrade(dvpMult, impliedTotal) {
@@ -193,6 +190,7 @@
             week: input.week,
             position: pos,
             available: avail.available && !!median,
+            availabilityUnknown: !!avail.unknown,
             statLine: { median, floor, ceiling },
             matchupGrade: median ? matchupGrade(input.dvpMult, impliedTotal) : 'C',
             opponent: input.opponent || (input.vegas ? { abbr: input.vegas.opp, impliedTotal: input.vegas.impliedTotal, spread: input.vegas.spread } : null),
@@ -210,23 +208,15 @@
         const score = calcFn || root.calcFantasyPts || (App.Sleeper && App.Sleeper.calcFantasyPts);
         if (typeof score !== 'function') throw new Error('startsit: no calcFantasyPts available');
         const sl = (proj && proj.statLine) || {};
-        // calcFantasyPts is position-blind, so true TE-premium (bonus_rec_te = extra
-        // pts per TE reception, on top of `rec`) can only be honored here, where the
-        // projection carries its position. Applied per stat line so floor/median/
-        // ceiling all reflect the bonus.
-        const teBonus = (proj && proj.position === 'TE' && scoring && Number(scoring.bonus_rec_te)) ? Number(scoring.bonus_rec_te) : 0;
-        const scoreLine = line => {
-            if (!line) return 0;
-            let p = score(line, scoring);
-            if (teBonus && Number.isFinite(line.rec)) p += teBonus * line.rec;
-            return p;
-        };
+        const details = typeof score.detailed === 'function' ? score.detailed(sl.median, scoring, proj?.position) : null;
+        const scoreLine = line => line ? score(line, scoring, proj?.position) : 0;
         const pts = {
             median: scoreLine(sl.median),
             floor: scoreLine(sl.floor),
             ceiling: scoreLine(sl.ceiling),
         };
-        return { ...proj, points: pts };
+        if (proj.availabilityUnknown && details?.supported !== false) return { ...proj, conditionalPoints: pts, points: { median: null, floor: null, ceiling: null }, scoringSupport: details, available: false, unavailableReason: 'Participation is unresolved; healthy-production scenario only. No participation probability assumed.' };
+        return { ...proj, points: pts, scoringSupport: details, available: proj.available !== false && details?.supported !== false, ...(details?.supported === false ? { points: { median: null, floor: null, ceiling: null }, unavailableReason: 'Unsupported scoring: ' + details.unsupported.join(', ') } : {}) };
     }
 
     // ── Lineup solver ────────────────────────────────────────────────

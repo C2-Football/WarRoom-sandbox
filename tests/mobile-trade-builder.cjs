@@ -116,7 +116,7 @@ function assertBuilderOrder(rendered){
 (async()=>{
     let analyzes=0,ui=analysisHarness(),verdict={...baseVerdict,seasonImpactController:readyController(()=>{analyzes++;return seasonResult;})};
     let rendered=ui.render(verdict),summary=assertBuilderOrder(rendered);
-    assert.match(copy(summary),/B/);assert.match(copy(summary),/67\s*%/);assert.match(copy(summary),/Calculating|Season impact/i,'Pending season data does not hide price or acceptance');
+    assert.match(copy(summary),/B/);assert.match(copy(summary),/67\s*\/100/);assert.match(copy(summary),/Calculating|Season impact/i,'Pending season data does not hide price or acceptance');
     await turn();rendered=ui.render(verdict);summary=assertBuilderOrder(rendered);
     assert.match(copy(summary),/Helps your season/);assert.match(copy(summary),/\+?0\.4/);
     assert.equal(analyzes,1,'Summary and deeper analysis share one season comparison');
@@ -127,19 +127,19 @@ function assertBuilderOrder(rendered){
 
     ui=analysisHarness();verdict={...baseVerdict,seasonImpactController:{enabled:true,status:'loading',key:'loading',analyze(){throw new Error('Unprepared season data must not be analyzed');}}};
     rendered=ui.render(verdict);summary=assertBuilderOrder(rendered);await turn();
-    assert.match(copy(summary),/Calculating/);assert.match(copy(summary),/B/);assert.match(copy(summary),/67\s*%/);assert(!copy(summary).includes('Helps your season'));ui.dispose();
+    assert.match(copy(summary),/Calculating/);assert.match(copy(summary),/B/);assert.match(copy(summary),/67\s*\/100/);assert(!copy(summary).includes('Helps your season'));ui.dispose();
 
     for(const pro of [false,true]){
         ui=analysisHarness({pro});verdict={...baseVerdict,seasonImpactController:{enabled:true,status:'unavailable',key:'missing',reason:'Season data unavailable.'}};
         rendered=ui.render(verdict);summary=assertBuilderOrder(rendered);
-        assert.match(copy(summary),/B/);assert.equal(/67\s*%/.test(copy(summary)),pro,'Top acceptance estimate preserves the free/Pro gate');
+        assert.match(copy(summary),/B/);assert.equal(/67\s*\/100/.test(copy(summary)),pro,'Top acceptance estimate preserves the free/Pro gate');
         assert.match(copy(rendered),/Season data unavailable/);assert(!copy(summary).includes('Helps your season'));assert(!copy(summary).includes('0.0 expected wins'));
         assert.equal(walk(rendered).filter(n=>n.type==='table'&&n.props.className==='tc-season-weeks').length,0);ui.dispose();
     }
     ui=analysisHarness({pro:false});verdict={...baseVerdict,seasonImpactController:readyController(()=>seasonResult)};ui.render(verdict);await turn();rendered=ui.render(verdict);summary=assertBuilderOrder(rendered);
-    assert.match(copy(summary),/Helps your season/);assert.match(copy(summary),/\+?0\.4/);assert(!/67\s*%/.test(copy(summary)),'Projected season help remains free while acceptance stays Pro');ui.dispose();
+    assert.match(copy(summary),/Helps your season/);assert.match(copy(summary),/\+?0\.4/);assert(!/67\s*\/100/.test(copy(summary)),'Projected season help remains free while acceptance stays Pro');ui.dispose();
     ui=analysisHarness();rendered=ui.render({...baseVerdict,seasonImpactController:{enabled:false}});summary=assertBuilderOrder(rendered);
-    assert.match(copy(summary),/B/);assert.match(copy(summary),/67\s*%/);assert(!/Helps your season|Costs projected wins|expected wins|Playoff chance/.test(copy(summary)),'Dynasty or disabled season model does not invent a projected season gain');ui.dispose();
+    assert.match(copy(summary),/B/);assert.match(copy(summary),/67\s*\/100/);assert(!/Helps your season|Costs projected wins|expected wins|Playoff chance/.test(copy(summary)),'Dynasty or disabled season model does not invent a projected season gain');ui.dispose();
     ui=analysisHarness();rendered=ui.render({...baseVerdict,hasTrade:false,seasonImpactController:{enabled:false}});assert(!byClass(rendered,'mc-trade-builder-summary'),'Empty builder does not show a fabricated verdict');assert(byClass(rendered,'mc-trade-builder-sides'),'Empty builder keeps both asset pickers');ui.dispose();
 
     // The mobile dynasty analysis stays compact while preserving the complete
@@ -155,12 +155,12 @@ function assertBuilderOrder(rendered){
         assert(!/Pick capital|FAAB/.test(visibleCopy(values)),'Zero pick and FAAB changes do not add empty rows');
         assert.match(visibleCopy(analysis),/Untouchable in deal: Outgoing starter/,'The user’s strategy warning stays visible outside closed detail, including Free');
         const ownerDetails=byClass(rendered,'tc-season-owner-details');assert.equal(ownerDetails.type,'details');assert(!ownerDetails.props.open,'Owner fit starts collapsed');
-        assert.match(visibleCopy(ownerDetails),/Owner fit.*acceptance/i);
+        assert.match(visibleCopy(ownerDetails),/Owner fit.*negotiation/i);
         assert(!/Endowment effect|Factor description|Likelihood of Acceptance/.test(visibleCopy(ownerDetails)),'The collapsed owner summary does not repeat the long acceptance report');
         assert.equal(copy(ownerDetails).includes('Endowment effect'),pro,'Psychology detail remains behind Pro');
         assert.equal(copy(ownerDetails).includes('The Fleecer'),pro,'The inferred owner read remains behind Pro');
         if(pro){for(const name of factorNames)assert(copy(ownerDetails).includes(name),'Expanded disclosure retains '+name);assert.match(copy(ownerDetails),/Grudge Tax/);assert.match(copy(ownerDetails),/Observed Behavior/);}
-        assert.equal(/67\s*%/.test(copy(rendered)),pro,'No acceptance value leaks into the free phone analysis');
+        assert.equal(/67\s*\/100/.test(copy(rendered)),pro,'No acceptance value leaks into the free phone analysis');
         assert(!walk(ownerDetails).some(item=>item.type==='button'&&/Why\?/.test(copy(item))),'Mobile negotiation needs only one native disclosure');
         const opinion=byClass(rendered,'tc-trade-second-opinion');assert.equal(opinion.type,'details');assert(!opinion.props.open,'Alex opinion starts collapsed');assert.match(copy(opinion),/Alex second opinion fixture/);assert(!visibleCopy(opinion).includes('Alex second opinion fixture'));
         ui.dispose();
@@ -173,7 +173,7 @@ function assertBuilderOrder(rendered){
     let resolveOld;analyzes=0;ui=analysisHarness();const delayed=readyController(deal=>{analyzes++;return deal.partnerRosterId===2?new Promise(resolve=>{resolveOld=resolve;}):{...seasonResult,wins:{...seasonResult.wins,delta:deal.receivePlayerIds.includes('replacement') ? .7 : -.4}};});
     verdict={...baseVerdict,seasonImpactController:delayed};ui.render(verdict);await turn();
     verdict={...verdict,seasonImpactDeal:{...fixtureDeal,partnerRosterId:3},grade:{grade:'D',label:'Overpay'},diffDisplay:'-500',likelihood:32};
-    rendered=ui.render(verdict);summary=assertBuilderOrder(rendered);assert.match(copy(summary),/D/);assert.match(copy(summary),/32\s*%/);assert(!copy(summary).includes('Helps your season'));
+    rendered=ui.render(verdict);summary=assertBuilderOrder(rendered);assert.match(copy(summary),/D/);assert.match(copy(summary),/32\s*\/100/);assert(!copy(summary).includes('Helps your season'));
     await turn();rendered=ui.render(verdict);assert.match(copy(assertBuilderOrder(rendered)),/Costs projected wins/);assert.equal(analyzes,2,'Changing only the partner requests the new deal comparison');
     resolveOld(seasonResult);await turn();rendered=ui.render(verdict);assert.match(copy(assertBuilderOrder(rendered)),/Costs projected wins/);assert(!copy(assertBuilderOrder(rendered)).includes('Helps your season'),'Late old-deal results cannot replace the edited builder summary');
     verdict={...verdict,seasonImpactDeal:{...verdict.seasonImpactDeal,receivePlayerIds:['replacement']}};rendered=ui.render(verdict);assert(!copy(assertBuilderOrder(rendered)).includes('Costs projected wins'),'An edited asset does not retain the previous deal forecast');
