@@ -90,7 +90,7 @@
         const missing = [], pool = active(roster).map(pid => {
             const p = projections?.[pid], pos = position(players[pid]), points = num(p?.points?.median);
             const knownOut = OUT.has(str(p?.injuryStatus).toUpperCase());
-            if (!players[pid] || !App.StartSit.BASE_POSITIONS.has(pos) || !p || points == null || (!p.statLine?.median && !knownOut)) missing.push(pid);
+            if (!players[pid] || !App.StartSit.BASE_POSITIONS.has(pos) || !p || !knownOut && (points == null || !p.statLine?.median)) missing.push(pid);
             return { pid, pos, available: p?.available === true, pts: points };
         });
         if (missing.length) return { ...unavailable('Some active players have no usable league-scored projection.'), missingPlayerIds: missing };
@@ -277,11 +277,17 @@
         }
         if (args.projectionsByPid && basisOf(args) === 'projected') {
             args.projectionsByPid = { ...args.projectionsByPid };
-            for (const pid of Object.keys(args.projectionsByPid)) if (players[pid]?.injury_status) args.projectionsByPid[pid] = { ...args.projectionsByPid[pid], available: false, points: { median: null }, availabilityUnknown: true };
+            for (const pid of Object.keys(args.projectionsByPid)) args.projectionsByPid[pid] = App.RosterForecastScenario?.adapt(args.projectionsByPid[pid]) || args.projectionsByPid[pid];
         }
         // Weekly results never prepare or simulate the rest of the season.
         // The selected preserved package opts into loadSeason explicitly.
-        return build(args);
+        const evaluated=build(args);
+        const participationNotice=App.RosterForecastScenario?.notice(args.projectionsByPid,players,args.roster);
+        return { ...evaluated, participationNotice, candidates:evaluated.candidates.map(c => {
+            const partner=rosters.find(r => str(r.roster_id) === str(c.partner.rosterId));
+            const partnerNotice=App.RosterForecastScenario?.notice(args.projectionsByPid,players,partner);
+            return {...c,conditionalParticipation:!!(participationNotice || partnerNotice),cautions:[...(c.cautions || []),...new Set([participationNotice,partnerNotice].filter(Boolean))]};
+        }) };
     }
     async function loadSeason(opts) {
         opts = opts || {};

@@ -179,3 +179,32 @@ test('CTB custom scoring no longer blocks waiver and trade eligibility',()=>{
     f.league.scoring_settings.unknown_rule=1;
     assert.equal(h.box.App.RecommendationEligibility.check(f.league,f.roster).ok,false);
 });
+test('acquisition healthy scenarios preserve canonical unknowns and reject absent baselines',()=>{
+    const h=harness(),b=h.box;
+    const raw=b.App.WeeklyProj.projectPlayer('p',{playersData:{p:{position:'RB',team:'BUF',injury_status:'Questionable'}},statsData:{},priorData:{},week:8,scoring:{rush_yd:.1},providerProjections:{p:{rush_att:10,rush_yd:100}}});
+    const scenario=b.App.RosterForecastScenario.adapt(raw);
+    assert.equal(raw.points.median,null);assert.equal(raw.available,false);
+    assert.equal(scenario.points.median,10);assert.equal(scenario.conditionalParticipation,true);
+    assert.equal(b.App.RosterForecastScenario.adapt({...raw,statLine:{median:null}}).points.median,null);
+    assert.equal(b.App.RosterForecastScenario.adapt({...raw,scoringSupport:{supported:false}}).points.median,null);
+});
+test('waiver and trade loaders label questionable-player scenarios instead of blocking the roster',async()=>{
+    const h=harness(),b=h.box,f=fixture();
+    for(const file of ['roster-waiver-lens','roster-trade-lens'])h.load(path.join(APP,'js/shared',file+'.js'));
+    b.S.user={user_id:'u1'};f.league.settings.type=2;f.players.starter.injury_status='Questionable';
+    b.App.WeeklyProj.ensureWeekProjections=async()=>({starter:{rush_att:10,rush_yd:100},bench:{rush_att:2,rush_yd:20},other:{rush_att:10,rush_yd:110},add:{rush_att:10,rush_yd:130}});
+    const args={...f,rosters:f.league.rosters,userId:'u1',accountKey:'user',skin:{type:'dynasty',phase:'in_season'},valuesByPid:{starter:100,bench:50,other:110,add:120},statsData:{},priorData:{}};
+    const waiver=await b.App.RosterWaiverLens.load(args);
+    assert.equal(waiver.readiness.weekly,true,waiver.reason);assert.match(waiver.participationNotice,/Starter/);
+    assert(waiver.candidates.length);assert(waiver.candidates.every(c=>c.conditionalParticipation));
+    const trade=await b.App.RosterTradeLens.load(args);
+    assert.equal(trade.before.status,'ready',trade.reason);assert.match(trade.participationNotice,/Starter/);
+    assert(trade.candidates.every(c=>c.conditionalParticipation));
+    // Truly missing baseline continues to block; a confirmed absence does not need a healthy forecast.
+    delete args.valuesByPid.add;f.players.starter.injury_status='Out';
+    const out=await b.App.RosterTradeLens.load(args);
+    assert.equal(out.before.status,'ready',out.reason);
+    f.players.starter.injury_status='';b.App.WeeklyProj.ensureWeekProjections=async()=>({});
+    const missing=await b.App.RosterTradeLens.load(args);
+    assert.equal(missing.status,'unavailable');assert.match(missing.reason,/projection/);
+});

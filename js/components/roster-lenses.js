@@ -232,7 +232,7 @@
             return <strong className={'wr-lens-gain wr-lens-age' + (inline ? ' is-inline' : '')}>{finite(age) ? compactNumber(Math.abs(age)) : '—'}<small>{finite(age) ? age > 0 ? 'years younger' : age < 0 ? 'years older' : 'same age' : 'age comparison'}</small></strong>;
         }
         const delta = deltaOf(candidate, lens.ui.horizon);
-        return <strong className={'wr-lens-gain' + (delta != null && delta < 0 ? ' is-loss' : '') + (inline ? ' is-inline' : '')}>{signed(delta)}<small>{lens.ui.horizon === 'season' ? 'ROS pts' : lens.ui.basis === 'average' ? 'avg pts' : 'lineup pts'}</small></strong>;
+        return <strong className={'wr-lens-gain' + (delta != null && delta < 0 ? ' is-loss' : '') + (inline ? ' is-inline' : '')}>{signed(delta)}<small>{lens.ui.horizon === 'season' ? 'ROS pts' : candidate.conditionalParticipation ? 'pts if they play' : lens.ui.basis === 'average' ? 'avg pts' : 'lineup pts'}</small></strong>;
     }
     function Impact({ lens }) {
         const candidate = lens.selected, metric = metricOf(candidate, lens.ui.horizon);
@@ -273,6 +273,7 @@
                     </div>
                 </div>
                 {lens.loading ? <p className="wr-lens-status" role="status">Finding {lens.mode === 'waivers' ? 'waiver moves' : 'trade fits'}…</p> : result?.status === 'unavailable' || result?.status === 'disabled' ? <div className="wr-lens-status" role="status"><p>{result.reason || 'This comparison is not available for the current league.'}</p><button type="button" onClick={lens.retry}>Try again</button></div> : <React.Fragment>
+                    {result?.participationNotice && <p className="wr-lens-note" role="status">{result.participationNotice}</p>}
                     {selected && (!inline || compact) && <Impact lens={lens} />}
                     {!selected && lens.ui.selected && <p className="wr-lens-note" role="status">Move no longer available. Choose another.</p>}
                     {!lens.options.length ? <p className="wr-lens-status" role="status">{result?.reason || 'No upgrades found.'}</p> : <React.Fragment>

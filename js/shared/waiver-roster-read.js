@@ -64,7 +64,7 @@
                 : !dynasty && p.position === 'QB' && Number(p.depth_chart_order) > 1 ? 'Backup QB' : null;
             let projection = null;
             try { projection = finite(options.project?.(String(pid))); } catch (_) { /* unknown projection */ }
-            if (injury && !unavailable) projection = null; // unresolved participation is not a probability haircut
+            if (injury && !unavailable && !options.conditionalPids?.has(String(pid))) projection = null; // unresolved participation is not a probability haircut
             let rosPoints = null;
             try { rosPoints = finite(options.rosProject?.(String(pid))); } catch (_) { /* unknown ROS */ }
             return { rosPoints, pid: String(pid), pos: norm(pos || p.position || ''), name: p.full_name || p.last_name || String(pid), dhq: finite(value), projection, available: !unavailable, unavailable, injury: injury || null, depth: p.depth_chart_order ?? null, bye: bye ?? null };
@@ -155,6 +155,22 @@
     root.App = root.App || {};
     root.App.buildFaRosterRead = buildFaRosterRead;
     root.App.RecommendationEligibility = { check: eligibility };
+    // A healthy-production scenario is evidence, but never an availability probability.
+    // Keep the canonical forecast intact; acquisition previews label this assumption.
+    root.App.RosterForecastScenario = {
+        adapt(projection) {
+            if (!projection?.availabilityUnknown || projection.scoringSupport?.supported === false
+                || !projection.statLine?.median || projection.conditionalPoints?.median == null
+                || !Number.isFinite(Number(projection.conditionalPoints.median))) return projection;
+            return { ...projection, available: true, points: { ...projection.conditionalPoints }, conditionalParticipation: true };
+        },
+        notice(projections, players, roster) {
+            const owned = new Set((roster?.players || []).map(String));
+            const names = Object.entries(projections || {}).filter(([pid,p]) => owned.has(pid) && p?.conditionalParticipation)
+                .map(([pid]) => players?.[pid]?.full_name || pid);
+            return names.length ? 'If they play: ' + names.join(', ') + '. These lineup comparisons assume normal participation; availability is unconfirmed.' : null;
+        }
+    };
     if (typeof module !== 'undefined' && module.exports) module.exports = buildFaRosterRead;
 
 })(typeof window !== 'undefined' ? window : globalThis);

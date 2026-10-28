@@ -117,7 +117,8 @@
         const type=typeOf(args), gm=args.gm || {}, effects=gm.effects || gm;
         const protectedPids=[...(effects.untouchable || []),...(gm.untouchables || []),...(args.protectedPids || [])].map(String);
         const valueOf=pid => own(args.valuesByPid,pid) ? number(args.valuesByPid[pid]) : null;
-        const options={week,protectedPids,project,rosProject:ros};
+        const conditionalPids=new Set(Object.keys(args.projectionsByPid || {}).filter(pid => args.projectionsByPid[pid]?.conditionalParticipation));
+        const options={week,protectedPids,project,rosProject:ros,conditionalPids};
         const reads=['week','season'].map(horizon => App.buildFaRosterRead(args.roster,{...args.league,rosters:args.rosters},players,valueOf,{...options,horizon}));
         const read=reads[0];
         if (!read.known) return result(args,'unavailable','The legal starting lineup could not be verified.');
@@ -211,7 +212,8 @@
                 if (!baseline) return;
                 try {
                     const projected=App.WeeklyProj?.projectPlayer?.(pid,{playersData:args.players,statsData:args.statsData,priorData:args.priorData,projectionsData:args.projectionsData,providerProjections:providerLines || {},scoring:args.league.scoring_settings || {},week:args.week});
-                    if (projected?.available && projectionNumber(projected) != null) args.projectionsByPid[pid]=projected;
+                    const scenario=App.RosterForecastScenario?.adapt(projected) || projected;
+                    if (scenario?.available && projectionNumber(scenario) != null) args.projectionsByPid[pid]=scenario;
                 } catch (_) { /* No invented projection on service failure. */ }
             });
         }
@@ -229,7 +231,12 @@
                 if (number(raw) != null) args.valuesByPid[pid]=number(raw);
             });
         }
-        return evaluate(args);
+        const evaluated=evaluate(args);
+        const participationNotice=App.RosterForecastScenario?.notice(args.projectionsByPid,args.players,args.roster);
+        return { ...evaluated, participationNotice, candidates:evaluated.candidates.map(c => {
+            const notice=App.RosterForecastScenario?.notice(args.projectionsByPid,args.players,{players:[...ids(args.roster),...(Array.isArray(c.incoming) ? c.incoming:[c.incoming]).filter(Boolean).map(p => p.pid)]});
+            return {...c,conditionalParticipation:!!notice,cautions:[...(c.cautions || []),...(notice ? [notice]:[])]};
+        }) };
     }
     const api={load,evaluate,rank,scope,restrictions};
     App.RosterWaiverLens=api;
