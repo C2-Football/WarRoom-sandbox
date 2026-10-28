@@ -37,7 +37,7 @@ for(const name of ['TcSeasonImpact','TcBuilderSummary','TcMobileTradeAnalysis','
     const component=analysisComponents.get(name);assert.ok(component,'Use the real '+name+' component in the populated builder test');
     vm.runInContext(Babel.transform(source.slice(component.start,component.end),{presets:['react']}).code,context);
 }
-Object.assign(context,{builderPlayerContext:null,tradeIds:props.tradeIds,tradePickIds:props.tradePickIds,tradeFaab:props.tradeFaab,playersData:props.playersData,_tsDeps:sideDeps,_verdict:{totalA:1000,totalB:5,hasTrade:false},skinVocabulary:{valueShortLabel:'DHQ'},valueSourceLabel:'format-adjusted values',metricPreference:{},FAAB_RATE:1,renderAlexVerdict:()=>h('p',{},'Alex second opinion fixture'),saveManualTrade(){},Tip:()=>null});
+Object.assign(context,{resolvedLeagueSkin:{type:'dynasty'},builderPlayerContext:null,tradeIds:props.tradeIds,tradePickIds:props.tradePickIds,tradeFaab:props.tradeFaab,playersData:props.playersData,_tsDeps:sideDeps,_verdict:{totalA:1000,totalB:5,hasTrade:false},skinVocabulary:{valueShortLabel:'DHQ'},valueSourceLabel:'format-adjusted values',metricPreference:{},FAAB_RATE:1,renderAlexVerdict:()=>h('p',{},'Alex second opinion fixture'),saveManualTrade(){},Tip:()=>null});
 vm.runInContext(Babel.transform('var simultaneousBuilder = '+source.slice(builderNode.start,builderNode.end),{presets:['react']}).code,context);
 tree=context.simultaneousBuilder;
 assert.ok(find('Assets you send'));assert.ok(find('Assets you receive'));

@@ -1,0 +1,6 @@
+{
+  "snapshotUrl": "https://raw.githubusercontent.com/C2-Football/WarRoom-sandbox/cbs-market-data/current.json",
+  "statusUrl": "https://raw.githubusercontent.com/C2-Football/WarRoom-sandbox/cbs-market-data/status.json",
+  "automationStatus": "Not activated. CBS permission and a successfully enabled scheduled job are required.",
+  "weights": { "budget": 0.25, "cbs": 0.15, "fantasyCalc": 0.10 }
+}

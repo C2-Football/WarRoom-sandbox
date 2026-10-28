@@ -67,11 +67,11 @@
         return [league.league_id || league.id || '', league.season || '', content.length, (a >>> 0).toString(36), (b >>> 0).toString(36)].join(':');
     }
 
-    function tcTradeVerdictKey({ leagueId, season, owners, tradeIds, tradePickIds, tradeFaab, seasonKey }) {
+    function tcTradeVerdictKey({ leagueId, season, owners, tradeIds, tradePickIds, tradeFaab, seasonKey, marketKey }) {
         return JSON.stringify([String(leagueId || ''), String(season || ''), owners?.A, owners?.B,
             [...(tradeIds?.A || [])].map(String).sort(), [...(tradeIds?.B || [])].map(String).sort(),
             [...(tradePickIds?.A || [])].sort(), [...(tradePickIds?.B || [])].sort(),
-            tradeFaab?.A || 0, tradeFaab?.B || 0, seasonKey || '']);
+            tradeFaab?.A || 0, tradeFaab?.B || 0, seasonKey || '', marketKey || '']);
     }
 
     // Alex explains the same model evidence displayed in Trade Analysis. Keep
@@ -149,6 +149,7 @@
                     giveFaab: deal.giveFaab || 0,
                     receiveFaab: deal.receiveFaab || 0,
                     totals: deal.totals || null,
+                    marketBasis: deal.marketBasis || null,
                     likelihood: deal.likelihood ?? null,
                     grade: deal.grade ?? null,
                     userGain: deal.userGain ?? null,
@@ -565,7 +566,7 @@
     // ── TcDealCard — extracted from renderDealHQ (Step-1 refactor; no behavior change) ──
     // One generated deal package: send/receive summary, decision strip (grade/accept/Δ), and an
     // expandable why-drawer. Closures it used (sideSummary, loadDealIntoBuilder, saveDeal) are props.
-    function TcDealCard({ deal, idx, actionFloor, expandedDealId, setExpandedDealId, loadDealIntoBuilder, saveDeal, sideSummary, seasonImpactController }) {
+    function TcDealCard({ deal, idx, actionFloor, expandedDealId, setExpandedDealId, loadDealIntoBuilder, saveDeal, sideSummary, seasonImpactController, marketEvidencePanel = null }) {
                 const deltaColor = deal.userGain >= 0 ? 'var(--good)' : 'var(--bad)';
                 const likelihoodColor2 = deal.likelihood >= actionFloor ? 'var(--good)' : deal.likelihood >= Math.max(55, actionFloor - 15) ? 'var(--warn)' : 'var(--bad)';
                 const expanded = expandedDealId === deal.id;
@@ -590,6 +591,7 @@
                         {sideSummary('You Get', deal, 'receive')}
                     </div>
                     {seasonImpactController?.enabled && <TcSeasonImpact controller={seasonImpactController} deal={deal} detailed={expanded} />}
+                    {marketEvidencePanel}
                     <div className="tc-dhq-decision-strip">
                         <div className="tc-dhq-decision">
                             <span>{seasonImpactController?.enabled ? 'Value grade' : 'Grade'}</span>
@@ -783,8 +785,43 @@
                 );
     }
 
+    function TcCbsBasis({ league, playersData, giveIds = [], receiveIds = [], impact = null, controls = false }) {
+        const store = window.App?.CbsMarket, board = window.App?.PlayerValue?.rosState?.();
+        const basis = board?.marketBasis, cbs = basis?.cbs || store?.read?.(league, window.App?.WeeklyProj?.currentWeek?.() || 1);
+        const [notice, setNotice] = React.useState('');
+        if (!cbs) return null;
+        const controlStyle = { minHeight:44, padding:'8px 10px', border:'1px solid var(--acc-line2, rgba(212,175,55,.3))', borderRadius:'var(--card-radius-sm, 8px)', background:'var(--acc-fill2, rgba(212,175,55,.08))', color:'var(--gold)', font:'inherit', cursor:'pointer' };
+        const state = store?.state?.() || {}, fmt = value => value == null ? 'unknown' : Math.round(value * 10) / 10;
+        const date = value => value ? new Date(value).toLocaleString() : 'unavailable';
+        const total = ids => ids.length && ids.every(id => cbs.entries[id]?.original != null) ? ids.reduce((sum,id)=>sum+cbs.entries[id].original,0) : null;
+        const give = total(giveIds), receive = total(receiveIds), disagreement = give != null && receive != null && impact?.delta != null && (receive-give)*impact.delta < 0;
+        return <details className="tc-season-method tc-cbs-basis" style={{ padding:10, border:'1px solid var(--acc-line1, rgba(212,175,55,.2))', borderRadius:'var(--card-radius-sm, 8px)' }}>
+            <summary>CBS market basis · {cbs.week ? 'Week ' + cbs.week + ' · ' : ''}{cbs.active ? (cbs.status === 'current-week' ? 'current-week chart' : 'previous-week chart') : cbs.status === 'missing' ? 'no imported chart' : 'not applied'}{cbs.format?.approximate ? ' · approximate format' : ''}</summary>
+            {cbs.sourceUrl && <p><a href={cbs.sourceUrl} target="_blank" rel="noopener noreferrer">CBS Sports chart — {cbs.season}, Week {cbs.week}</a><br />Published: {date(cbs.publishedAt)} · Updated: {date(cbs.updatedAt)}<br />Imported: {date(cbs.fetchedAt)} · {cbs.ageBasis === 'publication' ? 'Chart age' : 'First-import age (publication unknown)'}: {cbs.ageMs == null ? 'unknown' : Math.max(0, cbs.ageMs / 86400000).toFixed(1) + ' days'} · Version {cbs.version.slice(0,10)}</p>}
+            <p>{basis?.cbsApplied ? 'CBS prices influence DHQ trade prices, never projected fantasy points.' : 'CBS is excluded. DHQ uses seasonal evidence, plus FantasyCalc when available; no dynasty fallback.'} {cbs.status === 'previous-week' ? 'Latest successfully imported; a current-week release has not been confirmed.' : ''} {cbs.status === 'stale' ? 'Older than one NFL week or ten days: no CBS influence.' : ''} {cbs.format?.warnings?.join(' ')}</p>
+            <p>Starting market weights: CBS {Math.round((basis?.weights?.cbs ?? store?.weights?.cbs ?? .15)*100)}%, FantasyCalc {Math.round((basis?.weights?.fantasyCalc ?? store?.weights?.fantasyCalc ?? .10)*100)}%, combined cap 25%. Each source is normalized against its highest compatible price, then scaled to the same DHQ seasonal board. Missing source weight remains with DHQ. These weights are provisional, not validated optimal weights.</p>
+            <p>FantasyCalc: {basis?.fantasyCalcAvailable ? 'available within the shared market budget' : 'unavailable; its weight stays with the seasonal engine'}. Fetched: {date(basis?.fantasyCalcFetchedAt)}. Provider as-of: unavailable. FantasyCalc follows team count, QB count and PPR; custom scoring remains in the seasonal baseline.</p>
+            {(giveIds.length > 0 || receiveIds.length > 0) && <React.Fragment>
+                <p>Original CBS package prices: send {fmt(give)} → receive {fmt(receive)}. Missing or unlisted players make a package total unknown.</p>
+                {[...new Set([...giveIds, ...receiveIds])].map(id => {
+                    const entry = cbs.entries[id], detail = basis?.details?.[id], contribution = detail?.sources?.cbs;
+                    return <p key={id}><b>{playersData?.[id]?.full_name || id}</b>: CBS {entry ? fmt(entry.original) : 'unlisted / unmapped'} {entry?.column ? '(' + entry.column + ')' : ''}; {contribution ? 'normalized ' + fmt(contribution.normalized * board.scale) + ' × ' + Math.round(contribution.weight*100) + '% = ' + fmt(contribution.contribution * board.scale) + ' of DHQ ' + fmt(board.values[id]) : 'no CBS contribution'}.{entry?.teamMismatch ? ' Source team differs from the current player catalog; identity matched by name/position.' : ''}</p>;
+                })}
+                <p>DHQ lineup/season impact: {impact?.delta == null ? 'unavailable; review the season analysis' : fmt(impact.before) + ' → ' + fmt(impact.after) + ' points (' + (impact.delta >= 0 ? '+' : '') + fmt(impact.delta) + ')'}. {disagreement ? (impact.delta < 0 ? 'CBS prices the received package higher, but your projected lineup loses points. The price advantage does not override that roster downside.' : 'CBS prices the received package lower, but your projected lineup gains points. This pays a market premium for lineup fit; review whether the projected benefit justifies it.') : 'Package price and roster benefit are separate decisions.'}</p>
+            </React.Fragment>}
+            {controls && <React.Fragment>
+                <p>{state.local ? 'Manual import in this browser only. ' : ''}{state.job?.checkedAt ? 'Server checked: ' + date(state.job.checkedAt) + '. ' : ''}{state.job?.status === 'blocked' ? state.job.reason : state.job?.status === 'ok' ? 'Latest server import check succeeded; this does not establish continuous scheduler health.' : state.job?.status === 'offseason' ? state.job.reason : state.automationStatus} {state.error || ''}</p>
+                <button type="button" style={controlStyle} onClick={async()=>{await store?.refresh?.();setNotice(store?.state?.().error || 'Reloaded latest successfully imported snapshot.');}}>Refresh imported CBS chart</button>
+                <label style={{ display:'block', marginTop:8 }}>Import CBS chart JSON (this browser)<input type="file" style={{ maxWidth:'100%', minHeight:44, font:'inherit' }} accept="application/json,.json" aria-label="Import CBS chart JSON" onChange={async e=>{const file=e.target.files?.[0];if(!file)return;try{if(file.size>2000000)throw Error('Import exceeds 2 MB.');await store.importChart(JSON.parse(await file.text()),playersData);setNotice('Validated and imported in this browser.');}catch(error){setNotice('Import rejected; last valid chart retained. '+error.message);}e.target.value='';}} /></label>
+                <p role="status">{notice}</p>
+            </React.Fragment>}
+        </details>;
+    }
+
     function TradeCalcTab({ playersData, statsData, myRoster, standings, currentLeague, leagueSkin, sleeperUserId, timeRecomputeTs, viewMode, initialSubTab, onSubTabConsumed, seedOwnerId, seedPid }) {
         // ── Constants ──
+        const [marketEpoch, setMarketEpoch] = React.useState(0);
+        React.useEffect(() => { const refresh = () => setMarketEpoch(n => n + 1); window.addEventListener('wr:ros-market-loaded', refresh); return () => window.removeEventListener('wr:ros-market-loaded', refresh); }, []);
         const resolvedLeagueSkin = leagueSkin || window.App?.LeagueSkin?.getCurrent?.() || null;
         // Redraft → build rest-of-season values so deal pricing uses ROS instead
         // of dynasty DHQ. No-op (falls back to DHQ) for dynasty/keeper leagues.
@@ -796,7 +833,7 @@
                 });
             } catch (e) { if (window.wrLog) window.wrLog('trade.ensureRos', e); }
             return null;
-        }, [currentLeague, playersData, statsData, timeRecomputeTs]);
+        }, [currentLeague, playersData, statsData, timeRecomputeTs, marketEpoch]);
         const skinVocabulary = resolvedLeagueSkin?.vocabulary || {};
         const valueSourceLabel = resolvedLeagueSkin?.features?.showDynastyValue === false ? 'format-adjusted values' : 'dynasty valuations';
         let WEEKLY_TARGET = 243;
@@ -1461,7 +1498,7 @@
             };
         }, [seasonalPrepared, seasonalScope, seasonalEnabled, seasonalActive, myRoster?.roster_id]);
         activeTradeVerdictKeyRef.current = tcTradeVerdictKey({ leagueId, season: currentLeague.season, owners: tradeOwner,
-            tradeIds, tradePickIds, tradeFaab, seasonKey: seasonalEnabled ? seasonalScope + ':' + seasonImpactController.status : '' });
+            tradeIds, tradePickIds, tradeFaab, marketKey: resolvedLeagueSkin?.type === 'redraft' ? JSON.stringify([window.App?.CbsMarket?.identity?.(currentLeague, window.App?.WeeklyProj?.currentWeek?.()), window.App?.PlayerValue?.rosState?.()?.marketFetchedAt]) : null, seasonKey: seasonalEnabled ? seasonalScope + ':' + seasonImpactController.status : '' });
         const savedOwnerDna = savedOwnerDnaState.scope === ownerScoutingScope ? savedOwnerDnaState.map : {};
         const ownerDraftDna = ownerDraftDnaState.scope === ownerScoutingScope ? ownerDraftDnaState.map : {};
         // Inference remains available to the trade engine without becoming a
@@ -1751,7 +1788,7 @@
                 tradeHistory: ownerIntel.tradeHistory || [],
                 draftOutcomes: ownerIntel.draftOutcomes || [],
             });
-        }, [currentLeague?.league_id, allRosters.length, ownerIntelReady, timeRecomputeTs]);
+        }, [currentLeague?.league_id, allRosters.length, ownerIntelReady, timeRecomputeTs, marketEpoch]);
         const ownerBehaviorByRosterId = useMemo(() => {
             if (!behaviorBaselines || typeof window.App?.Intelligence?.buildOwnerBehaviorProfile !== 'function') return {};
             const profiles = {};
@@ -2258,6 +2295,7 @@
                 giveFaab,
                 receiveFaab,
                 totals: { give, receive },
+                marketBasis: window.App?.PlayerValue?.marketEvidence?.([...givePlayers, ...receivePlayers].map(p=>p.pid)) || null,
                 userGain,
                 likelihood,
                 grade: gradeRaw.grade,
@@ -2610,6 +2648,7 @@
                         const impact = seasonImpactController.analyze(deal, true);
                         if (impact.status !== 'ready' || !(impact.delta > 0) || impact.weeks.some(w => w.unfilledAfter > w.unfilledBefore)) return null;
                         return { ...deal, rosterBenefit: impact, rank: impact.delta, recommendationScore: impact.delta,
+                            marketVersion: window.App?.PlayerValue?.rosState?.()?.marketBasis?.cbs?.version || 'none',
                             confidence: 'Scenario', confidenceScore: null, viability: 'Projected lineup gain',
                             caution: [...(deal.caution || []), ...impact.warnings, ...(impact.weeks.some(w => w.pointsDelta < 0) ? ['Some weeks lose projected points; review the weekly tradeoff.'] : [])] };
                     }
@@ -3226,7 +3265,7 @@
         const finderEpochRef = useRef(0);
         const finderDataEpoch = useMemo(
             () => ++finderEpochRef.current,
-            [assessments, ownerDna, grudges, ownerBehaviorByRosterId, teamContextByRosterId, picksByOwner, draftSlotMaps, leagueDraftRounds]
+            [assessments, ownerDna, grudges, ownerBehaviorByRosterId, teamContextByRosterId, picksByOwner, draftSlotMaps, leagueDraftRounds, marketEpoch]
         );
         const partnerBoard = useMemo(() => computePartnerBoard(), [finderDataEpoch]);
         // Per-(partner, mode, focus) deal cache, invalidated wholesale on tuning/data
@@ -3273,8 +3312,9 @@
         // board change; evalPartnerDeals still reads fresh data via its
         // epoch-versioned cache whenever the scan does run.
         const finderBoardSig = partnerBoard.map(p => p.assessment.ownerId).sort().join(',');
+        const finderMarketKey = resolvedLeagueSkin?.type === 'redraft' ? JSON.stringify([window.App?.CbsMarket?.identity?.(currentLeague, window.App?.WeeklyProj?.currentWeek?.()), window.App?.PlayerValue?.rosState?.()?.marketFetchedAt]) : null;
         const finderLoopKey = finderActive && effPartnerId == null && partnerBoard.length
-            ? JSON.stringify([finderQuery.intent, effMode, finderFocusKey, finderTuningHash, finderBoardSig])
+            ? JSON.stringify([finderQuery.intent, effMode, finderFocusKey, finderTuningHash, finderBoardSig, finderMarketKey])
             : null;
         // On-demand scan (owner ask): the league-wide scan runs ONLY after the
         // user taps "Scan for moves". scanForKey holds the finderLoopKey the scan
@@ -3350,6 +3390,7 @@
         const finderDeals = useMemo(() => {
             if (!finderActive) return [];
             if (finderPoolOn) {
+                if (finderPool.key !== finderLoopKey) return [];
                 return finderPool.deals
                     .map(({ _sig, ...deal }) => deal)
                     .sort((a, b) => (b.rank + (seasonalEnabled ? 0 : (b.partnerScore || 0) * 0.2)) - (a.rank + (seasonalEnabled ? 0 : (a.partnerScore || 0) * 0.2))
@@ -3359,7 +3400,7 @@
             }
             if (!selectedPartner) return [];
             return evalPartnerDeals(selectedPartner, effMode, focusPlayerPid, focusPickR).map(({ _sig, ...deal }) => deal);
-        }, [finderActive, finderPoolOn, finderPool, selectedPartner, effMode, focusPlayerPid, focusPickR?.id, finderDataEpoch, finderTuningHash, seasonImpactController.key, seasonImpactController.status]);
+        }, [finderActive, finderPoolOn, finderPool, finderLoopKey, selectedPartner, effMode, focusPlayerPid, focusPickR?.id, finderDataEpoch, finderTuningHash, seasonImpactController.key, seasonImpactController.status]);
         const finderActionable = finderDeals.filter(deal => seasonalEnabled ? deal.rosterBenefit?.delta > 0 : deal.likelihood >= finderActionFloor);
         const finderMoonshotCount = Math.max(0, finderDeals.length - finderActionable.length);
         const finderVisibleDeals = showAllDeals ? finderDeals : finderActionable.slice(0, finderPoolOn ? 8 : 6);
@@ -3559,7 +3600,7 @@
             const picks = side => tradePickIds[side].map(id => { const p = id.split('-'), slot = p[4]?.startsWith('s') ? Number(p[4].slice(1)) : null; return { id, label: formatPickLabel(p[1], Number(p[2]), p[3], slot), value: pickValueForParts(p[1], Number(p[2]), p[3], slot) }; });
             saveDeal({ partnerOwnerId: tradeOwner.B, partnerName: assessments.find(a => String(a.ownerId) === String(tradeOwner.B))?.ownerName || '',
                 givePlayers: players('A'), receivePlayers: players('B'), givePicks: picks('A'), receivePicks: picks('B'), giveFaab: tradeFaab.A, receiveFaab: tradeFaab.B,
-                totals: { give: { total: verdict.totalA }, receive: { total: verdict.totalB } }, grade: verdict.grade?.grade, likelihood: verdict.likelihood, userGain: verdict.userGain });
+                totals: { give: { total: verdict.totalA }, receive: { total: verdict.totalB } }, marketBasis: window.App?.PlayerValue?.marketEvidence?.([...tradeIds.A, ...tradeIds.B]) || null, grade: verdict.grade?.grade, likelihood: verdict.likelihood, userGain: verdict.userGain });
         }
 
         function renderDealHQ() {
@@ -3813,7 +3854,8 @@
             }
 
             return <div className="tc-dhq-shell wr-fade-in">
-                {dealHqNotice && <div className="tc-dhq-notice" onAnimationEnd={() => setDealHqNotice(null)}>{dealHqNotice}</div>}
+                {resolvedLeagueSkin?.type === 'redraft' && <TcCbsBasis league={currentLeague} playersData={playersData} controls />}
+                        {dealHqNotice && <div className="tc-dhq-notice" onAnimationEnd={() => setDealHqNotice(null)}>{dealHqNotice}</div>}
 
                 <section className="tc-dhq-panel tc-finder-panel" aria-label="Find trade ideas" style={{ overflow: 'visible' }}>
                     <div className="tc-finder-intro">
@@ -4041,7 +4083,7 @@
                         </div>
                         <div className="tc-dhq-deal-stage-body">
                             {visibleDeals.length
-                                ? visibleDeals.map((deal, idx) => <TcDealCard key={deal.id} deal={deal} idx={idx} actionFloor={actionFloor} expandedDealId={expandedDealId} setExpandedDealId={setExpandedDealId} loadDealIntoBuilder={loadDealIntoBuilder} saveDeal={saveDeal} sideSummary={sideSummary} seasonImpactController={seasonImpactController} />)
+                                ? visibleDeals.map((deal, idx) => <TcDealCard key={deal.id} deal={deal} idx={idx} actionFloor={actionFloor} expandedDealId={expandedDealId} setExpandedDealId={setExpandedDealId} loadDealIntoBuilder={loadDealIntoBuilder} saveDeal={saveDeal} sideSummary={sideSummary} seasonImpactController={seasonImpactController} marketEvidencePanel={resolvedLeagueSkin?.type === 'redraft' ? <TcCbsBasis league={currentLeague} playersData={playersData} giveIds={(deal.givePlayers || []).map(p=>p.pid)} receiveIds={(deal.receivePlayers || []).map(p=>p.pid)} impact={deal.rosterBenefit} /> : null} />)
                                 : <div className="tc-dhq-empty">No ideas meet the {actionFloor}/100 negotiation score threshold. You can still explore the lower-score ideas below.</div>}
                         </div>
                         {(deals.length > visibleDeals.length || showAllDeals) && <button className="tc-dhq-show-more" onClick={() => setShowAllDeals(!showAllDeals)}>{showAllDeals ? 'Show recommended ideas' : moonshotCount ? `Explore ${moonshotCount} lower-score idea${moonshotCount === 1 ? '' : 's'}` : `Show ${deals.length - visibleDeals.length} more`}</button>}
@@ -4194,13 +4236,14 @@
                                     <>
                                         <strong style={{ fontFamily: 'var(--font-title)', fontSize: '0.95rem', color: _verdict.verdictColor }}>{_verdict.verdictText} {_verdict.diffDisplay}</strong>
                                         <span style={{ fontSize: '0.74rem', color: 'var(--silver)' }}>Sending {(_verdict.totalA == null ? 'unknown' : _verdict.totalA.toLocaleString())} / receiving {(_verdict.totalB == null ? 'unknown' : _verdict.totalB.toLocaleString())}</span>
-                                        {_pro && <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: '0.82rem', fontWeight: 700, color: _verdict.likelihoodColor }}>{_verdict.likelihood}/100 accept</span>}
+                                        {_pro && <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: '0.82rem', fontWeight: 700, color: _verdict.likelihoodColor }}>{_verdict.likelihood}/100 negotiation</span>}
                                     </>
                                 ) : (
                                     <span style={{ fontSize: '0.8rem', color: 'var(--silver)' }}>Build or tweak a trade without leaving this view.</span>
                                 )}
                                 <span style={{ marginLeft: _verdict.hasTrade && _pro ? '0' : 'auto', fontSize: '0.74rem', color: 'var(--gold)', fontWeight: 700 }}>{builderExpanded ? 'Collapse ▴' : (_verdict.hasTrade ? 'Edit ▾' : 'Open ▾')}</span>
                             </button>
+                            {resolvedLeagueSkin?.type === 'redraft' && <TcCbsBasis league={currentLeague} playersData={playersData} giveIds={tradeIds.A} receiveIds={tradeIds.B} impact={seasonImpactController.status === 'ready' ? seasonImpactController.analyze(_verdict.seasonImpactDeal, true) : null} controls />}
                             {builderExpanded && (
                                 <div style={{ borderTop: '1px solid rgba(53,208,214,0.18)', padding: '12px', background: 'rgba(0,0,0,0.16)' }}>
                                     <div style={{ fontSize: '0.72rem', color: 'var(--silver)', opacity: 0.6, marginBottom: '10px', lineHeight: 1.5 }}>
@@ -4424,12 +4467,13 @@
                 iSend: dealSide('A'),
                 iReceive: dealSide('B'),
                 seasonImpact: tcSeasonVerdictEvidence(v.seasonImpactController, v.seasonImpactDeal),
+                marketPriceBasis: window.App?.PlayerValue?.marketEvidence?.([...tradeIds.A, ...tradeIds.B]) || null,
                 verdict: {
                     verdictText: v.verdictText,
                     diffDisplay: v.diffDisplay,
                     negotiationScore: v.likelihood == null ? null : `${v.likelihood}/100`,
                     negotiationBasis: 'Hand-set comparative score; not calibrated acceptance odds or confidence.',
-                    evidencePolicy: 'Explain only supplied calculations. Preserve unknown values, required drops and weekly downside. Do not present unverified news as current fact.',
+                    evidencePolicy: 'Explain only supplied calculations. Preserve unknown values, required drops and weekly downside. Keep CBS/FantasyCalc package price separate from projected lineup benefit. Explain price/benefit disagreements and source age; CBS values are not fantasy points or acceptance probabilities. Do not present unverified news as current fact.',
                     psychNotes,
                 },
             };
@@ -5076,6 +5120,7 @@
                         </div>
                         {expanded && (
                             <div id={detailId} className="mc-trade-idea-detail">
+                                {resolvedLeagueSkin?.type === 'redraft' && <TcCbsBasis league={currentLeague} playersData={playersData} giveIds={(deal.givePlayers || []).map(p=>p.pid)} receiveIds={(deal.receivePlayers || []).map(p=>p.pid)} impact={deal.rosterBenefit} />}
                                 <p><b>Your roster:</b> {deal.whyYou}</p>
                                 <p><b>Owner fit:</b> {deal.whyAccept}</p>
                                 <p><b>Value read:</b> {deal.swing}</p>
@@ -5224,6 +5269,7 @@
                 <TcMobileTradeAnalysis verdict={_verdict} FAAB_RATE={FAAB_RATE} secondOpinion={_verdict.hasTrade ? renderAlexVerdict() : null} onSave={saveManualTrade}>
                         {builderPlayerContext && <button className="mc-trade-player-back" type="button" onClick={() => { window.wrNavigateTab?.(builderPlayerContext.returnTab || 'myteam'); window.setTimeout(() => (window._wrSelectPlayer || window.openPlayerModal)?.(builderPlayerContext.pid), 100); }}>‹ {playersData[builderPlayerContext.pid]?.full_name || 'Player details'}</button>}
                         <div className="mc-trade-packages">{['A', 'B'].map(side => <div key={side}><header><span>{side === 'A' ? 'YOU SEND' : 'YOU GET'}</span><b>{(side === 'A' ? _verdict.totalA : _verdict.totalB)?.toLocaleString() ?? 'unknown'}</b></header>{tradeIds[side].map(pid => <div key={pid}><span>{playersData[pid]?.full_name || String(pid)}</span><button type="button" aria-label={'Remove ' + (playersData[pid]?.full_name || pid) + ' from ' + side} onClick={() => _tsDeps.removePlayer(side, pid)}>×</button></div>)}{tradePickIds[side].map(id => { const p = id.split('-'); return <div key={id}><span>{formatPickLabel(p[1], Number(p[2]), p[3], p[4]?.startsWith('s') ? Number(p[4].slice(1)) : null)}</span><button type="button" aria-label={'Remove pick from ' + side} onClick={() => _tsDeps.removePick(side, id)}>×</button></div>; })}{tradeFaab[side] > 0 && <p>${tradeFaab[side]} FAAB</p>}{!tradeIds[side].length && !tradePickIds[side].length && !tradeFaab[side] && <p>Add players, picks or FAAB</p>}</div>)}</div>
+                        {resolvedLeagueSkin?.type === 'redraft' && <TcCbsBasis league={currentLeague} playersData={playersData} giveIds={tradeIds.A} receiveIds={tradeIds.B} impact={seasonImpactController.status === 'ready' ? seasonImpactController.analyze(_verdict.seasonImpactDeal, true) : null} controls />}
                         <div className="mc-trade-builder-toolbar">
                             {window.WR?.PlayerMetrics?.Picker && <window.WR.PlayerMetrics.Picker preference={metricPreference} />}
                             <small><strong>{skinVocabulary.valueShortLabel || 'DHQ'} Engine</strong> · {valueSourceLabel}</small>
@@ -5263,6 +5309,7 @@
                 ) : null;
                 deskBody = (
                     <React.Fragment>
+                        {resolvedLeagueSkin?.type === 'redraft' && <TcCbsBasis league={currentLeague} playersData={playersData} controls />}
                         {dealHqNotice && <div className="tc-dhq-notice" onAnimationEnd={() => setDealHqNotice(null)}>{dealHqNotice}</div>}
                         {tradeContext && (
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', background: 'var(--acc-fill2, rgba(212,175,55,0.08))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.24))', borderRadius: 'var(--card-radius-sm, 8px)', padding: '9px 11px' }}>

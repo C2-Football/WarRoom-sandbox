@@ -675,6 +675,7 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
         _wrDataGeneration++; _wrPlayersInflight = null; _wrPlayersFetchedAt = 0;
         window.App.WeeklyProj?.invalidate?.();
         window.App.PlayerValue?.invalidate?.();
+        window.App.CbsMarket?.invalidate?.();
         window.App.NflContext?.invalidate?.();
         window.App.SOS?.invalidate?.();
         window.Sleeper?.clearSeasonCaches?.();

@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://c2-football.github.io https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://sxshiqyxhhifvtfqawbq.supabase.co https://api.sleeper.app https://api.sleeper.com https://api.myfantasyleague.com https://*.myfantasyleague.com https://lm-api-reads.fantasy.espn.com https://fantasysports.yahooapis.com https://api.fantasycalc.com https://*.sentry.io; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; object-src 'none';">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://c2-football.github.io https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://sxshiqyxhhifvtfqawbq.supabase.co https://api.sleeper.app https://api.sleeper.com https://api.myfantasyleague.com https://*.myfantasyleague.com https://lm-api-reads.fantasy.espn.com https://fantasysports.yahooapis.com https://api.fantasycalc.com https://raw.githubusercontent.com https://*.sentry.io; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; object-src 'none';">
 
     <title>Dynasty HQ</title>
     <link rel="manifest" href="manifest.json">
@@ -3196,6 +3196,8 @@ WRShared.preloadMany(WR_SHARED_FILES);
 <script src="js/shared/txn-store.js?v=20261012commish1"></script>
 <!-- 3. Shared utilities: player valuation constants + projection engine -->
 <script type="text/babel" src="js/utils/sos-engine.js?v=20260823pre1"></script>
+<script src="js/shared/redraft-market.js"></script>
+<script src="js/shared/cbs-market-store.js"></script>
 <script type="text/babel" src="js/utils/player-value.js?v=20261012compare2"></script>
 <script src="js/utils/player-comparison.js?v=20261012compare2"></script>
 <script src="js/utils/team-comparison.js?v=20261012teams1"></script>

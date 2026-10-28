@@ -84,6 +84,7 @@
                     inputs.player.age = p.age ?? null;
                     inputs.player.years_exp = p.years_exp ?? null;
                     inputs.marketValue = ctx.marketRedraft?.[pid] ?? null;
+                    inputs.marketPricing = result.marketBasis ? clone({ cbsVersion: result.marketBasis.cbs.version, cbsStatus: result.marketBasis.cbs.status, cbsFormat: result.marketBasis.cbs.format, cbsSource: result.marketBasis.cbs.sourceUrl, cbsPublishedAt: result.marketBasis.cbs.publishedAt, cbsFetchedAt: result.marketBasis.cbs.fetchedAt, weights: result.marketBasis.weights, originalCBS: result.marketBasis.cbs.entries[pid] || null, calculation: result.marketBasis.details[pid] || null }) : null;
                     inputs.usageStats = clone(root.S?.playerStats?.[pid] || null);
                     const currentDynastyValue = root.App?.LI?.playerScores?.[pid] ?? null;
                     let dynastyScenario = null;
@@ -100,7 +101,7 @@
                 // Runtime signatures identify actual loaded implementations rather
                 // than a git SHA that may not match cached browser code.
                 const wp = root.App.WeeklyProj, ss = root.App.StartSit;
-                const runtime = clone({price: String(root.App.PlayerValue?.computePrices), baseline: String(wp?.buildBaseline), seasonBaseline: String(wp?.buildSeasonBaseline), project: String(ss?.projectPlayerWeek), score: String(ss?.scoreProjection), canonicalScorer: String(root.calcFantasyPts), scoringRules: String(root.calcFantasyPts?.detailed), availability: String(root.App.AvailabilityForecast.forecast), dynasty: String(root.App.PlayerValue?.projectPlayerValue)});
+                const runtime = clone({marketAdapter: String(root.App.RedraftMarket?.blend), marketFormat: String(root.App.RedraftMarket?.format), price: String(root.App.PlayerValue?.computePrices), baseline: String(wp?.buildBaseline), seasonBaseline: String(wp?.buildSeasonBaseline), project: String(ss?.projectPlayerWeek), score: String(ss?.scoreProjection), canonicalScorer: String(root.calcFantasyPts), scoringRules: String(root.calcFantasyPts?.detailed), availability: String(root.App.AvailabilityForecast.forecast), dynasty: String(root.App.PlayerValue?.projectPlayerValue)});
                 const inputHash = await hash(frozen);
                 const runtimeHash = await hash(runtime);
                 const configHash = await hash(config);

@@ -1,7 +1,7 @@
 {
   "name": "fantasy-war-room",
   "version": "1.0.0",
-  "description": "Fantasy football owner dashboard — draft war room, earnings tracking, free agent targets",
+  "description": "Fantasy football owner dashboard \u2014 draft war room, earnings tracking, free agent targets",
   "main": "index.html",
   "scripts": {
     "test": "node scripts/run-tests.cjs",
@@ -85,7 +85,11 @@
     "build:lens-visuals": "node scripts/build-lens-visuals.cjs",
     "test:redraft-reliability": "node scripts/test-redraft-reliability.cjs",
     "test:redraft-reliability:browser": "node tests/redraft-reliability-browser.cjs",
-    "test:redraft-reliability:build": "node tests/redraft-reliability-build.cjs"
+    "test:redraft-reliability:build": "node tests/redraft-reliability-build.cjs",
+    "test:cbs-market": "node --test tests/cbs-market.cjs",
+    "test:cbs-market:browser": "node tests/cbs-market-browser.cjs",
+    "test:cbs-market:build": "node tests/cbs-market-build.cjs",
+    "update:cbs-market": "node scripts/update-cbs-market.cjs"
   },
   "keywords": [
     "fantasy",
@@ -109,6 +113,7 @@
     "@electric-sql/pglite": "0.5.8",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.59.1",
+    "cheerio": "1.1.2",
     "esbuild": "0.28.2",
     "eslint": "^10.2.0",
     "husky": "^9.1.7",

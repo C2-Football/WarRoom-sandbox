@@ -1,0 +1,61 @@
+name: Update CBS redraft market snapshots
+on:
+  schedule:
+    - cron: '23 14 * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: cbs-market-snapshots
+  cancel-in-progress: false
+jobs:
+  update:
+    # Activate only after permission/access and the shared-engine release are verified.
+    if: vars.CBS_UPDATES_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Restore last published dataset (missing branch is allowed, fetch failures are not)
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref=$(git ls-remote --heads origin refs/heads/cbs-market-data)
+          mkdir -p /tmp/cbs-market-data
+          if [ -n "$ref" ]; then
+            git fetch origin cbs-market-data
+            git worktree add /tmp/cbs-market-data FETCH_HEAD
+          else
+            git -C /tmp/cbs-market-data init
+            git -C /tmp/cbs-market-data checkout --orphan cbs-market-data
+          fi
+      - name: Discover, validate and atomically activate chart
+        id: import
+        continue-on-error: true
+        env:
+          CBS_PERMISSION_REFERENCE: ${{ vars.CBS_PERMISSION_REFERENCE }}
+        run: node scripts/update-cbs-market.cjs --out /tmp/cbs-market-data
+      - name: Publish dataset and health as one Git revision
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /tmp/cbs-market-data
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- '*.json'
+          if ! git diff --cached --quiet; then
+            git commit -m 'Update CBS market snapshot check'
+            # checkout's credential helper applies within the parent repository;
+            # use gh's helper for a newly initialized data branch as well.
+            gh auth setup-git
+            git push "https://github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/heads/cbs-market-data
+          fi
+      - name: Report failed import without discarding the last valid chart
+        if: steps.import.outcome == 'failure'
+        run: exit 1

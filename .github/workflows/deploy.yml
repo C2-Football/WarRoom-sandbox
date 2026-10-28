@@ -69,6 +69,8 @@ jobs:
         run: |
           SHARED_SOURCE="$GITHUB_WORKSPACE/shared-src" npm run test:redraft-reliability
           SHARED_SOURCE="$GITHUB_WORKSPACE/shared-src" npm run test:redraft-reliability:build
+          SHARED_SOURCE="$GITHUB_WORKSPACE/shared-src" npm run test:cbs-market
+          SHARED_SOURCE="$GITHUB_WORKSPACE/shared-src" npm run test:cbs-market:build
 
       - name: Build Pages artifact
         run: |

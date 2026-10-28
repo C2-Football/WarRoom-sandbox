@@ -1,0 +1,11 @@
+--- a/.github/workflows/deploy.yml
++++ b/.github/workflows/deploy.yml
+@@ -37,7 +37,7 @@
+           repository: C2-Football/dhq-shared
+           path: shared-src
+           # Explicit dependency revision: releases do not change under the same app commit.
+-          ref: 877d59df32de7bf49ee3d944b8c09e5472feebd7
++          ref: a3b99522da9a6086385c26841e6c6dfecdeb1cb5
+ 
+       - name: Setup Node
+         uses: actions/setup-node@v4

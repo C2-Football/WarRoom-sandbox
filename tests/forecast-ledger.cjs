@@ -44,6 +44,12 @@ await test('Hash ordering stable, first-write immutable, input changes create ne
     ctx.statsData.a.rec=11;assert.equal((await journal.capture(ctx,result,healthy)).inserted,true);assert.equal(saved.size,2);
     assert.equal([...saved.values()][0].rows.find(r=>r.pid==='a').inputs.currentStats.rec,10);
 });
+await test('CBS price revisions append new evidence without changing forecast points',async()=>{
+    const {journal,ctx,result,healthy}=setup();
+    result.marketBasis={cbs:{version:'first',status:'current-week',format:{columns:{WR:'PPR'}},entries:{a:{original:10}}},weights:{cbs:.15},details:{}};
+    await journal.capture(ctx,result,healthy);result.marketBasis.cbs.version='second';result.marketBasis.cbs.entries.a.original=15;
+    await journal.capture(ctx,result,healthy);const records=await journal.read();assert.equal(records.length,2);assert.equal(records[0].rows[0].inputs.marketPricing.cbsVersion,'first');assert.equal(records[1].rows[0].inputs.marketPricing.cbsVersion,'second');assert.equal(records[0].rows[0].baseline.points,records[1].rows[0].baseline.points);
+});
 await test('Zero and missing players survive capture; identity and league settings recorded',async()=>{
     const {journal,ctx,result,healthy}=setup();await journal.capture(ctx,result,healthy);const r=(await journal.read('L'))[0];
     assert.equal(r.rows.length,4);assert.equal(r.config.scoring.rec,1);assert.equal(r.config.leagueType,'redraft');assert.equal(r.inputHash.length,64);assert.equal(r.runtimeHash.length,64);assert.equal(r.provenance.sourceTimestampsVerified,false);
