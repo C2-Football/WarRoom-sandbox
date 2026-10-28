@@ -37,7 +37,7 @@ jobs:
           repository: C2-Football/dhq-shared
           path: shared-src
           # Explicit dependency revision: releases do not change under the same app commit.
-          ref: 61883813d6d56d0582259c8b18fc88024574f8b5
+          ref: 991718aef72bf14d18cead3e2adee1312055e304
 
       - name: Setup Node
         uses: actions/setup-node@v4

@@ -10,6 +10,8 @@ const project=(line,scoring,position)=>b.App.WeeklyProj.projectPlayer('p',{playe
 assert.equal(project({pass_att:30,pass_yd:250,pass_td:2,pass_cmp:20,pass_fd:10},{pass_yd:.04,pass_td:4,pass_cmp:.5,pass_fd:1},'QB'),38);
 assert.equal(project({sack:2,int:2},{sack:1,int:2},'DEF'),6);
 assert.equal(project({rec:4,rec_yd:100},{rec:1,rec_yd:.1,bonus_rec_te:.5,bonus_rec_yd_100:3},'TE'),19);
+assert.equal(project({pass_att:30,pass_yd:250,pass_int_td:1},{pass_yd:.04,pass_int_td:-6,def_forced_punts:1,yds_allow_550p:-5},'QB'),4);
+assert.equal(project({sack:1,yds_allow:550,def_forced_punts:8},{yds_allow_550p:-5,def_forced_punts:1},'DEF'),3);
 for(const entry of ['index.html','draft-warroom.html','free-agency.html','trade-calculator.html','draft-war-room/index.html','reminder-unsubscribe.html']){
  const html=fs.readFileSync(path.join(base,'dist-deploy',entry),'utf8');assert(!html.includes('type="text/babel"'),entry+' contains no browser Babel scripts');
 }

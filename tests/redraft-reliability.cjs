@@ -169,3 +169,13 @@ test('production weekly forecast preserves uncertain participation as unknown an
  const h=harness();const out=h.box.App.WeeklyProj.projectPlayer('p',{playersData:{p:{position:'RB',team:'BUF',injury_status:'Questionable'}},statsData:{},priorData:{},week:8,scoring:{rush_yd:.1},providerProjections:{p:{rush_att:10,rush_yd:100}}});
  assert.equal(out.available,false);assert.equal(out.points.median,null);assert.equal(out.conditionalPoints.median,10);
 });
+test('CTB custom scoring no longer blocks waiver and trade eligibility',()=>{
+    const h=harness(),f=fixture();
+    Object.assign(f.league.scoring_settings,{def_forced_punts:1,blk_kick_ret_yd:.1,sack_yd:.1,def_pr_td:6,def_4_and_stop:2,fg_ret_yd:.1,yds_allow_550p:-5,pass_int_td:-6,int_ret_yd:.1,def_2pt:2,def_kr_td:6,def_3_and_out:1,fum_ret_yd:.1});
+    for(const kind of ['waiver','trade']) {
+        const out=h.box.App.RecommendationEligibility.check(f.league,f.roster,kind);
+        assert.equal(out.ok,true,out.reason);
+    }
+    f.league.scoring_settings.unknown_rule=1;
+    assert.equal(h.box.App.RecommendationEligibility.check(f.league,f.roster).ok,false);
+});
