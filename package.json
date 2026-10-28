@@ -89,7 +89,10 @@
     "test:cbs-market": "node --test tests/cbs-market.cjs",
     "test:cbs-market:browser": "node tests/cbs-market-browser.cjs",
     "test:cbs-market:build": "node tests/cbs-market-build.cjs",
-    "update:cbs-market": "node scripts/update-cbs-market.cjs"
+    "update:cbs-market": "node scripts/update-cbs-market.cjs",
+    "test:value-monitor": "node --test tests/value-history.cjs tests/value-monitor.cjs",
+    "test:value-monitor:build": "node tests/value-monitor-build.cjs",
+    "test:value-monitor:browser": "node tests/value-monitor-browser.cjs"
   },
   "keywords": [
     "fantasy",
@@ -113,6 +116,7 @@
     "@electric-sql/pglite": "0.5.8",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.59.1",
+    "@supabase/supabase-js": "2.101.1",
     "cheerio": "1.1.2",
     "esbuild": "0.28.2",
     "eslint": "^10.2.0",

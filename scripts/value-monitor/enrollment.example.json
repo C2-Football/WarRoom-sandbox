@@ -1,0 +1,10 @@
+{
+  "league_id": "REPLACE_WITH_SELECTED_SLEEPER_LEAGUE",
+  "season": 2026,
+  "value_type": "redraft",
+  "timezone": "America/Chicago",
+  "starts_at": "REPLACE_WITH_FUTURE_ISO_TIMESTAMP",
+  "user_id": "REPLACE_WITH_REPORT_OWNER_APP_USER_UUID",
+  "scope": {"kind": "players"},
+  "player_ids": ["REPLACE_WITH_SELECTED_STABLE_ID"]
+}

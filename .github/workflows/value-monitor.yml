@@ -1,0 +1,39 @@
+name: Seven-day value monitor
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 * * * *'
+permissions:
+  contents: read
+concurrency:
+  group: value-monitor-collector
+  cancel-in-progress: false
+jobs:
+  collect:
+    if: vars.VALUE_MONITOR_ENABLED == 'true' && vars.VALUE_MONITOR_SHARED_REVISION != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    environment: value-monitor
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Require a published immutable shared revision
+        env:
+          SHARED_REVISION: ${{ vars.VALUE_MONITOR_SHARED_REVISION }}
+        run: '[[ "$SHARED_REVISION" =~ ^[0-9a-f]{40}$ ]]'
+      - uses: actions/checkout@v4
+        with:
+          repository: C2-Football/dhq-shared
+          ref: ${{ vars.VALUE_MONITOR_SHARED_REVISION }}
+          path: _canonical-shared
+      - run: npm run sync:shared
+        env:
+          SHARED_SOURCE: ${{ github.workspace }}/_canonical-shared
+      - run: node scripts/value-monitor/run.cjs collect
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

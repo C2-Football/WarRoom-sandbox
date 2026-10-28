@@ -212,6 +212,9 @@ async function build() {
 
   const { babelSrcs, allSrcs } = collectSources(htmlByEntry);
   for (const worker of WORKERS) allSrcs.add(worker);
+  // These history modules are loaded through WRShared's inline list rather
+  // than literal script tags. Emit and verify the actual production writers.
+  for (const file of ['value-history.js','supabase-client.js']) allSrcs.add('reconai-shared/'+file);
   for (const src of babelSrcs) await emitModule(src, { jsx: true });
   for (const src of allSrcs) {
     if (!babelSrcs.has(src)) await emitModule(src, { jsx: false });

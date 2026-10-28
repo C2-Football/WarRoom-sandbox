@@ -948,14 +948,14 @@
             (state.picks || []).forEach(pick => {
                 if (!pick?.id || !pick?.pid || snapshottedPickIdsRef.current.has(pick.id)) return;
                 snapshottedPickIdsRef.current.add(pick.id);
-                if (pick.dhq == null || pick.dhq <= 0) return;
+                if (pick.dhq == null || pick.dhq < 0) return;
                 window.OD.recordValueSnapshot({
                     leagueId: state.leagueId, playerId: pick.pid,
                     season: Number(state.season) || new Date().getFullYear(), week: curWeek,
-                    ts: pick.ts ? new Date(pick.ts).toISOString() : undefined,
+                    ts: new Date().toISOString(), eventId: String(state.sleeperDraftId || state.leagueId) + ':' + pick.id,
                     value: pick.dhq, valueType: isRedraft ? 'redraft' : 'dynasty', source: 'draft',
-                    context: { pickSlot: `${pick.round}.${String(pick.slot).padStart(2, '0')}`, overall: pick.overall },
-                });
+                    context: { event_at: pick.ts || null, observed_now: true, pickSlot: `${pick.round}.${String(pick.slot).padStart(2, '0')}`, overall: pick.overall },
+                }).catch(e => { snapshottedPickIdsRef.current.delete(pick.id); window.App.valueHistorySaveError=e.message; });
             });
         }, [state.picks, state.mode, state.leagueId]);
 

@@ -37,7 +37,7 @@ jobs:
           repository: C2-Football/dhq-shared
           path: shared-src
           # Explicit dependency revision: releases do not change under the same app commit.
-          ref: a3b99522da9a6086385c26841e6c6dfecdeb1cb5
+          ref: 61883813d6d56d0582259c8b18fc88024574f8b5
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -71,6 +71,11 @@ jobs:
           SHARED_SOURCE="$GITHUB_WORKSPACE/shared-src" npm run test:redraft-reliability:build
           SHARED_SOURCE="$GITHUB_WORKSPACE/shared-src" npm run test:cbs-market
           SHARED_SOURCE="$GITHUB_WORKSPACE/shared-src" npm run test:cbs-market:build
+
+      - name: Verify value history persistence and finite monitor
+        run: |
+          npm run test:value-monitor
+          npm run test:value-monitor:build
 
       - name: Build Pages artifact
         run: |

@@ -62,13 +62,14 @@ const WR_SHARED_FILES = [
   'event-bus.js',
   'platform-provider.js',
   'sleeper-api.js',
-  'supabase-client.js',
+  'value-history.js',
+  ['supabase-client.js', '20261028history1'],
   'tier.js',
   'pick-value-model.js',
   'dhq-providers.js',
   'dhq-core.js',
   'intelligence-context.js',
-  ['dhq-engine.js', '20261012ownerscout1'],
+  ['dhq-engine.js', '20261028history1'],
   'nfl-fit.js',
   'team-assess.js',
   'analytics-engine.js',
@@ -2976,6 +2977,7 @@ WRShared.preloadMany(WR_SHARED_FILES);
 <script type="text/babel" src="js/components/wr-primitives.js?v=20261022idpaverage1"></script>
     <script type="text/babel" src="js/components/manual-seasons-editor.js?v=20260906manual1"></script>
     <script src="js/utils/nfl-byes.js?v=20260908bye1"></script>
+    <script src="js/components/value-monitor.js?v=20261028history1"></script>
     <script type="text/babel" src="js/components/player-card.js?v=20261012mobilepass1"></script>
 <!-- 2c. Saved List Views (SI-1) — window.WR.SavedViews — shared across list surfaces -->
 <script type="text/babel" src="js/shared/saved-views.js?v=20261007mission1"></script>
@@ -3183,6 +3185,7 @@ WRShared.preloadMany(WR_SHARED_FILES);
 <script src="js/shared/availability-forecast.js?v=20260906shadow1"></script>
 <script src="js/shared/forecast-ledger.js?v=20260918forecast1"></script>
 <script src="js/shared/forecast-archive.js?v=20260906shadow1"></script>
+<script src="js/shared/value-engine-version.js?v=20261028history1"></script>
 <script src="js/shared/snapshot-store.js?v=20260906shadow1"></script>
 <!-- 2h1. NFL draft capital dataset — window.WR_DRAFT_PROFILE — static historical
      [year, round, overall, team] by Sleeper id (Sleeper's API has none).

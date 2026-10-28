@@ -405,18 +405,22 @@
         const [scoutTick, setScoutTick] = useState(0);          // bumps when SOS / weather finish loading
 
         // ── Value History tab data — loaded lazily, only when that tab is open ──
-        const [valueHistory, setValueHistory] = useState(null); // null = loading, [] = none
+        const currentLeague = window.S?.leagues?.find(l => String(l.league_id || l.id) === String(window.S?.currentLeagueId)) || {};
+        const [valueHistory, setValueHistory] = useState(null);
+        const [historyError,setHistoryError]=useState(null);
+        const [historyFormat,setHistoryFormat]=useState(Number(currentLeague?.settings?.type)===0?'redraft':'dynasty'); // null = loading, [] = none
         useEffect(() => {
             if (tab !== 'value-history' || !pid) return;
             let alive = true;
             const S = window.S || {};
             const leagueId = S.currentLeagueId;
             if (!leagueId || typeof window.OD?.loadValueSnapshots !== 'function') { setValueHistory([]); return; }
-            window.OD.loadValueSnapshots({ leagueId, playerId: pid })
+            setValueHistory(null);setHistoryError(null);
+            window.OD.loadValueSnapshots({ leagueId, playerId: pid, valueType:historyFormat })
                 .then(rows => { if (alive) setValueHistory(rows || []); })
-                .catch(() => { if (alive) setValueHistory([]); });
+                .catch(e => { if (alive) {setHistoryError(e.message);setValueHistory([]);} });
             return () => { alive = false; };
-        }, [tab, pid]);
+        }, [tab, pid, currentLeague?.league_id, historyFormat]);
         useEffect(() => {
             if (tab !== 'scouting' || !pid) return;
             let alive = true;
@@ -457,7 +461,6 @@
         const peakLabel = age < pLo ? 'Rising' : age <= pHi ? 'Prime' : age <= declineHi ? 'Veteran' : 'Post-Window';
         const peakCol = age < pLo ? 'var(--k-2ecc71, #2ecc71)' : age <= pHi ? 'var(--k-d4af37, #d4af37)' : age <= declineHi ? 'var(--k-f0a500, #f0a500)' : 'var(--k-e74c3c, #e74c3c)';
         const dhqCol = dhq >= 7000 ? 'var(--k-2ecc71, #2ecc71)' : dhq >= 4000 ? 'var(--k-3498db, #3498db)' : dhq >= 2000 ? 'var(--k-d0d0d0, #d0d0d0)' : 'var(--text-muted)';
-        const currentLeague = window.S?.leagues?.find(l => String(l.league_id || l.id) === String(window.S?.currentLeagueId)) || {};
         const sc = scoringSettings || currentLeague?.scoring_settings || {};
         const leagueProfile = typeof window.App?.Intelligence?.buildLeagueProfile === 'function'
             ? window.App.Intelligence.buildLeagueProfile({ league: { ...currentLeague, scoring_settings: sc }, rosters: window.S?.rosters || [], platform: window.S?.platform || currentLeague?._platform })
@@ -831,66 +834,30 @@
         // there is no way to reconstruct what a player was worth before
         // this shipped, so an early-looking series is expected, not a bug.
         function ValueHistoryTab() {
-            const sectionStyle = { padding: '14px 20px' };
-            const hdrStyle = { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700, marginBottom: '8px' };
-            const SOURCE_COLOR = { draft: 'var(--gold)', trade: 'var(--k-5dade2, #5dade2)', periodic: 'var(--silver)' };
-            const SOURCE_LABEL = { draft: 'Draft', trade: 'Trade', periodic: 'Snapshot' };
-
-            if (valueHistory == null) {
-                return React.createElement('div', { style: sectionStyle },
-                    React.createElement('div', { style: { fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', opacity: 0.6 } }, 'Loading value history…')
-                );
-            }
-            if (!valueHistory.length) {
-                return React.createElement('div', { style: sectionStyle },
-                    React.createElement('div', { style: hdrStyle }, 'Value History'),
-                    React.createElement('div', { style: { fontSize: 'var(--text-body, 0.92rem)', color: 'var(--silver)', opacity: 0.7, lineHeight: 1.5 } },
-                        'No snapshots recorded yet. Values freeze at draft picks, trades, and periodic captures going forward — this can\'t reconstruct value from before this started.')
-                );
-            }
-
-            const pts = valueHistory.map((r, i) => ({ x: i, y: Number(r.value) || 0, r }));
-            const width = 560, height = 140;
-            const maxY = Math.max(...pts.map(p => p.y), 1);
-            const minY = Math.min(...pts.map(p => p.y), 0);
-            const yRange = Math.max(maxY - minY, 1);
-            const maxX = Math.max(pts.length - 1, 1);
-            const xScale = x => 10 + (x / maxX) * (width - 20);
-            const yScale = y => 10 + ((maxY - y) / yRange) * (height - 24);
-            const linePath = pts.map((p, i) => (i === 0 ? 'M' : 'L') + xScale(p.x) + ',' + yScale(p.y)).join(' ');
-            const first = pts[0].y, last = pts[pts.length - 1].y;
-            const delta = last - first;
-
-            return React.createElement('div', { style: sectionStyle },
-                React.createElement('div', { style: { display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '8px' } },
-                    React.createElement('div', { style: hdrStyle }, 'Value History'),
-                    pts.length > 1 ? React.createElement('span', {
-                        style: { fontFamily: 'JetBrains Mono, monospace', fontSize: 'var(--text-label, 0.8rem)', fontWeight: 700, color: delta > 0 ? 'var(--k-2ecc71, #2ecc71)' : delta < 0 ? 'var(--k-e74c3c, #e74c3c)' : 'var(--silver)' }
-                    }, (delta > 0 ? '▲ +' : delta < 0 ? '▼ ' : '— ') + Math.abs(delta).toLocaleString()) : null
-                ),
-                React.createElement('svg', { width: '100%', height, viewBox: `0 0 ${width} ${height}`, preserveAspectRatio: 'none' },
-                    React.createElement('path', { d: linePath, fill: 'none', stroke: 'var(--ov-7, rgba(255,255,255,0.3))', strokeWidth: 1.5 }),
-                    pts.map((p, i) => React.createElement('circle', {
-                        key: i, cx: xScale(p.x), cy: yScale(p.y), r: 3.5,
-                        fill: SOURCE_COLOR[p.r.source] || 'var(--silver)', stroke: '#000', strokeWidth: 0.5,
-                    },
-                        React.createElement('title', null, `${SOURCE_LABEL[p.r.source] || p.r.source} · S${p.r.season} W${p.r.week} · ${p.y.toLocaleString()}`)
-                    ))
-                ),
-                React.createElement('div', { style: { display: 'flex', gap: '12px', marginTop: '4px', fontSize: 'var(--text-micro, 0.6875rem)', color: 'var(--silver)', opacity: 0.7 } },
-                    Object.keys(SOURCE_LABEL).map(k => React.createElement('span', { key: k },
-                        React.createElement('span', { style: { color: SOURCE_COLOR[k] } }, '● '), SOURCE_LABEL[k]
-                    ))
-                ),
-                React.createElement('div', { style: { display: 'flex', flexDirection: 'column', marginTop: '14px' } },
-                    valueHistory.slice().reverse().slice(0, 12).map((r, i) => React.createElement('div', {
-                        key: i, style: { display: 'grid', gridTemplateColumns: '90px 70px 1fr', gap: '8px', alignItems: 'center', padding: '5px 0', borderBottom: '1px solid var(--ov-2, rgba(255,255,255,0.03))' }
-                    },
-                        React.createElement('span', { style: { fontSize: 'var(--text-label, 0.72rem)', color: 'var(--text-muted)' } }, `S${r.season} · W${r.week}`),
-                        React.createElement('span', { style: { fontFamily: 'JetBrains Mono, monospace', fontSize: 'var(--text-label, 0.82rem)', fontWeight: 700, color: 'var(--text-primary)' } }, Number(r.value).toLocaleString()),
-                        React.createElement('span', { style: { fontSize: 'var(--text-label, 0.72rem)', color: SOURCE_COLOR[r.source] || 'var(--text-muted)' } }, SOURCE_LABEL[r.source] || r.source)
-                    ))
-                )
+            const e=React.createElement,rows=valueHistory||[];
+            const colors={draft:'var(--gold)',trade:'var(--k-5dade2, #5dade2)',periodic:'var(--silver)',monitor:'var(--k-2ecc71, #2ecc71)'};
+            const first=rows[0],last=rows.at(-1);
+            const delta=first?.value!=null&&last?.value!=null&&(first.calculation_status||'ok')==='ok'&&(last.calculation_status||'ok')==='ok'?Number(last.value)-Number(first.value):null;
+            const good=rows.filter(r=>r.value!=null && (r.calculation_status||'ok')==='ok');
+            const points=rows.map((r,i)=>({r,x:i,y:r.value==null?null:Number(r.value)}));
+            const max=Math.max(1,...good.map(r=>Number(r.value))),x=i=>10+i/Math.max(1,rows.length-1)*540,y=v=>130-v/max*115;
+            let pen=false;const path=points.map(p=>{if(p.y==null||p.r.calculation_status&&p.r.calculation_status!=='ok'){pen=false;return ''; }const cmd=pen?'L':'M';pen=true;return cmd+x(p.x)+','+y(p.y);}).join(' ');
+            return e('div',{style:{padding:'14px 20px'}},
+                e('h3',null,'Value History'),
+                rows.length>1&&delta!=null?e('p',null,'Captured change: '+(delta>0?'+':'')+delta.toLocaleString()):null,
+                e('label',null,'Value format ',e('select',{value:historyFormat,onChange:ev=>setHistoryFormat(ev.target.value)},e('option',{value:'dynasty'},'Dynasty'),e('option',{value:'redraft'},'Redraft'))),
+                e(window.App.ValueMonitorPanel,{leagueId:currentLeague?.league_id||window.S?.currentLeagueId}),
+                historyError?e('p',{role:'alert'},historyError):valueHistory===null?e('p',null,'Loading persisted history…'):!rows.length?e('p',null,'No persisted observations in this format. History starts when values are captured; past values cannot be reconstructed.'):null,
+                good.length?e('svg',{width:'100%',height:140,viewBox:'0 0 560 140','aria-label':historyFormat+' value history'},
+                    e('path',{d:path,fill:'none',stroke:'var(--gold)',strokeWidth:1.5}),points.filter(p=>p.y!=null&&(p.r.calculation_status||'ok')==='ok').map(p=>e('circle',{key:p.r.id,cx:x(p.x),cy:y(p.y),r:3,fill:colors[p.r.source]||'var(--silver)'},e('title',null,new Date(p.r.ts).toLocaleString()+' · '+p.r.source+' · '+p.y)))):null,
+                e('div',{style:{display:'flex',gap:12,flexWrap:'wrap',fontSize:12}},Object.keys(colors).map(source=>e('span',{key:source,style:{color:colors[source]}},'● '+source))),
+                e('p',{style:{fontSize:12,color:'var(--text-muted)'}},'Captured observations, not historical reconstructions. Latest 40 records listed. Gaps represent unavailable values. Legacy timestamps and calculation provenance may be unverified.'),
+                rows.slice().reverse().slice(0,40).map(r=>e('details',{key:r.id,style:{padding:'6px 0',borderBottom:'1px solid var(--border-subtle, #333)'}},
+                    e('summary',null,new Date(r.ts).toLocaleString()+' · '+(r.value==null?'Unknown':Number(r.value).toLocaleString())+' · '+r.source+' · '+(r.calculation_status||'legacy')),
+                    e('p',null,'Season '+r.season+' / week '+r.week+' · '+r.value_type+' · calculated '+(r.calculated_at||'unknown')),
+                    e('p',null,'Capture '+(r.capture_key||'legacy')+(r.context?.observed_now?' · event discovered now, not valued historically':'')),
+                    e('pre',{style:{whiteSpace:'pre-wrap',overflowWrap:'anywhere',fontSize:11}},JSON.stringify(r.provenance||{},null,2))
+                ))
             );
         }
 

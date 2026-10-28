@@ -22,6 +22,8 @@ const FILES = [
   'espn-api.js',
   'mfl-api.js',
   'yahoo-api.js',
+  'value-monitor-runtime.cjs',
+  'value-history.js',
   'supabase-client.js',
   'tier.js',
   'pick-value-model.js',
@@ -140,3 +142,9 @@ if (fs.existsSync(DATA_SOURCE)) {
   console.error('[sync-reconai-shared] Missing rookie CSVs in source and locally');
   process.exit(1);
 }
+
+// Identical source fingerprint in browser history and the headless canonical host.
+const {createHash}=require('node:crypto');
+const {MODULES}=require(path.join(SOURCE,'value-monitor-runtime.cjs'));
+const engineSource=MODULES.map(name=>name+fs.readFileSync(path.join(SOURCE,name),'utf8')).join('')+fs.readFileSync(path.join(ROOT,'js/shared/availability-forecast.js'),'utf8');
+fs.writeFileSync(path.join(ROOT,'js/shared/value-engine-version.js'),'window.App=window.App||{};window.App.ValueEngineVersion='+JSON.stringify(createHash('sha256').update(engineSource).digest('hex'))+';\n');

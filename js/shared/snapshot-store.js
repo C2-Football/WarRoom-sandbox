@@ -22,7 +22,7 @@
     function nflContext() {
         const ns = (window.S && window.S.nflState) || (window.App && window.App.LI && window.App.LI.nflState) || {};
         const season = String(ns.season || (window.S && window.S.currentSeason) || new Date().getFullYear());
-        const week = Number(ns.display_week || ns.week || 0);
+        const week = Number(ns.week || ns.display_week || 0);
         return { season, week };
     }
 
@@ -50,41 +50,43 @@
         return { season: ctx.season, week: ctx.week, ts: Date.now(), teams };
     }
 
-    // Per-player periodic capture — one row per (league, player, week), so a
-    // player who's never traded or drafted still gets a genuine value-over-
-    // time line (draft/trade snapshots alone only ever give two points).
-    // Best-effort only: this fires when someone opens the league in the app,
-    // not on a real schedule — there is no server-side cron in this project
-    // (same limitation the team-aggregate capture above already accepts).
-    // Idempotent server-side (player_value_snapshots' unique constraint), so
-    // reopening the same league/week is a no-op rather than a duplicate row.
-    function capturePlayerValues() {
+    // Browser observations are distinct from a server monitor and local team totals.
+    const saveStates=new Map(),pending=new Map();
+    async function capturePlayerValues() {
         if (typeof window.OD?.recordValueSnapshots !== 'function') return;
-        const S = window.S || (window.App && window.App.S);
-        const LI = window.App && window.App.LI;
-        if (!S || !S.currentLeagueId || !LI || !LI.playerScores) return;
-        const rosters = S.rosters || [];
-        if (!rosters.length) return;
-        const scores = LI.playerScores || {};
-        const ctx = nflContext();
-        const PV = window.App && window.App.PlayerValue;
-        const isRedraft = !!(PV && PV.isRedraftActive && PV.isRedraftActive());
-        const rows = [];
-        const seen = new Set();
-        rosters.forEach(r => {
-            (r.players || []).forEach(pid => {
-                if (seen.has(pid)) return; // a player can't be on two rosters, but guard anyway
-                seen.add(pid);
-                const value = isRedraft ? PV.getValue(pid) : scores[pid];
-                if (value == null || value <= 0) return;
-                rows.push({
-                    leagueId: S.currentLeagueId, playerId: pid,
-                    season: ctx.season, week: ctx.week,
-                    value, valueType: isRedraft ? 'redraft' : 'dynasty', source: 'periodic',
-                });
-            });
-        });
-        if (rows.length) window.OD.recordValueSnapshots(rows);
+        const S=window.S||window.App?.S, LI=window.App?.LI;
+        if(!S?.currentLeagueId || !LI || LI.sourceLeagueId!==S.currentLeagueId)return;
+        const league=(S.leagues||[]).find(l=>l.league_id===S.currentLeagueId);
+        const type=league?.settings?.type==null?null:Number(league.settings.type)===0?'redraft':Number(league?.settings?.type)===2?'dynasty':null;
+        const lid=S.currentLeagueId;
+        if(pending.has(lid))return pending.get(lid);
+        if(!type)return; // keeper/unknown formats are not silently labeled dynasty
+        const PV=window.App?.PlayerValue,ctx=nflContext(),ts=new Date().toISOString();
+        const rosters=(S.rosters||[]).map(r=>({...r,players:[...(r.players||[])]}));
+        const ids=[...new Set(rosters.flatMap(r=>r.players||[]))];
+        if(!ids.length)return;
+        const board=type==='redraft'?PV?.rosState?.():null;
+        const settingsFingerprint=await window.App.ValueHistory.fingerprint({scoring:league.scoring_settings,roster:league.roster_positions,settings:league.settings,totalTeams:league.total_rosters}).catch(()=>null);
+        const calculated=type==='redraft'?board?.calculatedAt:Date.parse(LI.builtAt||'');
+        const stale=!Number.isFinite(calculated)||Date.now()-calculated>(type==='redraft'?15*60000:2*3600000);
+        const rows=ids.map(pid=>({leagueId:lid,playerId:pid,season:ctx.season,week:ctx.week,ts,
+            value:type==='redraft'?board?.values?.[pid]??null:LI.playerScores?.[pid]??null,
+            valueType:type,source:'periodic',status:stale?'stale':undefined,calculatedAt:type==='redraft'?(board?.calculatedAt?new Date(board.calculatedAt).toISOString():null):LI.builtAt||null,
+            rosterIds:rosters.filter(r=>(r.players||[]).includes(pid)).map(r=>r.roster_id),
+            provenance:{settingsFingerprint,origin:'browser observation; not scheduled monitoring',engineVersion:window.App.ValueEngineVersion||null,settings:league.scoring_settings,rosterPositions:league.roster_positions,sourceFreshness:board?.sourceFreshness||LI.sourceSnapshots||null}}));
+        const task=(async()=>{
+            saveStates.set(lid,{status:'saving',error:null});
+            try {
+                let count=0;
+                for(let i=0;i<rows.length;i+=500){const result=await window.OD.recordValueSnapshots(rows.slice(i,i+500));count+=result.rows.length;}
+                saveStates.set(lid,{status:'verified',verifiedAt:new Date().toISOString(),error:null,count});
+                return {ok:true,verified:true,count};
+            } catch(e) {
+                saveStates.set(lid,{status:'failed',error:e.message});
+                if(window.dhqLog)window.dhqLog('snapshot.recordPlayers',e);
+                return {ok:false,error:e.message};
+            } finally {pending.delete(lid);}
+        })();pending.set(lid,task);return task;
     }
 
     // Append / replace this week's row (idempotent per season+week).
@@ -177,5 +179,5 @@
         setTimeout(attach, 200);
     })();
 
-    window.WrSnapshots = { record, timeline, leagueDelta, empireDelta, captureCurrentLeague, capturePlayerValues };
+    window.WrSnapshots = { record, timeline, leagueDelta, empireDelta, captureCurrentLeague, capturePlayerValues, saveState:(lid=window.S?.currentLeagueId)=>saveStates.get(lid)||{status:'idle'} };
 })();
