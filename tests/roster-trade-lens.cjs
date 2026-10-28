@@ -294,3 +294,38 @@ test('viewer must own or co-own the active roster for generation and Builder han
     assert.equal(f.api.build(f.opts).status, 'ready');
     assert.equal(f.api.validateBuilderContext(target, f.opts).ok, true);
 });
+
+
+test('canonical acceptance stays independent of saved floor and filters before target ranking', () => {
+    const f = fixture((opts, sandbox) => {
+        opts.gm.acceptanceFloor = 70;
+        sandbox.App.TradeEngine = { calcAcceptanceLikelihood: () => 72 };
+    });
+    const result = f.api.build(f.opts);
+    assert.equal(result.strategy.acceptanceFloor, 70);
+    assert(result.candidates.length);
+    assert(result.candidates.every(c => c.acceptance.likelihood === 72));
+    assert.equal(result.candidates[0].partner.name, 'Northside');
+    f.opts.gm.acceptanceFloor = 73;
+    assert.equal(f.api.build(f.opts).candidates.length, 0);
+    f.opts.gm.acceptanceFloor = 72;
+    assert(f.api.build(f.opts).candidates.length, 'equality meets the floor');
+});
+
+test('an explicit floor never promotes packages with unavailable acceptance', () => {
+    const f = fixture();
+    f.opts.gm.acceptanceFloor = 80;
+    assert.equal(f.api.build(f.opts).candidates.length, 0);
+});
+
+
+test('eager shared engine supplies a real estimate without mounting Trade Desk', () => {
+    const f = fixture();
+    vm.runInContext(fs.readFileSync('reconai-shared/trade-engine.js', 'utf8'), f.sandbox);
+    f.opts.gm.acceptanceFloor = 55;
+    const result = f.api.build(f.opts);
+    for (const c of result.candidates) {
+        assert(c.acceptance.likelihood >= 55 && c.acceptance.likelihood <= 95);
+    }
+    assert.equal(typeof f.sandbox.App.TradeEngine.calcAcceptanceLikelihood, 'function');
+});

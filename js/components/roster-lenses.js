@@ -101,7 +101,7 @@
         }
         React.useEffect(() => {
             const changed = () => refresh(value => value + 1);
-            const events = ['wr:gm-mode-changed', 'wr:player-tags-changed', 'wr:projections-loaded', 'wr:ros-market-loaded', 'wr:roster-data-updated', 'wr:auth-changed'];
+            const events = ['wr:gm-mode-changed', 'wr:alex-settings-changed', 'wr:player-tags-changed', 'wr:projections-loaded', 'wr:ros-market-loaded', 'wr:roster-data-updated', 'wr:auth-changed'];
             events.forEach(event => root.addEventListener(event, changed));
             return () => events.forEach(event => root.removeEventListener(event, changed));
         }, []);
@@ -307,15 +307,18 @@
             </div>
             {inlineSource && <Impact lens={lens} />}
             {!trade && lens.input.skin?.type !== 'chopped' && otherDelta < 0 && <p className="wr-lens-other-horizon is-loss">{lens.ui.horizon === 'season' ? 'This week' : 'Rest of season'}: {signed(otherDelta)} lineup pts</p>}
-            {trade && partner && <p className="wr-lens-partner">{partner.name} · {partner.direction?.label || 'Direction unavailable'}{partner.direction?.source === 'inferred' ? ' (inferred)' : ''}</p>}
             {!futureView(lens) && (!finite(metric?.before) || !finite(metric?.after)) && <p className="wr-lens-note">{metric?.reason || 'Projection unavailable.'}</p>}
+            {trade && <div className="wr-lens-trade-facts" aria-label="Trade value and acceptance">
+                <p><strong>Trade with {partner?.name || 'Unknown manager'}</strong></p>
+                <p>You send <strong>{finite(candidate.price?.give) ? candidate.price.give.toLocaleString() : 'Unavailable'} {candidate.price?.unit === 'DHQ' ? 'DHQ' : 'season value'}</strong> · You get <strong>{finite(candidate.price?.receive) ? candidate.price.receive.toLocaleString() : 'Unavailable'} {candidate.price?.unit === 'DHQ' ? 'DHQ' : 'season value'}</strong></p>
+                {finite(candidate.price?.give) && finite(candidate.price?.receive) && <p>Total exchanged: <strong>{(candidate.price.give + candidate.price.receive).toLocaleString()} {candidate.price.unit === 'DHQ' ? 'DHQ' : 'season value'}</strong></p>}
+                <p>Estimated acceptance: <strong>{finite(candidate.acceptance?.likelihood) ? candidate.acceptance.likelihood + '%' : 'Unavailable'}</strong>{finite(lens.result?.strategy?.acceptanceFloor) && <span> · Your minimum {lens.result.strategy.acceptanceFloor}%</span>}</p>
+            </div>}
             <div className="wr-lens-actions"><button type="button" className="wr-lens-primary" onClick={() => lens.openReview(candidate)} aria-expanded={lens.ui.review}>{trade ? 'Review trade' : 'Review claim'}</button><button type="button" onClick={lens.clear}>Close</button></div>
             {lens.ui.review && <section className="wr-lens-review" aria-label={trade ? 'Review trade package' : 'Review waiver claim plan'}>
-                {trade && candidate.timelineFit?.matched && <p className="wr-lens-reason">{candidate.timelineFit.reason}</p>}
                 {!trade && lens.input.skin?.type !== 'chopped' && otherDelta != null && otherDelta >= 0 && <p className="wr-lens-other-horizon">{lens.ui.horizon === 'season' ? 'This week' : 'Rest of season'}: {signed(otherDelta)} lineup pts</p>}
-                {futureView(lens) && <p className="wr-lens-note">Age fit only; future performance is not forecast.</p>}
-                {trade && partner?.direction?.reason && <p className="wr-lens-note">{partner.direction.reason}</p>}
-                {candidate.cautions?.length > 0 && <ul>{candidate.cautions.map((caution, index) => <li key={index}>{typeof caution === 'string' ? caution : caution.text || caution.reason || ''}</li>)}</ul>}
+                {!trade && futureView(lens) && <p className="wr-lens-note">Age fit only; future performance is not forecast.</p>}
+                {!trade && candidate.cautions?.length > 0 && <ul>{candidate.cautions.map((caution, index) => <li key={index}>{typeof caution === 'string' ? caution : caution.text || caution.reason || ''}</li>)}</ul>}
                 {!trade && usesBids(lens.input) && <label className="wr-lens-bid">Planned max bid <span>$<input type="number" min="0" max={left == null ? undefined : left} step="1" inputMode="numeric" aria-label="Planned maximum waiver bid" placeholder="Not set" value={lens.ui.bid} onChange={event => lens.setBid(event.target.value)} /></span><small>{left == null ? 'Remaining budget unavailable' : '$' + left + ' remaining'}</small></label>}
                 <div className="wr-lens-actions">{!trade && <button type="button" className="wr-lens-primary" onClick={() => lens.savePlan(candidate)}>Save claim plan</button>}<button type="button" className={trade ? 'wr-lens-primary' : ''} onClick={() => lens.openModule(candidate)}>{trade ? 'Open in Trade Builder' : 'Open in Waivers'}</button></div>
                 {lens.ui.notice && <p className={'wr-lens-feedback' + (lens.ui.error ? ' is-error' : '')} role={lens.ui.error ? 'alert' : 'status'}>{lens.ui.notice}</p>}

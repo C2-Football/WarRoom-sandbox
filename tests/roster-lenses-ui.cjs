@@ -234,7 +234,7 @@ test('condensing preserves a negative alternate-horizon tradeoff and actionable 
     assert.match(text(missing.tree), /Comparison unavailable/); assert.match(text(missing.tree), /ROS inputs are missing\./, 'The active horizon keeps its concrete missing-evidence reason');
 });
 
-test('compact dynasty age fit retains real ages, price, inferred partner and expanded evidence boundaries', async () => {
+test('compact dynasty trade keeps facts and actions without explanatory captions', async () => {
     const h = harness(); h.input.skin = { type: 'dynasty', features: { showTrades: true } }; h.render();
     const move = candidate('trade-a', 'Young Runner', -8.5, 0, { price: { delta: -100, unit: 'DHQ' },
         futureFit: { outgoingAverageAge: 32, incomingAge: 24, ageDifference: 8, label: 'Younger roster asset' },
@@ -244,12 +244,15 @@ test('compact dynasty age fit retains real ages, price, inferred partner and exp
     const impact = find(h.tree, node => node.props.className === 'wr-lens-impact');
     assert.match(text(impact), /32.*24/); assert.match(text(impact), /8years younger/); assert.equal(h.seasonCalls.length, 0);
     let preview = find(h.tree, node => node.props['data-lens-preview'] === 'trade-a');
-    assert.match(text(preview), /Northside.*Competing profile \(inferred\)/); assert.match(text(preview), /-100 DHQ/);
+    assert.match(text(preview), /Trade with Northside/); assert.match(text(preview), /-100 DHQ/);
     assert(!text(preview).includes('future performance is not forecast'));
     h.click('Review trade'); preview = find(h.tree, node => node.props['data-lens-preview'] === 'trade-a');
-    assert(text(preview).includes('future performance is not forecast'));
-    assert(text(preview).includes('You give up projected production now.'));
-    assert(text(preview).includes('not a declared GM strategy'));
+    assert(!text(preview).includes('future performance is not forecast'));
+    assert(!text(preview).includes('You give up projected production now.'));
+    assert(!text(preview).includes('not a declared GM strategy'));
+    assert(!text(preview).includes('Model estimate;'));
+    assert(!text(preview).includes('Competing profile'));
+    assert.match(text(preview), /Open in Trade Builder/);
 });
 
 test('failed plan write is visible inline and never reported as a saved claim', async () => {

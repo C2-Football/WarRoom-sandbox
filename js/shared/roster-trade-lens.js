@@ -42,7 +42,8 @@
         const mode = type === 'redraft' ? 'win_now' : explored || savedMode;
         const labels = { rebuild: 'Rebuild', compete: 'Compete', win_now: 'Win now', custom: 'Custom' };
         return { mode, savedMode, label: labels[mode], savedLabel: labels[savedMode],
-            source: saved ? 'saved' : 'default', exploreMode: explored, untouchable: set(fx.untouchable || raw.untouchable || raw.untouchables),
+            source: saved ? 'saved' : 'default', exploreMode: explored,
+            acceptanceFloor: Math.max(55, Math.min(90, num(fx.acceptanceFloor) ?? num(raw.acceptanceFloor) ?? 75)), untouchable: set(fx.untouchable || raw.untouchable || raw.untouchables),
             targetPositions: set(fx.targetPositions || raw.targetPositions), sellPositions: set(fx.sellPositions || raw.sellPositions),
             sellRules: fx.sellRules || raw.sellRules || [],
             maxOverpayPct: num(fx.maxOverpayPct) ?? (mode === 'win_now' ? 0.20 : mode === 'rebuild' ? 0.07 : 0.12) };
@@ -161,7 +162,7 @@
         const currentWeek = num(opts.currentWeek) ?? num(App.WeeklyProj?.currentWeek?.()) ?? num(root.S?.currentWeek);
         const week = num(opts.week) ?? (currentWeek == null ? null : currentWeek + 1);
         const basis = basisOf(opts), basisLabel = App.RosterLensBasis?.describe?.(basis)?.label || ({ projected: 'Projected', average: 'Avg points', 'idp-average': 'IDP avg' })[basis];
-        const base = { version: VERSION, scope, context, basis, basisLabel, inputRevision: opts.revision ?? null, strategy: { mode: strategy.mode, savedMode: strategy.savedMode, savedLabel: strategy.savedLabel, label: strategy.label, source: strategy.source, exploreMode: strategy.exploreMode },
+        const base = { version: VERSION, scope, context, basis, basisLabel, inputRevision: opts.revision ?? null, strategy: { mode: strategy.mode, savedMode: strategy.savedMode, savedLabel: strategy.savedLabel, label: strategy.label, source: strategy.source, exploreMode: strategy.exploreMode, acceptanceFloor: strategy.acceptanceFloor },
             week, timing: week ? 'First full week after a trade · Week ' + week : 'Trade timing unavailable', candidates: [], before: null,
             notice: 'Possible packages, not agreed prices. One preview at a time; live rosters and your saved GM plan stay unchanged.' };
         const no = (status, reason) => ({ ...base, status, reason });
@@ -240,19 +241,33 @@
                 if (give > receive) caution.push('You send more ' + (type === 'redraft' ? 'season value' : 'DHQ value') + ' than you receive.');
                 if (type !== 'redraft' && target.age != null && target.age > (num(App.ageCurveWindows?.[target.pos]?.peak?.[1]) ?? 99)) caution.push('The incoming player is beyond the position’s typical peak-age range.');
                 if (partnerWeekly.status !== 'ready') caution.push('The other team’s lineup impact is incomplete.');
+                const engine = App.TradeEngine, mine = assessmentFor(roster, opts);
+                let acceptance = null;
+                if (typeof engine?.calcAcceptanceLikelihood === 'function') {
+                    const dna = scouting?.key || 'NONE';
+                    const posture = engine.calcOwnerPosture?.(assessment, dna);
+                    const taxes = engine.calcPsychTaxes?.(mine, assessment, dna, posture) || [];
+                    const grudge = engine.calcGrudgeTax?.(roster.owner_id, partnerRoster.owner_id, opts.grudges || root._tcGrudges || [], dna);
+                    if (grudge?.total) taxes.push({ name: 'Grudge Tax', impact: grudge.total });
+                    const likelihood = num(engine.calcAcceptanceLikelihood(give, receive, dna, taxes, mine, assessment, { totalPieces: outgoing.length + 1 }));
+                    if (likelihood != null) acceptance = { likelihood: Math.round(Math.max(5, Math.min(95, likelihood))), source: 'Trade Engine estimate' };
+                }
+                // A saved floor filters recommendations; it never changes the opponent estimate.
+                if (acceptance && acceptance.likelihood < strategy.acceptanceFloor) return;
+                if (!acceptance && strategy.source === 'saved' && (num(opts.gm?.acceptanceFloor) != null || num(opts.gm?.strategy?.acceptanceFloor) != null)) return;
                 const id = [context.myRosterId, str(partnerRoster.roster_id), giveIds.slice().sort().join(','), target.pid].join(':');
                 const c = { id, kind: 'trade', anchorPlayerId: outgoing[0].pid, incoming: [target], outgoing, partner: { rosterId: partnerRoster.roster_id, ownerId: partnerRoster.owner_id,
                     name: partnerName, direction, scouting: scouting || null }, basis, basisLabel, weekly, partnerWeekly,
                 season: unavailable(basis !== 'projected' ? 'Current-season averages are historical benchmarks, not rest-of-season forecasts. Choose Projected for a season comparison.' : type === 'redraft' ? 'Remaining-season evidence has not been loaded.' : 'Multi-year outcomes are not simulated.'),
                 price: { give, receive, delta: receive - give, unit: type === 'redraft' ? 'season value' : 'DHQ' }, futureFit: { ageDifference, outgoingAverageAge: avgAge, incomingAge: target.age,
                     label: ageDifference == null ? 'Age comparison unavailable' : ageDifference > 0 ? 'Younger roster asset' : ageDifference < 0 ? 'Older roster asset' : 'Similar age', source: 'roster ages; development is not forecast' },
-                reason, timelineFit, cautions: caution.concat(basis !== 'projected' ? ['Historical averages do not predict next week or the remaining season.'] : []), targetPriority: strategy.targetPositions.has(target.pos), sellPriority: outgoing.some(a => sellPriority(a, strategy)) };
+                ...(acceptance ? { acceptance } : {}), reason, timelineFit, cautions: caution.concat(basis !== 'projected' ? ['Historical averages do not predict next week or the remaining season.'] : []), targetPriority: strategy.targetPositions.has(target.pos), sellPriority: outgoing.some(a => sellPriority(a, strategy)) };
                 c.builderContext = { kind: 'roster-lens-package', source: 'roster-trade-lens', ...context, currentWeek, week, partnerRosterId: str(partnerRoster.roster_id), givePlayerIds: giveIds, receivePlayerIds: [target.pid] };
                 suggestions.push(c);
             }));
         });
         const seenTargets = new Set(), ranked = rank(suggestions, strategy).filter(c => { const pid = c.incoming[0].pid; if (seenTargets.has(pid)) return false; seenTargets.add(pid); return true; }).slice(0, Math.max(1, Math.min(8, num(opts.limit) || 5)));
-        return { ...base, status: ranked.length ? 'ready' : pricedTargets ? 'empty' : 'unavailable', reason: ranked.length ? null : pricedTargets ? 'No fairly priced package showed a clear fit within your protected core and GM plan.' : 'Other teams’ player prices are unavailable for this league.',
+        return { ...base, status: ranked.length ? 'ready' : pricedTargets ? 'empty' : 'unavailable', reason: ranked.length ? null : pricedTargets ? 'No verified package meets your ' + strategy.acceptanceFloor + '% acceptance floor, protected core and GM plan.' : 'Other teams’ player prices are unavailable for this league.',
             before, candidates: ranked, readiness: { pricing: true, weekly: true, season: false } };
     }
     async function load(opts) {
