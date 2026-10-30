@@ -56,7 +56,6 @@ function lineupScorePresentation({ tracking, submitted, state, gamesFresh, actua
 // stay in their actual lineup slot instead of duplicating cross-position pairs.
 function MatchupBreakdown({ matchup, comparison, week, pro, pmeta, upgrade, compact = false, reviewControls, benchmarkContext }) {
     const [expanded, setExpanded] = React.useState({ scope: '', groups: [] });
-    const [display, setDisplay] = React.useState({ scope: '', mode: 'auto' });
     const [benchmarkChoice, setBenchmarkChoice] = React.useState({ scope: '', basis: 'projected' });
     const [benchmarkLoad, setBenchmarkLoad] = React.useState({ key: '', options: null, players: null, stats: null });
     const benchmarkSequence = React.useRef(0);
@@ -74,8 +73,7 @@ function MatchupBreakdown({ matchup, comparison, week, pro, pmeta, upgrade, comp
     const accountKey = String(benchmarkAccount());
     const scope = [accountKey, benchmarkLeague._platform || window.S?.platform || '', benchmarkLeagueId, benchmarkLeague.season || '', week, oppName, comparison?.matchupId || ''].join('|');
     const reviewing = !!comparison?.available && (!!comparison.hasStarted || comparison.phase === 'past');
-    const mode = display.scope === scope ? display.mode : 'auto';
-    const actualMode = reviewing && mode !== 'projection';
+    const actualMode = reviewing;
     const Basis = window.App?.RosterLensBasis;
     const selectedBasis = benchmarkChoice.scope === scope ? benchmarkChoice.basis : 'projected';
     const basis = pro && !actualMode && benchmarkContext && Basis?.comparison && ['average', 'idp-average'].includes(selectedBasis) ? selectedBasis : 'projected';
@@ -154,7 +152,6 @@ function MatchupBreakdown({ matchup, comparison, week, pro, pmeta, upgrade, comp
     const playerNumber = (row, side) => empirical ? <span className="gd-benchmark-player-points"><strong>{fmt(row[side + 'Med'])}</strong><small>{row[side + 'Benchmark']?.comparisonBasis === 'average' ? 'Avg' : row[side + 'Benchmark']?.comparisonBasis === 'empty' ? 'Empty slot' : 'Proj'}{Number.isFinite(row[side + 'Benchmark']?.averageGames) ? ' · ' + row[side + 'Benchmark'].averageGames + ' games' : ''}</small></span> : actualMode ? <span className={'gd-review-player-points' + (row[side + 'Comparable'] ? ' is-' + row[side + 'Tone'] : '')}><strong aria-label={'Actual points ' + actualFmt(row[side + 'Actual'])}>{actualFmt(row[side + 'Actual'])}</strong><small><span>{projectionLabel(row[side + 'ProjectionKind'])}</span> <strong>{fmt(row[side + 'Projection'])}</strong></small>{row[side + 'Comparable'] ? <em>{row[side + 'Delta'] > 0 ? '+' : ''}{fmt(row[side + 'Delta'])} vs pregame</em> : null}</span> : reviewing ? <span className="gd-review-player-points"><strong>{fmt(row[side + 'Med'])}</strong><small>{projectionLabel(row[side + 'ProjectionKind'])}</small></span> : <strong>{fmt(row[side + 'Med'])}</strong>;
     return <section className={'gd-matchup' + (compact ? ' gd-matchup-compact' : '') + (reviewing ? ' gd-matchup-review' : '')} data-score-view={actualMode ? 'actual' : empirical ? basis : reviewing ? 'projection' : 'outlook'} aria-label="Weekly matchup breakdown">
         {reviewControls}
-        {reviewing && <div className="gd-review-switch" aria-label="Matchup score view"><button type="button" aria-pressed={!actualMode && !empirical} onClick={() => { setBenchmarkChoice({ scope, basis: 'projected' }); setDisplay({ scope, mode: 'projection' }); }}>Projection</button><button type="button" aria-pressed={actualMode} onClick={() => setDisplay({ scope, mode: 'actual' })}>Actual vs proj</button></div>}
         {pro && !actualMode && benchmarkContext && Basis?.comparison && <div className="gd-matchup-benchmark-tools"><select aria-label="Matchup point comparison basis" value={basis} onChange={event => setBenchmarkChoice({ scope, basis: ['average', 'idp-average'].includes(event.target.value) ? event.target.value : 'projected' })}><option value="projected">Projected</option><option value="average">Avg points</option><option value="idp-average">IDP avg</option></select>{empirical && nativeAverages && !prepared && <span role="status">Loading averages…</span>}</div>}
         <div className="gd-matchup-heading">
             <div><div className="gd-matchup-eyebrow">Week {week} · {actualMode ? comparison.headerLabel : empirical ? basisLabel : reviewing ? 'Submitted lineup projections' : 'Matchup outlook'}</div><h2>vs {oppName}</h2>

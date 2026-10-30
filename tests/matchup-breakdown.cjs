@@ -143,8 +143,7 @@ const reviewProps = { ...props, compact: true, comparison: completedComparison }
 tree = render(reviewProps, true);
 assert.match(tree.props.className, /gd-matchup-review/, 'a started matchup automatically opens actual points');
 assert.equal(tree.props['data-score-view'], 'actual');
-assert.equal(button(tree, 'Actual vs proj').props['aria-pressed'], true);
-assert.equal(button(tree, 'Projection').props['aria-pressed'], false);
+assert(!button(tree, 'Actual vs proj') && !button(tree, 'Projection'), 'One matchup surface replaces score-mode tabs');
 assert.match(text(tree), /Final points.*2\.50 You Proj 13\.0.*14\.00 Them Proj 11\.0/);
 assert.doesNotMatch(text(tree), /Win probability|Matchup outlook/, 'actual scores are not presented as a new forecast');
 assert.match(text(tree), /Submitted starters.*saved pregame/, 'the rendered comparison retains its baseline source explanation');
@@ -162,18 +161,9 @@ assert(all(reviewRows[0]).some(node => node.props.className === 'gd-review-playe
 assert(all(reviewRows[1]).some(node => node.props.className === 'gd-review-player-points is-strong'));
 assert(all(reviewRows[2]).filter(node => String(node.props.className).startsWith('gd-review-player-points')).every(node => !/is-strong|is-quiet|is-typical/.test(node.props.className)), 'unavailable final values never inherit a grade');
 assert.doesNotMatch(text(tree), /Quarterback|Their receiver|Kicker/, 'actual view uses submitted players rather than the optimizer pairs');
-button(tree, 'Projection').props.onClick(); tree = render(reviewProps);
-assert.equal(button(tree, 'Projection').props['aria-pressed'], true);
-assert.equal(tree.props['data-score-view'], 'projection');
-assert.match(text(tree), /Submitted lineup projections/);
-assert.deepEqual(slotRows(tree).map(row => row.props['data-slot']), reviewRows.map(row => row.props['data-slot']), 'mode switches keep the same slot groups');
-assert.deepEqual(slotRows(tree).map(row => text(row).match(/Actual QB|Actual Flex|Missing Flex|First View TE/)?.[0]), ['Actual QB', 'Actual Flex', 'Missing Flex', 'First View TE'], 'projection toggle keeps the same submitted players');
-assert.match(text(slotRows(tree)[1]), /Actual Flex -5\.0/);
-assert.match(text(slotRows(tree)[3]), /First View TE 8\.0 First view/, 'projection mode also retains source labels');
 tree = render({ ...reviewProps, comparison: { ...completedComparison, totalMine: 3 } });
-assert.equal(button(tree, 'Projection').props['aria-pressed'], true, 'a live refresh does not override the chosen display mode');
-button(tree, 'Actual vs proj').props.onClick(); tree = render(reviewProps);
-assert.equal(button(tree, 'Actual vs proj').props['aria-pressed'], true);
+assert.equal(tree.props['data-score-view'], 'actual');
+assert.match(text(tree), /3\.00 You Proj 13\.0/, 'live refresh updates actual alongside the saved projection');
 
 const beforeGame = buildComparison({ rows: comparisonOptions.rows.map(row => ({ ...row, points: 0 })), gameState: () => 'upcoming' });
 tree = render({ ...reviewProps, comparison: beforeGame }, true);
@@ -200,7 +190,7 @@ assert.match(text(slotRows(tree)[0]), /You Live Actual QB 0\.00/, 'an in-progres
 assert(!all(slotRows(tree)[0]).some(node => String(node.props.className).startsWith('gd-review-player-points') && /is-strong|is-quiet|is-typical/.test(node.props.className)), 'a live score is never graded against a full-game estimate');
 const changedWeek = render({ ...reviewProps, week: 2 });
 assert.equal(slotRows(changedWeek).length, 0, 'reviewing another week resets expanded player detail');
-assert.equal(button(changedWeek, 'Actual vs proj').props['aria-pressed'], true, 'a different week starts with its actual scores');
+assert.equal(changedWeek.props['data-score-view'], 'actual', 'a different week shows actual alongside projections');
 tree = render({ ...reviewProps, matchup: null }, true);
 assert.match(text(tree), /Final points/, 'submitted actual review is available even without an optimizer forecast');
 const unverifiedPast = buildComparison({ currentWeek: 4, gamesFresh: false, gameState: () => 'unknown',
@@ -302,13 +292,8 @@ const reviewWithBasis = { ...reviewProps, benchmarkContext: basisProps.benchmark
 const savedBefore = JSON.stringify(completedComparison);
 tree = render(reviewWithBasis, true);
 assert.equal(control(tree), undefined, 'Actual review keeps its existing actual/saved-projection numbers');
-button(tree, 'Projection').props.onClick(); tree = render(reviewWithBasis);
-tree = changeBasis('average', reviewWithBasis);
-assert.equal(tree.props['data-score-view'], 'average');
-assert.doesNotMatch(text(tree), /saved pregame|Final points|Win probability/);
-button(tree, 'Actual vs proj').props.onClick(); tree = render(reviewWithBasis);
 assert.equal(tree.props['data-score-view'], 'actual');
-assert.match(text(tree), /Final points.*2\.50 You Proj 13\.0.*14\.00 Them Proj 11\.0/);
+assert(!button(tree, 'Projection'), 'Started matchups retain both scores without a second display mode');
 assert.equal(JSON.stringify(completedComparison), savedBefore, 'Average display cannot overwrite submitted scores or captured forecasts');
 
 (async () => {
