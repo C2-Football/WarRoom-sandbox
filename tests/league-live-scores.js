@@ -59,3 +59,19 @@ async function run() {
     console.log('League live scores: scoring, season selection, sharing, stale recovery, visibility and cleanup passed.');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });
+// Questionable participation has a usable conditional forecast, not missing stats.
+{
+    globalThis.App.NflContext = { gameStatus: game => game?.status || 'unknown' };
+    const players={a:{team:'BUF'},b:{team:'KC'}},games=[{home:'BUF',away:'KC',status:'upcoming'}];
+    const row={points:0,starters:['a','b']};
+    const forecasts={a:{availabilityUnknown:true,points:{median:null},conditionalPoints:{median:12},statLine:{median:{rush_yd:120}},scoringSupport:{supported:true}},b:{points:{median:10},statLine:{median:{rec:5}}}};
+    assert.equal(L.projectedFinish(row,players,games,league,8,forecasts),22);
+    assert.equal(L.finishAssumption(row,forecasts),'If questionable players play');
+    assert.equal(forecasts.a.points.median,null,'canonical unknown stays unknown');
+    forecasts.a.scoringSupport.supported=false;
+    assert.equal(L.projectedFinish(row,players,games,league,8,forecasts),null);
+    forecasts.a.scoringSupport.supported=true;forecasts.a.statLine.median=null;
+    assert.equal(L.projectedFinish(row,players,games,league,8,forecasts),null,'missing baseline is not zero');
+    forecasts.a.statLine.median={rush_yd:120};games[0].status='final';
+    assert.equal(L.projectedFinish({...row,points:31},players,games,league,8,forecasts),31,'final actuals stay authoritative');
+}

@@ -128,7 +128,7 @@ function LeagueMatchupView({ matchupTarget, currentLeague, myRoster, playersData
             <div className="gd-league-game-heading"><span className="gd-matchup-eyebrow">Week {week} · League matchup</span><button type="button" disabled={loading} onClick={() => { board.refresh?.(); setContextRefresh(value => value + 1); }}>{loading ? 'Updating…' : 'Refresh scores'}</button></div>
             <div className="gd-league-game-scores">{rows.map((row, side) => <React.Fragment key={row.roster_id}>{side ? <span className="gd-league-game-versus">VS</span> : null}<div className={'gd-league-game-side is-' + (side ? 'right' : 'left')}>
                 <h2>{names[side]}</h2><strong className="gd-league-game-total">{fmt(Live.rosterPoints(row))}</strong><span className="gd-league-game-actual">Actual points</span>
-                <span className="gd-league-game-finish">Proj. finish <strong>{fmt(projectedFinish(row))}</strong></span>
+                <span className="gd-league-game-finish">Proj. finish <strong>{fmt(projectedFinish(row))}</strong>{projectedFinish(row) != null && Live.finishAssumption?.(row, projections) && <small> · if they play</small>}</span>
                 <small>{Live.starterProgress?.(row, playersData, games, currentLeague, week)?.text || 'Game status unavailable'}</small>
             </div></React.Fragment>)}</div>
             <p className={'gd-league-game-update' + (board.error || board.status === 'stale' ? ' is-stale' : '')} role="status">{board.error || board.status === 'stale' ? 'Scores could not refresh. Showing the last successful update.' : updated ? 'Updated ' + updated : 'Submitted lineups · League scoring'}</p>

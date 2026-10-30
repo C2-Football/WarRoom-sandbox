@@ -68,19 +68,25 @@
             if (!game && Number(root.App?.NFLByes?.weekForPlayer?.(player, Number(league?.season))) === Number(week)) continue;
             if (!['live', 'upcoming'].includes(status)) return null;
             const projection = projections?.[pid];
-            const estimate = projection?.points?.median;
+            const estimate = projection?.points?.median ?? (projection?.availabilityUnknown && projection?.scoringSupport?.supported !== false
+                ? projection?.conditionalPoints?.median : null);
             // A missing baseline also scores as zero in the projection engine; it
             // must remain unavailable rather than silently predicting zero.
             const statLine = projection?.statLine?.median;
             const scoringStat = /^(?:pass_|rush_|rec(?:_|$)|fum_|def_|fg|xp|idp_|tkl|sack|int(?:_|$)|ff$|fr(?:_|$)|safe|blk|st_|pts_allow|yds_allow|bonus_)/;
             const hasStats = statLine && Object.entries(statLine).some(([key, value]) => scoringStat.test(key) && value != null && value !== '' && Number.isFinite(Number(value)));
-            if (!hasStats || estimate == null || !Number.isFinite(Number(estimate))) return null;
+            if (projection?.scoringSupport?.supported === false || !hasStats || estimate == null || !Number.isFinite(Number(estimate))) return null;
             const earned = service.playerPoints(row, pid);
             if (status === 'live' && (earned == null || !Number.isFinite(Number(earned)))) return null;
             const actual = earned == null ? 0 : Number(earned);
             finish += Math.max(status === 'live' ? actual : -Infinity, Number(estimate)) - actual;
         }
         return finish;
+    }
+
+    function finishAssumption(row, projections) {
+        return (row?.starters || []).some(pid => projections?.[pid]?.availabilityUnknown
+            && projections[pid].conditionalPoints?.median != null) ? 'If questionable players play' : null;
     }
 
     function groupRows(rows) {
@@ -181,5 +187,5 @@
         }, [key]);
         return { ...(result.key === key ? result.state : empty(week, isSupported)), refresh };
     }
-    App.LeagueLiveScores = { INTERVAL, supported, currentWeek, rosterPoints, playerPoints, starterProgress, projectedFinish, groupRows, createClient, useScores };
+    App.LeagueLiveScores = { INTERVAL, supported, currentWeek, rosterPoints, playerPoints, starterProgress, projectedFinish, finishAssumption, groupRows, createClient, useScores };
 })(typeof window !== 'undefined' ? window : globalThis);
