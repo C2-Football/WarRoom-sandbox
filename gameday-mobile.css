@@ -354,12 +354,12 @@
 }
 
 /* Match the shared position palette while keeping small labels readable. */
-.gd-player-initial.gd-pos-qb { --gd-position-ink:#ffaaa4; --gd-position-fill:rgba(231,76,60,.18); }
-.gd-player-initial.gd-pos-rb { --gd-position-ink:#79e2a5; --gd-position-fill:rgba(46,204,113,.18); }
-.gd-player-initial.gd-pos-wr { --gd-position-ink:#91cef7; --gd-position-fill:rgba(52,152,219,.18); }
-.gd-player-initial.gd-pos-te { --gd-position-ink:#ffd173; --gd-position-fill:rgba(240,165,0,.18); }
-.gd-player-initial.gd-pos-k { --gd-position-ink:#d4b4ee; --gd-position-fill:rgba(155,89,182,.18); }
-.gd-player-initial.gd-pos-def,.gd-player-initial.gd-pos-dst { --gd-position-ink:#c4d0d9; --gd-position-fill:rgba(133,146,158,.18); }
+:is(.gd-player-initial,.gd-plan-player).gd-pos-qb { --gd-position-ink:#ffaaa4; --gd-position-fill:rgba(231,76,60,.18); }
+:is(.gd-player-initial,.gd-plan-player).gd-pos-rb { --gd-position-ink:#79e2a5; --gd-position-fill:rgba(46,204,113,.18); }
+:is(.gd-player-initial,.gd-plan-player).gd-pos-wr { --gd-position-ink:#91cef7; --gd-position-fill:rgba(52,152,219,.18); }
+:is(.gd-player-initial,.gd-plan-player).gd-pos-te { --gd-position-ink:#ffd173; --gd-position-fill:rgba(240,165,0,.18); }
+:is(.gd-player-initial,.gd-plan-player).gd-pos-k { --gd-position-ink:#d4b4ee; --gd-position-fill:rgba(155,89,182,.18); }
+:is(.gd-player-initial,.gd-plan-player).gd-pos-def,:is(.gd-player-initial,.gd-plan-player).gd-pos-dst { --gd-position-ink:#c4d0d9; --gd-position-fill:rgba(133,146,158,.18); }
 .gd-matchup-review .gd-review-player-points { flex-shrink:0; min-width:112px; }
 .gd-matchup[data-score-view="actual"] .gd-position-row { grid-template-columns:42px 84px minmax(24px,1fr) 84px 84px 16px; }
 .gd-matchup[data-score-view="actual"] .gd-matchup-totals > span:not(.gd-matchup-versus) { display:grid; grid-template-columns:auto auto; align-items:baseline; gap:2px 10px; }
@@ -485,4 +485,47 @@
   .gd-league-slot { grid-template-columns: 27px minmax(0, 1fr); gap: 5px; padding-right: 6px; padding-left: 5px; }
   .gd-league-starter { grid-template-columns: minmax(0, 1fr) 40px 40px; gap: 5px; }
   .gd-league-game-heading button { padding: 6px 7px; font-size: 11px; }
+}
+
+/* Quiet row boundaries keep player identity and planning metrics easy to follow. */
+@media (max-width: 767px) {
+  .gd-mobile .gd-working-lineup .gd-player-list {
+    display: flex; flex-direction: column; gap: 4px;
+    padding: 5px; border: 0 !important; border-radius: var(--card-radius, 10px) !important;
+    background: rgba(10, 19, 33, .38) !important;
+  }
+  .gd-mobile .gd-player-list .gd-plan-player,
+  .gd-mobile-sheet .gd-plan-player[class*="gd-pos-"] {
+    position: relative; border: 1px solid rgba(183, 206, 255, .14) !important;
+    border-radius: var(--card-radius-sm, 8px);
+    background: linear-gradient(90deg, color-mix(in srgb, var(--gd-position-ink, var(--cx-accent, #b7ceff)) 9%, transparent), rgba(183, 206, 255, .025) 48%) !important;
+    box-shadow: inset 3px 0 var(--gd-position-ink, var(--cx-accent, #b7ceff));
+  }
+  .gd-mobile .gd-player-list .gd-plan-player.is-risk,
+  .gd-mobile-sheet .gd-plan-player.is-risk[class*="gd-pos-"] {
+    box-shadow: inset 3px 0 var(--warn, #f0a500);
+  }
+  .gd-mobile .gd-player-list .gd-plan-player.is-selected,
+  .gd-mobile-sheet .gd-plan-player.is-selected[class*="gd-pos-"] {
+    border-color: var(--cx-accent, #b7ceff) !important;
+    background: linear-gradient(90deg, rgba(183, 206, 255, .17), rgba(183, 206, 255, .065)) !important;
+  }
+  .gd-mobile .gd-player-list .gd-plan-stats,
+  .gd-mobile-sheet .gd-plan-player .gd-plan-stats {
+    align-items: stretch; padding: 3px 0 3px 5px;
+    border-left: 1px solid rgba(183, 206, 255, .13);
+  }
+  .gd-mobile .gd-player-list .gd-plan-stats > span,
+  .gd-mobile-sheet .gd-plan-player .gd-plan-stats > span {
+    display: flex; flex-direction: column; justify-content: center;
+    gap: 3px; padding: 3px 0;
+  }
+  .gd-mobile .gd-player-list .gd-plan-stats > .is-projection,
+  .gd-mobile-sheet .gd-plan-player .gd-plan-stats > .is-projection {
+    border-radius: var(--card-radius-xs, 5px);
+    background: rgba(183, 206, 255, .1);
+  }
+  .gd-mobile .gd-player-list .has-actual-score .gd-plan-stats {
+    border-left: 0; padding-left: 0;
+  }
 }

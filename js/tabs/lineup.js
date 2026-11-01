@@ -20,19 +20,21 @@ function LineupInjuryBadge({ status }) {
 }
 
 // Stable component identity keeps the player button available for sheet focus return.
-const MobilePlayerRow = ({ pos, name, tag, slots, accent, injuryStatus, onClick, delta, disabled, actualScore }) => (
-    <button type="button" className={'gd-plan-player' + (accent === 'risk' ? ' is-risk' : '') + (actualScore ? ' has-actual-score' : '')} onClick={onClick} disabled={disabled}>
-        <span className={'gd-player-initial gd-pos-' + String(pos || '').toLowerCase().replace(/[^a-z]/g, '')}
-            style={window.App?.idpPositionFamily?.(pos) ? { '--gd-position-ink': window.App.positionColor(pos), '--gd-position-fill': 'color-mix(in srgb, ' + window.App.positionColor(pos) + ' 16%, transparent)' } : undefined}
+const MobilePlayerRow = ({ pos, name, tag, slots, accent, injuryStatus, onClick, delta, disabled, actualScore }) => {
+    const positionClass = 'gd-pos-' + String(pos || '').toLowerCase().replace(/[^a-z]/g, '');
+    const positionStyle = window.App?.idpPositionFamily?.(pos) ? { '--gd-position-ink': window.App.positionColor(pos), '--gd-position-fill': 'color-mix(in srgb, ' + window.App.positionColor(pos) + ' 16%, transparent)' } : undefined;
+    return <button type="button" className={'gd-plan-player ' + positionClass + (accent === 'risk' ? ' is-risk' : accent === 'gold' ? ' is-selected' : '') + (actualScore ? ' has-actual-score' : '')} style={positionStyle} onClick={onClick} disabled={disabled}>
+        <span className={'gd-player-initial ' + positionClass}
+            style={positionStyle}
             aria-hidden="true">{pos}</span>
         <span className="gd-player-main"><strong>{name}</strong><LineupInjuryBadge status={injuryStatus} /><span>{tag}</span></span>
         {actualScore ? <span className={'gd-player-actual is-' + actualScore.tone} title={actualScore.comparison || (actualScore.label + ' actual points · no pregame comparison')}><strong>{Number.isFinite(actualScore.points) ? actualScore.points.toFixed(2) : '—'}</strong><small>{actualScore.label} pts</small></span> : null}
-        <span className="gd-plan-stats" style={{ '--mc-columns': (slots || []).length }}>{(slots || []).map(stat => <span key={stat.label}><strong>{stat.value}</strong><small>{stat.label === 'PROJ' ? 'Proj' : stat.label}</small></span>)}</span>
+        <span className="gd-plan-stats" style={{ '--mc-columns': (slots || []).length }}>{(slots || []).map(stat => <span key={stat.label} className={stat.key === 'proj' || stat.label === 'PROJ' ? 'is-projection' : undefined}><strong>{stat.value}</strong><small>{stat.label === 'PROJ' ? 'Proj' : stat.label}</small></span>)}</span>
         {actualScore?.comparison ? <span className={'gd-score-comparison is-' + actualScore.tone}>{actualScore.comparison}</span> : null}
         <span className="gd-row-chevron" aria-hidden="true">›</span>
         {delta != null && <span className={'mc-swap-delta ' + (delta < 0 ? 'is-loss' : 'is-gain')}>{delta > 0 ? '+' : ''}{delta.toFixed(1)} projected pts</span>}
-    </button>
-);
+    </button>;
+};
 
 // Final scores may be compared only with a forecast captured before kickoff.
 // In-progress scores and first-view snapshots never acquire a quality color.
