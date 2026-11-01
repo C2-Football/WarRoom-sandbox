@@ -179,8 +179,8 @@ console.log('PASS lineup lens: legal individual swaps, FLEX/IDP, reserves, per-p
     scored = await realLens.load({ ...pprArgs, players: { ...realPlayers, catcher: { ...realPlayers.catcher, injury_status: 'Questionable' } } });
     realSwap = scored.candidates[0];
     assert.equal(realSwap.incoming[0].pid, 'catcher'); assert.equal(realSwap.conditional, true); assert.equal(realSwap.conditionalLabel, 'If they play');
-    assert.equal(realSwap.weekly.delta, 2.2, 'Real Questionable path remains usable with the existing 0.92 injury multiplier');
-    assert(Math.abs(realSwap.weekly.after - 9.2) < 0.00001);
+    assert.equal(realSwap.weekly.delta, 3, 'Sandbox Questionable path uses the explicit healthy participation scenario');
+    assert.equal(realSwap.weekly.after, 10);
     scored = await realLens.load({ ...pprArgs, roster: { ...realRoster, players: ['runner', 'missing'] } });
     assert.equal(scored.status, 'unavailable'); assert.equal(scored.candidates.length, 0, 'No baseline for an eligible bench player remains unknown');
     scored = await realLens.load({ ...pprArgs, roster: { ...realRoster, players: ['missing', 'catcher'], starters: ['missing'] }, platformStarters: ['missing'] });
