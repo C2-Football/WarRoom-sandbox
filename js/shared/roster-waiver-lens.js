@@ -9,6 +9,7 @@
     const own = (map, key) => Object.prototype.hasOwnProperty.call(map || {}, key);
     const basisOf = args => App.RosterLensBasis?.normalize?.(args.basis) || (['average','idp-average'].includes(args.basis) ? args.basis:'projected');
     const ids = roster => [...new Set([...(roster?.players || []), ...(roster?.reserve || []), ...(roster?.taxi || [])].filter(x => x != null && String(x) !== '0').map(String))];
+    const windowOf = args => App.RosterLensBasis?.normalizeWindow?.(args.averageWindow) || 'season';
     const norm = pos => App.normPos?.(pos) || App.RosterLensBasis?.position?.(pos) || ({ DST:'DEF', 'D/ST':'DEF', DE:'DL', DT:'DL', NT:'DL', IDL:'DL', EDGE:'DL', CB:'DB', S:'DB', SS:'DB', FS:'DB', OLB:'LB', ILB:'LB', MLB:'LB' }[pos] || pos);
     const typeOf = args => args.skin?.type || App.LeagueSkin?.build?.({league:args.league})?.type
         || ({0:'redraft',1:'keeper',2:'dynasty',3:'chopped'})[args.league?.settings?.type] || 'unknown';
@@ -21,13 +22,13 @@
     function scope(args) {
         const league=args.league || {}, owner=account(args);
         const platform=league._platform || (league._mfl ? 'mfl' : league._espn ? 'espn' : league._yahoo ? 'yahoo' : root.S?.platform || 'sleeper');
-        return owner && idOf(league) && league.season ? [owner,platform,idOf(league),league.season,basisOf(args)].map(encodeURIComponent).join(':') : null;
+        return owner && idOf(league) && league.season ? [owner,platform,idOf(league),league.season,basisOf(args),...(basisOf(args) === 'projected' ? []:[windowOf(args)])].map(encodeURIComponent).join(':') : null;
     }
     function result(args, status, reason, extras) {
         return { status, reason, scope:scope(args), week:number(args.week) || App.WeeklyProj?.currentWeek?.() || null,
             candidates:[], readiness:{weekly:false,season:false}, before:null,
             notice:'Preview only. Review the drop, bid and player locks on your league platform.', ...extras,
-            basis:basisOf(args),basisLabel:App.RosterLensBasis?.describe?.(basisOf(args))?.label || ({projected:'Projected',average:'Avg points','idp-average':'IDP avg'})[basisOf(args)] };
+            basis:basisOf(args),averageWindow:windowOf(args),basisLabel:App.RosterLensBasis?.describe?.(basisOf(args),windowOf(args))?.label || ({projected:'Projected',average:'Avg points','idp-average':'IDP avg'})[basisOf(args)] };
     }
     function restrictions(args) {
         const league=args.league || {}, settings=league.settings || {}, skin=args.skin || {};
@@ -157,10 +158,10 @@
                 seen.add(id);
                 const asset=(key,player) => ({pid:key,name:player.full_name || [player.first_name,player.last_name].filter(Boolean).join(' ') || key,
                     position:norm(player.position),team:player.team || null,projection:project(key),comparisonBasis:args.projectionsByPid?.[key]?.comparisonBasis || 'projected',
-                    averageGames:args.projectionsByPid?.[key]?.averageGames ?? null,averageSeason:args.projectionsByPid?.[key]?.averageSeason ?? null,averageSource:args.projectionsByPid?.[key]?.averageSource ?? null});
+                    averageGames:args.projectionsByPid?.[key]?.averageGames ?? null,averageSeason:args.projectionsByPid?.[key]?.averageSeason ?? null,averageSource:args.projectionsByPid?.[key]?.averageSource ?? null,averageWindow:args.projectionsByPid?.[key]?.averageWindow ?? null});
                 const incoming=asset(pid,p), outgoing=dropPid ? asset(dropPid,players[dropPid]) : null;
                 const delta=number(fit.weeklyGain), rosDelta=number(fit.rosGain);
-                const weekly={status:delta != null && beforeWeek != null ? 'ready':'unavailable',before:beforeWeek,after:delta != null && beforeWeek != null ? +(beforeWeek+delta).toFixed(2):null,delta,basis};
+                const weekly={status:delta != null && beforeWeek != null ? 'ready':'unavailable',before:beforeWeek,after:delta != null && beforeWeek != null ? +(beforeWeek+delta).toFixed(2):null,delta,basis,averageWindow:windowOf(args)};
                 const season={status:rosDelta != null && beforeRos != null ? 'ready':'unavailable',before:beforeRos,after:rosDelta != null && beforeRos != null ? +(beforeRos+rosDelta).toFixed(1):null,delta:rosDelta,basis:'fixed-roster ROS lineup points',
                     conditionalParticipation:ids(args.roster).filter(key => !reserve.has(key)).concat(pid).some(conditionalRos),
                     reason:seasonReason || (ros(pid) == null ? 'ROS forecast unavailable for ' + incoming.name + '.' : null)};
@@ -174,14 +175,14 @@
                 const price={bid:null,remaining:budget != null && spent != null ? Math.max(0,budget-spent):null,minimum:number(args.league.settings?.waiver_budget_min),basis:'Choose your maximum on the claim plan; no winning bid is predicted.'};
                 candidates.push({id,pid,dropPid,anchorPlayerId:dropPid,player:p,drop:dropPid ? players[dropPid]:null,
                     incoming:[incoming],outgoing:outgoing ? [outgoing]:[],weekly,season,price,cautions,requiresLockCheck:true,
-                    basis,reason:delta > 0 ? '+'+delta.toFixed(1)+(basis === 'average' ? ' current-season average lineup points.':basis === 'idp-average' ? ' mixed-basis lineup points.':' projected lineup points this week.') : '+'+rosDelta.toFixed(1)+' projected ROS lineup points.',
-                    handoff:{pid,dropPid,position:pos,leagueId:idOf(args.league),week,basis,source:'roster-waiver-lens',reason:'Compare '+incoming.name+(outgoing ? ' for '+outgoing.name : ' using an open roster spot')+'. '+(delta == null ? 'Lineup comparison unavailable.' : (basis === 'projected' ? 'Week lineup gain ':'Average-basis lineup change ')+(delta>0?'+':'')+delta.toFixed(1)+'.')+(basis !== 'projected' ? ' Historical averages are not forecasts.':rosDelta == null ? ' ROS gain unavailable.' : ' ROS lineup gain '+(rosDelta>0?'+':'')+rosDelta.toFixed(1)+'.')}});
+                    basis,averageWindow:windowOf(args),reason:delta > 0 ? '+'+delta.toFixed(1)+(basis === 'average' ? (windowOf(args) === 'season' ? ' current-season average lineup points.' : ' last '+windowOf(args)+' games average lineup points.'):basis === 'idp-average' ? ' mixed-basis lineup points.':' projected lineup points this week.') : '+'+rosDelta.toFixed(1)+' projected ROS lineup points.',
+                    handoff:{pid,dropPid,position:pos,leagueId:idOf(args.league),week,basis,averageWindow:windowOf(args),source:'roster-waiver-lens',reason:'Compare '+incoming.name+(outgoing ? ' for '+outgoing.name : ' using an open roster spot')+'. '+(delta == null ? 'Lineup comparison unavailable.' : (basis === 'projected' ? 'Week lineup gain ':'Average-basis lineup change ')+(delta>0?'+':'')+delta.toFixed(1)+'.')+(basis !== 'projected' ? ' Historical averages are not forecasts.':rosDelta == null ? ' ROS gain unavailable.' : ' ROS lineup gain '+(rosDelta>0?'+':'')+rosDelta.toFixed(1)+'.')}});
             });
         });
         return result(args,candidates.length ? 'ready':'empty',candidates.length ? null:'No confirmed upgrade with the available forecasts.',{
             week,candidates:candidates.sort((a,b) => (b.weekly.delta ?? -Infinity)-(a.weekly.delta ?? -Infinity) || a.id.localeCompare(b.id)),
             readiness:{weekly:beforeWeek != null,season:beforeRos != null},before:{weekly:beforeWeek,season:beforeRos},
-            basisDescription:basis !== 'projected' ? App.RosterLensBasis.describe(basis).description : type === 'chopped' ? 'This-week lineup points; survival probability changes are not modeled.' : 'Best legal lineup before and after one alternative move. ROS holds rosters fixed.'});
+            basisDescription:basis !== 'projected' ? App.RosterLensBasis.describe(basis,windowOf(args)).description : type === 'chopped' ? 'This-week lineup points; survival probability changes are not modeled.' : 'Best legal lineup before and after one alternative move. ROS holds rosters fixed.'});
     }
     async function load(input) {
         let args={...input,league:input.league || {},priorData:input.priorData || input.priorStatsData,draft:input.draft || input.briefDraftInfo};

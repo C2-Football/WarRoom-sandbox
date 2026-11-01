@@ -18,6 +18,7 @@
     const position = p => App.normPos ? App.normPos(p?.position) : App.RosterLensBasis?.position?.(p?.position) || App.StartSit?.normSlot(p?.position || '');
     const name = p => p?.full_name || [p?.first_name, p?.last_name].filter(Boolean).join(' ') || 'Player';
     const basisOf = opts => App.RosterLensBasis?.normalize?.(opts.basis) || (['average', 'idp-average'].includes(opts.basis) ? opts.basis : 'projected');
+    const windowOf = opts => App.RosterLensBasis?.normalizeWindow?.(opts.averageWindow) || 'season';
     function skinFor(opts) {
         if (opts.skin || opts.leagueSkin) return opts.skin || opts.leagueSkin;
         return App.LeagueSkin?.resolve?.({ league: opts.league, rosters: opts.rosters || opts.league?.rosters }) || {};
@@ -29,9 +30,9 @@
             (r.locked_players || []).map(str).sort(), (r.protected_players || []).map(str).sort()]).sort((a, b) => a[0].localeCompare(b[0]))));
         return { accountKey: str(opts.accountKey || opts.userId), platform: str(opts.platform || league._platform ||
             (league._mfl ? 'mfl' : league._espn ? 'espn' : league._yahoo ? 'yahoo' : 'sleeper')),
-        leagueId: str(league.league_id || league.id), season: str(league.season), myRosterId: str(opts.roster?.roster_id), basis: basisOf(opts), revision };
+        leagueId: str(league.league_id || league.id), season: str(league.season), myRosterId: str(opts.roster?.roster_id), basis: basisOf(opts), averageWindow: windowOf(opts), revision };
     }
-    function scopeFor(context) { return [VERSION, context.accountKey, context.platform, context.leagueId, context.season, context.myRosterId, context.basis || 'projected', context.revision].join('|'); }
+    function scopeFor(context) { return [VERSION, context.accountKey, context.platform, context.leagueId, context.season, context.myRosterId, context.basis || 'projected', ...(context.basis === 'projected' ? [] : [context.averageWindow || 'season']), context.revision].join('|'); }
     function strategyFor(opts, type) {
         const fx = opts.gm || root.WR?.GmMode?.effects?.(opts.league?.league_id || opts.league?.id) || {};
         const raw = fx.strategy || fx;
@@ -161,8 +162,8 @@
         const context = contextFor(opts), scope = scopeFor(context), skin = skinFor(opts), type = skin.type || 'unknown', strategy = strategyFor(opts, type);
         const currentWeek = num(opts.currentWeek) ?? num(App.WeeklyProj?.currentWeek?.()) ?? num(root.S?.currentWeek);
         const week = num(opts.week) ?? (currentWeek == null ? null : currentWeek + 1);
-        const basis = basisOf(opts), basisLabel = App.RosterLensBasis?.describe?.(basis)?.label || ({ projected: 'Projected', average: 'Avg points', 'idp-average': 'IDP avg' })[basis];
-        const base = { version: VERSION, scope, context, basis, basisLabel, inputRevision: opts.revision ?? null, strategy: { mode: strategy.mode, savedMode: strategy.savedMode, savedLabel: strategy.savedLabel, label: strategy.label, source: strategy.source, exploreMode: strategy.exploreMode, acceptanceFloor: strategy.acceptanceFloor },
+        const basis = basisOf(opts), basisLabel = App.RosterLensBasis?.describe?.(basis, windowOf(opts))?.label || ({ projected: 'Projected', average: 'Avg points', 'idp-average': 'IDP avg' })[basis];
+        const base = { version: VERSION, scope, context, basis, basisLabel, averageWindow: windowOf(opts), inputRevision: opts.revision ?? null, strategy: { mode: strategy.mode, savedMode: strategy.savedMode, savedLabel: strategy.savedLabel, label: strategy.label, source: strategy.source, exploreMode: strategy.exploreMode, acceptanceFloor: strategy.acceptanceFloor },
             week, timing: week ? 'First full week after a trade · Week ' + week : 'Trade timing unavailable', candidates: [], before: null,
             notice: 'Possible packages, not agreed prices. One preview at a time; live rosters and your saved GM plan stay unchanged.' };
         const no = (status, reason) => ({ ...base, status, reason });
@@ -191,7 +192,7 @@
         const asset = pid => ({ pid, id: pid, name: name(players[pid]), pos: position(players[pid]), team: players[pid]?.team || null,
             age: num(players[pid]?.age), value: num(typeof values[pid] === 'object' ? values[pid]?.value : values[pid]), projection: num(projections[pid]?.points?.median),
             comparisonBasis: projections[pid]?.comparisonBasis || 'projected', averageGames: projections[pid]?.averageGames ?? null,
-            averageSeason: projections[pid]?.averageSeason ?? null, averageSource: projections[pid]?.averageSource ?? null });
+            averageSeason: projections[pid]?.averageSeason ?? null, averageWindow: projections[pid]?.averageWindow ?? null, averageSource: projections[pid]?.averageSource ?? null });
         const ownProtected = protectedFor(roster, opts, strategy);
         const owned = ids(roster).map(asset).filter(a => a.value > 0 && !ownProtected.has(a.pid))
             .sort((a, b) => Number(sellPriority(b, strategy)) - Number(sellPriority(a, strategy)) || b.value - a.value).slice(0, 14);
@@ -219,7 +220,7 @@
                 const giveIds = outgoing.map(a => a.pid), changed = move(roster, giveIds, [target.pid]), changedPartner = move(partnerRoster, [target.pid], giveIds);
                 if (active(changed).length > si.capacity || active(changedPartner).length > si.capacity) return;
                 const after = projectLineup(changed, projections, players, league), weekly = weeklyComparison(before, after, week);
-                weekly.basis = basis; weekly.basisLabel = basisLabel;
+                weekly.basis = basis; weekly.basisLabel = basisLabel; weekly.averageWindow = windowOf(opts);
                 if (weekly.status !== 'ready' || weekly.openSlotsAfter > weekly.openSlotsBefore) return;
                 const ages = outgoing.map(a => a.age), avgAge = ages.every(a => a != null) ? ages.reduce((sum, a) => sum + a, 0) / ages.length : null;
                 const ageDifference = avgAge == null || target.age == null ? null : round(avgAge - target.age);
@@ -257,7 +258,7 @@
                 if (!acceptance && strategy.source === 'saved' && (num(opts.gm?.acceptanceFloor) != null || num(opts.gm?.strategy?.acceptanceFloor) != null)) return;
                 const id = [context.myRosterId, str(partnerRoster.roster_id), giveIds.slice().sort().join(','), target.pid].join(':');
                 const c = { id, kind: 'trade', anchorPlayerId: outgoing[0].pid, incoming: [target], outgoing, partner: { rosterId: partnerRoster.roster_id, ownerId: partnerRoster.owner_id,
-                    name: partnerName, direction, scouting: scouting || null }, basis, basisLabel, weekly, partnerWeekly,
+                    name: partnerName, direction, scouting: scouting || null }, basis, basisLabel, averageWindow: windowOf(opts), weekly, partnerWeekly,
                 season: unavailable(basis !== 'projected' ? 'Current-season averages are historical benchmarks, not rest-of-season forecasts. Choose Projected for a season comparison.' : type === 'redraft' ? 'Remaining-season evidence has not been loaded.' : 'Multi-year outcomes are not simulated.'),
                 price: { give, receive, delta: receive - give, unit: type === 'redraft' ? 'season value' : 'DHQ' }, futureFit: { ageDifference, outgoingAverageAge: avgAge, incomingAge: target.age,
                     label: ageDifference == null ? 'Age comparison unavailable' : ageDifference > 0 ? 'Younger roster asset' : ageDifference < 0 ? 'Older roster asset' : 'Similar age', source: 'roster ages; development is not forecast' },
@@ -347,6 +348,7 @@
         const current = contextFor(opts || {}), bad = reason => ({ ok: false, reason });
         if (target?.kind !== 'roster-lens-package' || !target.accountKey || !current.accountKey) return bad('This trade preview has no active account context.');
         for (const field of ['accountKey', 'platform', 'leagueId', 'season', 'myRosterId', 'basis', 'revision']) if (str(target[field]) !== str(current[field])) return bad('The account, league, roster or comparison basis changed. Refresh the trade lens before opening this package.');
+        if (current.basis !== 'projected' && windowOf(target) !== current.averageWindow) return bad('The average-points window changed. Refresh the trade lens before opening this package.');
         const skin = skinFor(opts), league = opts.league || {}, rosters = opts.rosters || league.rosters || [];
         const currentWeek = num(opts.currentWeek) ?? num(App.WeeklyProj?.currentWeek?.()) ?? num(root.S?.currentWeek);
         if (num(target.currentWeek) !== currentWeek || num(target.week) == null || Number(target.week) <= currentWeek) return bad('The NFL week changed. Refresh this trade preview before opening its package.');

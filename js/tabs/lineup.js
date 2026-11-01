@@ -462,7 +462,11 @@ function MyLineupTab({
                 || !Number.isFinite(context.ts) || Date.now() - context.ts < 0 || Date.now() - context.ts > 300000
                 || !startingSlots.some(slot => slot.idx === context.slotIndex)
                 || !(myRoster?.players || []).map(String).includes(String(context.incomingPid))) return;
-            setLensReview({ ...context, scope: lensReviewScope });
+            const comparisonBasis = ['average', 'idp-average'].includes(context.basis) ? context.basis : 'projected';
+            const averageWindow = ['3', '5'].includes(String(context.averageWindow)) ? String(context.averageWindow) : 'season';
+            const comparison = Object.fromEntries(['before', 'after', 'delta'].map(key => [key, Number.isFinite(context.comparison?.[key]) ? context.comparison[key] : null]));
+            setLensReview({ ...context, basis: comparisonBasis, averageWindow, comparison, scope: lensReviewScope });
+            if (comparisonBasis !== 'projected') setFormWindow(averageWindow === 'season' ? 'season' : Number(averageWindow));
             setWeekChoice({ scope: leagueScope, week: context.week });
             setPhoneView('week');
             setGdView('week');
@@ -491,8 +495,11 @@ function MyLineupTab({
         const review = reviewForSlot(slot);
         if (!review) return null;
         const suggested = suggestedForSlot(slot);
+        const averageLabel = review.averageWindow === 'season' ? 'season average' : 'last ' + review.averageWindow + ' games average';
+        const comparisonLabel = review.basis === 'average' ? averageLabel : review.basis === 'idp-average' ? 'IDP ' + averageLabel + ' + projections' : '';
         return <p className="gd-muted" role="status" style={{ padding: '0 14px' }}>{suggested
-            ? <>From Lineup lens: start <strong>{pmeta(suggested).name}</strong>{review.outgoingPid ? <> over {pmeta(review.outgoingPid).name}</> : <> in this empty slot</>}.</>
+            ? <>From Lineup lens{comparisonLabel ? ' (' + comparisonLabel + ')' : ''}: start <strong>{pmeta(suggested).name}</strong>{review.outgoingPid ? <> over {pmeta(review.outgoingPid).name}</> : <> in this empty slot</>}.
+                {comparisonLabel && Number.isFinite(review.comparison?.after) && <span style={{ display: 'block', marginTop: '4px' }}>{Number.isFinite(review.comparison.before) ? review.comparison.before.toFixed(1) : '—'} → {review.comparison.after.toFixed(1)}{Number.isFinite(review.comparison.delta) ? ' (' + (review.comparison.delta > 0 ? '+' : '') + review.comparison.delta.toFixed(1) + ')' : ''} {review.basis === 'average' ? 'avg pts/game' : 'comparison pts'}</span>}</>
             : !gamesFresh ? 'Checking the suggested swap…' : 'The suggested swap changed or is locked. Review the current eligible players.'}</p>;
     };
 

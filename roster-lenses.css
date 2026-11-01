@@ -9,7 +9,7 @@
 .wr-lens-context strong{color:var(--white)}
 .wr-lens-tools{display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;width:100%;min-width:0}
 .wr-lens-basis{min-height:44px;max-width:100%;width:136px;padding:6px 22px 6px 8px;border:1px solid var(--ov-6,rgba(203,213,229,.2));border-radius:var(--card-radius-sm,8px);background:var(--surf-solid);color:var(--gold);font:400 16px var(--font-body,sans-serif)}
-.wr-lens-week{min-height:44px;min-width:0;max-width:100%;padding:6px 22px 6px 8px;border:1px solid var(--ov-6,rgba(203,213,229,.2));border-radius:var(--card-radius-sm,8px);background:var(--surf-solid);color:var(--gold);font:400 16px var(--font-body,sans-serif);box-sizing:border-box}
+.wr-lens-week,.wr-lens-average-window{min-height:44px;min-width:0;max-width:100%;padding:6px 22px 6px 8px;border:1px solid var(--ov-6,rgba(203,213,229,.2));border-radius:var(--card-radius-sm,8px);background:var(--surf-solid);color:var(--gold);font:400 16px var(--font-body,sans-serif);box-sizing:border-box}
 .wr-lens-horizons{display:flex;gap:3px;flex-shrink:0}
 .wr-lens-horizons button{border:0;padding:6px 9px;background:transparent;font-size:12px}
 .wr-lens-horizons button[aria-pressed=true]{background:var(--acc-fill2,rgba(180,205,255,.12));color:var(--gold)}
@@ -125,7 +125,8 @@
   .wr-lens-tools{display:grid;grid-template-columns:minmax(128px,1fr) minmax(0,1.2fr);align-items:center;gap:6px}
   .wr-lens-tools:has(>.wr-lens-basis:only-child){grid-template-columns:minmax(0,1fr)}
   .wr-lens-tools>.wr-lens-basis{width:100%;min-width:0;box-sizing:border-box}
-  .wr-lens-tools>.wr-lens-week{width:100%}
+  .wr-lens-tools>.wr-lens-week,.wr-lens-tools>.wr-lens-average-window{width:100%}
+  .wr-lens-tools.has-average-window>.wr-lens-week,.wr-lens-tools.has-average-window>.wr-lens-horizons{grid-column:1/-1}
   .wr-lens-horizons{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));min-width:0;gap:3px}
   .wr-lens-horizons button{min-width:0;padding:6px 4px;font-size:13px;line-height:1.2;white-space:normal}
   .wr-mission-control .wr-roster-mobile-player[data-wr-lens-state]>.wr-roster-mobile-player-trigger{min-height:60px!important;padding:8px 9px!important;box-sizing:border-box}

@@ -9,6 +9,7 @@
     const idOf = league => String(league?.league_id || league?.id || '');
     const ids = values => [...new Set((values || []).filter(value => value != null && String(value) !== '0' && String(value) !== '').map(String))];
     const basisOf = args => ['average', 'idp-average'].includes(args.basis) ? args.basis : 'projected';
+    const windowOf = args => App.RosterLensBasis?.normalizeWindow?.(args.averageWindow) || 'season';
     const upper = value => String(value || '').trim().toUpperCase();
     const norm = value => ({ DE: 'DL', DT: 'DL', NT: 'DL', IDL: 'DL', EDGE: 'DL', CB: 'DB', S: 'DB', SS: 'DB', FS: 'DB', OLB: 'LB', ILB: 'LB', MLB: 'LB', DST: 'DEF', 'D/ST': 'DEF', PK: 'K' })[upper(value)] || upper(value);
     const team = value => ({ WSH: 'WAS', JAC: 'JAX', LA: 'LAR' })[upper(value)] || upper(value);
@@ -35,12 +36,12 @@
         return args.userId || root.S?.user?.user_id ? 'user:' + (args.userId || root.S.user.user_id) : '';
     }
     function scope(args) {
-        return [account(args), args.league?._platform || root.S?.platform || 'sleeper', idOf(args.league), args.league?.season || '', args.roster?.roster_id ?? '', args.week || '', basisOf(args)].map(encodeURIComponent).join(':');
+        return [account(args), args.league?._platform || root.S?.platform || 'sleeper', idOf(args.league), args.league?.season || '', args.roster?.roster_id ?? '', args.week || '', basisOf(args), ...(basisOf(args) === 'projected' ? [] : [windowOf(args)])].map(encodeURIComponent).join(':');
     }
     function result(args, status, reason, extra) {
         const basis = basisOf(args);
-        return { status, reason, scope: scope(args), week: number(args.week), basis,
-            basisLabel: App.RosterLensBasis?.describe?.(basis)?.label || ({ projected: 'Projected', average: 'Avg points', 'idp-average': 'IDP avg' })[basis],
+        return { status, reason, scope: scope(args), week: number(args.week), basis, averageWindow: windowOf(args),
+            basisLabel: App.RosterLensBasis?.describe?.(basis, windowOf(args))?.label || ({ projected: 'Projected', average: 'Avg points', 'idp-average': 'IDP avg' })[basis],
             candidates: [], readiness: { weekly: false, complete: false }, ...extra };
     }
     function currentWeek(args) {
@@ -138,7 +139,7 @@
             const p = args.players[pid];
             return { pid, name: p.full_name || [p.first_name, p.last_name].filter(Boolean).join(' ') || pid,
                 position: norm(p.position), team: p.team || null, projection: value.points, comparisonBasis: value.comparisonBasis,
-                averageGames: value.averageGames ?? null, averageSeason: value.averageSeason ?? null, injuryStatus: statusOf(pid, args) || null };
+                averageGames: value.averageGames ?? null, averageSeason: value.averageSeason ?? null, averageWindow: value.averageWindow ?? null, averageSource: value.averageSource ?? null, injuryStatus: statusOf(pid, args) || null };
         };
         slots.forEach(slot => {
             if (!slot.eligible.length) { diagnostics.unsupportedSlots++; return; }
@@ -170,10 +171,10 @@
                         : (delta > 0 ? '+' : '') + delta.toFixed(1) + (args.basis === 'projected' ? ' projected points this week.' : ' points on the selected comparison basis.');
                 candidates.push({ id: [args.week, slot.index, outgoingPid || 'empty', incomingPid].join(':'), anchorPlayerId: outgoingPid || incomingPid,
                     incoming: [incoming], outgoing: outgoing ? [outgoing] : [], slotIndex: slot.index, slotName: slot.name,
-                    weekly: { before: before.points, after: after.points, delta, status: delta == null ? 'unavailable' : 'ready', basis: args.basis },
-                    reason, conditional, conditionalLabel: conditional ? 'If they play' : null, priority,
+                    weekly: { before: before.points, after: after.points, delta, status: delta == null ? 'unavailable' : 'ready', basis: args.basis, averageWindow: windowOf(args) },
+                    reason, basis: args.basis, averageWindow: windowOf(args), conditional, conditionalLabel: conditional ? 'If they play' : null, priority,
                     handoff: { leagueId: idOf(args.league), season: args.league.season, rosterId: args.roster.roster_id, week: args.week,
-                        slotIndex: slot.index, incomingPid, outgoingPid, source: 'roster-lineup-lens' } });
+                        slotIndex: slot.index, incomingPid, outgoingPid, basis: args.basis, averageWindow: windowOf(args), source: 'roster-lineup-lens' } });
             }
         });
         candidates.sort((a, b) => b.priority - a.priority || (b.weekly.delta ?? -Infinity) - (a.weekly.delta ?? -Infinity)

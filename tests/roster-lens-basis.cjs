@@ -53,6 +53,89 @@ test('scoped completed-game season form takes precedence and never uses an unrel
     f.window.S.weeklyPlayerPointsScope = 'another-league';
     assert.equal(f.basis.currentAverage('old', f.args).value, 5);
 });
+function weeklyFixture(f) {
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '../js/shared/weekly-proj.js'), 'utf8'), f.sandbox, { filename: 'weekly-proj.js' });
+    f.args.currentWeek = 8;
+    const values = [30, 40, 20, 10, 0, -2, 8, 999];
+    Object.assign(f.window.S, { currentWeek: 8, weeklyPlayerPointsLeagueId: 'one', weeklyPlayerPointsSeason: 2026,
+        weeklyPlayerPointsThroughWeek: 7, weeklyPlayerPointsComplete: true,
+        weeklyPlayerPointsScope: f.window.App.WeeklyProj.weeklyPointsScope('one', 2026, f.args.league.scoring_settings),
+        weeklyPlayerPoints: Object.fromEntries(values.map((points, i) => [i + 1, { old: points, bench: 1, target: 20, add: 25 }])),
+        weeklyPlayerPlayed: Object.fromEntries(values.map((_, i) => [i + 1, { old: true, bench: true, target: true, add: true }])) });
+}
+test('last 3, last 5 and season use completed games, signed zeros, and the actual chosen sample count', () => {
+    const f = fixture(); weeklyFixture(f);
+    for (const [averageWindow, value, games] of [['3', 2, 3], ['5', 7.2, 5], ['season', 15.1, 7]]) {
+        const observed = f.basis.currentAverage('old', { ...f.args, averageWindow, week: 15 });
+        assert.equal(observed.value, value); assert.equal(observed.games, games); assert.equal(observed.averageWindow, averageWindow);
+    }
+    f.window.S.weeklyPlayerPlayed[6].old = false;
+    assert.equal(f.basis.currentAverage('old', { ...f.args, averageWindow: '3' }).value, 6, 'DNP is skipped; genuine played zero counts');
+    for (const week of [1, 3, 4, 5, 6]) delete f.window.S.weeklyPlayerPoints[week].old;
+    const partial = f.basis.currentAverage('old', { ...f.args, averageWindow: '5' });
+    assert.equal(partial.value, 24); assert.equal(partial.games, 2, 'Fewer played games remain a truthful smaller sample');
+});
+test('recent windows never fall back to season totals or unrelated/incomplete history', () => {
+    const f = fixture(); weeklyFixture(f);
+    f.window.S.weeklyPlayerPointsScope = 'wrong-scoring';
+    assert.equal(f.basis.currentAverage('old', { ...f.args, averageWindow: '3' }).value, null);
+    f.window.S.weeklyPlayerPointsScope = f.window.App.WeeklyProj.weeklyPointsScope('one', 2026, f.args.league.scoring_settings);
+    f.window.S.weeklyPlayerPointsComplete = false;
+    assert.equal(f.basis.currentAverage('old', { ...f.args, averageWindow: '3' }).value, null);
+    assert.equal(f.basis.currentAverage('old', f.args).value, 5, 'Partial loaded history cannot masquerade as the season; original scored season aggregate remains usable');
+    f.window.S.weeklyPlayerPointsComplete = true; f.window.S.weeklyPlayerPointsThroughWeek = 8;
+    assert.equal(f.basis.currentAverage('old', { ...f.args, averageWindow: '3' }).value, null, 'A live-week cutoff is rejected');
+    f.window.S.weeklyPlayerPointsThroughWeek = 7; f.args.league._mfl = true;
+    assert.equal(f.basis.currentAverage('old', { ...f.args, averageWindow: '3' }).value, null, 'MFL recent native scoring is not inferred from flattened stats');
+});
+test('IDP recent window changes only defenders and keeps offensive projections intact', () => {
+    const f = fixture(); weeklyFixture(f);
+    f.args.players.old.position = 'EDGE';
+    let compared = f.basis.comparison('old', { ...f.args, averageWindow: '3', basis: 'idp-average', projected: f.args.projectionsByPid.old });
+    assert.equal(compared.points.median, 2); assert.equal(compared.averageGames, 3); assert.equal(compared.averageWindow, '3');
+    f.args.players.old.position = 'WR';
+    compared = f.basis.comparison('old', { ...f.args, averageWindow: '3', basis: 'idp-average', projected: f.args.projectionsByPid.old });
+    assert.equal(compared.points.median, 20); assert.equal(compared.averageWindow, null);
+});
+test('recent preparation loads a completed history once per account/league/scoring/cutoff and never uses selected future week', async () => {
+    const f = fixture(); weeklyFixture(f); f.window.S.weeklyPlayerPointsComplete = false;
+    let calls = 0;
+    f.window.App.WeeklyProj.loadWeeklyPoints = async request => {
+        calls++; assert.equal(request.throughWeek, 7);
+        return { complete: true, points: f.window.S.weeklyPlayerPoints, played: f.window.S.weeklyPlayerPlayed };
+    };
+    const request = { ...f.args, basis: 'average', averageWindow: '3', week: 15 };
+    const prepared = await f.basis.prepare(request);
+    assert.equal(f.basis.currentAverage('old', prepared).value, 2); assert.equal(calls, 1);
+    assert.equal(f.basis.currentAverage('old', await f.basis.prepare({ ...request, averageWindow: '5' })).value, 7.2); assert.equal(calls, 1);
+    await f.basis.prepare({ ...request, accountKey: 'different' }); assert.equal(calls, 2);
+    await f.basis.prepare({ ...request, league: { ...request.league, scoring_settings: { rec: 2 } } }); assert.equal(calls, 3);
+    f.window.S.weeklyPlayerPointsComplete = true;
+    const reused = await f.basis.prepare(request); assert.equal(reused.averageHistory, undefined); assert.equal(calls, 3, 'Complete current history is reused');
+});
+test('failed recent history never turns missing weeks into a usable average and can retry', async () => {
+    const f = fixture(); weeklyFixture(f); f.window.S.weeklyPlayerPointsComplete = false;
+    let calls = 0;
+    f.window.App.WeeklyProj.loadWeeklyPoints = async () => ({ complete: ++calls > 1, points: f.window.S.weeklyPlayerPoints, played: f.window.S.weeklyPlayerPlayed });
+    const request = { ...f.args, basis: 'average', averageWindow: '3' };
+    assert.equal(f.basis.currentAverage('old', await f.basis.prepare(request)).value, null);
+    assert.equal(f.basis.currentAverage('old', await f.basis.prepare(request)).value, 2); assert.equal(calls, 2);
+});
+test('average windows propagate through waiver/trade assets and reject captured trade actions from another window', () => {
+    const f = fixture(); weeklyFixture(f);
+    const request = { ...f.args, basis: 'average', averageWindow: '3' };
+    const trade = f.trade.build(request), waiver = f.waiver.evaluate(request);
+    assert.equal(trade.status, 'ready'); assert.equal(waiver.status, 'ready');
+    for (const result of [trade, waiver]) {
+        assert.equal(result.averageWindow, '3'); assert.equal(result.candidates[0].averageWindow, '3');
+        assert.equal(result.candidates[0].incoming[0].averageGames, 3); assert.equal(result.candidates[0].incoming[0].averageWindow, '3');
+        assert.equal(result.candidates[0].weekly.averageWindow, '3');
+    }
+    assert.equal(f.trade.validateBuilderContext(trade.candidates[0].builderContext, request).ok, true);
+    assert.equal(f.trade.validateBuilderContext(trade.candidates[0].builderContext, { ...request, averageWindow: '5' }).ok, false);
+    assert.notEqual(trade.scope, f.trade.build({ ...request, averageWindow: '5' }).scope);
+    assert.notEqual(waiver.scope, f.waiver.evaluate({ ...request, averageWindow: '5' }).scope);
+});
 test('official MFL average requires current-league provenance, never estimates absent AVG from NFL GP', async () => {
     const f = fixture(); f.args.league._mfl = true;
     const context = f.basis.sourceContext(f.args), raw = { gp: 8, _mflScoring: { scoringKey: context.scoringKey, season: '2026', week: null, points: 100, average: 0 } };

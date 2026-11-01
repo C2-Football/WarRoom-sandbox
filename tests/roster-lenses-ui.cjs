@@ -525,9 +525,9 @@ test('changing point basis clears the old scenario until a newly optimized compa
     assert.equal(h.lens.selected, null, 'New average results require another explicit open'); chooseMove(h, 'avg-a');
     const preview = find(h.tree, node => node.props['data-lens-preview'] === 'avg-a');
     const impact = find(h.tree, node => node.props.className === 'wr-lens-impact');
-    assert.match(text(impact), /2026 avg lineup.*70\.0.*75\.0.*\+5\.0avg pts/);
-    assert.match(text(preview), /Avg\s*12\.54 games/); assert(!text(preview).includes('Proj'));
-    assert.match(text(preview), /Bench Runner.*Avg 7\.5/, 'Outgoing average stays explicit beside the incoming average, independent of roster projection columns');
+    assert.match(text(impact), /Season avg lineup.*70\.0.*75\.0.*\+5\.0Season avg pts/);
+    assert.match(text(preview), /Season avg\s*12\.54 games/); assert(!text(preview).includes('Proj'));
+    assert.match(text(preview), /Bench Runner.*Season avg 7\.5/, 'Outgoing average stays explicit beside the incoming average, independent of roster projection columns');
     assert.equal(h.lens.selected.id, 'avg-a'); assert.equal(h.lens.ui.horizon, 'week');
     assert(!find(h.tree, node => node.props['aria-label'] === 'Acquisition projection horizon'));
     h.lens.setHorizon('season'); h.render(); await h.flush(); assert.equal(h.lens.ui.horizon, 'week'); assert.equal(h.seasonCalls.length, 0);
@@ -553,9 +553,9 @@ test('IDP average mode labels each asset source and keeps offensive projections 
     const offense = candidate('offense-a', 'Offense Receiver', 2, 0, { basis: 'idp-average',
         incoming: [{ pid: 'offense-a', name: 'Offense Receiver', position: 'WR', projection: 12.3, comparisonBasis: 'projected' }], season: { status: 'unavailable', delta: null } });
     h.calls.at(-1).resolve({ ...ready([idp, offense]), basis: 'idp-average' }); await h.flush(); chooseMove(h, idp.id);
-    assert.match(text(find(h.tree, node => node.props.className === 'wr-lens-impact')), /IDP avg \+ projections/);
+    assert.match(text(find(h.tree, node => node.props.className === 'wr-lens-impact')), /Season avg IDP \+ projections/);
     let preview = find(h.tree, node => node.props['data-lens-preview'] === 'idp-a');
-    assert.match(text(preview), /LB/); assert.match(text(preview), /Avg\s*0\.05 games/, 'A measured zero remains visible with its observed-game count');
+    assert.match(text(preview), /LB/); assert.match(text(preview), /Season avg\s*0\.05 games/, 'A measured zero remains visible with its observed-game count');
     h.lens.choose(h.lens.options.find(move => move.id === 'offense-a')); h.render();
     preview = find(h.tree, node => node.props['data-lens-preview'] === 'offense-a');
     assert.match(text(preview), /WR/); assert.match(text(preview), /Proj\s*12\.3/); assert(!text(preview).includes('Avg'));
@@ -919,6 +919,7 @@ test('lineup review hands off the selected week, slot, players and account witho
     assert.equal(context.leagueId, 'one'); assert.equal(context.season, '2026'); assert.equal(context.rosterId, '1');
     assert.equal(context.week, 6); assert.equal(context.slotIndex, 0); assert.equal(context.incomingPid, 'bench'); assert.equal(context.outgoingPid, 'starter');
     assert.equal(context.basis, 'projected'); assert(Number.isFinite(context.ts));
+    assert.deepEqual(JSON.parse(JSON.stringify(context.comparison)), { before: 10.2, after: 14.8, delta: 4.6 });
     assert.equal(h.events.at(-1).type, 'wr:open-lineup-lens'); assert.equal(h.events.at(-1).detail, context);
     assert.equal(JSON.stringify(h.roster), before); assert.equal(h.writes.length, 0);
 });
@@ -938,7 +939,7 @@ test('lineup future-week and basis reads reject late results and clear prior rec
     const average = lineupMove({ incoming: [{ pid: 'bench', name: 'Bench Runner', projection: 12, comparisonBasis: 'average' }], outgoing: [{ pid: 'starter', name: 'Starter Receiver', projection: 9, comparisonBasis: 'average' }], weekly: { before: 9, after: 12, delta: 3 } });
     h.calls.at(-1).resolve({ ...ready([average]), week: 8, basis: 'average' }); await h.flush(); chooseMove(h);
     const preview = find(h.tree, node => node.props['aria-label'] === 'Lineup swap preview');
-    assert.match(text(preview), /\+3\.0avg pts/); assert.match(text(preview), /12\.0Avg points/); assert.match(text(preview), /9\.0Avg points/);
+    assert.match(text(preview), /\+3\.0Season avg pts/); assert.match(text(preview), /12\.0Season avg/); assert.match(text(preview), /9\.0Season avg/);
     assert(!text(preview).includes('Projected'));
     h.lens.setHorizon('season'); h.render(); assert.equal(h.lens.ui.horizon, 'week');
 });
@@ -972,7 +973,7 @@ test('conditional lineup gains stay labeled in collapsed rows and expanded previ
     assert(!text(preview).includes('+4.6 projected points this week.'));
     h.change('Point comparison basis', 'idp-average'); await h.flush();
     h.calls.at(-1).resolve({ ...ready([lineupMove({ conditional: true })]), basis: 'idp-average' }); await h.flush();
-    assert.match(text(find(rosterTrigger(h, 'starter'), node => node.props.className === 'wr-lens-bar-gain')), /\+4\.6mixed ptsIf they play/);
+    assert.match(text(find(rosterTrigger(h, 'starter'), node => node.props.className === 'wr-lens-bar-gain')), /\+4\.6Season mixed ptsIf they play/);
 });
 
 test('empty-slot lineup recommendation anchors the bench player and labels the slot', async () => {
@@ -1018,4 +1019,76 @@ test('lineup week rollover clamps the selected week and missing comparisons rema
     assert.match(text(h.tree), /Kickoff status could not be verified/); assert(!text(h.tree).includes('No clear upgrades'));
     h.click('Try again'); await h.flush(); h.calls.at(-1).resolve({ status: 'empty', candidates: [], week: 7 }); await h.flush();
     assert.match(text(h.tree), /No clear upgrades/);
+});
+
+
+for (const mode of ['lineup', 'waivers', 'trades']) test(mode + ' average windows are explicit and retained within the league', async () => {
+    const h = harness(); h.lens.setMode(mode); h.render(); await h.flush();
+    assert(!find(h.tree, node => node.props['aria-label'] === 'Average points window'), 'Projected comparisons do not show an average window');
+    h.change('Point comparison basis', 'average'); await h.flush();
+    const selector = find(h.tree, node => node.props['aria-label'] === 'Average points window');
+    assert.equal(selector.props.value, 'season');
+    assert.deepEqual(all(selector, node => node.type === 'option').map(node => [node.props.value, text(node)]), [['3', 'Last 3 games'], ['5', 'Last 5 games'], ['season', 'Season']]);
+    h.change('Average points window', '3'); await h.flush();
+    assert.equal(h.calls.at(-1).options.averageWindow, '3');
+    h.change('Point comparison basis', 'projected'); await h.flush();
+    assert(!find(h.tree, node => node.props['aria-label'] === 'Average points window'));
+    h.change('Point comparison basis', 'idp-average'); await h.flush();
+    assert.equal(find(h.tree, node => node.props['aria-label'] === 'Average points window').props.value, '3');
+    assert.equal(h.calls.at(-1).options.averageWindow, '3');
+    h.lens.setMode(mode === 'waivers' ? 'lineup' : 'waivers'); h.render(); await h.flush();
+    assert.equal(h.lens.ui.averageWindow, '3', 'Switching lenses keeps the selected comparison window');
+    h.viewer = 'other-owner'; h.render(); await h.flush();
+    assert.equal(h.lens.mode, 'off'); assert.equal(h.lens.ui.averageWindow, 'season', 'Account changes reset scoped preferences');
+});
+
+test('changing an average window invalidates visible moves and late responses without relabeling old values', async () => {
+    const h = harness(); await loadLineup(h);
+    h.change('Point comparison basis', 'average'); await h.flush(); const season = h.calls.at(-1);
+    const seasonMove = lineupMove({ id: 'season-move', incoming: [{ pid: 'bench', name: 'Season Leader', projection: 18, comparisonBasis: 'average', averageWindow: 'season', averageGames: 6 }], weekly: { before: 10, after: 18, delta: 8 } });
+    season.resolve({ ...ready([seasonMove]), basis: 'average', averageWindow: 'season' }); await h.flush(); chooseMove(h);
+    const previous = h.lens, oldKey = h.lens.key;
+    h.change('Average points window', '3'); await h.flush(); const last3 = h.calls.at(-1);
+    assert.notEqual(h.lens.key, oldKey); assert.equal(h.lens.selected, null); assert.equal(h.lens.options.length, 0);
+    previous.openModule(seasonMove); assert.equal(h.navigations.length, 0, 'Captured season recommendations cannot navigate under L3 settings');
+    h.change('Average points window', '5'); await h.flush(); const last5 = h.calls.at(-1);
+    const current = lineupMove({ id: 'last5-move', incoming: [{ pid: 'bench', name: 'Recent Leader', projection: 14, comparisonBasis: 'average', averageWindow: '5', averageGames: 4 }], outgoing: [{ pid: 'starter', name: 'Starter Receiver', projection: 11, comparisonBasis: 'average', averageWindow: '5', averageGames: 5 }], weekly: { before: 11, after: 14, delta: 3 } });
+    last5.resolve({ ...ready([current]), basis: 'average', averageWindow: '5' }); await h.flush(); chooseMove(h);
+    last3.resolve({ ...ready([lineupMove({ id: 'late-last3', incoming: [{ pid: 'bench', name: 'Wrong Recent Leader', projection: 99 }] })]), basis: 'average', averageWindow: '3' }); await h.flush();
+    assert.equal(h.lens.selected.id, 'last5-move'); assert(!text(h.tree).includes('Wrong Recent Leader')); assert(!text(h.tree).includes('Season Leader'));
+    const preview = find(h.tree, node => node.props['aria-label'] === 'Lineup swap preview');
+    assert.match(text(preview), /\+3\.0L5 avg pts/);
+    assert.match(text(preview), /14\.0L5 avg4 of 5 games/);
+    assert.match(text(preview), /11\.0L5 avg5 games/);
+    h.click('Review in Game Day');
+    assert.equal(h.root.WR.lineupLensContext.averageWindow, '5'); assert.equal(h.root.WR.lineupLensContext.basis, 'average');
+    assert.equal(h.writes.length, 0);
+});
+
+test('average acquisition previews label both players with their chosen sample and keep offense projections distinct', async () => {
+    const h = harness(); await loadWaivers(h);
+    h.change('Point comparison basis', 'idp-average'); h.change('Average points window', '3'); await h.flush();
+    const move = candidate('idp-recent', 'Recent Defender', 2, 0, { incoming: [{ pid: 'idp-recent', name: 'Recent Defender', position: 'LB', projection: 0, comparisonBasis: 'average', averageWindow: '3', averageGames: 2, averageSeason: '2026' }], outgoing: [{ pid: 'bench', name: 'Bench Runner', projection: -2, comparisonBasis: 'average', averageWindow: '3', averageGames: 3 }], season: { status: 'unavailable', delta: null } });
+    h.calls.at(-1).resolve({ ...ready([move]), basis: 'idp-average', averageWindow: '3' }); await h.flush(); chooseMove(h);
+    const preview = find(h.tree, node => node.props['aria-label'] === 'Acquisition preview');
+    assert.match(text(preview), /Bench Runner.*L3 avg -2\.0 · 3 games/);
+    assert.match(text(preview), /L3 avg\s*0\.02 of 3 games/);
+    const source = find(preview, node => typeof node.props.title === 'string' && node.props.title.includes('Last 3 completed games'));
+    assert(source); assert.match(source.props.title, /2026.*2 of 3 games.*League scoring/);
+    assert.match(text(find(h.tree, node => node.props.className === 'wr-lens-impact')), /L3 avg IDP \+ projections/);
+});
+
+
+test('lineup handoff comparison preserves unknown, genuine zero and signed values', async () => {
+    for (const [metric, expected] of [
+        [{ before: null, after: 14.8, delta: undefined }, { before: null, after: 14.8, delta: null }],
+        [{ before: 0, after: 3, delta: 3 }, { before: 0, after: 3, delta: 3 }],
+        [{ before: -2, after: 0, delta: 2 }, { before: -2, after: 0, delta: 2 }],
+        [{ before: '', after: Infinity, delta: NaN }, { before: null, after: null, delta: null }],
+    ]) {
+        const h = harness(); await loadLineup(h, [lineupMove({ weekly: metric })]); chooseMove(h);
+        h.click('Review in Game Day');
+        assert.deepEqual(JSON.parse(JSON.stringify(h.root.WR.lineupLensContext.comparison)), expected);
+        assert.equal(h.writes.length, 0);
+    }
 });

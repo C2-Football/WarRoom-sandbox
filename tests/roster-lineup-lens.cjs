@@ -79,6 +79,27 @@ const statsData = Object.fromEntries(Object.keys(players).map(pid => [pid, { gp:
 out = Lens.evaluate({ ...args, basis: 'average', statsData }); swap = find(out, 'better'); assert.equal(swap.weekly.delta, 10); assert.equal(swap.incoming[0].comparisonBasis, 'average');
 out = Lens.evaluate({ ...args, basis: 'idp-average', statsData }); assert.equal(find(out, 'better').weekly.delta, 7, 'Offense retains projections in IDP average mode');
 assert.equal(Lens.evaluate({ ...args, basis: 'average', statsData, statsSeason: 2025 }).status, 'unavailable');
+{
+    const windowLeague = { ...league, roster_positions: ['FLEX', 'BN', 'BN', 'BN'] };
+    const windowPlayers = { rb: players.rb, better: players.better, receiver: players.receiver, seasonal: player('Season leader', 'RB') };
+    const windowRoster = { ...roster, players: Object.keys(windowPlayers), starters: ['rb'], reserve: [], taxi: [] };
+    const history = { complete: true, throughWeek: 7, context: window.App.RosterLensBasis.sourceContext({ league: windowLeague }),
+        points: Object.fromEntries(Array.from({ length: 8 }, (_, index) => [index + 1, { rb: 10,
+            better: index >= 4 ? 15 : 0, receiver: index >= 2 && index <= 3 ? 30 : index >= 4 ? 8 : 0,
+            seasonal: index < 2 ? 50 : 0 }])), played: {} };
+    const windowArgs = { ...args, league: windowLeague, players: windowPlayers, roster: windowRoster, currentWeek: 8, week: 8,
+        scheduleWeek: 8, basis: 'average', averageHistory: history };
+    for (const [averageWindow, pid, gain, sample] of [['3', 'better', 5, 3], ['5', 'receiver', 6.8, 5], ['season', 'seasonal', 4.3, 7]]) {
+        const result = Lens.evaluate({ ...windowArgs, averageWindow });
+        assert.equal(result.status, 'ready'); const best = result.candidates[0];
+        assert.equal(best.incoming[0].pid, pid, averageWindow + ' ranks by its own measured sample');
+        assert.equal(best.weekly.delta, gain); assert.equal(best.incoming[0].averageGames, sample);
+        assert.equal(best.incoming[0].averageWindow, averageWindow); assert.equal(best.handoff.averageWindow, averageWindow);
+        assert.equal(best.handoff.basis, 'average'); assert.equal(result.averageWindow, averageWindow);
+    }
+    assert.notEqual(Lens.scope({ ...windowArgs, averageWindow: '3' }), Lens.scope({ ...windowArgs, averageWindow: '5' }));
+    assert.equal(Lens.evaluate({ ...windowArgs, averageWindow: '3', dataScope: Lens.scope({ ...windowArgs, averageWindow: '5' }) }).status, 'unavailable');
+}
 assert.equal(Lens.evaluate({ ...args, platformStarters: ['qb', 'wr', 'wr'] }).status, 'unavailable');
 assert.equal(Lens.evaluate({ ...args, roster: { ...roster, starters: [] } }).status, 'unavailable');
 assert.equal(Lens.evaluate({ ...args, userId: 'stranger' }).status, 'disabled');

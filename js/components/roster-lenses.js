@@ -12,6 +12,19 @@
     const nameOf = asset => asset?.name || asset?.player?.full_name || 'Player';
     const metricOf = (candidate, horizon) => candidate?.[horizon === 'season' ? 'season' : 'weekly'];
     const normalizeBasis = basis => ['average', 'idp-average'].includes(basis) ? basis : 'projected';
+    const normalizeWindow = value => ['3', '5'].includes(String(value)) ? String(value) : 'season';
+    const averageWindowOf = (lens, asset) => normalizeWindow(asset?.averageWindow || lens.ui.averageWindow);
+    const averageLabel = (lens, asset) => (averageWindowOf(lens, asset) === 'season' ? 'Season' : 'L' + averageWindowOf(lens, asset)) + ' avg';
+    const sampleLabel = (lens, asset) => {
+        if (!finite(asset?.averageGames)) return '';
+        const window = averageWindowOf(lens, asset), count = compactNumber(asset.averageGames);
+        return window !== 'season' && asset.averageGames < Number(window) ? count + ' of ' + window + ' games' : count + (asset.averageGames === 1 ? ' game' : ' games');
+    };
+    const averageTitle = (lens, asset) => [asset?.averageSeason || lens.input.league?.season,
+        averageWindowOf(lens, asset) === 'season' ? 'Season points per game' : 'Last ' + averageWindowOf(lens, asset) + ' completed games',
+        sampleLabel(lens, asset), 'League scoring'].filter(Boolean).join(' · ');
+    const gainLabel = lens => lens.ui.horizon === 'season' ? 'ROS pts' : lens.ui.basis === 'average' ? averageLabel(lens) + ' pts'
+        : lens.ui.basis === 'idp-average' ? (normalizeWindow(lens.ui.averageWindow) === 'season' ? 'Season' : 'L' + normalizeWindow(lens.ui.averageWindow)) + ' mixed pts' : 'lineup pts';
     const dynastyOf = input => ['dynasty', 'keeper', 'empire'].includes(input.skin?.type);
     const currentWeek = input => Math.max(1, Math.min(18, Number(root.App?.LeagueLiveScores?.currentWeek?.(input.league) || root.App?.WeeklyProj?.currentWeek?.() || root.S?.nflState?.week || 1)));
     const futureView = lens => lens.mode === 'trades' && lens.input.skin?.type !== 'redraft' && lens.ui.horizon === 'season';
@@ -40,7 +53,7 @@
                 targets: [...(input.gm?.targetPositions || [])].map(text).sort(), sell: [...(input.gm?.sellPositions || [])].map(text).sort(), rules: input.gm?.sellRules },
         });
     }
-    const initial = scope => ({ scope, mode: 'off', horizon: 'week', week: null, basis: 'projected', selected: null, exploreMode: null, review: false, bid: '', notice: '', error: false });
+    const initial = scope => ({ scope, mode: 'off', horizon: 'week', week: null, basis: 'projected', averageWindow: 'season', selected: null, exploreMode: null, review: false, bid: '', notice: '', error: false });
     function ranked(candidates, horizon, prioritize = false) {
         return (candidates || []).slice().sort((a, b) => {
             if (prioritize && (Number(a.priority) || 0) !== (Number(b.priority) || 0)) return (Number(b.priority) || 0) - (Number(a.priority) || 0);
@@ -80,11 +93,11 @@
         const basis = normalizeBasis(scopedUi.basis);
         const firstWeek = currentWeek(input);
         const allowSeasonView = scopedUi.mode !== 'lineup' && input.skin?.type !== 'chopped' && (basis === 'projected' || scopedUi.mode === 'trades' && dynastyOf(input));
-        const ui = { ...scopedUi, basis, week: Math.max(firstWeek, Math.min(18, Number(scopedUi.week) || firstWeek)), horizon: allowSeasonView ? scopedUi.horizon : 'week' };
+        const ui = { ...scopedUi, basis, averageWindow: normalizeWindow(scopedUi.averageWindow), week: Math.max(firstWeek, Math.min(18, Number(scopedUi.week) || firstWeek)), horizon: allowSeasonView ? scopedUi.horizon : 'week' };
         const allowed = !!input.isPro && !!input.roster && !!account(input);
         const canTrade = input.skin?.features?.showTrades !== false && input.skin?.type !== 'chopped' && Number(input.league?.settings?.disable_trades || 0) !== 1;
         const mode = allowed && (ui.mode !== 'trades' || canTrade) ? ui.mode : 'off';
-        const key = JSON.stringify([scope, dataSignature, references.current.revision, tick, retry, mode, ui.exploreMode, basis, mode === 'lineup' ? ui.week : null]);
+        const key = JSON.stringify([scope, dataSignature, references.current.revision, tick, retry, mode, ui.exploreMode, basis, basis !== 'projected' ? ui.averageWindow : null, mode === 'lineup' ? ui.week : null]);
         const live = React.useRef(null);
         live.current = { key, scope, input, ui, mode };
         const result = load.key === key ? load.value : null;
@@ -128,7 +141,7 @@
                 statsData: input.statsData, statsSeason: input.statsSeason, priorData: input.priorData, priorStatsData: input.priorData, userId: input.userId,
                 projectionsData: text(root.S?.currentLeagueId) === text(input.league?.league_id || input.league?.id) ? root.S?.projectionsData : undefined,
                 accountKey: account(input), skin: input.skin, gm: input.gm, exploreMode: ui.exploreMode,
-                horizon: 'week', basis, revision: dataSignature, ...(mode === 'lineup' ? { week: ui.week } : {}) };
+                horizon: 'week', basis, averageWindow: ui.averageWindow, revision: dataSignature, ...(mode === 'lineup' ? { week: ui.week } : {}) };
             Promise.resolve().then(() => {
                 if (!service?.load) throw new Error('The roster comparison has not loaded. Try again.');
                 return service.load(opts);
@@ -153,7 +166,7 @@
             const opts = { league: input.league, roster: input.roster, rosters: input.league?.rosters, players: input.players,
                 statsData: input.statsData, statsSeason: input.statsSeason, priorData: input.priorData, priorStatsData: input.priorData, userId: input.userId,
                 accountKey: account(input), gm: input.gm, skin: input.skin, exploreMode: ui.exploreMode,
-                basis, revision: dataSignature,
+                basis, averageWindow: ui.averageWindow, revision: dataSignature,
                 projectionsData: text(root.S?.currentLeagueId) === text(input.league?.league_id || input.league?.id) ? root.S?.projectionsData : undefined,
                 result, candidateId: baseSelected.id };
             Promise.resolve().then(() => service?.loadSeason ? service.loadSeason(opts) : { season: { status: 'unavailable', reason: 'Remaining-season analysis has not loaded.' } }).then(value => {
@@ -200,7 +213,9 @@
                 const context = { ...candidate.handoff, leagueId: text(input.league?.league_id || input.league?.id),
                     season: text(input.league?.season), rosterId: text(input.roster?.roster_id), week: ui.week,
                     slotIndex: candidate.slotIndex, incomingPid: pidOf(candidate.incoming?.[0]), outgoingPid: pidOf(candidate.outgoing?.[0]),
-                    accountKey: account(input), basis, source: 'roster-lineup-lens', ts: Date.now() };
+                    accountKey: account(input), basis, averageWindow: ui.averageWindow,
+                    comparison: Object.fromEntries(['before', 'after', 'delta'].map(key => [key, finite(candidate.weekly?.[key]) ? candidate.weekly[key] : null])),
+                    source: 'roster-lineup-lens', ts: Date.now() };
                 WR.lineupLensContext = context;
                 input.setActiveTab?.('lineup');
                 root.dispatchEvent(new root.CustomEvent('wr:open-lineup-lens', { detail: context }));
@@ -240,6 +255,7 @@
             setMode, choose, clear, openReview, savePlan, openModule, openIncoming,
             setHorizon: horizon => update({ horizon: allowSeasonView ? horizon : 'week', selected: selected?.id || '', notice: '', error: false }),
             setBasis: next => update({ basis: normalizeBasis(next), horizon: 'week', selected: null, review: false, bid: '', notice: '', error: false }),
+            setAverageWindow: next => update({ averageWindow: normalizeWindow(next), selected: null, review: false, bid: '', notice: '', error: false }),
             setWeek: next => { if (mode === 'lineup') update({ week: Math.max(firstWeek, Math.min(18, Number(next) || firstWeek)), selected: null, review: false, notice: '', error: false }); },
             explore: next => update({ exploreMode: next, selected: null, review: false, notice: '', error: false }),
             setBid: bid => update({ bid, notice: '', error: false }), retry: () => setRetry(value => value + 1),
@@ -255,15 +271,17 @@
         const suffix = (inline ? ' is-inline' : '') + (conditional ? ' is-conditional' : '');
         const condition = conditional ? <small className="wr-lens-gain-condition">If they play</small> : null;
         if (lens.mode === 'lineup' && delta == null) return <strong className={'wr-lens-gain wr-lens-coverage' + suffix}>Cover<small>{candidate.slotName || 'slot'}</small>{condition}</strong>;
-        return <strong className={'wr-lens-gain' + (delta != null && delta < 0 ? ' is-loss' : '') + suffix}>{signed(delta)}<small>{lens.ui.horizon === 'season' ? candidate.season?.conditionalParticipation ? 'ROS pts if they play' : 'ROS pts' : candidate.conditionalParticipation ? 'pts if they play' : lens.ui.basis === 'average' ? 'avg pts' : lens.mode === 'lineup' && lens.ui.basis === 'idp-average' ? 'mixed pts' : 'lineup pts'}</small>{condition}</strong>;
+        const label = lens.ui.horizon === 'season' && candidate.season?.conditionalParticipation ? 'ROS pts if they play'
+            : lens.ui.horizon !== 'season' && candidate.conditionalParticipation ? 'pts if they play' : gainLabel(lens);
+        return <strong className={'wr-lens-gain' + (delta != null && delta < 0 ? ' is-loss' : '') + suffix}>{signed(delta)}<small>{label}</small>{condition}</strong>;
     }
     function Impact({ lens }) {
         const candidate = lens.selected, metric = metricOf(candidate, lens.ui.horizon);
         if (candidate && futureView(lens)) return <div className="wr-lens-impact" aria-live="polite"><div><span>Average age · Preview</span><strong>{finite(candidate.futureFit?.outgoingAverageAge) && finite(candidate.futureFit?.incomingAge) ? compactNumber(candidate.futureFit.outgoingAverageAge) + ' → ' + compactNumber(candidate.futureFit.incomingAge) : 'Age unavailable'}</strong></div><Gain candidate={candidate} lens={lens} /></div>;
         const usable = finite(metric?.before) && finite(metric?.after) && deltaOf(candidate, lens.ui.horizon) != null;
         const week = lens.result?.timing?.fromWeek || lens.result?.week;
-        const label = lens.ui.horizon === 'season' ? 'Season lineup' : lens.ui.basis === 'average' ? text(lens.input.league?.season) + ' avg lineup'
-            : lens.ui.basis === 'idp-average' ? 'IDP avg + projections' : week ? 'Week ' + week + ' lineup' : 'Projected lineup';
+        const label = lens.ui.horizon === 'season' ? 'Season lineup' : lens.ui.basis === 'average' ? averageLabel(lens) + ' lineup'
+            : lens.ui.basis === 'idp-average' ? averageLabel(lens) + ' IDP + projections' : week ? 'Week ' + week + ' lineup' : 'Projected lineup';
         return <div className="wr-lens-impact" aria-live="polite">
             <div><span>{label} · Preview</span>
                 {usable ? <strong>{number(metric.before)} <span aria-hidden="true">→</span> {number(metric.after)}</strong> : <strong className="wr-lens-unavailable">{lens.seasonLoading ? 'Comparing the season…' : candidate ? 'Comparison unavailable' : 'Choose a move to compare'}</strong>}
@@ -293,7 +311,8 @@
                     {lens.mode === 'trades' && dynasty && <label className="wr-lens-strategy"><span>{strategy?.source === 'saved' || lens.input.gm?.hasStrategy ? 'Saved plan' : 'GM direction'}: <strong>{strategy?.savedLabel || lens.input.gm?.modeLabel || 'Compete'}</strong></span>
                         <select aria-label="Explore a trade strategy without saving it" value={lens.ui.exploreMode || ''} onChange={event => lens.explore(event.target.value || null)}><option value="">Follow my plan</option><option value="win_now">Explore win now</option><option value="rebuild">Explore rebuild</option><option value="compete">Explore compete</option></select>
                     </label>}
-                    <div className="wr-lens-tools"><select className="wr-lens-basis" aria-label="Point comparison basis" value={lens.ui.basis} onChange={event => lens.setBasis(event.target.value)}><option value="projected">Projected</option><option value="average">Avg points</option><option value="idp-average">IDP avg</option></select>
+                    <div className={"wr-lens-tools" + (lens.ui.basis !== 'projected' ? ' has-average-window' : '')}><select className="wr-lens-basis" aria-label="Point comparison basis" value={lens.ui.basis} onChange={event => lens.setBasis(event.target.value)}><option value="projected">Projected</option><option value="average">Avg points</option><option value="idp-average">IDP avg</option></select>
+                        {lens.ui.basis !== 'projected' && <select className="wr-lens-average-window" aria-label="Average points window" value={normalizeWindow(lens.ui.averageWindow)} onChange={event => lens.setAverageWindow(event.target.value)}><option value="3">Last 3 games</option><option value="5">Last 5 games</option><option value="season">Season</option></select>}
                         {lineup && <select className="wr-lens-week" aria-label="Lineup week" value={lens.ui.week} onChange={event => lens.setWeek(event.target.value)}>{Array.from({ length: 19 - lens.firstWeek }, (_, index) => lens.firstWeek + index).map(week => <option key={week} value={week}>Wk {week}{week === lens.firstWeek ? ' · Current' : ''}</option>)}</select>}
                         {showHorizon && <div className="wr-lens-horizons" role="group" aria-label="Acquisition projection horizon"><button type="button" aria-pressed={lens.ui.horizon === 'week'} onClick={() => lens.setHorizon('week')}>{lens.mode === 'trades' ? 'Next full week' : 'This week'}</button><button type="button" aria-pressed={lens.ui.horizon === 'season'} onClick={() => lens.setHorizon('season')}>{lens.mode === 'trades' && dynasty ? 'Future fit' : 'Season'}</button></div>}
                     </div>
@@ -320,7 +339,7 @@
         const assetRow = (asset, action) => <div className={'wr-lens-lineup-player is-' + action.toLowerCase()}>
             <span>{action}</span>
             <div>{onOpenPlayer ? <button type="button" className="wr-lens-owned-target" aria-label={'Open player details for ' + nameOf(asset)} onClick={event => { event?.stopPropagation(); onOpenPlayer(pidOf(asset)); }}>{nameOf(asset)}</button> : <strong>{nameOf(asset)}</strong>}<small>{[asset.position, asset.team].filter(Boolean).join(' · ')}</small></div>
-            <div className="wr-lens-lineup-points"><strong>{number(asset.projection)}</strong><small>{asset.comparisonBasis === 'average' ? 'Avg points' : 'Projected'}</small></div>
+            <div className="wr-lens-lineup-points" title={asset.comparisonBasis === 'average' ? averageTitle(lens, asset) : undefined}><strong>{number(asset.projection)}</strong><small>{asset.comparisonBasis === 'average' ? averageLabel(lens, asset) : 'Projected'}</small>{asset.comparisonBasis === 'average' && sampleLabel(lens, asset) && <small>{sampleLabel(lens, asset)}</small>}</div>
         </div>;
         return <div className={'wr-lens-preview wr-lens-lineup-preview' + (inlineSource ? ' is-inline' : '')} data-lens-preview={candidate.id} data-lens-state="active" aria-label="Lineup swap preview">
             <div className="wr-lens-lineup-heading"><span>Week {lens.result?.week || lens.ui.week} · {candidate.slotName} · Preview</span><Gain candidate={candidate} lens={lens} /></div>
@@ -341,10 +360,10 @@
         return <div className={'wr-lens-preview' + (inlineSource ? ' is-inline' : '')} data-lens-preview={candidate.id} data-lens-state="active" aria-label="Acquisition preview">
             <div className="wr-lens-source" aria-label={trade ? 'Your players in this trade' : 'Your player in this waiver move'}>
                 <span>{outgoing.length ? trade ? 'You send' : 'You drop' : 'Open roster spot'}</span>
-                {outgoing.length > 0 && <strong>{outgoing.map((asset, index) => <React.Fragment key={pidOf(asset)}>{index > 0 ? ' + ' : ''}{onOpenPlayer ? <button type="button" className="wr-lens-owned-target" aria-label={'Open player details for ' + nameOf(asset)} onClick={event => { event?.stopPropagation(); onOpenPlayer(pidOf(asset)); }}>{nameOf(asset)}</button> : nameOf(asset)}{lens.ui.basis !== 'projected' && <small> · {asset.comparisonBasis === 'average' ? 'Avg' : 'Proj'} {number(asset.projection)}</small>}</React.Fragment>)}</strong>}
+                {outgoing.length > 0 && <strong>{outgoing.map((asset, index) => <React.Fragment key={pidOf(asset)}>{index > 0 ? ' + ' : ''}{onOpenPlayer ? <button type="button" className="wr-lens-owned-target" aria-label={'Open player details for ' + nameOf(asset)} onClick={event => { event?.stopPropagation(); onOpenPlayer(pidOf(asset)); }}>{nameOf(asset)}</button> : nameOf(asset)}{lens.ui.basis !== 'projected' && <small> · {asset.comparisonBasis === 'average' ? averageLabel(lens, asset) : 'Proj'} {number(asset.projection)}{asset.comparisonBasis === 'average' && sampleLabel(lens, asset) && ' · ' + sampleLabel(lens, asset)}</small>}</React.Fragment>)}</strong>}
             </div>
             <div className="wr-lens-target-label">{trade ? 'You get' : 'You add'}</div>
-            <div className="wr-lens-incoming"><div>{incoming.map(asset => <button type="button" className="wr-lens-player-target" key={pidOf(asset)} aria-label={trade ? 'Open trade calculator for ' + nameOf(asset) : 'Compare ' + nameOf(asset) + (outgoing[0] ? ' with ' + nameOf(outgoing[0]) : '')} onClick={event => { event?.stopPropagation(); lens.openIncoming(candidate, asset); }}><strong>{nameOf(asset)}<span className="wr-lens-player-chevron" aria-hidden="true">›</span><small><span className="wr-lens-position" style={{ '--wr-position-color': root.App?.positionColor?.(asset.position || asset.pos) || root.App?.POS_COLORS?.[asset.position || asset.pos] }}>{asset.position || asset.pos}</span>{[asset.team, asset.age != null ? 'Age ' + asset.age : null].filter(Boolean).map(detail => ' · ' + detail)}</small><small className="wr-lens-player-stats"><span title={asset.comparisonBasis === 'average' ? [asset.averageSeason || lens.input.league?.season, 'season average', finite(asset.averageGames) ? asset.averageGames + ' games' : ''].filter(Boolean).join(' · ') : undefined}>{asset.comparisonBasis === 'average' ? 'Avg' : trade ? 'W' + lens.result?.week + ' proj' : 'Proj'} <b>{number(asset.projection)}</b>{asset.comparisonBasis === 'average' && finite(asset.averageGames) && <small>{compactNumber(asset.averageGames)} games</small>}</span><span>L5 PPG <b>{number(recentForm(lens.input, pidOf(asset)))}</b></span></small></strong></button>)}</div>{!inlineSource && <Gain candidate={candidate} lens={lens} />}</div>
+            <div className="wr-lens-incoming"><div>{incoming.map(asset => <button type="button" className="wr-lens-player-target" key={pidOf(asset)} aria-label={trade ? 'Open trade calculator for ' + nameOf(asset) : 'Compare ' + nameOf(asset) + (outgoing[0] ? ' with ' + nameOf(outgoing[0]) : '')} onClick={event => { event?.stopPropagation(); lens.openIncoming(candidate, asset); }}><strong>{nameOf(asset)}<span className="wr-lens-player-chevron" aria-hidden="true">›</span><small><span className="wr-lens-position" style={{ '--wr-position-color': root.App?.positionColor?.(asset.position || asset.pos) || root.App?.POS_COLORS?.[asset.position || asset.pos] }}>{asset.position || asset.pos}</span>{[asset.team, asset.age != null ? 'Age ' + asset.age : null].filter(Boolean).map(detail => ' · ' + detail)}</small><small className="wr-lens-player-stats"><span title={asset.comparisonBasis === 'average' ? averageTitle(lens, asset) : undefined}>{asset.comparisonBasis === 'average' ? averageLabel(lens, asset) : trade ? 'W' + lens.result?.week + ' proj' : 'Proj'} <b>{number(asset.projection)}</b>{asset.comparisonBasis === 'average' && finite(asset.averageGames) && <small>{sampleLabel(lens, asset)}</small>}</span><span>L5 PPG <b>{number(recentForm(lens.input, pidOf(asset)))}</b></span></small></strong></button>)}</div>{!inlineSource && <Gain candidate={candidate} lens={lens} />}</div>
             <div className="wr-lens-costs">
                 {!trade && usesBids(lens.input) && lens.ui.bid !== '' && <p className="wr-lens-price"><span>Max bid</span> ${lens.ui.bid}</p>}
                 {trade && candidate.price && finite(candidate.price.delta) && <p className="wr-lens-price"><span>Value change</span> {candidate.price.delta > 0 ? '+' : ''}{compactNumber(candidate.price.delta)} {candidate.price.unit || 'value'}</p>}
@@ -382,7 +401,7 @@
         return <div id={'roster-lens-' + pid} className="wr-lens-row" data-lens={lens.mode} data-lens-state={selected ? 'active' : 'available'}>
             {!selected ? <button type="button" className="wr-lens-peek" data-lens-peek={candidates[0].id} aria-label={'Preview move for ' + ownedName} aria-expanded={false} onClick={() => lens.choose(candidates[0])}><span>Potential gain</span><Gain candidate={candidates[0]} lens={lens} /><span aria-hidden="true">›</span></button> : <React.Fragment>
                 <Preview lens={lens} candidate={selected} onOpenPlayer={onOpenPlayer} inlineSource />
-                {candidates.length > 2 ? <label className="wr-lens-more">Other ideas for {ownedName}<select aria-label={(lens.mode === 'lineup' ? 'Lineup swaps for ' : 'Acquisition ideas for ') + ownedName} value={selected.id} onChange={event => { const candidate = candidates.find(item => item.id === event.target.value); if (candidate) lens.choose(candidate); }}><option value="" disabled>Choose a move</option>{candidates.map((candidate, index) => <option key={candidate.id} value={candidate.id}>{candidate.id === selected.id ? candidate.incoming.map(nameOf).join(' + ') : 'Move ' + (index + 1)} · {futureView(lens) ? candidate.futureFit?.label || 'Compare value' : lens.mode === 'lineup' && deltaOf(candidate, lens.ui.horizon) == null ? 'Cover ' + candidate.slotName : signed(deltaOf(candidate, lens.ui.horizon)) + (lens.ui.horizon === 'season' ? ' ROS pts' : lens.ui.basis === 'average' ? ' avg pts' : ' lineup pts')}</option>)}</select></label> : candidates.filter(candidate => candidate.id !== selected.id).map(candidate => <button type="button" className="wr-lens-try" key={candidate.id} data-lens-peek={candidate.id} onClick={() => lens.choose(candidate)}><span>Other move</span><Gain candidate={candidate} lens={lens} /><span aria-hidden="true">↓</span></button>)}
+                {candidates.length > 2 ? <label className="wr-lens-more">Other ideas for {ownedName}<select aria-label={(lens.mode === 'lineup' ? 'Lineup swaps for ' : 'Acquisition ideas for ') + ownedName} value={selected.id} onChange={event => { const candidate = candidates.find(item => item.id === event.target.value); if (candidate) lens.choose(candidate); }}><option value="" disabled>Choose a move</option>{candidates.map((candidate, index) => <option key={candidate.id} value={candidate.id}>{candidate.id === selected.id ? candidate.incoming.map(nameOf).join(' + ') : 'Move ' + (index + 1)} · {futureView(lens) ? candidate.futureFit?.label || 'Compare value' : lens.mode === 'lineup' && deltaOf(candidate, lens.ui.horizon) == null ? 'Cover ' + candidate.slotName : signed(deltaOf(candidate, lens.ui.horizon)) + ' ' + gainLabel(lens)}</option>)}</select></label> : candidates.filter(candidate => candidate.id !== selected.id).map(candidate => <button type="button" className="wr-lens-try" key={candidate.id} data-lens-peek={candidate.id} onClick={() => lens.choose(candidate)}><span>Other move</span><Gain candidate={candidate} lens={lens} /><span aria-hidden="true">↓</span></button>)}
             </React.Fragment>}
         </div>;
     }

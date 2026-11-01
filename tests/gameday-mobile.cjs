@@ -133,6 +133,23 @@ const matchupPanel = node => String(node?.props?.className || '').split(/\s+/).i
     assert.equal(select(futureReview.out, node => node.props['aria-label'] === 'Lineup week').props.value, 3);
     assert.match(textOf(futureReview.out), /From Lineup lens: start Bench Option/);
     assert.equal(futureReview.planWrites.length, 0, 'Future-week handoff is also read-only');
+    for (const [basis, averageWindow, label, buttonLabel] of [
+        ['average', '3', 'last 3 games average', 'L3'],
+        ['average', 'season', 'season average', 'SZN'],
+        ['idp-average', '5', 'IDP last 5 games average + projections', 'L5'],
+        ['average', 'invalid', 'season average', 'SZN'],
+    ]) {
+        const averageReview = await fixture({ upcoming: true, lensContext: { ...handoff, basis, averageWindow, comparison: { before: 6, after: 16, delta: 10 } } });
+        assert(textOf(averageReview.out).includes('From Lineup lens (' + label + '): start Bench Option'), 'Review names the exact average window');
+        assert.match(textOf(averageReview.out), /6\.0 → 16\.0\(\+10\.0\)|6\.0 → 16\.0 \(\+10\.0\)/, 'The original average comparison remains visible beside independent projection metrics');
+        const formControls = all(averageReview.out).filter(node => ['Player form window', 'Optimizer form window'].includes(node.props['aria-label']));
+        assert(formControls.length > 0);
+        for (const controls of formControls) assert.equal(button(controls, buttonLabel)?.props['aria-pressed'], true, 'The Game Day picker uses the same average window');
+        assert.equal(averageReview.planWrites.length, 0, 'Choosing an average window for review does not write a lineup');
+    }
+    const projectedReview = await fixture({ upcoming: true, lensContext: { ...handoff, basis: 'projected', averageWindow: '3' } });
+    const projectedForm = select(projectedReview.out, node => node.props['aria-label'] === 'Optimizer form window');
+    assert.equal(button(projectedForm, 'L5')?.props['aria-pressed'], true, 'Projected review does not change the independent form window');
     for (const invalid of [{ accountKey: 'account:other' }, { leagueId: 'elsewhere' }, { season: '2025' }, { rosterId: '99' }, { week: 1 }, { ts: Date.now() - 600000 }]) {
         const rejected = await fixture({ upcoming: true, lensContext: { ...handoff, ...invalid } });
         assert(!select(rejected.out, node => node.props.className === 'gd-mobile-sheet'), 'A stale or out-of-scope handoff cannot open a picker');
