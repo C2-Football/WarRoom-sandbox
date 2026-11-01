@@ -7,7 +7,7 @@ const source = babel.transform(fs.readFileSync('js/tabs/lineup.js', 'utf8'), { p
 
 // Render the real mobile branch with state/effects, so navigation and lock
 // behavior are checked alongside score provenance and absent projections.
-async function fixture({ upcoming = false, matchupId = 7, width = 390, rosterView = false, noProjection = false, supported = true, stale = false, withMatchup = false, withBasis = false, withMetrics = false, pro = true, storage = new Map(), seasonData = null, initialView = 'week', forecasts = {}, forecastsByWeek = {}, scoreRowsByWeek = {}, scoreStatus = 'ready', scoreError = null } = {}) {
+async function fixture({ upcoming = false, matchupId = 7, width = 390, rosterView = false, noProjection = false, supported = true, stale = false, withMatchup = false, withBasis = false, withMetrics = false, pro = true, storage = new Map(), seasonData = null, initialView = 'week', forecasts = {}, forecastsByWeek = {}, scoreRowsByWeek = {}, scoreStatus = 'ready', scoreError = null, lensContext = null } = {}) {
     const state = [], deps = [], pending = [];
     const events = {};
     const loadedForm = {};
@@ -41,6 +41,8 @@ async function fixture({ upcoming = false, matchupId = 7, width = 390, rosterVie
             S: { nflState: { season: 2026 } },
             localStorage: { getItem: key => storage.get(key) || null, setItem: (key, value) => { planWrites.push({ key, value }); storage.set(key, value); } },
             WR: {
+                lineupLensContext: lensContext,
+                WaiverPlans: { account: () => 'account:viewer' },
                 useViewport: () => ({ width, isPhone: width < 768 }), HeroCard: true, AssetRow: true, CardList: true,
                 Sheet: ({ open, children }) => open ? h('dialog', {}, children) : null,
                 ActionBar: ({ visible, ...props }) => visible ? h('actionbar', props) : null,
@@ -77,6 +79,7 @@ async function fixture({ upcoming = false, matchupId = 7, width = 390, rosterVie
     ctx.window.App.LineupForecastSnapshots = { read: (league, week) => forecastsForWeek(week), capture: options => { forecastCaptures.push(options.week); return forecastsForWeek(options.week); } };
     delete ctx.window.App.StartSit;
     vm.runInContext(fs.readFileSync('js/shared/startsit-engine.js', 'utf8'), ctx);
+    vm.runInContext(fs.readFileSync('js/shared/roster-lineup-lens.js', 'utf8'), ctx);
     if (withMetrics) {
         ctx.window.React = React;
         vm.runInContext(fs.readFileSync('js/shared/player-metrics.js', 'utf8'), ctx);
@@ -107,7 +110,7 @@ async function fixture({ upcoming = false, matchupId = 7, width = 390, rosterVie
         throw Error('Render did not settle');
     }
     await render();
-    return { get out() { return out; }, render, games, props, result, storage, projectionWeeks, scoreWeeks, contextWeeks, opponentWeeks, scoreFeedCalls, forecastCaptures, planWrites, scorePresentation: values => ctx.lineupScorePresentation(values), async loadForm(pid, value) { loadedForm[pid] = value; events['wr:weekly-points-loaded']({ detail: { leagueId: '123' } }); await render(); }, async kickoff(team) { games.find(g => g.home === team).state = 'live'; await refresh(); await render(); } };
+    return { get out() { return out; }, render, games, props, result, storage, projectionWeeks, scoreWeeks, contextWeeks, opponentWeeks, scoreFeedCalls, forecastCaptures, planWrites, async openLens(context) { events['wr:open-lineup-lens']({ detail: context }); await render(); }, scorePresentation: values => ctx.lineupScorePresentation(values), async loadForm(pid, value) { loadedForm[pid] = value; events['wr:weekly-points-loaded']({ detail: { leagueId: '123' } }); await render(); }, async kickoff(team) { games.find(g => g.home === team).state = 'live'; await refresh(); await render(); } };
 }
 const all = node => node && typeof node === 'object' ? [node, ...(node.children || []).flatMap(all)] : [];
 const textOf = node => node == null ? '' : typeof node === 'object' ? (node.children || []).map(textOf).join('') : String(node);
@@ -116,6 +119,45 @@ const button = (out, label) => select(out, n => n.type === 'button' && textOf(n)
 const matchupPanel = node => String(node?.props?.className || '').split(/\s+/).includes('gd-matchup');
 
 (async () => {
+    {
+    const handoff = { source: 'roster-lineup-lens', accountKey: 'account:viewer', leagueId: '123', season: '2026', rosterId: '1',
+        week: 2, slotIndex: 0, incomingPid: 'd', outgoingPid: 'a', ts: Date.now() };
+    const review = await fixture({ upcoming: true, lensContext: handoff, initialView: 'matchup' });
+    assert.match(textOf(review.out), /From Lineup lens: start Bench Option over Zero Starter/);
+    assert.match(textOf(review.out), /LINEUP LENS/);
+    assert.equal(review.planWrites.length, 0, 'Reviewing the lens never changes a saved lineup');
+    await review.kickoff('NYJ');
+    assert.match(textOf(review.out), /suggested swap changed or is locked/);
+    assert.doesNotMatch(textOf(review.out), /From Lineup lens: start/);
+    const futureReview = await fixture({ upcoming: true, lensContext: { ...handoff, week: 3 } });
+    assert.equal(select(futureReview.out, node => node.props['aria-label'] === 'Lineup week').props.value, 3);
+    assert.match(textOf(futureReview.out), /From Lineup lens: start Bench Option/);
+    assert.equal(futureReview.planWrites.length, 0, 'Future-week handoff is also read-only');
+    for (const invalid of [{ accountKey: 'account:other' }, { leagueId: 'elsewhere' }, { season: '2025' }, { rosterId: '99' }, { week: 1 }, { ts: Date.now() - 600000 }]) {
+        const rejected = await fixture({ upcoming: true, lensContext: { ...handoff, ...invalid } });
+        assert(!select(rejected.out, node => node.props.className === 'gd-mobile-sheet'), 'A stale or out-of-scope handoff cannot open a picker');
+        assert.equal(rejected.planWrites.length, 0);
+    }
+    const mountedReview = await fixture({ upcoming: true });
+    await mountedReview.openLens(handoff);
+    assert.match(textOf(mountedReview.out), /From Lineup lens: start Bench Option/);
+    const multiPosition = await fixture({ upcoming: true });
+    multiPosition.props.playersData.d.position = 'LB';
+    multiPosition.props.playersData.d.fantasy_positions = ['LB', 'QB'];
+    await multiPosition.openLens(handoff);
+    assert.match(textOf(multiPosition.out), /From Lineup lens: start Bench Option/);
+    const multiSheet = select(multiPosition.out, node => node.props.className === 'gd-mobile-sheet');
+    select(multiSheet, node => node.type === 'button' && textOf(node).includes('Bench Option')).props.onClick();
+    await multiPosition.render();
+    assert.equal(JSON.parse(multiPosition.planWrites.at(-1).value)['0'], 'd', 'The same secondary-position swap remains legal when explicitly added to the plan');
+    const aliasReview = await fixture({ upcoming: true });
+    aliasReview.props.currentLeague.roster_positions = ['QB', 'RB', 'WRRB_FLEX'];
+    aliasReview.props.playersData.d.position = 'RB';
+    await aliasReview.render();
+    await aliasReview.openLens({ ...handoff, slotIndex: 2, outgoingPid: 'c' });
+    assert.match(textOf(aliasReview.out), /From Lineup lens: start Bench Option over Missing Starter/);
+    }
+
     const fromOverview = await fixture({ initialView: 'matchup', withMatchup: true });
     assert.equal(button(fromOverview.out, 'Matchup').props['aria-pressed'], true, 'Overview entry opens the matchup immediately');
     assert(select(fromOverview.out, matchupPanel));

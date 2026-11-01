@@ -316,6 +316,7 @@ function MyLineupTab({
 
     const [formWindow, setFormWindow] = React.useState(5); // rolling-PPG window: 3 | 5 | 8 | 'season'
     const [openSlot, setOpenSlot] = React.useState(null);  // slot idx whose picker is expanded
+    const [lensReview, setLensReview] = React.useState(null);
     const [applyOpen, setApplyOpen] = React.useState(false);      // phone-only: WR.ActionBar apply/push sheet (inert off-phone)
     const [phoneView, setPhoneView] = React.useState(initialView === 'matchup' ? 'matchup' : 'week');
     const [phoneSortChoice, setPhoneSortChoice] = React.useState({ scope: '', key: null, dir: -1 });
@@ -380,15 +381,21 @@ function MyLineupTab({
         const out = [];
         let k = 0;
         (currentLeague && currentLeague.roster_positions || []).forEach(raw => {
-            const s = SS.normSlot(raw);
+            const original = SS.normSlot(raw);
+            const originalEligibility = SS.FLEX_ALLOWED[original] || (SS.BASE_POSITIONS.has(original) ? [original] : null);
+            // Keep solver slot names (including WRTQ) aligned with Apply Optimal.
+            const s = originalEligibility || BENCH.has(original) ? original : window.App?.RosterLineupLens?.normSlot(raw) || original;
             if (BENCH.has(s)) return;
-            const elig = SS.FLEX_ALLOWED[s] || (SS.BASE_POSITIONS.has(s) ? [s] : null);
+            const elig = originalEligibility || window.App?.RosterLineupLens?.slotEligibility(raw);
             if (!elig) { k++; return; } // unknown starting slot — keep starters[] alignment
             out.push({ idx: k, slotName: s, elig });
             k++;
         });
         return out;
     }, [currentLeague]);
+    const fitsSlot = (pid, slot) => window.App?.RosterLineupLens?.eligiblePlayer
+        ? window.App.RosterLineupLens.eligiblePlayer(playersData?.[pid], slot.elig)
+        : [playersData?.[pid]?.position, ...(playersData?.[pid]?.fantasy_positions || [])].some(position => slot.elig.includes(normPos(position) || position));
 
     // Current lineup from the platform (roster.starters aligns with non-bench slots).
     const currentAssign = React.useMemo(() => {
@@ -408,7 +415,7 @@ function MyLineupTab({
         startingSlots.forEach(sl => {
             const pid = plan?.[sl.idx] == null ? '' : String(plan[sl.idx]);
             if (!pid || !active.has(pid) || reserves.has(pid) || seen.has(pid)) return;
-            if (!sl.elig.includes(pmeta(pid).pos)) return;
+            if (!fitsSlot(pid, sl)) return;
             next[sl.idx] = pid; seen.add(pid);
         });
         return next;
@@ -436,6 +443,58 @@ function MyLineupTab({
             else delete workingAssign[sl.idx];
         }
     });
+
+    // A roster-lens handoff opens the existing picker. It never writes a plan
+    // or submits a lineup, and old account/league/week contexts cannot reopen.
+    const lensAccount = window.WR?.WaiverPlans?.account?.()
+        || ((window.App?.OD || window.OD)?.getCurrentUserId?.()
+            ? 'account:' + (window.App?.OD || window.OD).getCurrentUserId()
+            : sleeperUserId ? 'viewer:' + String(sleeperUserId) : '');
+    const lensReviewScope = leagueScope + '|' + lensAccount;
+    React.useEffect(() => {
+        const accept = context => {
+            if (!pro || !context || context.source !== 'roster-lineup-lens' || !lensAccount
+                || context.accountKey !== lensAccount
+                || String(context.leagueId) !== String(currentLeague?.league_id || currentLeague?.id)
+                || String(context.season) !== String(currentLeague?.season)
+                || String(context.rosterId) !== String(myRoster?.roster_id)
+                || !Number.isInteger(context.week) || context.week < liveWeek || context.week > 18
+                || !Number.isFinite(context.ts) || Date.now() - context.ts < 0 || Date.now() - context.ts > 300000
+                || !startingSlots.some(slot => slot.idx === context.slotIndex)
+                || !(myRoster?.players || []).map(String).includes(String(context.incomingPid))) return;
+            setLensReview({ ...context, scope: lensReviewScope });
+            setWeekChoice({ scope: leagueScope, week: context.week });
+            setPhoneView('week');
+            setGdView('week');
+            if (window.WR?.lineupLensContext === context) delete window.WR.lineupLensContext;
+        };
+        accept(window.WR?.lineupLensContext);
+        const receive = event => accept(event.detail);
+        window.addEventListener('wr:open-lineup-lens', receive);
+        return () => window.removeEventListener('wr:open-lineup-lens', receive);
+    }, [lensReviewScope, liveWeek, pro, JSON.stringify(currentLeague?.roster_positions), JSON.stringify(myRoster?.players)]);
+    const reviewForSlot = slot => lensReview?.scope === lensReviewScope && lensReview.week === planningWeek
+        && lensReview.slotIndex === slot?.idx ? lensReview : null;
+    const suggestedForSlot = slot => {
+        const review = reviewForSlot(slot);
+        if (!review || String(workingAssign[slot.idx] || '') !== String(review.outgoingPid || '')) return null;
+        const pid = String(review.incomingPid);
+        if (!(myRoster?.players || []).map(String).includes(pid)
+            || [...(myRoster?.reserve || []), ...(myRoster?.taxi || [])].map(String).includes(pid)
+            || Object.values(workingAssign).map(String).includes(pid)
+            || isByePlayer(pid)
+            || ['O', 'OUT', 'IR', 'PUP', 'SUS', 'SUSPENDED', 'DNP', 'NA', 'COV'].includes(String(playersData?.[pid]?.injury_status || '').toUpperCase())
+            || !fitsSlot(pid, slot) || !canChangePlayer(pid) || !canChangePlayer(workingAssign[slot.idx])) return null;
+        return pid;
+    };
+    const lensReviewNote = slot => {
+        const review = reviewForSlot(slot);
+        if (!review) return null;
+        const suggested = suggestedForSlot(slot);
+        return <p className="gd-muted" role="status" style={{ padding: '0 14px' }}>{suggested
+            ? <>From Lineup lens: start <strong>{pmeta(suggested).name}</strong>{review.outgoingPid ? <> over {pmeta(review.outgoingPid).name}</> : <> in this empty slot</>}.</>
+            : !gamesFresh ? 'Checking the suggested swap…' : 'The suggested swap changed or is locked. Review the current eligible players.'}</p>;
+    };
 
     const formWinLabel = formWindow === 'season' ? 'SZN' : 'L' + formWindow;
     const formOf = pid => WP?.formStats?.(pid, formWindow);
@@ -481,7 +540,10 @@ function MyLineupTab({
     // Provider refreshes must not wipe a saved plan. Submitted-player locks are
     // reconciled above; changing the week only closes the old week's picker.
     const lineupKey = liveKey + '|' + platformStarters.join(',');
-    React.useEffect(() => { setOpenSlot(null); setApplyOpen(false); setAppliedMoves(null); }, [planKey]);
+    React.useEffect(() => {
+        setOpenSlot(lensReview?.scope === lensReviewScope && lensReview.week === planningWeek ? lensReview.slotIndex : null);
+        setApplyOpen(false); setAppliedMoves(null);
+    }, [planKey, lensReview]);
 
     // Load real NFL matchup context (opponent + Vegas implied total/spread +
     // weather) for the selected week, then recompute projections once it lands.
@@ -953,7 +1015,7 @@ function MyLineupTab({
                 const editable = canChangePlayer(pid) && sl.elig.length > 0;
                 const submitted = String(platformStarters[sl.idx] || '') === String(pid || '');
                 const open = openSlot === sl.idx && editable;
-                const options = open ? (myRoster?.players || []).map(String).filter(id => !reserves.has(id) && (!used.has(id) || id === pid) && sl.elig.includes(pmeta(id).pos) && canChangePlayer(id)).sort(byForm) : [];
+                const options = open ? (myRoster?.players || []).map(String).filter(id => !reserves.has(id) && (!used.has(id) || id === pid) && fitsSlot(id, sl) && canChangePlayer(id)).sort(byForm) : [];
                 return <div className="roster-lineup-slot" key={sl.idx}>
                     <button type="button" className="roster-lineup-row" disabled={!editable} aria-expanded={open} onClick={() => setOpenSlot(open ? null : sl.idx)}>
                         <span className="roster-lineup-position">{sl.slotName.replace('_', ' ')}</span>
@@ -1008,7 +1070,7 @@ function MyLineupTab({
 
     function eligibleFor(slot) {
         return activeIds
-            .filter(pid => slot.elig.includes(normPos((playersData[pid] || {}).position) || (playersData[pid] || {}).position))
+            .filter(pid => fitsSlot(pid, slot))
             .filter(pid => !usedPids.has(pid) || String(workingAssign[slot.idx]) === pid)
             .filter(pid => String(workingAssign[slot.idx]) === pid || (canChangePlayer(workingAssign[slot.idx]) && canChangePlayer(pid)))
             .sort(byForm);
@@ -1542,7 +1604,7 @@ function MyLineupTab({
             const opp = proj && proj.opponent;
             const fs = formOf(epid);
             return <MobilePlayerRow key={epid} pos={meta.positionLabel || meta.pos || '?'} name={meta.name} injuryStatus={status}
-                tag={[isCur ? 'CURRENT STARTER' : 'START', meta.team || 'FA', opp && opp.abbr ? (opp.home ? 'vs ' : '@ ') + opp.abbr : null, pro ? 'Matchup ' + (proj?.matchupGrade || '—') : null].filter(Boolean).join(' · ')}
+                tag={[isCur ? 'CURRENT STARTER' : suggestedForSlot(openSl) === String(epid) ? 'LINEUP LENS' : 'START', meta.team || 'FA', opp && opp.abbr ? (opp.home ? 'vs ' : '@ ') + opp.abbr : null, pro ? 'Matchup ' + (proj?.matchupGrade || '—') : null].filter(Boolean).join(' · ')}
                 slots={playerMetricSlots(epid)}
                 delta={!isCur && proj?.available !== false && Number.isFinite(pts?.[objective]) && (!openPid || (projOf(openPid)?.available !== false && Number.isFinite(projOf(openPid)?.points?.[objective]))) ? pts[objective] - (openPid ? projOf(openPid).points[objective] : 0) : null}
                 disabled={!canChangePlayer(openPid) || !canChangePlayer(epid)}
@@ -1597,6 +1659,7 @@ function MyLineupTab({
                 <Sheet open={!!openSl} onClose={() => setOpenSlot(null)} title={openSl ? 'Set ' + openSl.slotName.replace('_', ' ') : ''} desktop={null}>
                     {openSl ? (
                         <div className="gd-mobile-sheet" style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '8px 14px 4px' }}>
+                            {lensReviewNote(openSl)}
                             <div className="mc-swap-summary"><span>SIT</span><strong>{openPid ? pmeta(openPid).name : 'Empty slot'}</strong><small>Choose the player to START below</small></div>
                             {metricPreference && <window.WR.PlayerMetrics.Picker preference={metricPreference} />}
                             <div className="wr-seg">
@@ -1830,12 +1893,13 @@ function MyLineupTab({
                                         ) : null;
                                     })() : null}
                                     <div style={{ padding: '5px 14px', fontSize: fz('0.58rem'), letterSpacing: '0.05em', color: SILVER, textTransform: 'uppercase' }}>Eligible for {sl.slotName.replace('_', ' ')} — tap to start</div>
+                                    {lensReviewNote(sl)}
                                     {elig.map(epid => {
                                         const isCur = String(pid) === String(epid);
                                         return (
                                             <div key={epid} onClick={() => { canChangePlayer(pid) && canChangePlayer(epid) && setWorkingAssign(w => ({ ...w, [sl.idx]: epid })); setOpenSlot(null); }}
                                                 style={{ display: 'grid', gridTemplateColumns: GRID, gap: '8px', padding: isPhone ? '10px 14px' : '7px 14px', minHeight: isPhone ? '44px' : undefined, alignItems: 'center', cursor: 'pointer', background: isCur ? 'rgba(212,175,55,0.10)' : 'transparent', borderLeft: isCur ? `3px solid ${GOLD}` : '3px solid transparent' }}>
-                                                <span style={{ fontSize: fz('0.6rem'), color: isCur ? GOLD : SILVER, fontWeight: 700 }}>{isCur ? 'IN' : ''}</span>
+                                                <span style={{ fontSize: fz('0.6rem'), color: isCur ? GOLD : SILVER, fontWeight: 700 }}>{isCur ? 'IN' : suggestedForSlot(sl) === String(epid) ? 'LENS' : ''}</span>
                                                 <PlayerCells pid={epid} />
                                             </div>
                                         );

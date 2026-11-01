@@ -1,6 +1,6 @@
-/* Roster acquisition lenses use existing app surfaces and preserve the list. */
+/* Roster lenses use existing app surfaces and preserve the list. */
 .wr-roster-lens{min-width:0;color:var(--white);font-family:var(--font-body,sans-serif)}
-.wr-lens-switch{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;padding:4px;border:1px solid var(--ov-6,rgba(203,213,229,.2));border-radius:var(--card-radius,12px);background:var(--surf-solid)}
+.wr-lens-switch{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;padding:4px;border:1px solid var(--ov-6,rgba(203,213,229,.2));border-radius:var(--card-radius,12px);background:var(--surf-solid)}
 .wr-roster-lens button,.wr-lens-row button{font:600 13px var(--font-body,sans-serif);min-height:44px;border:1px solid var(--ov-6,rgba(203,213,229,.2));border-radius:var(--card-radius-sm,8px);padding:8px 10px;background:var(--surf-solid);color:var(--silver);cursor:pointer}
 .wr-lens-switch button{min-width:0;border:0;background:transparent;display:flex;align-items:center;justify-content:center;gap:6px;white-space:normal}
 .wr-lens-switch button[aria-pressed=true]{background:var(--acc-fill3,rgba(180,205,255,.18));color:var(--gold)}
@@ -8,7 +8,8 @@
 .wr-lens-context{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap;padding:4px 0;color:var(--silver);font-size:12px;line-height:1.4}
 .wr-lens-context strong{color:var(--white)}
 .wr-lens-tools{display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;width:100%;min-width:0}
-.wr-lens-basis{min-height:44px;max-width:100%;width:116px;padding:6px 22px 6px 8px;border:1px solid var(--ov-6,rgba(203,213,229,.2));border-radius:var(--card-radius-sm,8px);background:var(--surf-solid);color:var(--gold);font:400 16px var(--font-body,sans-serif)}
+.wr-lens-basis{min-height:44px;max-width:100%;width:136px;padding:6px 22px 6px 8px;border:1px solid var(--ov-6,rgba(203,213,229,.2));border-radius:var(--card-radius-sm,8px);background:var(--surf-solid);color:var(--gold);font:400 16px var(--font-body,sans-serif)}
+.wr-lens-week{min-height:44px;min-width:0;max-width:100%;padding:6px 22px 6px 8px;border:1px solid var(--ov-6,rgba(203,213,229,.2));border-radius:var(--card-radius-sm,8px);background:var(--surf-solid);color:var(--gold);font:400 16px var(--font-body,sans-serif);box-sizing:border-box}
 .wr-lens-horizons{display:flex;gap:3px;flex-shrink:0}
 .wr-lens-horizons button{border:0;padding:6px 9px;background:transparent;font-size:12px}
 .wr-lens-horizons button[aria-pressed=true]{background:var(--acc-fill2,rgba(180,205,255,.12));color:var(--gold)}
@@ -23,7 +24,9 @@
 .wr-lens-gain{display:block;flex-shrink:0;color:var(--good);text-align:right;font:700 16px var(--font-mono,monospace);font-variant-numeric:tabular-nums;line-height:1.4}
 .wr-lens-gain.is-loss{color:var(--bad)}
 .wr-lens-gain.wr-lens-age{color:var(--white)}
+.wr-lens-gain.wr-lens-coverage{color:var(--warn,var(--gold));font-family:var(--font-body,sans-serif)}
 .wr-lens-gain small{display:block;color:var(--silver);font:400 11px var(--font-body,sans-serif)}
+.wr-lens-gain small.wr-lens-gain-condition{color:var(--warn,var(--gold))}
 .wr-lens-status{padding:9px 2px;color:var(--silver);font-size:13px;line-height:1.5;margin:0}
 .wr-lens-status p{margin:0 0 8px}
 .wr-lens-note{margin:6px 1px;color:var(--silver);font-size:11px;line-height:1.5}
@@ -34,6 +37,18 @@
 .wr-lens-peek .wr-lens-gain{max-width:60%;font-size:16px}
 .wr-lens-peek:focus-visible{outline:2px solid var(--wr-lens-accent,#e6bc5c);outline-offset:1px}
 .wr-lens-preview{padding:8px 1px;min-width:0;color:var(--white);font-family:var(--font-body,sans-serif)}
+.wr-lens-lineup-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 0 7px;border-bottom:1px solid var(--wr-lens-line,var(--ov-6))}
+.wr-lens-lineup-heading>span{min-width:0;font-size:11px;color:var(--silver);line-height:1.5;overflow-wrap:anywhere}
+.wr-lens-lineup-player{display:grid;grid-template-columns:38px minmax(0,1fr) auto;align-items:center;gap:8px;padding:6px 0;font-size:12px;min-width:0}
+.wr-lens-lineup-player>span{color:var(--silver)}
+.wr-lens-lineup-player.is-start>span{color:var(--good);font-weight:650}
+.wr-lens-lineup-player>div{min-width:0}
+.wr-lens-lineup-player>div>strong{font-size:14px;overflow-wrap:anywhere}
+.wr-lens-lineup-player small{display:block;color:var(--silver);font-size:10px;line-height:1.4}
+.wr-lens-lineup-player .wr-lens-owned-target{font-size:14px;line-height:1.35}
+.wr-lens-lineup-points{text-align:right;font-variant-numeric:tabular-nums}
+.wr-lens-lineup-points>strong{font-family:var(--font-mono,monospace)}
+.wr-lens-lineup-empty{margin:8px 0;color:var(--silver);font-size:12px}
 .wr-roster-lens .wr-lens-preview[data-lens-state=active]{--wr-lens-accent:#4bd78f;--wr-lens-line:rgba(75,215,143,.38);padding:8px 10px;border:1px solid rgba(75,215,143,.7);border-radius:10px;background:linear-gradient(115deg,rgba(46,204,113,.24),rgba(46,204,113,.13));box-sizing:border-box}
 .wr-lens-source{display:flex;align-items:baseline;gap:5px 7px;flex-wrap:wrap;padding:0 0 7px;margin-bottom:7px;border-bottom:1px solid var(--ov-5,rgba(203,213,229,.12));font:500 12px/1.4 var(--font-body,sans-serif)}
 .wr-lens-source>span{flex-shrink:0;color:var(--silver)}
@@ -110,6 +125,7 @@
   .wr-lens-tools{display:grid;grid-template-columns:minmax(128px,1fr) minmax(0,1.2fr);align-items:center;gap:6px}
   .wr-lens-tools:has(>.wr-lens-basis:only-child){grid-template-columns:minmax(0,1fr)}
   .wr-lens-tools>.wr-lens-basis{width:100%;min-width:0;box-sizing:border-box}
+  .wr-lens-tools>.wr-lens-week{width:100%}
   .wr-lens-horizons{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));min-width:0;gap:3px}
   .wr-lens-horizons button{min-width:0;padding:6px 4px;font-size:13px;line-height:1.2;white-space:normal}
   .wr-mission-control .wr-roster-mobile-player[data-wr-lens-state]>.wr-roster-mobile-player-trigger{min-height:60px!important;padding:8px 9px!important;box-sizing:border-box}
@@ -118,6 +134,8 @@
   .wr-lens-bar-gain>small{font:inherit}
   .wr-lens-bar-gain .wr-lens-gain{display:inline-flex;align-items:baseline;gap:4px;min-width:0;font-size:18px;line-height:1.3;white-space:nowrap}
   .wr-lens-bar-gain .wr-lens-gain small{display:inline;font-size:11px;line-height:inherit}
+  .wr-lens-bar-gain .wr-lens-gain.is-conditional{display:grid;grid-template-columns:auto auto;column-gap:4px;row-gap:1px;justify-content:end}
+  .wr-lens-bar-gain .wr-lens-gain-condition{grid-column:1/-1}
   .wr-lens-preview.is-inline{padding:4px 0 0;animation:none!important;transform:none}
   .wr-lens-preview.is-inline>.wr-lens-source{align-items:center;gap:4px 8px;padding:0;margin:0;border:0;font-size:11px}
   .wr-lens-preview.is-inline>.wr-lens-source>strong{display:flex;align-items:center;flex-wrap:wrap;gap:0 4px;font-size:14px}

@@ -29,7 +29,7 @@ const tradeCandidates = () => [candidate('trade-a', 'Trade Target', 2, 0, { seas
 const ready = candidates => ({ status: 'ready', week: 6, candidates });
 
 function harness({ integrated = false, pro = true, metrics = false } = {}) {
-    const slots = [], pending = new Map(), events = [], listeners = new Map(), calls = [], seasonCalls = [], writes = [], navigations = [], acquisition = [], comparisons = [];
+    const slots = [], pending = new Map(), events = [], listeners = new Map(), timers = new Map(), calls = [], seasonCalls = [], writes = [], navigations = [], acquisition = [], comparisons = [];
     let index = 0, dirty = false, tree, lens, viewer = 'owner', saveFailure = false;
     const storage = new Map();
     const localStorage = { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, String(value)), removeItem: key => storage.delete(key) };
@@ -70,6 +70,8 @@ function harness({ integrated = false, pro = true, metrics = false } = {}) {
         S: { currentLeagueId: 'one', platform: 'sleeper', nflState: { season: '2026', week: 6 }, weeklyPlayerPointsScope: 'points:one' },
         addEventListener(type, fn) { if (!listeners.has(type)) listeners.set(type, new Set()); listeners.get(type).add(fn); },
         removeEventListener(type, fn) { listeners.get(type)?.delete(fn); },
+        setInterval(fn, ms) { const id = Symbol('interval'); timers.set(id, { fn, ms }); return id; },
+        clearInterval(id) { timers.delete(id); },
         dispatchEvent(event) { events.push(event); for (const fn of listeners.get(event.type) || []) fn(event); },
         CustomEvent: class { constructor(type, init) { this.type = type; this.detail = init?.detail; } },
         RosterPlayerStats: 'roster-stats', wrIsPro: () => pro,
@@ -87,6 +89,7 @@ function harness({ integrated = false, pro = true, metrics = false } = {}) {
             NFLByes: { seasonFor: () => 2026, label: () => 'Bye 7', rosterWeeks: () => ({ weeks: [], unknown: [] }) },
             WeeklyProj: { currentWeek: () => 6, weeklyPointsScope: id => 'points:' + id, formStats: () => ({ rollingPPG: 11.5 }) },
             RosterWaiverLens: { load: options => { const next = deferred(); calls.push({ mode: 'waivers', options, ...next }); return next.promise; } },
+            RosterLineupLens: { load: options => { const next = deferred(); calls.push({ mode: 'lineup', options, ...next }); return next.promise; } },
             RosterTradeLens: {
                 load: options => { const next = deferred(); calls.push({ mode: 'trades', options, ...next }); return next.promise; },
                 loadSeason: options => { const next = deferred(); seasonCalls.push({ options, ...next }); return next.promise; },
@@ -94,9 +97,10 @@ function harness({ integrated = false, pro = true, metrics = false } = {}) {
             },
         },
     };
+    root.document = { hidden: false, addEventListener: root.addEventListener, removeEventListener: root.removeEventListener, querySelector: () => null };
     const context = vm.createContext({ window: root, React, console, CustomEvent: root.CustomEvent, localStorage,
         InlineCareerStats: 'career', getPlayerAnnotation: () => null, wrAlpha: color => color,
-        setTimeout: fn => fn(), requestAnimationFrame: noop, document: { querySelector: () => null } });
+        setTimeout: fn => fn(), requestAnimationFrame: noop, document: root.document });
     if (metrics) { root.React = React; vm.runInContext(fs.readFileSync('js/shared/player-metrics.js', 'utf8'), context); }
     vm.runInContext(compiledLens, context);
     const api = root.WR.RosterLens;
@@ -129,7 +133,7 @@ function harness({ integrated = false, pro = true, metrics = false } = {}) {
         return tree;
     }
     async function flush() { for (let i = 0; i < 12; i++) { await Promise.resolve(); if (dirty) render(); } return tree; }
-    const apiForTest = { root, api, input, props, calls, seasonCalls, writes, events, navigations, acquisition, comparisons, plans, players, roster, league, gm, render, flush,
+    const apiForTest = { root, api, input, props, calls, seasonCalls, writes, events, navigations, acquisition, comparisons, plans, players, roster, league, gm, render, flush, timers,
         get tree() { return tree; }, get lens() { return lens; },
         set viewer(value) { viewer = value; }, set saveFailure(value) { saveFailure = value; },
         click(label) { const button = find(tree, node => node.type === 'button' && (text(node) === label || node.props['aria-label'] === label)); assert(button, 'button: ' + label); button.props.onClick(); render(); return button; },
@@ -140,6 +144,16 @@ function harness({ integrated = false, pro = true, metrics = false } = {}) {
 
 async function loadWaivers(h, candidates = waiverCandidates()) { h.click('Waivers'); await h.flush(); const call = h.calls.at(-1); assert.equal(call.mode, 'waivers'); call.resolve(ready(candidates)); await h.flush(); return h.lens; }
 async function loadTrades(h, candidates = tradeCandidates()) { h.click('Trades'); await h.flush(); const call = h.calls.at(-1); assert.equal(call.mode, 'trades'); call.resolve({ ...ready(candidates), week: 7, timing: { fromWeek: 7 } }); await h.flush(); return h.lens; }
+async function loadLineup(h, candidates = [lineupMove()]) { h.click('Lineup'); await h.flush(); const call = h.calls.at(-1); assert.equal(call.mode, 'lineup'); call.resolve(ready(candidates)); await h.flush(); return h.lens; }
+function lineupMove(extra = {}) {
+    return { id: 'lineup:6:0:bench', anchorPlayerId: 'starter', slotIndex: 0, slotName: 'FLEX',
+        incoming: [{ pid: 'bench', name: 'Bench Runner', position: 'RB', team: 'CHI', projection: 14.8, comparisonBasis: 'projected' }],
+        outgoing: [{ pid: 'starter', name: 'Starter Receiver', position: 'WR', team: 'MIN', projection: 10.2, comparisonBasis: 'projected' }],
+        weekly: { before: 10.2, after: 14.8, delta: 4.6, status: 'ready' }, priority: 0,
+        reason: 'Higher projected points in this slot.', conditional: false,
+        handoff: { leagueId: 'one', season: '2026', rosterId: '1', week: 6, slotIndex: 0, incomingPid: 'bench', outgoingPid: 'starter', source: 'roster-lineup-lens' },
+        ...extra };
+}
 
 // Loading recommendations never opens a preview. Existing detail-focused tests
 // explicitly choose their move through these helpers instead of relying on a
@@ -199,7 +213,7 @@ test('compact preview keeps decision facts, shows one preview cue, and avoids re
     const h = harness({ integrated: true }); await openWaivers(h);
     let preview = find(h.tree, node => node.props['data-lens-preview'] === 'add-a');
     const impact = find(h.tree, node => node.props.className === 'wr-lens-impact');
-    const controls = find(h.tree, node => node.props['aria-label'] === 'Roster acquisition lenses');
+    const controls = find(h.tree, node => node.props['aria-label'] === 'Roster lenses');
     assert(preview.props.className.split(/\s+/).includes('is-inline'), 'The owned roster source uses the compact inline preview');
     assert(find(preview, node => node === impact), 'The lineup comparison belongs inside the opened player card');
     assert.equal(all(h.tree, node => node.props.className === 'wr-lens-impact').length, 1, 'The comparison is shown once');
@@ -401,7 +415,7 @@ test('an unavailable compare entry reports an inline failure instead of silently
 test('actual My Roster places review inside its player row and restores untouched filters/sort on lens off', async () => {
     const h = harness({ integrated: true });
     const beforeRoster = JSON.stringify(h.roster), beforeSort = JSON.stringify(h.props.rosterSort), beforeColumns = JSON.stringify(h.props.visibleCols);
-    const controls = find(h.tree, node => node.props['aria-label'] === 'Roster acquisition lenses');
+    const controls = find(h.tree, node => node.props['aria-label'] === 'Roster lenses');
     const playerSection = find(h.tree, node => node.props.className === 'wr-roster-mobile-players');
     const flat = walk(h.tree); assert(flat.indexOf(controls) < flat.indexOf(playerSection));
     await openWaivers(h);
@@ -572,6 +586,7 @@ const secondSourceMove = () => candidate('new-receiver', 'Available Receiver', 2
     outgoing: [{ pid: 'starter', name: 'Starter Receiver', position: 'WR', projection: 8 }],
 });
 const rosterPlayer = (h, pid) => find(h.tree, node => node.props['data-wr-roster-pid'] === pid);
+const rosterIds = h => all(h.tree, node => !!node.props['data-wr-roster-pid']).map(node => node.props['data-wr-roster-pid']);
 const rosterTrigger = (h, pid) => find(rosterPlayer(h, pid), node => node.props.className === 'wr-roster-mobile-player-trigger');
 const previewNodes = h => all(h.tree, node => !!node.props['data-lens-preview']);
 const activeSources = h => all(h.tree, node => !!node.props['data-wr-lens-source']);
@@ -579,7 +594,7 @@ const activeSources = h => all(h.tree, node => !!node.props['data-wr-lens-source
 for (const mode of ['waivers', 'trades']) test(mode + ' activation, opening, alternatives, switching and closing highlight players in their existing order and groups', async () => {
     const h = harness({ integrated: true, metrics: true });
     h.props.rosterSort = { key: 'age', dir: 1 }; h.render();
-    const controls = () => find(h.tree, node => node.props['aria-label'] === 'Roster acquisition lenses');
+    const controls = () => find(h.tree, node => node.props['aria-label'] === 'Roster lenses');
     const playerOrder = () => all(h.tree, node => !!node.props['data-wr-roster-pid']).map(node => node.props['data-wr-roster-pid']);
     const groupHeadings = () => all(h.tree, node => node.props.className === 'wr-roster-mobile-group-heading').map(text);
     const beforeOrder = playerOrder(), beforeGroups = groupHeadings(), beforeFilter = h.props.rosterFilter, beforeSort = JSON.stringify(h.props.rosterSort);
@@ -868,4 +883,139 @@ test('season waiver comparison labels conditional ROS without hiding totals', as
     assert.match(text(impact), /\+30\.0ROS pts if they play/);
     assert(!text(h.tree).includes('Comparison unavailable'));
     assert.equal(h.lens.selected.id, 'add-a');
+});
+
+test('lineup lens decorates the existing starter row and shows slot values without acquisition actions', async () => {
+    const h = harness({ integrated: true });
+    const originalRoster = JSON.stringify(h.roster), originalOrder = rosterIds(h);
+    await loadLineup(h);
+    assert.equal(h.calls.at(-1).options.week, 6);
+    assert.equal(h.lens.selected, null);
+    assert.equal(rosterPlayer(h, 'starter').props['data-wr-lens-state'], 'available');
+    assert.deepEqual(rosterIds(h), originalOrder);
+    assert(!find(h.tree, node => node.props['aria-label'] === 'Acquisition projection horizon'));
+    assert(!find(h.tree, node => node.type === 'button' && text(node) === 'Season'));
+    h.click('Preview move for Starter Receiver');
+    const preview = find(h.tree, node => node.props['aria-label'] === 'Lineup swap preview');
+    assert(preview); assert.equal(rosterPlayer(h, 'starter').props['data-wr-lens-state'], 'active');
+    assert.match(text(preview), /Week 6 · FLEX · Preview/);
+    assert.match(text(preview), /\+4\.6/);
+    assert.match(text(preview), /BenchStarter Receiver.*10\.2Projected/);
+    assert.match(text(preview), /StartBench Runner.*14\.8Projected/);
+    for (const label of ['You drop', 'You add', 'Review claim', 'Save claim plan', 'Review trade', 'Max bid', 'Week 6 lineup']) assert(!text(preview).includes(label), label);
+    assert(find(preview, node => node.props['aria-label'] === 'Open player details for Bench Runner'));
+    h.click('Close');
+    assert.equal(previewNodes(h).length, 0); assert.equal(h.lens.selected, null);
+    assert.equal(JSON.stringify(h.roster), originalRoster); assert.equal(h.writes.length, 0);
+});
+
+test('lineup review hands off the selected week, slot, players and account without changing starters', async () => {
+    const h = harness(); await loadLineup(h); chooseMove(h);
+    const before = JSON.stringify(h.roster);
+    h.click('Review in Game Day');
+    assert.equal(h.navigations.at(-1), 'lineup');
+    const context = h.root.WR.lineupLensContext;
+    assert.equal(context.source, 'roster-lineup-lens'); assert.equal(context.accountKey, 'account:owner');
+    assert.equal(context.leagueId, 'one'); assert.equal(context.season, '2026'); assert.equal(context.rosterId, '1');
+    assert.equal(context.week, 6); assert.equal(context.slotIndex, 0); assert.equal(context.incomingPid, 'bench'); assert.equal(context.outgoingPid, 'starter');
+    assert.equal(context.basis, 'projected'); assert(Number.isFinite(context.ts));
+    assert.equal(h.events.at(-1).type, 'wr:open-lineup-lens'); assert.equal(h.events.at(-1).detail, context);
+    assert.equal(JSON.stringify(h.roster), before); assert.equal(h.writes.length, 0);
+});
+
+test('lineup future-week and basis reads reject late results and clear prior recommendations', async () => {
+    const h = harness(); h.click('Lineup'); await h.flush(); const old = h.calls.at(-1);
+    h.change('Lineup week', '8'); await h.flush(); const future = h.calls.at(-1);
+    assert.equal(future.options.week, 8);
+    old.resolve(ready([lineupMove()])); await h.flush();
+    assert.equal(h.lens.loading, true); assert.equal(h.lens.options.length, 0);
+    future.resolve({ ...ready([lineupMove({ id: 'future-swap' })]), week: 8 }); await h.flush(); chooseMove(h);
+    assert.match(text(h.tree), /Week 8 · FLEX/);
+    const captured = h.lens.openModule, move = h.lens.selected;
+    h.change('Point comparison basis', 'average'); await h.flush();
+    captured(move); assert.equal(h.navigations.length, 0); assert.equal(h.lens.selected, null);
+    assert.equal(h.calls.at(-1).options.week, 8); assert.equal(h.calls.at(-1).options.basis, 'average');
+    const average = lineupMove({ incoming: [{ pid: 'bench', name: 'Bench Runner', projection: 12, comparisonBasis: 'average' }], outgoing: [{ pid: 'starter', name: 'Starter Receiver', projection: 9, comparisonBasis: 'average' }], weekly: { before: 9, after: 12, delta: 3 } });
+    h.calls.at(-1).resolve({ ...ready([average]), week: 8, basis: 'average' }); await h.flush(); chooseMove(h);
+    const preview = find(h.tree, node => node.props['aria-label'] === 'Lineup swap preview');
+    assert.match(text(preview), /\+3\.0avg pts/); assert.match(text(preview), /12\.0Avg points/); assert.match(text(preview), /9\.0Avg points/);
+    assert(!text(preview).includes('Projected'));
+    h.lens.setHorizon('season'); h.render(); assert.equal(h.lens.ui.horizon, 'week');
+});
+
+test('lineup coverage outranks numeric upgrades and preserves unknown points and conditional labels', async () => {
+    const h = harness(), upgrade = lineupMove();
+    const cover = lineupMove({ id: 'cover', priority: 3, conditional: true,
+        outgoing: [{ pid: 'starter', name: 'Starter Receiver', projection: null }],
+        weekly: { before: null, after: 14.8, delta: null }, reason: 'Replace a bye-week starter.' });
+    await loadLineup(h, [upgrade, cover]);
+    assert.equal(h.lens.options[0].id, 'cover'); chooseMove(h);
+    const preview = find(h.tree, node => node.props['aria-label'] === 'Lineup swap preview');
+    assert.match(text(preview), /CoverFLEX/); assert.match(text(preview), /Starter Receiver.*—Projected/);
+    assert.match(text(preview), /If they play/); assert.match(text(preview), /Replace a bye-week starter/);
+    assert(!text(preview).includes('+14.8'), 'Unknown outgoing points must not turn into zero');
+    assert(!text(preview).includes('Comparison unavailable'), 'The available coverage recommendation remains useful');
+});
+
+test('conditional lineup gains stay labeled in collapsed rows and expanded previews without repeated gain copy', async () => {
+    const h = harness({ integrated: true });
+    await loadLineup(h, [lineupMove({ conditional: true, reason: '+4.6 projected points this week.' })]);
+    const summary = find(rosterTrigger(h, 'starter'), node => node.props.className === 'wr-lens-bar-gain');
+    assert.match(text(summary), /\+4\.6lineup ptsIf they play/);
+    assert(find(summary, node => node.props.className === 'wr-lens-gain-condition'));
+    const weeks = all(find(h.tree, node => node.props['aria-label'] === 'Lineup week'), node => node.type === 'option');
+    assert.equal(text(weeks[0]), 'Wk 6 · Current'); assert.equal(text(weeks[1]), 'Wk 7');
+    h.click('Preview move for Starter Receiver');
+    const preview = find(h.tree, node => node.props['aria-label'] === 'Lineup swap preview');
+    assert.match(text(preview), /\+4\.6lineup ptsIf they play/);
+    assert.equal((text(preview).match(/If they play/g) || []).length, 1);
+    assert(!text(preview).includes('+4.6 projected points this week.'));
+    h.change('Point comparison basis', 'idp-average'); await h.flush();
+    h.calls.at(-1).resolve({ ...ready([lineupMove({ conditional: true })]), basis: 'idp-average' }); await h.flush();
+    assert.match(text(find(rosterTrigger(h, 'starter'), node => node.props.className === 'wr-lens-bar-gain')), /\+4\.6mixed ptsIf they play/);
+});
+
+test('empty-slot lineup recommendation anchors the bench player and labels the slot', async () => {
+    const h = harness({ integrated: true });
+    await loadLineup(h, [lineupMove({ anchorPlayerId: 'bench', outgoing: [], slotName: 'RB', slotIndex: 1, weekly: { before: 0, after: 14.8, delta: 14.8 }, priority: 4 })]);
+    assert.equal(rosterPlayer(h, 'bench').props['data-wr-lens-state'], 'available');
+    h.click('Preview move for Bench Runner');
+    assert.match(text(find(h.tree, node => node.props['aria-label'] === 'Lineup swap preview')), /Fill empty RB slot/);
+    h.click('Review in Game Day');
+    assert.equal(h.root.WR.lineupLensContext.outgoingPid, ''); assert.equal(h.root.WR.lineupLensContext.slotIndex, 1);
+    assert.equal(h.writes.length, 0);
+});
+
+test('starter and scoring changes invalidate captured lineup actions before replacements arrive', async () => {
+    for (const mutate of [h => { h.roster.starters = ['bench']; }, h => { h.league.scoring_settings.rec = 0.5; }, h => { h.viewer = 'other'; }]) {
+        const h = harness(); await loadLineup(h); chooseMove(h);
+        const captured = h.lens.openModule, move = h.lens.selected;
+        mutate(h); captured(move);
+        assert.equal(h.navigations.length, 0); assert.equal(h.root.WR.lineupLensContext, undefined);
+        h.render(false); assert.equal(h.lens.selected, null);
+    }
+});
+
+test('lineup schedule refresh runs only while visible and stops when its lens is turned off', async () => {
+    const h = harness(); assert.equal(h.timers.size, 0); await loadLineup(h); chooseMove(h);
+    assert.equal(h.timers.size, 1); const timer = [...h.timers.values()][0]; assert.equal(timer.ms, 30000);
+    const originalCalls = h.calls.length;
+    h.root.document.hidden = true; timer.fn(); h.render(); await h.flush(); assert.equal(h.calls.length, originalCalls);
+    h.root.document.hidden = false; h.root.dispatchEvent({ type: 'visibilitychange' }); h.render(); await h.flush();
+    assert.equal(h.calls.length, originalCalls + 1); assert.equal(h.lens.selected, null); assert.equal(h.lens.loading, true);
+    h.click('Lens off'); assert.equal(h.timers.size, 0);
+    h.calls.at(-1).resolve(ready([lineupMove()])); await h.flush(); assert.equal(h.lens.mode, 'off'); assert.equal(h.lens.selected, null);
+});
+
+test('lineup week rollover clamps the selected week and missing comparisons remain explicit', async () => {
+    const h = harness(); await loadLineup(h);
+    h.root.App.WeeklyProj.currentWeek = () => 7;
+    [...h.timers.values()][0].fn(); h.render(); await h.flush();
+    assert.equal(h.lens.ui.week, 7); assert.equal(h.calls.at(-1).options.week, 7);
+    const options = all(find(h.tree, node => node.props['aria-label'] === 'Lineup week'), node => node.type === 'option');
+    assert.equal(options[0].props.value, 7); assert.equal(options.at(-1).props.value, 18);
+    h.calls.at(-1).resolve({ status: 'unavailable', reason: 'Kickoff status could not be verified.', candidates: [], week: 7 }); await h.flush();
+    assert.match(text(h.tree), /Kickoff status could not be verified/); assert(!text(h.tree).includes('No clear upgrades'));
+    h.click('Try again'); await h.flush(); h.calls.at(-1).resolve({ status: 'empty', candidates: [], week: 7 }); await h.flush();
+    assert.match(text(h.tree), /No clear upgrades/);
 });

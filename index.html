@@ -3122,7 +3122,7 @@ WRShared.preloadMany(WR_SHARED_FILES);
 <link rel="stylesheet" href="player-metrics-mobile.css?v=20261025rosterorder1">
 <link rel="stylesheet" href="roster-scoring-visuals.css?v=20261018visualscores1">
 <link rel="stylesheet" href="scoreboard-visual-cues.css?v=20261023scorecues1">
-<link rel="stylesheet" href="roster-lenses.css?v=20261023lensinplace1">
+<link rel="stylesheet" href="roster-lenses.css?v=20261101lineuplens1">
 <link rel="stylesheet" href="mobile-live-standings.css?v=20261019playoffviews1">
 <link rel="stylesheet" href="player-compare.css?v=20261012compare2">
 <link rel="stylesheet" href="team-compare.css?v=20261012compare3">
@@ -3171,6 +3171,7 @@ WRShared.preloadMany(WR_SHARED_FILES);
 <script src="js/shared/trade-season-impact.js?v=20261022rosterlenses1"></script>
 <script src="js/shared/roster-lens-basis.js?v=20261022idpaverage1"></script>
 <script src="js/shared/roster-waiver-lens.js?v=20261022idpaverage1"></script>
+<script src="js/shared/roster-lineup-lens.js?v=20261101lineuplens1"></script>
 <script src="js/shared/roster-trade-lens.js?v=20261022idpaverage1"></script>
 <script src="js/shared/faab-engine.js?v=20260805ch3"></script>
 <script src="js/utils/gamelog-engine.js?v=20260702scout1"></script>
@@ -3253,7 +3254,7 @@ WRShared.preloadMany(WR_SHARED_FILES);
 <script type="text/babel" src="js/components/league-wire-portfolio.js?v=20260915audit5"></script>
 <script type="text/babel" src="js/components/league-wire.js?v=20261007mission1"></script>
 <script type="text/babel" data-wr-defer="lineup" src="js/components/league-matchup-view.js?v=20261012leaguematchup1"></script>
-<script type="text/babel" data-wr-defer="lineup" src="js/tabs/lineup.js?v=20261101playerrows1"></script>
+<script type="text/babel" data-wr-defer="lineup" src="js/tabs/lineup.js?v=20261101lineuplens1"></script>
 <!-- 4b. Draft Command Center modules — group "draft" (~28 scripts, ~1.26MB),
      loaded on first Draft-tab open. -->
 <script type="text/babel" data-wr-defer="draft" src="js/draft/styles.js?v=20260427font1"></script>
@@ -3319,7 +3320,7 @@ WRShared.preloadMany(WR_SHARED_FILES);
 <!-- Group "analysis": analytics.js embeds LeagueMapTab, so both defer together
      (league-map.js first — DOM order is execution order within a group). -->
 <script type="text/babel" data-wr-defer="analysis" src="js/tabs/league-map.js?v=20261022headersort1"></script>
-<script type="text/babel" data-wr-defer="myteam" src="js/components/roster-lenses.js?v=20261023lensinplace1"></script>
+<script type="text/babel" data-wr-defer="myteam" src="js/components/roster-lenses.js?v=20261101lineuplens1"></script>
 <script type="text/babel" data-wr-defer="myteam" src="js/tabs/my-team.js?v=20261025rosterorder1"></script>
 <!-- Compare: extracted from My Roster's former sub-view, now a top-level ROSTER-group tab. -->
 <script type="text/babel" data-wr-defer="compare" src="js/tabs/compare.js?v=20261022lensplayer1"></script>
