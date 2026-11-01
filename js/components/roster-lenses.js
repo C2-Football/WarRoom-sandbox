@@ -232,7 +232,7 @@
             return <strong className={'wr-lens-gain wr-lens-age' + (inline ? ' is-inline' : '')}>{finite(age) ? compactNumber(Math.abs(age)) : '—'}<small>{finite(age) ? age > 0 ? 'years younger' : age < 0 ? 'years older' : 'same age' : 'age comparison'}</small></strong>;
         }
         const delta = deltaOf(candidate, lens.ui.horizon);
-        return <strong className={'wr-lens-gain' + (delta != null && delta < 0 ? ' is-loss' : '') + (inline ? ' is-inline' : '')}>{signed(delta)}<small>{lens.ui.horizon === 'season' ? 'ROS pts' : candidate.conditionalParticipation ? 'pts if they play' : lens.ui.basis === 'average' ? 'avg pts' : 'lineup pts'}</small></strong>;
+        return <strong className={'wr-lens-gain' + (delta != null && delta < 0 ? ' is-loss' : '') + (inline ? ' is-inline' : '')}>{signed(delta)}<small>{lens.ui.horizon === 'season' ? candidate.season?.conditionalParticipation ? 'ROS pts if they play' : 'ROS pts' : candidate.conditionalParticipation ? 'pts if they play' : lens.ui.basis === 'average' ? 'avg pts' : 'lineup pts'}</small></strong>;
     }
     function Impact({ lens }) {
         const candidate = lens.selected, metric = metricOf(candidate, lens.ui.horizon);

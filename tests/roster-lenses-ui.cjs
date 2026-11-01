@@ -856,3 +856,16 @@ test('a same-source alternate exposes only its gain until clicked and closes the
     h.click('Close');
     assert.equal(previewNodes(h).length, 0); assert(!text(h.tree).includes('Other Trade Target'));
 });
+
+test('season waiver comparison labels conditional ROS without hiding totals', async () => {
+    const h = harness();
+    const move = candidate('add-a', 'Available Runner', 3, 30);
+    move.season.conditionalParticipation = true;
+    await openWaivers(h, [move]);
+    h.click('Season'); await h.flush();
+    const impact = find(h.tree, node => node.props.className === 'wr-lens-impact');
+    assert.match(text(impact), /500\.0.*530\.0/);
+    assert.match(text(impact), /\+30\.0ROS pts if they play/);
+    assert(!text(h.tree).includes('Comparison unavailable'));
+    assert.equal(h.lens.selected.id, 'add-a');
+});

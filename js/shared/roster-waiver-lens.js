@@ -73,8 +73,11 @@
         const state=args.rosState;
         if (!rosMatches(args,week)) return () => null;
         return pid => {
-            if (!own(state.points,pid)) return null;
-            const value=number(state.points[pid]);
+            // Reuse the verified healthy ROS baseline only for the same explicit
+            // participation scenario used by the weekly preview. Never fill unknowns with zero.
+            const conditional=args.projectionsByPid?.[pid]?.conditionalParticipation === true;
+            if (!own(state.points,pid) && !conditional) return null;
+            const value=number(state.points?.[pid]) ?? (conditional ? number(state.healthyPoints?.[pid]) : null);
             // The seasonal value engine zero-pins unprojectable players. A
             // zero is scoring evidence only with a real projection baseline.
             return value === 0 && projectionNumber(args.projectionsByPid?.[pid]) == null && !args.rosEvidenceByPid?.[pid] ? null : value;
@@ -128,6 +131,12 @@
         const excluded=new Set((filters.excludePositions || []).map(norm));
         const beforeWeek=read.beforeWeekly.complete ? number(read.beforeWeekly.total) : null;
         const beforeRos=read.beforeRos?.complete ? number(read.beforeRos.total) : null;
+        const reserve=new Set([...(args.roster.reserve || []),...(args.roster.taxi || [])].map(String));
+        const missingRos=ids(args.roster).filter(pid => !reserve.has(pid) && ros(pid) == null);
+        const seasonReason=basis !== 'projected'
+            ? 'Current-season averages are historical benchmarks, not rest-of-season forecasts. Choose Projected for a season comparison.'
+            : missingRos.length ? 'ROS forecast unavailable for ' + missingRos.map(pid => players[pid]?.full_name || pid).join(', ') + '.' : null;
+        const conditionalRos=pid => number(args.rosState?.points?.[pid]) == null && args.projectionsByPid?.[pid]?.conditionalParticipation === true && ros(pid) != null;
         if (beforeWeek == null && beforeRos == null) return result(args,'unavailable',basis === 'projected' ? 'Lineup forecasts are incomplete. Missing forecasts stay unknown.'
             : basis === 'average' ? 'Current-season average comparisons are incomplete. Missing averages stay unknown.' : 'Current-season averages or required projections are incomplete for this comparison.');
         Object.entries(players).forEach(([pid,p]) => {
@@ -153,7 +162,8 @@
                 const delta=number(fit.weeklyGain), rosDelta=number(fit.rosGain);
                 const weekly={status:delta != null && beforeWeek != null ? 'ready':'unavailable',before:beforeWeek,after:delta != null && beforeWeek != null ? +(beforeWeek+delta).toFixed(2):null,delta,basis};
                 const season={status:rosDelta != null && beforeRos != null ? 'ready':'unavailable',before:beforeRos,after:rosDelta != null && beforeRos != null ? +(beforeRos+rosDelta).toFixed(1):null,delta:rosDelta,basis:'fixed-roster ROS lineup points',
-                    reason:basis !== 'projected' ? 'Current-season averages are historical benchmarks, not rest-of-season forecasts. Choose Projected for a season comparison.':null};
+                    conditionalParticipation:ids(args.roster).filter(key => !reserve.has(key)).concat(pid).some(conditionalRos),
+                    reason:seasonReason || (ros(pid) == null ? 'ROS forecast unavailable for ' + incoming.name + '.' : null)};
                 const cautions=[];
                 if (p.injury_status) cautions.push('Injury: '+p.injury_status);
                 if (number(p.depth_chart_order) > 1) cautions.push('Depth-chart role may limit opportunity.');

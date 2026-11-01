@@ -57,6 +57,22 @@ assert.equal(Lens.rank(out,{horizon:'both'}).length,0);
 assert(!out.candidates.some(x=>x.pid==='backup'),'High forecast does not verify a starting QB role');
 assert.equal(pick.id,'add:q2');assert.match(pick.cautions.join(' '),/Lowers projected ROS/);
 window.App.Chopped={isChopped:()=>true,isEliminated:()=>true};assert.equal(Lens.evaluate(args).status,'disabled');delete window.App.Chopped;
+// A Questionable tag can leave canonical ROS unknown while the healthy baseline is verified.
+const conditionalArgs={...args,projectionsByPid:{...args.projectionsByPid,w:{available:true,conditionalParticipation:true,points:{median:20}}},rosState:{...args.rosState,points:{r:180,b:75,add:210},healthyPoints:{w:200}}};
+const conditionalSnapshot=JSON.stringify(conditionalArgs.rosState);
+const conditionalResult=Lens.evaluate(conditionalArgs);
+const conditionalPick=conditionalResult.candidates.find(x=>x.pid==='add');
+assert.equal(conditionalPick.season.before,380);
+assert.equal(conditionalPick.season.after,410);
+assert.equal(conditionalPick.season.delta,30);
+assert.equal(conditionalPick.season.conditionalParticipation,true);
+assert.equal(JSON.stringify(conditionalArgs.rosState),conditionalSnapshot,'Canonical availability and prices stay unchanged');
+assert.equal(Lens.evaluate({...conditionalArgs,rosState:{...conditionalArgs.rosState,points:{...conditionalArgs.rosState.points,w:null}}}).candidates.find(x=>x.pid==='add').season.conditionalParticipation,true);
+const absentBaseline=Lens.evaluate({...conditionalArgs,rosState:{...conditionalArgs.rosState,healthyPoints:{}}});
+assert.equal(absentBaseline.readiness.season,false);
+assert.match(absentBaseline.candidates[0].season.reason,/Starter WR/);
+const wrongWeek=Lens.evaluate({...conditionalArgs,rosState:{...conditionalArgs.rosState,week:5}});
+assert.equal(wrongWeek.readiness.season,false,'Conditional baseline never bypasses scope checks');
 console.log('PASS roster waiver lens: real legal FLEX alternatives, stable drop/horizons, protected assets, zero/missing forecasts, scope, roster ownership, restrictions and claim handoff');
 (async()=>{
     const dynasty={...args,league:{...league,settings:{...league.settings,type:2}},skin:{type:'dynasty',phase:'in_season'},valuesByPid:undefined};

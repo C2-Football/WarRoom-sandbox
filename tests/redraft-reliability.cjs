@@ -208,3 +208,20 @@ test('waiver and trade loaders label questionable-player scenarios instead of bl
     const missing=await b.App.RosterTradeLens.load(args);
     assert.equal(missing.status,'unavailable');assert.match(missing.reason,/projection/);
 });
+
+
+test('waiver season uses verified healthy ROS for the labeled participation scenario',async()=>{
+    const h=harness(),b=h.box,f=fixture();
+    h.load(path.join(APP,'js/shared/roster-waiver-lens.js'));
+    b.S.user={user_id:'u1'};
+    f.players.starter.injury_status='Questionable';
+    const statsData={starter:{gp:8,rush_att:100,rush_yd:800},bench:{gp:8,rush_att:20,rush_yd:100},add:{gp:8,rush_att:120,rush_yd:1100},other:{gp:8,rush_att:100,rush_yd:700}};
+    b.App.WeeklyProj.ensureWeekProjections=async()=>({starter:{rush_att:10,rush_yd:100},bench:{rush_att:2,rush_yd:20},other:{rush_att:10,rush_yd:110},add:{rush_att:10,rush_yd:140}});
+    const out=await b.App.RosterWaiverLens.load({...f,rosters:f.league.rosters,userId:'u1',skin:{type:'redraft',phase:'in_season'},valuesByPid:{starter:100,bench:50,other:110,add:120},statsData,priorData:{}});
+    assert.equal(out.readiness.season,true,out.reason);
+    const add=out.candidates.find(c=>c.pid==='add');
+    assert(add);
+    assert.equal(add.season.status,'ready');
+    assert.equal(add.season.conditionalParticipation,true);
+    assert(Number.isFinite(add.season.before)&&Number.isFinite(add.season.after));
+});
