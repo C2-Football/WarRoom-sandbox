@@ -4,12 +4,22 @@ const {createClient}=require('@supabase/supabase-js');
 const {database,transport,owner}=require('./helpers/value-monitor-db.cjs'),{fixture}=require('./helpers/advice-fixture.cjs');
 const R=require('../scripts/advice/runtime.cjs');
 const W=require('../scripts/advice/worker.cjs');
-async function setup(){const {db}=await database();await db.exec(fs.readFileSync('supabase/migrations/20261104000000_advice_scorecard.sql','utf8'));return db;}
+async function setup(){const {db}=await database();await db.exec('alter default privileges in schema public grant execute on functions to anon,authenticated;');await db.exec(fs.readFileSync('supabase/migrations/20261104000000_advice_scorecard.sql','utf8'));return db;}
 const call=async(db,name,params)=>(await db.query(`select ${name}(${Object.keys(params).map((k,i)=>k+' => $'+(i+1)).join(',')}) r`,Object.values(params).map(x=>x&&typeof x==='object'?JSON.stringify(x):x))).rows[0].r;
 async function enrolled(db){const f=fixture(),now=Date.now(),iso=d=>new Date(now+d).toISOString(),config={ownerKey:'account:'+owner,leagueId:'fixture-league',season:2026,engineHash:R.engineHash(),cohort:'validation',endWeek:4,
  weeks:f.c.weeks.map((w,i)=>({...w,freezeAt:iso((i+2)*864e5),firstKickoffAt:iso((i+2)*864e5+36e5),endsAt:iso((i+3)*864e5)})),cases:[{key:'fixture-case',kind:'waiver',firstWeek:1,captureAt:iso(36e5),deadline:iso(864e5),effectiveAt:iso(864e5+36e5)}]};
  const id=await call(db,'enroll_advice_run',{p_config:config});await db.query('update advice_runs set active=true where id=$1',[id]);await db.exec("update advice_jobs set scheduled_at=now()-interval '1 minute',next_at=now()-interval '1 minute' where kind='capture'");
  f.c.decisionId=id+':fixture-case';f.c.deadline=config.cases[0].deadline;f.c.effectiveAt=config.cases[0].effectiveAt;f.c.weeks=config.weeks;f.c.capturedAt=iso(-1000);f.c.sources[0].observedAt=iso(-2000);return {id,f,config};}
+test('Supabase default browser grants cannot expose collector-only routines',async()=>{
+ const db=await setup();try{
+  for(const routine of ['enroll_advice_run(jsonb)','claim_advice_job()','finish_advice_job(bigint,uuid,jsonb,text)','note_advice_readback_failure(bigint,text)']){
+   for(const role of ['anon','authenticated','service_role']){
+    const allowed=(await db.query("select has_function_privilege($1,$2,'execute') allowed",[role,'public.'+routine])).rows[0].allowed;
+    assert.equal(allowed,role==='service_role',role+' permission for '+routine);
+   }
+  }
+ }finally{await db.close();}
+});
 test('SQL saves actual advice with server receipt, immutable readback and lease fencing through pinned Supabase client',async()=>{
  const db=await setup();try{const {f}=await enrolled(db),calls=[],client=createClient('http://fixture.local','fixture',{global:{fetch:transport(db,{calls})},auth:{persistSession:false}});
  const job=(await client.rpc('claim_advice_job')).data;assert(job);assert.equal((await client.rpc('claim_advice_job')).data,null);

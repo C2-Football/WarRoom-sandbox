@@ -48,7 +48,7 @@ Verified on November 4, 2026:
 
 | Check | Result |
 | --- | --- |
-| Focused advice capture, database, runtime and evaluation suite | 22 passed, 0 failed |
+| Focused advice capture, database, runtime and evaluation suite | 23 passed, 0 failed; includes Supabase default-role-grant regression |
 | Existing value-history and value-monitor suite | 15 passed |
 | Existing forecast ledger, archive and evaluation suites | 36 passed |
 | Existing core suite | 97 passed |
@@ -75,6 +75,8 @@ npm run test:advice-scorecard:browser
 ```
 
 The focused suite exercises real calculation modules, the pinned Supabase client and a local PostgreSQL-compatible database, plus simulated provider responses. It checks persistence/readback, owner boundaries, immutable predictions, late/future/stale evidence, lineups and benched points, byes, drops, budgets, effective times, hold/simple comparisons, paired identity, missing versus zero outcomes, partial horizons, retries/corrections, failed coverage and unknown trade acceptance. These tests are evidence about implementation behavior only.
+
+The authorized deployment dry run exposed Supabase's direct default grants to browser roles. The migration now explicitly revokes those grants on collector routines before granting service-only access. The regression reproduces those hosted defaults, and the Pages release workflow runs the full focused suite on Node 22 before publishing. The initial dry run rolled back; the unsafe grants were never applied persistently.
 
 ## Local source locations
 

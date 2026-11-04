@@ -77,6 +77,9 @@ jobs:
           npm run test:value-monitor
           npm run test:value-monitor:build
 
+      - name: Verify advice scorecard persistence and collector permissions
+        run: npm run test:advice-scorecard
+
       - name: Build Pages artifact
         run: |
           set -euo pipefail

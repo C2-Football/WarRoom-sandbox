@@ -159,6 +159,8 @@ begin
  else raise exception 'Unknown advice report table';end if;
  return result;
 end;$$;
-revoke all on function public.advice_owner(),public.enroll_advice_run(jsonb),public.claim_advice_job(),public.finish_advice_job(bigint,uuid,jsonb,text),public.note_advice_readback_failure(bigint,text),public.observe_advice(jsonb),public.read_advice_data(text,text,bigint) from public;
+-- Supabase may grant new routines directly to browser roles through default
+-- privileges. Revoking PUBLIC alone does not remove those direct grants.
+revoke all on function public.advice_owner(),public.advice_immutable(),public.enroll_advice_run(jsonb),public.claim_advice_job(),public.finish_advice_job(bigint,uuid,jsonb,text),public.note_advice_readback_failure(bigint,text),public.observe_advice(jsonb),public.read_advice_data(text,text,bigint) from public,anon,authenticated;
 grant execute on function public.enroll_advice_run(jsonb),public.claim_advice_job(),public.finish_advice_job(bigint,uuid,jsonb,text),public.note_advice_readback_failure(bigint,text) to service_role;
 grant execute on function public.observe_advice(jsonb),public.read_advice_data(text,text,bigint) to anon,authenticated;
