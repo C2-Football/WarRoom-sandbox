@@ -244,10 +244,12 @@
         }
         const evaluated=evaluate(args);
         const participationNotice=App.RosterForecastScenario?.notice(args.projectionsByPid,args.players,args.roster);
-        return { ...evaluated, participationNotice, candidates:evaluated.candidates.map(c => {
+        const answer = { ...evaluated, participationNotice, candidates:evaluated.candidates.map(c => {
             const notice=App.RosterForecastScenario?.notice(args.projectionsByPid,args.players,{players:[...ids(args.roster),...(Array.isArray(c.incoming) ? c.incoming:[c.incoming]).filter(Boolean).map(p => p.pid)]});
             return {...c,conditionalParticipation:!!notice,cautions:[...(c.cautions || []),...(notice ? [notice]:[])]};
         }) };
+        App.AdviceCapture?.prepared?.('waiver', args, answer);
+        return answer;
     }
     const api={load,evaluate,rank,scope,restrictions};
     App.RosterWaiverLens=api;

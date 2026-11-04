@@ -1,0 +1,32 @@
+{
+  "ownerKey": "account:REPLACE_WITH_AUTHORIZED_APP_USER_UUID",
+  "platform": "sleeper",
+  "leagueId": "REPLACE_WITH_LEAGUE_ID",
+  "rosterId": 1,
+  "season": 2026,
+  "format": "redraft",
+  "endWeek": 17,
+  "cohort": "validation",
+  "tuningEndsAt": "REPLACE_WITH_ISO_TIME",
+  "validationStartsAt": "REPLACE_WITH_LATER_ISO_TIME",
+  "gm": {},
+  "cases": [
+    {
+      "key": "week10-waiver",
+      "kind": "waiver",
+      "firstWeek": 10,
+      "captureAt": "REPLACE_WITH_FUTURE_ISO_TIME",
+      "deadline": "REPLACE_WITH_VERIFIED_LEAGUE_CLAIM_DEADLINE",
+      "effectiveAt": "REPLACE_WITH_ASSUMED_ACQUISITION_EFFECTIVE_TIME",
+      "faab": 1
+    },
+    {
+      "key": "week10-trade",
+      "kind": "trade",
+      "firstWeek": 10,
+      "captureAt": "REPLACE_WITH_FUTURE_ISO_TIME",
+      "deadline": "REPLACE_WITH_VERIFIED_TRADE_DECISION_DEADLINE",
+      "effectiveAt": "REPLACE_WITH_ASSUMED_TRADE_EFFECTIVE_TIME"
+    }
+  ]
+}

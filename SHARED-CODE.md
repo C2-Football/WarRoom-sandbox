@@ -153,3 +153,7 @@ function.
 - **Adding a new constant** — add to `dhq-shared/constants.js` and add a matching fallback in `warroom/js/core.js`.
 
 After editing any shared module: `git push origin main` in `dhq-shared/`. Each app vendors the change on its next build (`npm run sync:shared`, which runs automatically on dev/build/deploy).
+
+## Advice scorecard modules (November 2026)
+
+`advice-scorecard.js`, `roster-waiver-lens.js`, `roster-trade-lens.js`, `waiver-roster-read.js`, and `roster-lens-basis.js` are canonical in dhq-shared. The sync script copies the advice evaluator into `reconai-shared/` and the existing lens paths into `js/shared/`. Edit the canonical copies first. Current recommendation algorithms remain unchanged apart from the guarded capture hook. Displayed capture and the server scheduler are disabled until separately activated. See `reports/advice-scorecard.md`.

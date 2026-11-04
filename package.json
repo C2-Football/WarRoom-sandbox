@@ -92,7 +92,10 @@
     "update:cbs-market": "node scripts/update-cbs-market.cjs",
     "test:value-monitor": "node --test tests/value-history.cjs tests/value-monitor.cjs",
     "test:value-monitor:build": "node tests/value-monitor-build.cjs",
-    "test:value-monitor:browser": "node tests/value-monitor-browser.cjs"
+    "test:value-monitor:browser": "node tests/value-monitor-browser.cjs",
+    "test:advice-scorecard": "node --test tests/advice-scorecard.cjs tests/advice-scorecard-db.cjs tests/advice-scorecard-runtime.cjs",
+    "advice:collect": "node scripts/advice/run.cjs collect",
+    "test:advice-scorecard:browser": "node tests/advice-scorecard-browser.cjs"
   },
   "keywords": [
     "fantasy",

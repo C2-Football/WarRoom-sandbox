@@ -24,6 +24,7 @@ const FILES = [
   'yahoo-api.js',
   'value-monitor-runtime.cjs',
   'value-history.js',
+  'advice-scorecard.js',
   'supabase-client.js',
   'tier.js',
   'pick-value-model.js',
@@ -95,7 +96,7 @@ console.log(`[sync-reconai-shared] Copied ${FILES.length} files to ${path.relati
 // never propagate a change to it in either direction. That convention has no
 // enforcement, so a one-sided edit silently forks the value engine (DHQ, ROS,
 // keeper blend) between the two repos. Fail loudly instead.
-for (const file of ['startsit-engine.js', 'weekly-proj.js', 'nfl-context.js', 'redraft-market.js']) fs.copyFileSync(path.join(SOURCE, file), path.join(ROOT, 'js/shared', file));
+for (const file of ['startsit-engine.js', 'weekly-proj.js', 'nfl-context.js', 'redraft-market.js', 'roster-waiver-lens.js', 'roster-trade-lens.js', 'waiver-roster-read.js', 'roster-lens-basis.js']) fs.copyFileSync(path.join(SOURCE, file), path.join(ROOT, 'js/shared', file));
 const TWIN = 'player-value.js';
 const twinLocal = path.join(ROOT, 'js', 'utils', TWIN);
 const twinShared = path.join(SOURCE, TWIN);

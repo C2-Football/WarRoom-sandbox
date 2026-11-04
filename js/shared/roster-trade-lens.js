@@ -299,11 +299,13 @@
         // The selected preserved package opts into loadSeason explicitly.
         const evaluated=build(args);
         const participationNotice=App.RosterForecastScenario?.notice(args.projectionsByPid,players,args.roster);
-        return { ...evaluated, participationNotice, candidates:evaluated.candidates.map(c => {
+        const answer = { ...evaluated, participationNotice, candidates:evaluated.candidates.map(c => {
             const partner=rosters.find(r => str(r.roster_id) === str(c.partner.rosterId));
             const partnerNotice=App.RosterForecastScenario?.notice(args.projectionsByPid,players,partner);
             return {...c,conditionalParticipation:!!(participationNotice || partnerNotice),cautions:[...(c.cautions || []),...new Set([participationNotice,partnerNotice].filter(Boolean))]};
         }) };
+        App.AdviceCapture?.prepared?.('trade', args, answer);
+        return answer;
     }
     async function loadSeason(opts) {
         opts = opts || {};

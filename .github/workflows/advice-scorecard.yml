@@ -1,0 +1,39 @@
+name: DHQ advice scorecard (explicit activation required)
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '7,37 * * * *'
+permissions:
+  contents: read
+concurrency:
+  group: dhq-advice-scorecard
+  cancel-in-progress: false
+jobs:
+  collect:
+    if: vars.ADVICE_SCORECARD_ENABLED == 'true' && vars.ADVICE_SHARED_REVISION != ''
+    runs-on: ubuntu-latest
+    environment: advice-scorecard
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Require immutable shared revision
+        env:
+          SHARED_REVISION: ${{ vars.ADVICE_SHARED_REVISION }}
+        run: '[[ "$SHARED_REVISION" =~ ^[0-9a-f]{40}$ ]]'
+      - uses: actions/checkout@v4
+        with:
+          repository: C2-Football/dhq-shared
+          ref: ${{ vars.ADVICE_SHARED_REVISION }}
+          path: _canonical-shared
+      - run: npm run sync:shared
+        env:
+          SHARED_SOURCE: ${{ github.workspace }}/_canonical-shared
+      - run: node scripts/advice/run.cjs collect
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
