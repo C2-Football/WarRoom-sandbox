@@ -1874,7 +1874,7 @@ function MyTeamTab({
               <span className="wr-roster-position-icon" style={{ '--wr-position-color': window.App.positionColor?.(r.p.position || r.pos) || posColors[r.pos] || ({ QB: '#e74c3c', RB: '#2ecc71', WR: '#3498db', TE: '#f0a500', K: '#9b59b6', DEF: '#85929e' })[r.pos] || 'var(--silver)' }}>{window.App.idpPositionFamily?.(r.p.position) ? String(r.p.position).toUpperCase() : r.pos}</span>
               <span className="wr-roster-identity-copy"><strong>{getPlayerName(r.pid)}</strong><span>{_phoneTagFor(r, false)}{isLensSource && <span className="wr-lens-source-badge">In lens</span>}</span></span>
             </span>
-            {lensCandidate && <span id={'roster-lens-gain-' + r.pid} className="wr-lens-bar-gain"><small>Potential gain</small><window.WR.RosterLens.Gain candidate={lensCandidate} lens={rosterLens} inline /></span>}
+            {lensCandidate && (rosterLens.mode === 'lineup' ? <window.WR.RosterLens.LineupSummary candidate={lensCandidate} lens={rosterLens} id={'roster-lens-gain-' + r.pid} /> : <span id={'roster-lens-gain-' + r.pid} className="wr-lens-bar-gain"><small>Potential gain</small><window.WR.RosterLens.Gain candidate={lensCandidate} lens={rosterLens} inline /></span>)}
             {!lensCandidate && (metricPreference ? <span className="mc-roster-metrics" style={{ '--mc-columns': metricPreference.selected.length }}>{window.WR.PlayerMetrics.slots(metricPreference.selected, {
               proj: projFor(r.pid)?.available !== false ? projFor(r.pid)?.points?.median : null,
               ppg: window.App?.WeeklyProj?.formStats?.(r.pid, 5)?.rollingPPG,

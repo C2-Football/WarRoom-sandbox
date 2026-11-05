@@ -1,6 +1,6 @@
 /* global module */
-// Read-only, individual bench-for-starter comparisons. Alternatives are never
-// combined into a claimed whole-lineup gain and never submitted to a provider.
+// Read-only bench-for-starter comparisons and the best compatible set of swaps.
+// Each bench player and starting slot can appear only once in the suggested set.
 (function (root) {
     'use strict';
     const App = root.App = root.App || {};
@@ -99,6 +99,69 @@
             || projected?.available === false && conditional == null || projected?.statLine && projected.statLine.median == null && conditional == null) points = null;
         return { points, available: points != null, comparisonBasis: 'projected', conditional: uncertain && points != null };
     }
+    function selectPlan(candidates) {
+        // Exact rectangular assignment (Hungarian algorithm). A flexible
+        // player is assigned once, even when several slots could use them.
+        // The dummy columns mean any slot can keep its current starter.
+        const slots = [...new Set(candidates.map(candidate => candidate.slotIndex))];
+        const players = ids(candidates.map(candidate => candidate.incoming?.[0]?.pid));
+        const width = players.length + slots.length, zero = () => [0, 0, 0, 0, 0];
+        const less = (a, b) => {
+            if (!b) return true;
+            for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] < b[i];
+            return false;
+        };
+        const plus = (a, b) => a.map((value, i) => value + b[i]);
+        const minus = (a, b) => a.map((value, i) => value - b[i]);
+        const edges = slots.map(() => Array(players.length).fill(null));
+        candidates.forEach(candidate => {
+            // Fill empty/unavailable slots before numeric upgrades. Missing
+            // baselines stay unknown; never manufacture a displayed gain.
+            const delta = number(candidate.weekly?.delta), after = number(candidate.weekly?.after);
+            const cost = [candidate.outgoing?.length ? 0 : -1,
+                candidate.outgoing?.length && delta == null ? -1 : 0,
+                -Math.round((delta ?? after ?? 0) * 100), 1, candidate.conditional ? 1 : 0];
+            const row = slots.indexOf(candidate.slotIndex), column = players.indexOf(String(candidate.incoming[0].pid));
+            if (!edges[row][column] || less(cost, edges[row][column].cost)) edges[row][column] = { candidate, cost };
+        });
+        const u = Array.from({ length: slots.length + 1 }, zero), v = Array.from({ length: width + 1 }, zero);
+        const assigned = Array(width + 1).fill(0), previous = Array(width + 1).fill(0);
+        for (let row = 1; row <= slots.length; row++) {
+            assigned[0] = row;
+            const distances = Array(width + 1).fill(null), visited = Array(width + 1).fill(false);
+            let column = 0;
+            do {
+                visited[column] = true;
+                const active = assigned[column];
+                let delta = null, next = 0;
+                for (let j = 1; j <= width; j++) {
+                    if (visited[j]) continue;
+                    // One dummy per row makes a legal unchanged assignment
+                    // always possible. Forbidden player edges cost more than it.
+                    const cost = j > players.length ? zero() : edges[active - 1][j - 1]?.cost || [1, 0, 0, 0, 0];
+                    const reduced = minus(minus(cost, u[active]), v[j]);
+                    if (less(reduced, distances[j])) { distances[j] = reduced; previous[j] = column; }
+                    if (less(distances[j], delta)) { delta = distances[j]; next = j; }
+                }
+                for (let j = 0; j <= width; j++) {
+                    if (visited[j]) { u[assigned[j]] = plus(u[assigned[j]], delta); v[j] = minus(v[j], delta); }
+                    else if (distances[j]) distances[j] = minus(distances[j], delta);
+                }
+                column = next;
+            } while (assigned[column]);
+            do {
+                const from = previous[column];
+                assigned[column] = assigned[from]; column = from;
+            } while (column);
+        }
+        const selected = new Set();
+        for (let column = 1; column <= players.length; column++) {
+            const edge = assigned[column] && edges[assigned[column] - 1][column - 1];
+            if (edge) selected.add(edge.candidate);
+        }
+        return candidates.filter(candidate => selected.has(candidate));
+    }
+
     function evaluate(input) {
         const args = { ...input, players: input.players || input.playersData || {}, basis: basisOf(input) };
         args.currentWeek = currentWeek(args);
@@ -179,11 +242,12 @@
         });
         candidates.sort((a, b) => b.priority - a.priority || (b.weekly.delta ?? -Infinity) - (a.weekly.delta ?? -Infinity)
             || b.weekly.after - a.weekly.after || a.id.localeCompare(b.id));
+        const recommendations = selectPlan(candidates);
         const incomplete = diagnostics.missing > 0 || diagnostics.unknownLocks > 0 || diagnostics.unsupportedSlots > 0;
         const reason = incomplete ? 'Some comparisons are unavailable because player data, forecasts or kickoff status are missing.'
             : candidates.length ? null : diagnostics.locked && !diagnostics.compared ? 'No eligible unlocked lineup changes remain this week.' : 'No better eligible bench replacement on the selected basis.';
         return result(args, candidates.length ? 'ready' : incomplete ? 'unavailable' : 'empty', reason,
-            { candidates, diagnostics, readiness: { weekly: candidates.length > 0 || diagnostics.compared > 0, complete: !incomplete },
+            { candidates, recommendations, diagnostics, readiness: { weekly: candidates.length > 0 || diagnostics.compared > 0, complete: !incomplete },
                 lineupSource: args.lineupSource || (args.platformStarters ? 'Submitted starters' : 'Roster starters') });
     }
     async function submittedLineup(args) {
@@ -265,7 +329,7 @@
         }
         return evaluate(args);
     }
-    const api = { evaluate, load, scope, normSlot, slotEligibility, eligiblePlayer };
+    const api = { evaluate, load, scope, normSlot, slotEligibility, eligiblePlayer, selectPlan };
     App.RosterLineupLens = api;
     root.WR = root.WR || {}; root.WR.RosterLineupLens = api;
     if (typeof module !== 'undefined' && module.exports) module.exports = api;

@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const Babel = require('@babel/standalone');
+const { selectPlan } = require('../js/shared/roster-lineup-lens.js');
 
 const compiledLens = Babel.transform(fs.readFileSync('js/components/roster-lenses.js', 'utf8'), { presets: ['react'] }).code;
 const compiledRoster = Babel.transform(fs.readFileSync('js/tabs/my-team.js', 'utf8'), { presets: ['react'] }).code;
@@ -89,7 +90,7 @@ function harness({ integrated = false, pro = true, metrics = false } = {}) {
             NFLByes: { seasonFor: () => 2026, label: () => 'Bye 7', rosterWeeks: () => ({ weeks: [], unknown: [] }) },
             WeeklyProj: { currentWeek: () => 6, weeklyPointsScope: id => 'points:' + id, formStats: () => ({ rollingPPG: 11.5 }) },
             RosterWaiverLens: { load: options => { const next = deferred(); calls.push({ mode: 'waivers', options, ...next }); return next.promise; } },
-            RosterLineupLens: { load: options => { const next = deferred(); calls.push({ mode: 'lineup', options, ...next }); return next.promise; } },
+            RosterLineupLens: { selectPlan, load: options => { const next = deferred(); calls.push({ mode: 'lineup', options, ...next }); return next.promise; } },
             RosterTradeLens: {
                 load: options => { const next = deferred(); calls.push({ mode: 'trades', options, ...next }); return next.promise; },
                 loadSeason: options => { const next = deferred(); seasonCalls.push({ options, ...next }); return next.promise; },
@@ -892,6 +893,10 @@ test('lineup lens decorates the existing starter row and shows slot values witho
     assert.equal(h.calls.at(-1).options.week, 6);
     assert.equal(h.lens.selected, null);
     assert.equal(rosterPlayer(h, 'starter').props['data-wr-lens-state'], 'available');
+    const summary = find(rosterTrigger(h, 'starter'), node => node.props['data-lineup-summary']);
+    assert.match(text(summary), /Start Bench Runner.*Bench Starter Receiver.*\+4\.6/);
+    assert(!text(summary).includes('Potential gain'), 'The closed yellow card states the exact swap');
+    assert.equal(previewNodes(h).length, 0, 'Both names are readable before opening the green preview');
     assert.deepEqual(rosterIds(h), originalOrder);
     assert(!find(h.tree, node => node.props['aria-label'] === 'Acquisition projection horizon'));
     assert(!find(h.tree, node => node.type === 'button' && text(node) === 'Season'));
@@ -907,6 +912,49 @@ test('lineup lens decorates the existing starter row and shows slot values witho
     h.click('Close');
     assert.equal(previewNodes(h).length, 0); assert.equal(h.lens.selected, null);
     assert.equal(JSON.stringify(h.roster), originalRoster); assert.equal(h.writes.length, 0);
+});
+
+test('lineup rows use one compatible plan and reveal at most three named, conflict-free choices', async () => {
+    const h = harness({ integrated: true });
+    for (const [pid, name] of [['starter2', 'Second Starter'], ['bench2', 'Other Recommended Runner'],
+        ['bench3', 'Second Choice Runner'], ['bench4', 'Third Choice Runner'], ['bench5', 'Fourth Choice Runner']]) {
+        h.players[pid] = { full_name: name, position: 'RB', team: 'CHI' };
+        h.roster.players.push(pid);
+    }
+    h.roster.starters.push('starter2');
+    const move = (outgoing, incoming, gain, slot = 0) => lineupMove({ id: outgoing + ':' + incoming, anchorPlayerId: outgoing, slotIndex: slot,
+        incoming: [{ pid: incoming, name: h.players[incoming].full_name, projection: 10 + gain }],
+        outgoing: [{ pid: outgoing, name: h.players[outgoing].full_name, projection: 10 }], weekly: { before: 10, after: 10 + gain, delta: gain } });
+    const moves = [move('starter', 'bench', 10), move('starter2', 'bench2', 7, 1), move('starter', 'bench2', 9),
+        move('starter', 'bench3', 8), move('starter', 'bench4', 6), move('starter', 'bench5', 5), move('starter2', 'bench', 1, 1)];
+    h.render();
+    const before = JSON.stringify(h.roster), order = rosterIds(h);
+    await loadLineup(h, moves);
+    assert.equal(h.lens.options.length, 2);
+    assert.equal(new Set(h.lens.options.map(candidate => candidate.incoming[0].pid)).size, 2);
+    assert.match(text(rosterTrigger(h, 'starter')), /Start Bench Runner/);
+    assert.match(text(rosterTrigger(h, 'starter2')), /Start Other Recommended Runner/);
+    assert(!find(h.tree, node => node.props['aria-label'] === 'Lineup choices for Starter Receiver'));
+    h.click('Preview move for Starter Receiver');
+    let choices = find(h.tree, node => node.props['aria-label'] === 'Lineup choices for Starter Receiver');
+    assert.equal(all(choices, node => node.type === 'button').length, 3);
+    assert.match(text(choices), /RecommendedBench Runner.*Option 2Second Choice Runner.*Option 3Third Choice Runner/);
+    assert(!text(choices).includes('Other Recommended Runner'), 'Do not reuse the other suggested slot’s bench player');
+    assert(!text(choices).includes('Fourth Choice Runner'));
+    const second = find(choices, node => node.props['data-lens-peek'] === 'starter:bench3');
+    second.props.onClick(); h.render();
+    assert.equal(h.lens.selected.id, 'starter:bench3');
+    const preview = find(h.tree, node => node.props['aria-label'] === 'Lineup swap preview');
+    assert.match(text(preview), /StartSecond Choice Runner.*\+8\.0|\+8\.0.*StartSecond Choice Runner/);
+    choices = find(h.tree, node => node.props['aria-label'] === 'Lineup choices for Starter Receiver');
+    assert.equal(find(choices, node => node.props['data-lens-peek'] === 'starter:bench3').props['aria-pressed'], true);
+    h.click('Review in Game Day');
+    assert.equal(h.root.WR.lineupLensContext.incomingPid, 'bench3');
+    assert.equal(h.root.WR.lineupLensContext.outgoingPid, 'starter');
+    assert.equal(JSON.stringify(h.roster), before); assert.equal(h.writes.length, 0);
+    assert.deepEqual(rosterIds(h), order, 'The compatible plan decorates the existing list without sorting it');
+    h.click('Close');
+    assert.match(text(rosterTrigger(h, 'starter')), /Start Bench Runner/);
 });
 
 test('lineup review hands off the selected week, slot, players and account without changing starters', async () => {

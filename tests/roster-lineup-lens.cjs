@@ -16,6 +16,66 @@ const args = { league, roster, players, userId: 'owner', currentSeason: 2026, cu
     games, gamesUpdatedAt: now, scheduleWeek: 6, scheduleSeason: 2026,
     projectionsByPid: { qb: 22, wr: 16, rb: 12, better: 19, receiver: 18, q2: 24, reserve: 50, taxi: 60 } };
 const find = (out, incoming, slot = 2) => out.candidates.find(c => c.incoming[0].pid === incoming && c.slotIndex === slot);
+{
+    const idpPlayers = Object.fromEntries([['lb1', 2], ['lb2', 4], ['lb3', 6], ['lb4', 8], ['lb5', 10], ['upgrade', 20]].map(([pid]) => [pid, player(pid, 'LB')]));
+    const idpRoster = { ...roster, players: Object.keys(idpPlayers), starters: ['lb1', 'lb2', 'lb3', 'lb4', 'lb5'], reserve: [], taxi: [] };
+    const idp = Lens.evaluate({ ...args, league: { ...league, roster_positions: ['LB', 'LB', 'LB', 'IDP_FLEX', 'IDP_FLEX', 'BN'] },
+        roster: idpRoster, players: idpPlayers, projectionsByPid: { lb1: 2, lb2: 4, lb3: 6, lb4: 8, lb5: 10, upgrade: 20 } });
+    assert.equal(idp.candidates.length, 5, 'Retain the legal comparisons for details');
+    assert.equal(idp.recommendations.length, 1, 'One bench linebacker produces one recommendation, not five');
+    assert.equal(idp.recommendations[0].outgoing[0].pid, 'lb1');
+    assert.equal(idp.recommendations[0].weekly.delta, 18, 'Recommend the highest gain for that linebacker');
+}
+{
+    const matchingPlayers = { lb: player('Starting linebacker', 'LB'), dl: player('Starting lineman', 'DL'),
+        flex: player('Flexible linebacker', 'LB'), db: player('Bench back', 'DB') };
+    const input = { ...args, league: { ...league, roster_positions: ['LB', 'IDP_FLEX', 'BN'] }, players: matchingPlayers,
+        roster: { ...roster, players: Object.keys(matchingPlayers), starters: ['lb', 'dl'], reserve: [], taxi: [] },
+        projectionsByPid: { lb: 2, dl: 1, flex: 20, db: 19 } };
+    const planned = Lens.evaluate(input);
+    assert.equal(planned.candidates[0].weekly.delta, 19, 'The greedy first edge is the linebacker in FLEX');
+    assert.deepEqual(Array.from(planned.recommendations, move => [move.slotIndex, move.incoming[0].pid]), [[0, 'flex'], [1, 'db']]);
+    assert.equal(planned.recommendations.reduce((total, move) => total + move.weekly.delta, 0), 36, 'Joint matching beats the greedy 19-point plan');
+    assert.equal(JSON.stringify(input.roster.starters), JSON.stringify(['lb', 'dl']), 'Planning never changes the submitted lineup');
+    for (const patch of [{ lockedPids: ['flex'] }, { players: { ...matchingPlayers, flex: { ...matchingPlayers.flex, injury_status: 'Out' } } },
+        { projectionsByPid: { ...input.projectionsByPid, flex: null } }]) {
+        assert(!Lens.evaluate({ ...input, ...patch }).recommendations.some(move => move.incoming[0].pid === 'flex'));
+    }
+}
+{
+    // Check the matching algorithm against exhaustive legal combinations,
+    // including ties, coverage, sparse eligibility and reassignment chains.
+    let seed = 314159;
+    const random = max => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed % max; };
+    const score = moves => moves.reduce((sum, move) => sum.map((value, index) => value + [
+        move.outgoing.length ? 0 : 1, move.outgoing.length && move.weekly.delta == null ? 1 : 0,
+        Math.round((move.weekly.delta ?? move.weekly.after) * 100), -1, move.conditional ? -1 : 0][index]), [0, 0, 0, 0, 0]);
+    const compare = (left, right) => { for (let i = 0; i < left.length; i++) if (left[i] !== right[i]) return left[i] - right[i]; return 0; };
+    for (let run = 0; run < 120; run++) {
+        const candidates = [];
+        for (let slot = 0; slot < 4; slot++) {
+            const coverage = random(5);
+            for (let pid = 0; pid < 5; pid++) if (random(3)) candidates.push({ id: slot + ':' + pid, slotIndex: slot,
+                outgoing: coverage === 0 ? [] : [{ pid: 'starter' + slot }], incoming: [{ pid: 'bench' + pid }], conditional: !random(4),
+                weekly: { delta: coverage === 1 ? null : random(200) / 10 + 0.1, after: random(200) / 10 } });
+        }
+        let best = [0, 0, 0, 0, 0];
+        const enumerate = (slot, used, moves) => {
+            if (slot === 4) { const value = score(moves); if (compare(value, best) > 0) best = value; return; }
+            enumerate(slot + 1, used, moves);
+            candidates.filter(move => move.slotIndex === slot && !used.has(move.incoming[0].pid)).forEach(move => {
+                enumerate(slot + 1, new Set([...used, move.incoming[0].pid]), [...moves, move]);
+            });
+        };
+        enumerate(0, new Set(), []);
+        const plan = Lens.selectPlan(candidates);
+        assert.deepEqual(score(plan), best, 'Exact legal optimum for randomized roster ' + run);
+        assert.equal(new Set(plan.map(move => move.slotIndex)).size, plan.length);
+        assert.equal(new Set(plan.map(move => move.incoming[0].pid)).size, plan.length);
+    }
+    assert.equal(Lens.selectPlan([]).length, 0);
+    console.log('PASS joint lineup plan: unique players and slots, largest useful gain, FLEX contention, and 120 exhaustive optimality comparisons');
+}
 let out = Lens.evaluate(args), swap = find(out, 'better');
 assert.equal(out.status, 'ready'); assert(swap);
 assert.equal(swap.weekly.before, 12); assert.equal(swap.weekly.after, 19); assert.equal(swap.weekly.delta, 7);

@@ -61,6 +61,24 @@
             return (bv == null ? -Infinity : bv) - (av == null ? -Infinity : av);
         });
     }
+    function lineupChoices(result) {
+        const candidates = result?.candidates || [];
+        const recommendations = result?.recommendations || root.App?.RosterLineupLens?.selectPlan?.(candidates) || candidates;
+        const options = ranked(recommendations, 'week', true), byAnchor = new Map();
+        options.forEach(recommended => {
+            const occupied = new Set(options.filter(candidate => candidate.id !== recommended.id).map(candidate => pidOf(candidate.incoming?.[0])));
+            const alternatives = ranked(candidates.filter(candidate => candidate.id !== recommended.id
+                && candidate.slotIndex === recommended.slotIndex && !occupied.has(pidOf(candidate.incoming?.[0]))), 'week', true);
+            const unique = new Set([pidOf(recommended.incoming?.[0])]);
+            const choices = [recommended];
+            alternatives.forEach(candidate => {
+                const pid = pidOf(candidate.incoming?.[0]);
+                if (choices.length < 3 && !unique.has(pid)) { choices.push(candidate); unique.add(pid); }
+            });
+            byAnchor.set(text(recommended.anchorPlayerId || pidOf(recommended.outgoing?.[0]) || pidOf(recommended.incoming?.[0])), choices);
+        });
+        return { options, byAnchor };
+    }
     function budget(input) {
         const configured = input.league?.settings?.waiver_budget, spent = input.roster?.settings?.waiver_budget_used;
         const known = value => value != null && text(value).trim() !== '' && Number.isFinite(Number(value)) && Number(value) >= 0;
@@ -101,8 +119,10 @@
         const live = React.useRef(null);
         live.current = { key, scope, input, ui, mode };
         const result = load.key === key ? load.value : null;
-        const options = mode === 'trades' && ui.horizon === 'week' ? (result?.candidates || []) : ranked(result?.candidates, ui.horizon, mode === 'lineup');
-        const baseSelected = options.find(candidate => candidate.id === ui.selected) || null;
+        const lineup = mode === 'lineup' ? lineupChoices(result) : null;
+        const options = lineup ? lineup.options : mode === 'trades' && ui.horizon === 'week' ? (result?.candidates || []) : ranked(result?.candidates, ui.horizon);
+        const selectionPool = lineup ? [...lineup.byAnchor.values()].flat() : options;
+        const baseSelected = selectionPool.find(candidate => candidate.id === ui.selected) || null;
         const seasonKey = JSON.stringify([key, baseSelected?.id]);
         const lazySeason = seasonLoad.key === seasonKey ? seasonLoad.value?.season : null;
         const seasonNeeded = mode === 'trades' && basis === 'projected' && input.skin?.type === 'redraft' && ui.horizon === 'season' && !!baseSelected;
@@ -113,7 +133,7 @@
             const activeLeagueId = root.S?.currentLeagueId;
             return current?.key === key && current.scope === identity(current.input) && signature(current.input) === dataSignature && current.mode === mode && mode !== 'off'
                 && (!activeLeagueId || text(activeLeagueId) === text(input.league?.league_id || input.league?.id))
-                && !!result && load.key === key && result.candidates?.some(item => item.id === candidate?.id);
+                && !!result && load.key === key && selectionPool.some(item => item.id === candidate?.id);
         }
         React.useEffect(() => {
             const changed = () => refresh(value => value + 1);
@@ -244,8 +264,8 @@
                 season: text(input.league?.season), accountKey: account(input), source: mode === 'lineup' ? 'roster-lineup-lens' : 'roster-waiver-lens' });
             if (opened === false) update({ notice: 'This comparison changed. Choose a current move.', error: true });
         };
-        const byAnchor = new Map();
-        options.forEach(candidate => {
+        const byAnchor = lineup?.byAnchor || new Map();
+        if (!lineup) options.forEach(candidate => {
             const anchor = text(candidate.anchorPlayerId || candidate.dropPid || pidOf(candidate.outgoing?.[0]));
             if (!byAnchor.has(anchor)) byAnchor.set(anchor, []);
             byAnchor.get(anchor).push(candidate);
@@ -401,9 +421,23 @@
         return <div id={'roster-lens-' + pid} className="wr-lens-row" data-lens={lens.mode} data-lens-state={selected ? 'active' : 'available'}>
             {!selected ? <button type="button" className="wr-lens-peek" data-lens-peek={candidates[0].id} aria-label={'Preview move for ' + ownedName} aria-expanded={false} onClick={() => lens.choose(candidates[0])}><span>Potential gain</span><Gain candidate={candidates[0]} lens={lens} /><span aria-hidden="true">›</span></button> : <React.Fragment>
                 <Preview lens={lens} candidate={selected} onOpenPlayer={onOpenPlayer} inlineSource />
-                {candidates.length > 2 ? <label className="wr-lens-more">Other ideas for {ownedName}<select aria-label={(lens.mode === 'lineup' ? 'Lineup swaps for ' : 'Acquisition ideas for ') + ownedName} value={selected.id} onChange={event => { const candidate = candidates.find(item => item.id === event.target.value); if (candidate) lens.choose(candidate); }}><option value="" disabled>Choose a move</option>{candidates.map((candidate, index) => <option key={candidate.id} value={candidate.id}>{candidate.id === selected.id ? candidate.incoming.map(nameOf).join(' + ') : 'Move ' + (index + 1)} · {futureView(lens) ? candidate.futureFit?.label || 'Compare value' : lens.mode === 'lineup' && deltaOf(candidate, lens.ui.horizon) == null ? 'Cover ' + candidate.slotName : signed(deltaOf(candidate, lens.ui.horizon)) + ' ' + gainLabel(lens)}</option>)}</select></label> : candidates.filter(candidate => candidate.id !== selected.id).map(candidate => <button type="button" className="wr-lens-try" key={candidate.id} data-lens-peek={candidate.id} onClick={() => lens.choose(candidate)}><span>Other move</span><Gain candidate={candidate} lens={lens} /><span aria-hidden="true">↓</span></button>)}
+                {lens.mode === 'lineup' ? <LineupChoices lens={lens} candidates={candidates} ownedName={ownedName} /> : candidates.length > 2 ? <label className="wr-lens-more">Other ideas for {ownedName}<select aria-label={'Acquisition ideas for ' + ownedName} value={selected.id} onChange={event => { const candidate = candidates.find(item => item.id === event.target.value); if (candidate) lens.choose(candidate); }}><option value="" disabled>Choose a move</option>{candidates.map((candidate, index) => <option key={candidate.id} value={candidate.id}>{candidate.id === selected.id ? candidate.incoming.map(nameOf).join(' + ') : 'Move ' + (index + 1)} · {futureView(lens) ? candidate.futureFit?.label || 'Compare value' : signed(deltaOf(candidate, lens.ui.horizon)) + ' ' + gainLabel(lens)}</option>)}</select></label> : candidates.filter(candidate => candidate.id !== selected.id).map(candidate => <button type="button" className="wr-lens-try" key={candidate.id} data-lens-peek={candidate.id} onClick={() => lens.choose(candidate)}><span>Other move</span><Gain candidate={candidate} lens={lens} /><span aria-hidden="true">↓</span></button>)}
             </React.Fragment>}
         </div>;
     }
-    WR.RosterLens = { useLens, Controls, Row, Preview, Gain, identity, signature, ranked, metricOf, deltaOf };
+    function LineupChoices({ lens, candidates, ownedName }) {
+        if (candidates.length < 2) return null;
+        return <div className="wr-lens-lineup-choices" role="group" aria-label={'Lineup choices for ' + ownedName}>
+            {candidates.map((candidate, index) => <button type="button" className="wr-lens-try" key={candidate.id}
+                data-lens-peek={candidate.id} aria-pressed={candidate.id === lens.selected?.id} onClick={() => lens.choose(candidate)}>
+                <span><small>{index === 0 ? 'Recommended' : 'Option ' + (index + 1)}</small><strong>{nameOf(candidate.incoming?.[0])}</strong></span>
+                <Gain candidate={candidate} lens={lens} />
+            </button>)}
+        </div>;
+    }
+    function LineupSummary({ candidate, lens, id }) {
+        const incoming = candidate.incoming?.[0], outgoing = candidate.outgoing?.[0];
+        return <span id={id} className="wr-lens-bar-gain" data-lineup-summary="true"><span className="wr-lens-lineup-summary-copy"><strong>Start {nameOf(incoming)}</strong><small>{outgoing ? 'Bench ' + nameOf(outgoing) : 'Fill empty ' + candidate.slotName + ' slot'}</small></span><Gain candidate={candidate} lens={lens} inline /></span>;
+    }
+    WR.RosterLens = { useLens, Controls, Row, Preview, Gain, LineupSummary, identity, signature, ranked, metricOf, deltaOf, lineupChoices };
 })(window);
