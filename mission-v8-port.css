@@ -68,10 +68,10 @@
     -webkit-backdrop-filter:blur(22px) saturate(132%);
   }
   .wr-mission-v8 .wr-phone-lhdr{display:flex!important;position:relative;width:100%!important;max-width:none!important;box-sizing:border-box;align-items:center!important;gap:8px!important;padding:0!important;}
-  .wr-mission-v8 .wr-phone-lhdr > .mc-league-switch{position:absolute!important;left:50%;width:fit-content;max-width:calc(100% - 124px);justify-content:center!important;transform:translateX(-50%);z-index:0;}
-  .wr-mission-v8 .wr-phone-lhdr > .mc-menu-trigger,.wr-mission-v8 .wr-phone-lhdr > .mc-alex-trigger{position:relative;z-index:1;}
+  .wr-mission-v8 .wr-phone-lhdr > .mc-league-switch{position:relative!important;flex:1 1 0!important;width:0;max-width:none;justify-content:center!important;transform:none;z-index:0;}
+  .wr-mission-v8 .wr-phone-lhdr > .mc-menu-trigger,.wr-mission-v8 .wr-phone-lhdr > .mc-alex-trigger,.wr-mission-v8 .wr-phone-lhdr > .mc-refresh-trigger{position:relative;z-index:1;}
   .wr-mission-v8 .wr-phone-lhdr > .mc-alex-trigger{margin-left:auto;}
-  .wr-mission-v8 .mc-menu-trigger,.wr-mission-v8 .mc-alex-trigger{
+  .wr-mission-v8 .mc-menu-trigger,.wr-mission-v8 .mc-alex-trigger,.wr-mission-v8 .mc-refresh-trigger{
     min-width:44px;height:44px;padding:8px;border:1px solid var(--gx-edge);border-radius:14px;
     color:var(--cx-ink);background:linear-gradient(145deg,rgba(255,255,255,.13),rgba(149,173,211,.08));
     box-shadow:inset 0 1px rgba(255,255,255,.14);}

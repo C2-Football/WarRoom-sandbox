@@ -1583,7 +1583,7 @@
         const [briefDraftInfo, setBriefDraftInfo] = useState(null);
         const [sidebarOpen, setSidebarOpen] = useState(false);
         // The league title opens the selector directly. Season, status, and
-        // refresh controls remain in League options in the phone menu. The compact
+        // additional controls remain in League options in the phone menu. The compact
         // header (and the hamburger removal that rides with it) engages only
         // while the sheet primitive is actually live, so a kit-load failure
         // falls back to the stacked header + hamburger instead of stranding nav.
@@ -1830,6 +1830,31 @@
         useEffect(() => {
             loadLeagueDetails();
         }, [currentLeague]);
+
+        const refreshInFlightRef = useRef(false);
+        const [refreshingData, setRefreshingData] = useState(false);
+        const refreshDisabled = refreshingData || !!loadStage || loading || dhqStatus.loading;
+
+        // All manual refresh entry points share cache invalidation and a
+        // synchronous lock so repeated taps cannot start competing full loads.
+        async function refreshLeagueData() {
+            if (refreshInFlightRef.current || refreshDisabled) return;
+            refreshInFlightRef.current = true;
+            setRefreshingData(true);
+            setPhHdrSheetOpen(false);
+            try {
+                try {
+                    Object.keys(localStorage).filter(k => k.startsWith('dhq_leagueintel_') || k.startsWith('dhq_hist_')).forEach(k => localStorage.removeItem(k));
+                } catch (e) { window.wrLog('refresh.cleanup', e); }
+                window.App?.clearDataCaches?.();
+                window.Sleeper?.clearSeasonCaches?.();
+                if (window.App) { window.App.LI = {}; window.App.LI_LOADED = false; window._liLoading = false; }
+                await loadLeagueDetails();
+            } finally {
+                refreshInFlightRef.current = false;
+                setRefreshingData(false);
+            }
+        }
 
         async function loadLeagueDetails() {
             // New full load supersedes any in-flight background revalidation.
@@ -3094,19 +3119,7 @@
                     })()}
 
                     {/* Refresh Button */}
-                    <button className="wr-sidebar-refresh" onClick={async () => {
-                        try {
-                            Object.keys(localStorage).filter(k => k.startsWith('dhq_leagueintel_') || k.startsWith('dhq_hist_')).forEach(k => localStorage.removeItem(k));
-                            // Real cache clears (audit:refresh-stale step 2): the old
-                            // `window._wrPlayersCache = null` never touched core.js's
-                            // closure-scoped cache, and the sessionStorage key was a
-                            // relic of the pre-IndexedDB players cache.
-                            window.App?.clearDataCaches?.();
-                            window.Sleeper?.clearSeasonCaches?.();
-                            if (window.App) { window.App.LI = {}; window.App.LI_LOADED = false; window._liLoading = false; }
-                        } catch(e) { window.wrLog('refresh.cleanup', e); }
-                        await loadLeagueDetails();
-                    }} style={{
+                    <button className="wr-sidebar-refresh" onClick={refreshLeagueData} disabled={refreshDisabled} style={{
                         width: '100%', padding: '10px 16px', border: 'none',
                         background: 'transparent', cursor: 'pointer', display: 'flex',
                         alignItems: 'center', transition: 'all 0.15s', color: 'var(--gold)',
@@ -3117,7 +3130,7 @@
                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                     title="Reload DHQ values, league history, and AI data"
                     >
-                        {sidebarCollapsed ? renderNavIcon('refresh') : 'Refresh Data'}
+                        {sidebarCollapsed ? renderNavIcon('refresh') : refreshingData ? 'Refreshing…' : 'Refresh Data'}
                         {/* iPad pass: title= never fires on touch — promote the
                             info-exclusive tooltip to the tap-to-toggle Tip on
                             coarse pointers only (desktop byte-identical). */}
@@ -3166,16 +3179,6 @@
                             setActiveTab('draft');
                             if (jump) window.dispatchEvent(new CustomEvent('wr:open-live-draft'));
                         };
-                        const doRefresh = async () => {
-                            setPhHdrSheetOpen(false);
-                            try {
-                                Object.keys(localStorage).filter(k => k.startsWith('dhq_leagueintel_') || k.startsWith('dhq_hist_')).forEach(k => localStorage.removeItem(k));
-                                window.App?.clearDataCaches?.();
-                                window.Sleeper?.clearSeasonCaches?.();
-                                if (window.App) { window.App.LI = {}; window.App.LI_LOADED = false; window._liLoading = false; }
-                            } catch (e) { window.wrLog('refresh.cleanup', e); }
-                            await loadLeagueDetails();
-                        };
                         return (
                             <React.Fragment>
                                 <div className="wr-phone-lhdr" style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, paddingLeft: '2px' }}>
@@ -3188,6 +3191,12 @@
                                         <span aria-hidden="true" className="mc-v8-phase-dot" style={{ width: 7, height: 7, borderRadius: '50%', flex: 'none', background: phaseColor }} />
                                         <span className="mc-v8-league-identity"><small>DYNASTY HQ</small><strong>{currentLeague.name}</strong></span>
                                         <span aria-hidden="true" style={{ color: 'var(--text-muted)', fontSize: '0.65rem', flex: 'none' }}>▾</span>
+                                    </button>
+                                    <button type="button" className="mc-refresh-trigger" onClick={refreshLeagueData}
+                                        disabled={refreshDisabled} aria-busy={refreshingData}
+                                        aria-label={refreshingData ? 'Refreshing league data' : 'Refresh league data'}
+                                        title={refreshingData ? 'Refreshing league data…' : 'Refresh league data'}>
+                                        {renderNavIcon('refresh')}
                                     </button>
                                     <button type="button" className="mc-alex-trigger" onClick={() => window.dispatchEvent(new CustomEvent('wr:mission-alex-open'))} aria-label="Chat with Alex"><span aria-hidden="true">✦</span> Alex</button>
                                 </div>
@@ -3227,7 +3236,7 @@
                                             <span style={{ ...rowVal, color: leagueSkin.phaseMeta.color }}>{leagueSkin.phaseMeta.label}</span>
                                         </div>}
                                         <button style={rowSt} onClick={() => onBack({ leagueSelector: true })}><span style={rowVal}>Switch league</span></button>
-                                        <button style={rowSt} onClick={doRefresh} disabled={!!loadStage}><span style={rowVal}>{loadStage ? 'Refreshing…' : 'Refresh data'}</span></button>
+                                        <button style={rowSt} onClick={refreshLeagueData} disabled={refreshDisabled}><span style={rowVal}>{refreshDisabled ? 'Refreshing…' : 'Refresh data'}</span></button>
                                         {window.WR?.Feedback?.reportBug && <button style={rowSt} onClick={() => { setPhHdrSheetOpen(false); window.WR.Feedback.reportBug(); }}><span style={rowVal}>Report a bug</span></button>}
                                         {window.WR?.Feedback?.openBoard && <button style={rowSt} onClick={() => { setPhHdrSheetOpen(false); window.WR.Feedback.openBoard(); }}><span style={rowVal}>Feature requests</span></button>}
                                         {headerDraftClock && <button style={rowSt} onClick={doDraftJump}>
