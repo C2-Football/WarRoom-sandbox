@@ -4,7 +4,7 @@ const {createClient}=require('@supabase/supabase-js');
 const {database,transport,owner}=require('./helpers/value-monitor-db.cjs'),{fixture}=require('./helpers/advice-fixture.cjs');
 const R=require('../scripts/advice/runtime.cjs');
 const W=require('../scripts/advice/worker.cjs');
-async function setup(){const {db}=await database();await db.exec('alter default privileges in schema public grant execute on functions to anon,authenticated;');await db.exec(fs.readFileSync('supabase/migrations/20261104000000_advice_scorecard.sql','utf8'));return db;}
+async function setup(){const {db}=await database();await db.exec('alter default privileges in schema public grant execute on functions to anon,authenticated;');await db.exec(fs.readFileSync('supabase/migrations/20261104000000_advice_scorecard.sql','utf8'));await db.exec(fs.readFileSync('supabase/migrations/20261105000000_advice_backend_only.sql','utf8'));return db;}
 const call=async(db,name,params)=>(await db.query(`select ${name}(${Object.keys(params).map((k,i)=>k+' => $'+(i+1)).join(',')}) r`,Object.values(params).map(x=>x&&typeof x==='object'?JSON.stringify(x):x))).rows[0].r;
 async function enrolled(db){const f=fixture(),now=Date.now(),iso=d=>new Date(now+d).toISOString(),config={ownerKey:'account:'+owner,leagueId:'fixture-league',season:2026,engineHash:R.engineHash(),cohort:'validation',endWeek:4,
  weeks:f.c.weeks.map((w,i)=>({...w,freezeAt:iso((i+2)*864e5),firstKickoffAt:iso((i+2)*864e5+36e5),endsAt:iso((i+3)*864e5)})),cases:[{key:'fixture-case',kind:'waiver',firstWeek:1,captureAt:iso(36e5),deadline:iso(864e5),effectiveAt:iso(864e5+36e5)}]};
@@ -29,18 +29,17 @@ test('SQL saves actual advice with server receipt, immutable readback and lease 
  result=await client.rpc('finish_advice_job',{p_id:job.job.id,p_token:job.job.lease_token,p_payload:record});assert.match(result.error.message,/lease/);
  }finally{await db.close();}
 });
-test('owner-only browser observation saves deduplicate repeated views, reject mutation, and do real readback',async()=>{
- const db=await setup();try{await db.query("select set_config('request.jwt.claims',$1,false)",[JSON.stringify({sub:owner})]);await db.exec('set role authenticated');
- const record={id:'a'.repeat(64),ownerKey:'account:'+owner,leagueId:'L',kind:'waiver',capturedAt:'2026-11-01',issued:{status:'empty',reason:'Hold/no clear upgrade'}};
- const receipt=await call(db,'observe_advice',{p_record:record});const again=await call(db,'observe_advice',{p_record:{...record,capturedAt:'2026-11-02'}});assert.deepEqual(again,receipt);
- const read=await call(db,'read_advice_data',{p_league_id:'L',p_table:'observations'});assert.equal(read.length,1);assert.equal(read[0].payload.issued.reason,'Hold/no clear upgrade');
- await assert.rejects(call(db,'observe_advice',{p_record:{...record,issued:{status:'ready'}}}),/conflict/);
- await assert.rejects(db.query('select claim_advice_job()'),/permission/);
- await assert.rejects(db.query('select * from advice_records'),/permission/);
- await db.exec('reset role');await db.query("select set_config('request.jwt.claims',$1,false)",[JSON.stringify({sub:'10000000-0000-4000-8000-000000000002'})]);await db.exec('set role authenticated');assert.equal((await call(db,'read_advice_data',{p_league_id:'L',p_table:'observations'})).length,0);
- await db.exec('reset role');await db.query("select set_config('request.jwt.claims','{}',false)");await db.exec('set role anon');await assert.rejects(call(db,'read_advice_data',{p_league_id:'L',p_table:'observations'}),/Authentication/);
- await db.exec('reset role');await db.query("select set_config('request.jwt.claims',$1,false)",[JSON.stringify({app_metadata:{sleeper_username:'legacy-fixture'}})]);await db.exec('set role anon');
- await call(db,'observe_advice',{p_record:{...record,id:'b'.repeat(64),ownerKey:'sleeper:legacy-fixture'}});assert.equal((await call(db,'read_advice_data',{p_league_id:'L',p_table:'observations'})).length,1,'Legacy JWT reads only its own observation');
+test('advice storage and reports are server-only even for valid browser identities',async()=>{
+ const db=await setup();try{
+  for(const role of ['anon','authenticated']){
+   await db.query("select set_config('request.jwt.claims',$1,false)",[JSON.stringify({sub:owner,app_metadata:{sleeper_username:'fixture'}})]);await db.exec('set role '+role);
+   await assert.rejects(call(db,'observe_advice',{p_record:{}}),/permission/);
+   await assert.rejects(call(db,'read_advice_data',{p_league_id:'L',p_table:'records'}),/permission/);
+   await assert.rejects(db.query('select claim_advice_job()'),/permission/);
+   await assert.rejects(db.query('select * from advice_records'),/permission/);
+   await db.exec('reset role');
+  }
+  await db.exec('set role service_role');assert.equal((await db.query('select * from advice_records')).rows.length,0);
  }finally{await db.close();}
 });
 test('failed captures retry with backoff, stop visibly after five failures, and expired intervals become missing',async()=>{

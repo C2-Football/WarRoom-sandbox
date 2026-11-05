@@ -1,18 +1,12 @@
-# DHQ Advice Scorecard — local implementation and activation guide
+# DHQ Advice Scorecard — internal backend evaluation
 
-Status on November 4, 2026: implemented locally. Not deployed. No production migration, live enrollment, live scheduled job, real advice capture, or completed real outcome grade was performed. No claim of improved football advice is made. Test data and the preview are simulations.
+The scorecard is an internal backend system, not a feature in the app. The product panel, browser collector, activation JSON and CSS are removed. No scorecard UI, browser polling or displayed-advice collection remains. Canonical evaluation code is synchronized into ignored `server/generated/`, outside the public app bundle. Release checks reject retired advice assets or hooks in the source, compiled frontend or actual Pages artifact.
 
-## Implementation
+The collector runs the actual canonical waiver/trade, valuation and projection engines on the server. Only that caller supplies an optional input-inspection callback to preserve the calculations used. It records current/candidate/hold/simple results from one frozen context before the deadline. These are internal engine evaluations; they do not claim a user saw or followed the advice. The existing app recommendations and weights are unchanged.
 
-The scorecard is available under My Roster → DHQ Advice Scorecard. Displayed-advice capture defaults to off in `content/advice-scorecard.json`. Its archive preserves the returned advice, every candidate and hold, the visible horizon/selected package/FAAB input, roster and scoring context, player status, projections and supporting calculations. An account-bound outbox retries interrupted saves, waits for the database request, checks the server receipt, and independently reads saved bytes back. Repeated identical views retain their first receipt and do not increase evaluation sample size.
+The original migration `20261104000000_advice_scorecard.sql` preserves immutable records, server receipts, append-only revisions, leased jobs and readback verification. Follow-up migration `20261105000000_advice_backend_only.sql` revokes anonymous/authenticated access to the retired observation and report RPCs. Direct table reads and collector operations require service credentials. Historical data and tables are preserved. Value-history and player forecasts remain separate.
 
-Prospective monitored decisions are registered before their capture times. Each has a stable run/case ID, deadline, assumed effective time, cohort, calendar and pinned runtime. The autonomous Node collector uses the existing Supabase stack and actual canonical valuation, weekly projection, waiver and trade lens paths. It records current advice, a named candidate, hold, and a simple strategy from one frozen context. This includes ignored advice and no-upgrade holds. Failure to produce advice remains a failed/missing case, never an invented hold. Scheduled advice is available to read in the scorecard even if the owner never opens the original lens.
-
-Recommendation history is distinct from the old player forecast ledger. Nothing imports or reinterprets old forecasts as advice. `scripts/lib/advice-evaluation.cjs` and `scripts/evaluate-advice-scorecard.cjs` follow the existing forecast evaluator/export pattern without changing its semantics.
-
-Canonical additions in `dhq-shared`: `advice-scorecard.js` and the existing waiver/trade/eligibility/basis modules, now explicitly synchronized from their canonical copies. The current recommendation algorithms are retained; their only integration change is a failure-isolated capture callback. App synchronization still verifies the player-value twin. Value-history writers and monitor tables are preserved.
-
-The additive migration is `supabase/migrations/20261104000000_advice_scorecard.sql`. Tables store runs, expected cases, original recommendations, append-only lineup/outcome/grade/transaction packets, leased jobs, and actual displayed observations. Owner-only RPCs derive identity from the existing account or legacy JWT. Browser roles cannot claim jobs, enroll monitors, edit predictions, write outcomes, or supply server receipt times. Service credentials are required only in the server collector. No fantasy transaction API writes exist.
+Collection stays disabled until authorized leagues and future cases are enrolled. No real advice capture, completed real outcome grade or improvement in advice quality is claimed.
 
 ## Predeclared evaluation policy
 
@@ -26,81 +20,50 @@ The additive migration is `supabase/migrations/20261104000000_advice_scorecard.s
 - Candidate `depth-aware-v1`: same opportunity context and lineup calculations, ranked by projected lineup gain minus 0.1 times outgoing projected production, with hold when the adjusted gain is not positive. This is an explicitly testable candidate, not a validated improvement. The scorecard reports actual points and costs separately; the ranking rule is disclosed. Production weights are never changed by collection or evaluation.
 - Training/tuning and validation windows are declared at enrollment; validation starts strictly after the tuning cutoff. New versions require a separate pinned run. Promotion remains manual.
 
-## Evidence and limitations
 
-Prospective grading uses **registered scheduled cases**, original server receipts and weekly pre-kickoff snapshots. Browser history captures actual screen output, but existing browser data loaders do not expose complete verified source/deadline timestamps. Those observations are visibly excluded from prospective grades. They are not backfilled using current data. The monitored recommendation surface is the existing roster waiver/trade lenses; unrelated free-agent/home/chat surfaces are not represented as captured advice.
+## Evidence boundaries
 
-Autonomous capture currently supports Sleeper redraft and dynasty. Unsupported providers, keeper/custom modes and unavailable scoring/calendar evidence fail explicitly. Format reporting distinguishes team count, PPR, QB/Superflex, TE premium and IDP. Standard roster capacity, reserve/taxi, locks, protected players and copy availability are checked. Trade packages needing an unprovided partner drop are rejected.
+Only registered server cases with pre-deadline receipts and timely pre-kickoff snapshots qualify for prospective grades. Failed captures, holds, missing candidates and exclusions remain in coverage. Past forecasts or browser observations are not reconstructed into recommendations.
 
-Sources are the app's existing Sleeper raw-stat/projection feeds and ESPN schedule/game status feed. Public API smoke checks on November 4 returned a current schedule and 2,080 week-8 stat rows, including 1,367 rows with explicit participation fields. This verifies endpoint availability only. It is **not** a real advice capture or an accuracy result. The raw-stat endpoint is not documented as a complete player-stat service in [Sleeper's API documentation](https://docs.sleeper.com/). A final game plus an explicit player participation/stat row is required; absent rows remain missing. Provider publication times are not invented: retrieval times, cache age, available Last-Modified values and input hashes are retained separately. Schedule changes invalidate the affected registered comparison until explicitly reviewed.
+Capture supports Sleeper redraft/dynasty. Unsupported formats/providers and unavailable scoring or schedule evidence fail explicitly. The existing Sleeper raw-stat/projection feeds and ESPN schedule/status are used. A completed game needs an explicit participation/stat row; absent player rows stay missing. Retrieval times and available provider headers are retained without inventing publication times. Schedule changes invalidate affected registered comparisons.
 
-Only a successful matching observed transaction establishes a completed acquisition. A missing transaction means the offer/acceptance outcome is unknown. Matching transactions do not prove that DHQ caused the action. No causal win claims are made. Manager-direction and acceptance text are labeled heuristics. Calculation explanations are cross-checked against the captured legal-lineup calculation; mismatches are counted. There is no general natural-language fact-checker, private offer-history feed, or automated verification of manager intent.
+Unsent offers and absent matching transactions have unknown acceptance. Conditional benefit is distinct from observed acquisitions and causal wins. Manager intent and acceptance text remain unverified heuristics. Generic confidence is not a probability. Probability scoring requires a precise event and horizon.
 
-The current engine's acceptance heuristics have no precisely defined event horizon and are not calibrated probabilities. No generic confidence is converted to probability. The evaluator supports explicit event ID/horizon probability observations, Brier score, log loss and reliability bins, but no real qualifying probability forecast is currently supplied by these engines.
+Outcome jobs retry every six hours through a 14-day correction window; later corrections require reviewed requeueing. Changed stats append revised grades while predictions and lineup snapshots remain unchanged. Missed pregame checkpoints are not reconstructed. Uncertainty clusters repeated player/week exposures across leagues; fewer than eight groups yields no interval. Tuning and later validation cases stay separate. No collection duration automatically proves improvement or promotes an engine.
 
-Outcome jobs retry with backoff and case-level lease fencing. They run every six hours after the registered week end and retain a 14-day correction window. A raw outcome change appends a new version and grade; unchanged retries reuse the existing evidence. Corrections after that window require an explicit operator requeue. Predictions and lineup snapshots never change. GitHub scheduling is best effort; missed pregame windows are exposed and never reconstructed afterward.
+## Private reporting
 
-Uncertainty groups all decisions connected by any repeated player/week exposure, including across leagues. With fewer than eight distinct exposure groups, no interval is shown. Otherwise a deterministic cluster bootstrap provides a descriptive interval. Groups are conservative and may leave very few effective observations. Neither seven days nor a positive average automatically produces an improved verdict. Reports preserve exclusions, unmatched candidate cases, partial horizons and coverage gaps.
+With protected server credentials, use the administrative CLI:
 
-## Local verification
+```sh
+node scripts/advice/run.cjs report RUN_UUID > /private/path/advice-report.json
+node scripts/evaluate-advice-scorecard.cjs /private/path/advice-report.json > /private/path/advice-evaluation.json
+```
 
-Verified on November 4, 2026:
+Reports include immutable evidence and receipts, coverage/failures/exclusions, completed versus partial horizons, starter-point deltas versus hold/simple, helped/tied/hurt rates, costly drops, FAAB, paired engine performance, distinct exposures, uncertainty and transaction observations. Offline exports check content integrity but do not independently authenticate database receipts. There is no product dashboard or browser-accessible reporting API.
 
-| Check | Result |
-| --- | --- |
-| Focused advice capture, database, runtime and evaluation suite | 23 passed, 0 failed; includes Supabase default-role-grant regression |
-| Existing value-history and value-monitor suite | 15 passed |
-| Existing forecast ledger, archive and evaluation suites | 36 passed |
-| Existing core suite | 97 passed |
-| Existing redraft reliability suite | All 37 test files passed |
-| Roster trade and roster lens UI checks | 20 trade checks and 53 UI checks passed; waiver checks passed |
-| Production build | All six entry pages built; 167 JSX and 330 total modules compiled/minified |
-| Built scorecard browser checks | Passed at 390px and 1365px: rendering, coverage, unknown acceptance, evidence export, read failures and no horizontal overflow |
-
-Local verification used Node 25.8.1 and desktop Chromium. The scheduled workflow targets Node 22; its hosted environment, authenticated hosted capture, mobile Safari and physical devices have not been exercised. Local persistence tests use the actual Supabase client against a local PostgreSQL-compatible database with simulated provider responses. No hosted database or production credentials were used.
-
-Run from the isolated app checkout with its sibling canonical shared checkout:
+## Verification
 
 ```sh
 npm run sync:shared
 npm run test:advice-scorecard
-npm run test:value-monitor
-npm run test:forecast-ledger
-npm run test:redraft-reliability
-npm run test:core
+npm run test:roster-lenses
 node scripts/build-deploy.cjs
-node scripts/serve-static.cjs --port=3534
-# In another terminal:
-npm run test:advice-scorecard:browser
+node tests/advice-backend-only.cjs --artifact=dist-deploy
 ```
 
-The focused suite exercises real calculation modules, the pinned Supabase client and a local PostgreSQL-compatible database, plus simulated provider responses. It checks persistence/readback, owner boundaries, immutable predictions, late/future/stale evidence, lineups and benched points, byes, drops, budgets, effective times, hold/simple comparisons, paired identity, missing versus zero outcomes, partial horizons, retries/corrections, failed coverage and unknown trade acceptance. These tests are evidence about implementation behavior only.
+The Pages workflow also runs `node tests/advice-backend-only.cjs --artifact=pages-artifact`. Focused tests use real calculation modules, the pinned Supabase client and a local PostgreSQL-compatible database with simulated provider inputs. They verify persistence/readback, immutable/versioned evidence, Supabase default grants, service-only access, legal lineups, bench points, byes/drops/FAAB, acquisition times, late/future/stale evidence, paired identity, missing versus zero outcomes, partial horizons, retries/corrections, failed coverage and unknown acceptance. Passing tests do not establish improved football advice.
 
-The authorized deployment dry run exposed Supabase's direct default grants to browser roles. The migration now explicitly revokes those grants on collector routines before granting service-only access. The regression reproduces those hosted defaults, and the Pages release workflow runs the full focused suite on Node 22 before publishing. The initial dry run rolled back; the unsafe grants were never applied persistently.
+## Deploy and activate
 
-## Local source locations
+The app and canonical source remain isolated in `work/warroom` and `work/dhq-shared` beneath `/Users/jacobc/Documents/Codex/2026-11-04/files-pasted-by-the-user-implement`. Existing unrelated work is preserved.
 
-The existing working copies and their uncommitted work were preserved. Implementation is isolated in two local branches:
-
-- App: `work/warroom`, branch `codex/dhq-advice-scorecard-20261104`, based on sandbox commit `3c602325c13692656f817193844856873f11586a`.
-- Canonical shared: `work/dhq-shared`, branch `codex/dhq-advice-shared-20261104`, based on the sandbox's existing shared pin `991718aef72bf14d18cead3e2adee1312055e304`.
-
-Both directories are beneath `/Users/jacobc/Documents/Codex/2026-11-04/files-pasted-by-the-user-implement`. The delivery archive includes patches against those exact base commits, the migration, this guide, verification logs, and clearly labeled simulated screenshots. The release manifest identifies the final local commits. Neither branch has been pushed.
-
-## Exact activation sequence — requires separate authorization
-
-1. Review both local branches and the implementation diff. Publish the canonical shared commit first when authorized. The local app deployment workflows already pin canonical shared commit `71e9a09ef1c2404f0e5eff4f177bc6805c863b43`; publish that exact shared commit before the app is published. The source sync adds required modules; deploying against an older shared pin must fail instead of silently using an old engine.
-2. Link the intended Supabase project using the existing administrator tooling. Preview pending migrations:
-
-   ```sh
-   supabase db push --linked --dry-run
-   ```
-
-   Proceed with `supabase db push --linked` **only if the preview contains the intended advice migration and no unauthorized migrations**. Otherwise apply `20261104000000_advice_scorecard.sql` through the established single-migration process and record its version. Do not replay old migrations or reset the database. Verify table RLS, immutable triggers and the owner/service RPC grants before enabling capture.
-3. Deploy the app from its reviewed commit, with `content/advice-scorecard.json` still false and `ADVICE_SCORECARD_ENABLED` unset/false. Check that the scorecard renders and an authenticated owner can read an empty report. A deployed interface is a separate milestone from collection.
-4. Configure the protected GitHub environment `advice-scorecard` with `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`. Never put the service key in browser configuration, local fixtures, a published JSON file or logs. Set repository variable `ADVICE_SHARED_REVISION` to the exact published 40-character shared commit. Use the app commit containing the matching pinned runtime.
-5. Copy `scripts/advice/enrollment.seed.example.json` to an operator-controlled private working file. Set the authorized app owner, Sleeper league and roster, season/format, fantasy end week, cohort and tuning/validation cutoff. List **all** intended future waiver/trade cases before outcomes, with each capture time, verified decision deadline, assumed effective time and FAAB. Do not select cases by later results. The platform's waiver processing/trade review timing must be checked by the operator; the collector does not guess it.
-6. Prepare the complete schedule, inspect the result and validate it (read-only; no enrollment):
+1. Publish canonical shared revision `10a21ff6cf525df3bab7285fd25d0e300b91087e` and the app commit pinning it. The Pages release removes the previous app-facing feature. Internal code remains outside the published artifact.
+2. Apply only the two advice migrations, in order, if absent from the migration ledger. Use a transaction preview and the established single-migration process. Do not replay unrelated migrations or reset the database. Verify exact source, all six RLS tables, five immutable triggers and denied browser access to capture/report/collector routines.
+3. Keep `ADVICE_SCORECARD_ENABLED` unset/false. Deployment does not enroll leagues or turn collection on. The old `captureDisplayedAdvice` option no longer exists.
+4. For separately authorized collection, configure protected GitHub environment `advice-scorecard` with `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`. Set repository variable `ADVICE_SHARED_REVISION` to the exact reviewed shared commit. Never publish or log service credentials.
+5. Copy `scripts/advice/enrollment.seed.example.json` to a private operator file. Set authorized owner/league/roster, season/format, season-end week, tuning/validation boundaries, and all intended future cases. Verify decision deadlines and assumed effective times; do not choose cases after seeing outcomes.
+6. Prepare, inspect and validate the preregistration:
 
    ```sh
    node scripts/advice/run.cjs prepare /private/path/advice-seed.json > /private/path/advice-enrollment.json
@@ -108,64 +71,36 @@ Both directories are beneath `/Users/jacobc/Documents/Codex/2026-11-04/files-pas
    node scripts/advice/run.cjs fingerprint
    ```
 
-   Preserve this configuration as the preregistration. Capture must precede the decision deadline; deadline and effective time must precede the first weekly freeze. The calendar covers every evaluated week and all 32 teams. Unsupported/missing schedules stop enrollment.
-7. With protected server credentials in the collector's environment, enroll the validated configuration:
+   Capture must precede the deadline; deadline and effective time must precede the first weekly freeze. The calendar covers every evaluated week and all 32 teams. New runtime versions require new preregistered runs.
+7. Enroll using server credentials with `node scripts/advice/run.cjs enroll /private/path/advice-enrollment.json`. The new run is inactive. After reviewing its owner, case list, calendar and fingerprint, activate only that run using `update public.advice_runs set active=true where id='REVIEWED_RUN_UUID';`, then set `ADVICE_SCORECARD_ENABLED=true` and dispatch the workflow. The half-hour schedule is best effort. Empty results before capture time are not a successful capture.
 
-   ```sh
-   node scripts/advice/run.cjs enroll /private/path/advice-enrollment.json
-   ```
+## Verify the first real capture and completed grade
 
-   This returns `runId` with `active:false`. After checking its owner, case list, calendar and fingerprint, activate only that run through the administrative SQL console:
-
-   ```sql
-   update public.advice_runs set active = true where id = 'THE_REVIEWED_RUN_UUID';
-   ```
-
-   Set `ADVICE_SCORECARD_ENABLED=true` only after the run and service permissions are verified. Dispatch the “DHQ advice scorecard” workflow once, then rely on its half-hour schedule. Empty output before the registered capture time is expected, not a successful capture.
-8. Enable actual screen-history capture separately by changing `captureDisplayedAdvice` to true in `content/advice-scorecard.json` and publishing that reviewed configuration. This starts owner-bound observation capture on roster waiver/trade views. It does not enroll a monitor or turn those observations into prospective evidence.
-
-## First real recommendation capture
-
-At the first registered capture interval:
-
-- Inspect the workflow result for the case ID, `kind: capture`, a server `receivedAt`, and `readbackVerified: true`.
-- Independently read the owner-private scorecard and open “Registered advice and evidence.” Confirm the real roster/league, add/drop or trade (or explicit hold), required drops, assumed bid, current/candidate versions, input hashes and supporting calculations.
-- Export the server evidence with `node scripts/advice/run.cjs report RUN_UUID > /private/path/first-advice-report.json` and check the original payload using `node scripts/evaluate-advice-scorecard.cjs /private/path/first-advice-report.json`.
-- Verify `received_at` and `context.capturedAt` are before the registered deadline and first kickoff; source issues and legal-rule exclusions must be empty. Confirm the current, candidate and simple input IDs are identical. A candidate failure must remain visible.
-- For a screen observation, view a roster lens, then refresh its scorecard and confirm a row in “Displayed advice history.” Retry after a simulated network failure; the original owner-bound observation and first receipt must survive. This is a separate milestone from a registered eligible case.
-
-Read-only administrative proof:
+Require a collector result with the decision ID, `kind: capture`, server `receivedAt`, and `readbackVerified: true`. Independently export the report. Confirm real roster/league, move or explicit hold, required drops, bid, supporting calculations, versions and identical frozen input IDs. Capture/receipt must precede the deadline and evaluated kickoffs. Missing candidates and failures must stay visible. This verifies an internal engine record, not delivery to a user.
 
 ```sql
-select c.decision_id, c.status, a.received_at,
-       a.payload->'context'->>'capturedAt' as captured_at,
-       a.payload->'context'->>'deadline' as deadline,
-       a.payload->'engineInputs' as paired_inputs,
-       a.payload->'sourceIssues' as source_issues
-from public.advice_cases c
-left join public.advice_records a using (decision_id)
-where c.run_id = 'THE_REVIEWED_RUN_UUID';
+select c.decision_id,c.status,a.received_at,
+ a.payload->'context'->>'capturedAt' as captured_at,
+ a.payload->'context'->>'deadline' as deadline,
+ a.payload->'engineInputs' as paired_inputs,
+ a.payload->'sourceIssues' as source_issues
+from public.advice_cases c left join public.advice_records a using(decision_id)
+where c.run_id='REVIEWED_RUN_UUID';
 ```
 
-## First completed outcome evaluation
-
-Wait for a **real completed horizon**, not an arbitrary collection duration. A next-week waiver result can mature first; four-week and season trade horizons remain partial until all required weeks have complete legal lineups and actual starter outcomes.
-
-Check every weekly snapshot's original receipt before the earliest kickoff, confirmed player/game outcome status, captured scoring hash, and the absence of missing starter rows. The scorecard must show completed, eligible results with actual points versus both hold and simple, while other horizons stay partial. An observed trade is still conditional roster evidence, not proof of acceptance or additional wins.
+Wait for a real completed horizon. Require timely original weekly snapshots, captured scoring, final games and complete actual starter rows. A next-week waiver grade can mature before four-week/season grades; partial horizons stay separate. Verify deltas against both hold and simple, with costs and feasibility separate.
 
 ```sql
-select decision_id, week, received_at,
-       payload->'grade'->>'eligible' as eligible,
-       payload->'grade'->'horizons' as horizons,
-       payload->'outcomeVersions' as outcome_versions
-from public.advice_packets
-where kind = 'grade'
-  and decision_id = 'THE_REVIEWED_DECISION_ID'
+select decision_id,week,received_at,
+ payload->'grade'->>'eligible' as eligible,
+ payload->'grade'->'horizons' as horizons,
+ payload->'outcomeVersions' as outcome_versions
+from public.advice_packets where kind='grade' and decision_id='REVIEWED_DECISION_ID'
 order by id;
 ```
 
-Re-run the collector on unchanged data: the grade/evidence row count should not increase. A genuine correction should append an outcome and grade revision while the original recommendation and lineup payloads remain byte-equivalent. Refresh/export the report and inspect both versions. A failed or missed checkpoint stays visible; it never becomes a zero score.
+Unchanged retries must not add duplicate evidence or grades. Corrections append versions while original recommendation and lineup bytes remain unchanged. No real capture or completed grade is claimed until verified.
 
-## Recovery and shutdown
+## Recovery
 
-Disable `ADVICE_SCORECARD_ENABLED` and set the affected run's `active=false` to stop work without deleting history. Retry a failed outcome job only after repairing its source/access issue, using the same pinned runtime. A service administrator can reset its `status='retry'`, `next_at=now()`, `attempts=0`, `lease_token=null`, and `lease_until=null` within a reviewed correction window. Never requeue a missed capture or lineup checkpoint after its deadline. Register a new future case instead. Model promotion is a separate reviewed code change.
+Disable `ADVICE_SCORECARD_ENABLED` and set affected runs inactive to stop collection without deleting history. Repair source/access failures before requeuing outcome jobs within a reviewed correction window. Never reconstruct missed capture/lineup checkpoints after their deadline; preregister new future cases. Model promotion remains a separate manual decision.

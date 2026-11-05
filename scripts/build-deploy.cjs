@@ -214,7 +214,7 @@ async function build() {
   for (const worker of WORKERS) allSrcs.add(worker);
   // These history modules are loaded through WRShared's inline list rather
   // than literal script tags. Emit and verify the actual production writers.
-  for (const file of ['value-history.js','supabase-client.js','advice-scorecard.js']) allSrcs.add('reconai-shared/'+file);
+  for (const file of ['value-history.js','supabase-client.js']) allSrcs.add('reconai-shared/'+file);
   for (const src of babelSrcs) await emitModule(src, { jsx: true });
   for (const src of allSrcs) {
     if (!babelSrcs.has(src)) await emitModule(src, { jsx: false });
@@ -223,7 +223,7 @@ async function build() {
   const duatFiles = directory => fs.readdirSync(path.join(ROOT, directory), { withFileTypes: true })
     .flatMap(entry => entry.isDirectory() ? duatFiles(directory + '/' + entry.name) : entry.isFile() ? [directory + '/' + entry.name] : []);
   const duatStyles = fs.readdirSync(ROOT).filter(name => /^duat(?:-[a-z-]+)?\.css$/.test(name));
-  const dashboardStyles = ['advice-scorecard.css', 'dashboard-lenses.css', 'dashboard-builder.css', 'dashboard-views.css', 'dashboard-reminders.css', 'lens-composition.css'];
+  const dashboardStyles = ['dashboard-lenses.css', 'dashboard-builder.css', 'dashboard-views.css', 'dashboard-reminders.css', 'lens-composition.css'];
   for (const name of [...duatStyles, ...dashboardStyles, ...duatFiles('images/duat'), 'data/duat/lore-catalog.json']) {
     assetHash.set(name, contentHash(fs.readFileSync(path.join(ROOT, name))));
   }
@@ -232,7 +232,7 @@ async function build() {
   const revision = process.env.GITHUB_SHA || execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim();
   fs.writeFileSync(path.join(OUT_DIR, 'release.json'), JSON.stringify({
     revision, builtAt: new Date().toISOString(), environment: process.env.GITHUB_REPOSITORY || 'local-preview',
-    assets: Object.fromEntries([...assetHash].filter(([name]) => name.includes('advice-') || name.includes('time-league') || name.includes('duat') || name.includes('dashboard-') || name.includes('lens-') || WORKERS.includes(name) || name === 'js/shared/reminder-unsubscribe.js')),
+    assets: Object.fromEntries([...assetHash].filter(([name]) => name.includes('time-league') || name.includes('duat') || name.includes('dashboard-') || name.includes('lens-') || WORKERS.includes(name) || name === 'js/shared/reminder-unsubscribe.js')),
   }, null, 2) + '\n');
 
   const pct = rawBytes ? Math.round((1 - outBytes / rawBytes) * 100) : 0;

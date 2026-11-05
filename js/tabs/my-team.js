@@ -2103,7 +2103,6 @@ function MyTeamTab({
         {_phoneSheetEl}
         {_reviewSheetEl}
       </React.Fragment>}
-      {window.App.AdviceScorecardPanel && <window.App.AdviceScorecardPanel leagueId={currentLeague?.league_id || currentLeague?.id} />}
       {rosterLens && <window.WR.RosterLens.Controls lens={rosterLens} compact={!_phone || phoneTableOpen} inlinePids={new Set(_phone && !phoneTableOpen ? rows.map(r => String(r.pid)) : [])} />}
       {isChoppedRoster && <section className={_phone ? 'wr-roster-mobile-byes' : undefined} aria-label="Roster bye weeks" style={{ border: '1px solid var(--acc-line1, rgba(212,175,55,.25))', borderRadius: 'var(--card-radius, 10px)', padding: '12px', color: 'var(--silver)' }}>
         <details>

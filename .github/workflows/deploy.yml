@@ -37,7 +37,7 @@ jobs:
           repository: C2-Football/dhq-shared
           path: shared-src
           # Explicit dependency revision: releases do not change under the same app commit.
-          ref: 71e9a09ef1c2404f0e5eff4f177bc6805c863b43
+          ref: 10a21ff6cf525df3bab7285fd25d0e300b91087e
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -78,7 +78,9 @@ jobs:
           npm run test:value-monitor:build
 
       - name: Verify advice scorecard persistence and collector permissions
-        run: npm run test:advice-scorecard
+        run: |
+          npm run test:advice-scorecard
+          node tests/advice-backend-only.cjs --artifact=dist-deploy
 
       - name: Build Pages artifact
         run: |
@@ -107,6 +109,7 @@ jobs:
             test -s "pages-artifact/images/duat/$asset"
           done
           rm -rf pages-artifact/**/.git pages-artifact/**/node_modules pages-artifact/**/supabase pages-artifact/**/tests
+          node tests/advice-backend-only.cjs --artifact=pages-artifact
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

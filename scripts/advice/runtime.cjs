@@ -2,11 +2,12 @@
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),crypto=require('node:crypto');
 const ROOT=path.resolve(__dirname,'../..'),shared=path.join(ROOT,'reconai-shared');
 const valueRuntime=require('../../reconai-shared/value-monitor-runtime.cjs');
-const A=require('../../reconai-shared/advice-scorecard.js');
+const ADVICE_CORE=path.join(ROOT,'server/generated/advice-scorecard.js');
+const A=require(ADVICE_CORE);
 const {engineFiles}=require('../value-monitor/worker.cjs');
 const hash=x=>crypto.createHash('sha256').update(typeof x==='string'?x:A.stable(x)).digest('hex');
 const APP_FILES=['js/shared/availability-forecast.js','js/utils/nfl-byes.js','js/shared/waiver-roster-read.js','js/shared/roster-lens-basis.js','js/shared/roster-waiver-lens.js','js/shared/roster-trade-lens.js'];
-const engineHash=()=>hash([...valueRuntime.MODULES.map(n=>engineFiles()[n]||path.join(shared,n)),...['trade-engine.js','advice-scorecard.js','value-monitor-runtime.cjs'].map(n=>path.join(shared,n)),...APP_FILES.map(n=>path.join(ROOT,n)),__filename].map(f=>fs.readFileSync(f,'utf8')).join('\n'));
+const engineHash=()=>hash([...valueRuntime.MODULES.map(n=>engineFiles()[n]||path.join(shared,n)),...['trade-engine.js','value-monitor-runtime.cjs'].map(n=>path.join(shared,n)),ADVICE_CORE,...APP_FILES.map(n=>path.join(ROOT,n)),__filename].map(f=>fs.readFileSync(f,'utf8')).join('\n'));
 function tracker(fetcher=fetch,now=()=>new Date().toISOString()) {
  const sources=[],cache=new Map();return {sources,fetch:async(url,opts={})=>{
   const key=String(url);if(cache.has(key))return (await cache.get(key)).clone();
@@ -44,7 +45,7 @@ async function host(config,{fetcher=fetch,now=Date.now()}={}) {
  b.App.OD=b.OD;b.App.LeagueSkin={getCurrent:()=>({type,phase:'in_season'})};
  for(const name of ['trade-engine.js'])vm.runInContext(fs.readFileSync(path.join(shared,name),'utf8'),b);
  for(const name of APP_FILES.slice(1))vm.runInContext(fs.readFileSync(path.join(ROOT,name),'utf8'),b);
- vm.runInContext(fs.readFileSync(path.join(shared,'advice-scorecard.js'),'utf8'),b);
+ vm.runInContext(fs.readFileSync(ADVICE_CORE,'utf8'),b);
  // Unavailable provider failures must not be disguised as usable, fallback inputs.
  if(value.host.messages.some(m=>/failed|error/i.test(m)))value.host.messages.forEach(m=>tracked.sources.push({source:'canonical engine: '+m,observedAt:null}));
  return {b,roster,league,type,tracked};
@@ -70,11 +71,11 @@ async function capture(job,options={}) {
  const actual=await schedule(config.season,weeks[0].week,tracked.fetch);verifySchedule(weeks[0],actual,b.App.NFLByes,config.season);
  const relevant=Object.keys(b.S.players).filter(pid=>b.S.rosters.some(r=>(r.players||[]).includes(pid))||b.S.players[pid].team&&(b.S.statsData?.[pid]?.gp>0||b.S.priorData?.[pid]?.gp>0||b.S.projectionsData?.[pid]?.gp>0));
  const map=await projections(h,spec.firstWeek,relevant);
- let prepared; b.App.AdviceCapture={prepared:(kind,args,answer)=>{prepared={kind,args,answer};}};
+ let prepared;
  const args={league,roster,rosters:b.S.rosters,players:b.S.players,statsData:b.S.statsData,priorData:b.S.priorData,projectionsData:b.S.projectionsData,
   projectionsByPid:map,week:spec.firstWeek,currentWeek:Number(b.S.nflState.week),currentSeason:config.season,userId:roster.owner_id,accountId:config.ownerKey,accountKey:config.ownerKey,skin:{type,phase:'in_season'},gm:config.gm||{},basis:'projected',horizon:'week'};
- const answer=await b.App[spec.kind==='waiver'?'RosterWaiverLens':'RosterTradeLens'].load(args);
- const frozenArgs=prepared?.args||args;
+ const answer=await b.App[spec.kind==='waiver'?'RosterWaiverLens':'RosterTradeLens'].load(args,inputs=>{prepared=inputs;});
+ const frozenArgs=prepared||args;
  const initialPlayers=weeklyPlayers(h,map,weeks[0]),allOwned=new Set(b.S.rosters.flatMap(r=>[...(r.players||[]),...(r.reserve||[]),...(r.taxi||[])]).map(String));
  const copies=Math.max(1,Number(league.settings?.player_copies)||1);
  const eligible=Object.keys(initialPlayers).filter(pid=>initialPlayers[pid].status==='available'&&(spec.kind==='waiver'?!A.active(roster).includes(pid)&&b.S.rosters.filter(r=>(r.players||[]).includes(pid)).length<copies:allOwned.has(pid)&&!A.active(roster).includes(pid)));
@@ -87,7 +88,7 @@ async function capture(job,options={}) {
   league,roster,rosters:b.S.rosters,players,eligiblePlayerIds:eligible,locks,budget:{remaining,minimum,assumedBid:spec.faab??minimum},protectedPids:config.gm?.untouchable||[],
   initialWeek:{week:spec.firstWeek,players:initialPlayers},weeks,policy:A.POLICY,scheduleSource:actual.source,versions:{current:'current:'+config.engineHash,candidate:A.CANDIDATE},
   issued:answer,calculations:{statsData:Object.fromEntries(necessary.filter(pid=>b.S.statsData?.[pid]).map(pid=>[pid,b.S.statsData[pid]])),priorData:Object.fromEntries(necessary.filter(pid=>b.S.priorData?.[pid]).map(pid=>[pid,b.S.priorData[pid]])),seasonProjections:Object.fromEntries(necessary.filter(pid=>b.S.projectionsData?.[pid]).map(pid=>[pid,b.S.projectionsData[pid]])),projectionsByPid:map,valuesByPid:frozenArgs.valuesByPid||b.App.PlayerValue.rosState?.()?.values||b.App.LI?.playerScores||{},rosState:frozenArgs.rosState||b.App.PlayerValue.rosState?.()||null,gm:config.gm||{}},sources:tracked.sources,maxInputAgeSeconds:config.maxInputAgeSeconds||3600,
-  delivery:'scheduled advice issued; viewing and acting are separate observations',explanationAudit:{status:'calculation claims retained; roster-direction/acceptance heuristics are not verified facts',unsupportedClaims:[]}};
+  delivery:'internal server evaluation; this record is not evidence of advice displayed to a user',explanationAudit:{status:'calculation claims retained; roster-direction/acceptance heuristics are not verified facts',unsupportedClaims:[]}};
  return b.App.AdviceScorecard.makeRecord(c,hash);
 }
 async function freezeWeek(entry,plan,config,options={}) {

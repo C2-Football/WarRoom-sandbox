@@ -156,15 +156,6 @@
             return () => { cancelled = true; };
         }, [key]);
         React.useEffect(() => {
-            if (!result || result.status === 'loading' || !['waivers','trades'].includes(mode)) return;
-            root.App.AdviceCapture?.shown?.(mode === 'waivers' ? 'waiver' : 'trade', result, {
-                league: input.league, roster: input.roster, rosters: input.league?.rosters, players: input.players,
-                basis, week: result.week, gm: input.gm,
-                view: { horizon: ui.horizon, basis, averageWindow: ui.averageWindow,
-                    selectedCandidateId: selected?.id || null, selectedCalculation: selected || null, assumedBid: ui.bid || null }
-            });
-        }, [result, mode, ui.horizon, ui.selected, ui.bid, lazySeason]);
-        React.useEffect(() => {
             const request = ++seasonSequence.current;
             let cancelled = false;
             if (!seasonNeeded || !result || result.status === 'loading') return () => { cancelled = true; };

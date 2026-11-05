@@ -9,6 +9,8 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
 const TARGET = path.join(ROOT, 'reconai-shared');
+const SERVER_TARGET = path.join(ROOT, 'server/generated');
+const SERVER_FILES = ['advice-scorecard.js'];
 
 const FILES = [
   'app-config.js',
@@ -24,7 +26,6 @@ const FILES = [
   'yahoo-api.js',
   'value-monitor-runtime.cjs',
   'value-history.js',
-  'advice-scorecard.js',
   'supabase-client.js',
   'tier.js',
   'pick-value-model.js',
@@ -61,7 +62,7 @@ function findSourceDir() {
 }
 
 function hasBundledSnapshot() {
-  return FILES.every(file => fs.existsSync(path.join(TARGET, file)));
+  return FILES.every(file => fs.existsSync(path.join(TARGET, file))) && SERVER_FILES.every(file => fs.existsSync(path.join(SERVER_TARGET, file)));
 }
 
 const SOURCE = findSourceDir();
@@ -88,6 +89,9 @@ for (const file of FILES) {
 }
 
 console.log(`[sync-reconai-shared] Copied ${FILES.length} files to ${path.relative(ROOT, TARGET)}/`);
+// Internal evaluation code is never copied into the browser or Pages artifact.
+fs.mkdirSync(SERVER_TARGET, { recursive: true });
+for (const file of SERVER_FILES) fs.copyFileSync(path.join(SOURCE, file), path.join(SERVER_TARGET, file));
 
 // ── Un-vendored twin: player-value.js ───────────────────────────────────────
 // player-value.js is deliberately NOT in FILES. index.html loads War Room's own
