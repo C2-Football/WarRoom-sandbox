@@ -48,7 +48,7 @@ jobs:
         with:
           repository: C2-Football/dhq-shared
           path: shared-src
-          ref: 10a21ff6cf525df3bab7285fd25d0e300b91087e
+          ref: 6cbeff40ab4e5e3323129e3626a94a06dae2edfb
       - uses: actions/setup-node@v4
         with:
           node-version: 20.20.2
