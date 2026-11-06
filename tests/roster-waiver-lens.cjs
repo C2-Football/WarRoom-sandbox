@@ -2,7 +2,7 @@
 const assert=require('node:assert/strict'), fs=require('node:fs'), vm=require('node:vm');
 const window={App:{NFLByes:{weekForPlayer:p=>p.bye}},S:{currentLeagueId:'league-a',season:2026,nflState:{season:2026},user:{user_id:'owner'}},_playerTags:{}};
 const ctx=vm.createContext({window,Promise,console});
-for (const path of ['js/shared/chopped.js','js/shared/waiver-roster-read.js','js/shared/roster-waiver-lens.js']) vm.runInContext(fs.readFileSync(path,'utf8'),ctx,{filename:path});
+for (const path of ['js/shared/chopped.js','js/shared/roster-lens-basis.js','js/shared/waiver-roster-read.js','js/shared/roster-waiver-lens.js']) vm.runInContext(fs.readFileSync(path,'utf8'),ctx,{filename:path});
 const Lens=window.App.RosterWaiverLens;
 const player=(name,position,more={})=>({full_name:name,position,team:'KC',...more});
 const players={w:player('Starter WR','WR'),r:player('Starter RB','RB'),b:player('Bench RB','RB'),add:player('Available RB','RB'),held:player('Other roster RB','RB'),backup:player('Backup QB','QB',{depth_chart_order:2})};
@@ -72,6 +72,24 @@ assert.equal(Lens.evaluate({...choppedArgs,rosters:[...rosters,{...eliminated,se
 assert.equal(Lens.evaluate({...choppedArgs,rosters:[...rosters,{...eliminated,players:undefined}]}).status,'unavailable','Require an explicit null release from the provider');
 assert.equal(Lens.evaluate({...choppedArgs,league:{...league,total_rosters:3}}).status,'unavailable','Other league formats do not reinterpret missing rosters');
 assert.equal(Lens.evaluate({...choppedArgs,roster:eliminated,userId:'chopped'}).status,'disabled');
+const choppedAverage={...choppedArgs,basis:'average',statsData:{r:{gp:4,rec:60},b:{gp:4,rec:20},add:{gp:4,rec:72}},
+    players:{...players,unknownReplacement:player('Available WR','WR')},
+    valuesByPid:{...args.valuesByPid,unknownReplacement:7000}};
+choppedAverage.statsData.unknownReplacement={gp:4,rec:120};
+window.App.LeagueStats={score:(line,scoring)=>line.rec*scoring.rec};
+const partialAverage=Lens.evaluate(choppedAverage);
+assert.equal(partialAverage.status,'ready',partialAverage.reason);
+assert.match(partialAverage.comparisonNote,/Unscored starters/i);
+const partialPick=partialAverage.candidates.find(c=>c.pid==='add');
+assert.equal(partialPick.weekly.partial,true);
+assert.equal(partialPick.weekly.before,15);
+assert.equal(partialPick.weekly.after,18);
+assert.equal(partialPick.dropPid,'b');
+assert(!partialAverage.candidates.some(c=>c.pid==='unknownReplacement'),'Do not score an upgrade by replacing a starter with an unknown average');
+const noAverage=Lens.evaluate({...choppedAverage,statsData:{}});
+assert.equal(noAverage.status,'unavailable');
+assert.equal(noAverage.suggestProjected,true);
+assert.equal(noAverage.candidates.length,0);
 // A Questionable tag can leave canonical ROS unknown while the healthy baseline is verified.
 const conditionalArgs={...args,projectionsByPid:{...args.projectionsByPid,w:{available:true,conditionalParticipation:true,points:{median:20}}},rosState:{...args.rosState,points:{r:180,b:75,add:210},healthyPoints:{w:200}}};
 const conditionalSnapshot=JSON.stringify(conditionalArgs.rosState);

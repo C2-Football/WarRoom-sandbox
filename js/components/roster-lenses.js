@@ -23,7 +23,7 @@
     const averageTitle = (lens, asset) => [asset?.averageSeason || lens.input.league?.season,
         averageWindowOf(lens, asset) === 'season' ? 'Season points per game' : 'Last ' + averageWindowOf(lens, asset) + ' completed games',
         sampleLabel(lens, asset), 'League scoring'].filter(Boolean).join(' · ');
-    const gainLabel = lens => lens.ui.horizon === 'season' ? 'ROS pts' : lens.ui.basis === 'average' ? averageLabel(lens) + ' pts'
+    const gainLabel = lens => lens.ui.horizon === 'season' ? 'ROS pts' : lens.result?.comparisonNote ? 'compared pts' : lens.ui.basis === 'average' ? averageLabel(lens) + ' pts'
         : lens.ui.basis === 'idp-average' ? (normalizeWindow(lens.ui.averageWindow) === 'season' ? 'Season' : 'L' + normalizeWindow(lens.ui.averageWindow)) + ' mixed pts' : 'lineup pts';
     const dynastyOf = input => ['dynasty', 'keeper', 'empire'].includes(input.skin?.type);
     const currentWeek = input => Math.max(1, Math.min(18, Number(root.App?.LeagueLiveScores?.currentWeek?.(input.league) || root.App?.WeeklyProj?.currentWeek?.() || root.S?.nflState?.week || 1)));
@@ -303,7 +303,7 @@
         const label = lens.ui.horizon === 'season' ? 'Season lineup' : lens.ui.basis === 'average' ? averageLabel(lens) + ' lineup'
             : lens.ui.basis === 'idp-average' ? averageLabel(lens) + ' IDP + projections' : week ? 'Week ' + week + ' lineup' : 'Projected lineup';
         return <div className="wr-lens-impact" aria-live="polite">
-            <div><span>{label} · Preview</span>
+            <div><span>{label}{metric?.partial ? ' · Scored slots' : ''} · Preview</span>
                 {usable ? <strong>{number(metric.before)} <span aria-hidden="true">→</span> {number(metric.after)}</strong> : <strong className="wr-lens-unavailable">{lens.seasonLoading ? 'Comparing the season…' : candidate ? 'Comparison unavailable' : 'Choose a move to compare'}</strong>}
             </div>{candidate && <Gain candidate={candidate} lens={lens} />}
         </div>;
@@ -337,7 +337,8 @@
                         {showHorizon && <div className="wr-lens-horizons" role="group" aria-label="Acquisition projection horizon"><button type="button" aria-pressed={lens.ui.horizon === 'week'} onClick={() => lens.setHorizon('week')}>{lens.mode === 'trades' ? 'Next full week' : 'This week'}</button><button type="button" aria-pressed={lens.ui.horizon === 'season'} onClick={() => lens.setHorizon('season')}>{lens.mode === 'trades' && dynasty ? 'Future fit' : 'Season'}</button></div>}
                     </div>
                 </div>
-                {lens.loading ? <p className="wr-lens-status" role="status">Finding {lineup ? 'lineup swaps' : lens.mode === 'waivers' ? 'waiver moves' : 'trade fits'}…</p> : result?.status === 'unavailable' || result?.status === 'disabled' ? <div className="wr-lens-status" role="status"><p>{result.reason || 'This comparison is not available for the current league.'}</p><button type="button" onClick={lens.retry}>Try again</button></div> : <React.Fragment>
+                {result?.comparisonNote && <p className="wr-lens-note" role="status">{result.comparisonNote}</p>}
+                {lens.loading ? <p className="wr-lens-status" role="status">Finding {lineup ? 'lineup swaps' : lens.mode === 'waivers' ? 'waiver moves' : 'trade fits'}…</p> : result?.status === 'unavailable' || result?.status === 'disabled' || result?.suggestProjected ? <div className="wr-lens-status" role="status"><p>{result.reason || 'This comparison is not available for the current league.'}</p>{result.suggestProjected ? <button type="button" onClick={() => lens.setBasis('projected')}>Use projections</button> : <button type="button" onClick={lens.retry}>Try again</button>}</div> : <React.Fragment>
                     {result?.participationNotice && <p className="wr-lens-note" role="status">{result.participationNotice}</p>}
                     {selected && !lineup && (!inline || compact) && <Impact lens={lens} />}
                     {!selected && lens.ui.selected && <p className="wr-lens-note" role="status">Move no longer available. Choose another.</p>}
