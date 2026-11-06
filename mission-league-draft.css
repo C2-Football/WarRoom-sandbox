@@ -1,8 +1,6 @@
 /* Mission Control phone competition and draft surfaces. Desktop keeps its full workspace. */
 @media (max-width: 359px) {
   .mc-league .mc-league-form { gap:2px; }
-  .mc-league .mc-league-form-label { font-size:10px; margin-right:0; }
-  .mc-league .mc-league-form-pill { min-width:13px; }
 }
 @media (max-width: 767px) {
   .mc-section-tabs { display:flex; gap:3px; padding:4px; margin:0 0 10px; border:1px solid rgba(214,221,235,.13); border-radius:14px; background:linear-gradient(135deg,rgba(255,255,255,.065),rgba(255,255,255,.015)); backdrop-filter:blur(18px); }
@@ -24,27 +22,29 @@
   .mc-league .la-tools select { font-size:12px!important; padding:7px; }
   .mc-league .mc-league-controls { display:flex; width:100%; gap:8px; }
   .mc-league .mc-league-control { display:grid; flex:1; min-width:0; gap:4px; }
-  .mc-league .mc-league-control-label { color:var(--silver); font-size:11px; line-height:1.2; }
   .wr-mission-v8 .mc-league-standings .mc-league-controls .mc-league-control select { width:100%; min-height:44px; font-size:16px!important; }
   .mc-league .la-standings .la-report-row { margin:0; padding:0 5px; background:transparent; border:0; border-bottom:1px solid rgba(255,255,255,.09); border-radius:0; }
-  .mc-league .la-standings .la-own { background:rgba(212,175,55,.09); border-left:2px solid var(--gold); }
+  .mc-league .la-standings .la-own { background:rgba(183,206,255,.1); box-shadow:inset 2px 0 var(--cx-accent,var(--gold)); }
   .mc-league .la-standings .la-report-row > summary, .mc-league .la-standings-columns { display:grid; grid-template-columns:26px minmax(0,1fr) 51px 55px; gap:5px; align-items:center; }
-  .mc-league .la-standings .la-report-row > summary { min-height:52px; padding:9px 0; }
-  .mc-league .la-standing-team { display:grid; gap:4px; min-width:0; }
-  .mc-league-team-line { display:flex; flex-wrap:wrap; align-items:center; gap:4px; min-width:0; }
-  .mc-league-team-line strong { overflow-wrap:anywhere; }
+  .mc-league .la-standings .la-report-row > summary { min-height:44px; padding:4px 0; }
+  .mc-league .la-standing-team { display:grid; gap:2px; min-width:0; }
+  .mc-league-team-line { display:flex; align-items:center; gap:4px; min-width:0; }
+  .mc-league .la-report-row:not([open]) .mc-league-team-line strong { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .mc-league .la-report-row[open] .mc-league-team-line { flex-wrap:wrap; }
+  .mc-league .la-report-row[open] .mc-league-team-line strong { overflow-wrap:anywhere; }
   .mc-league .la-standing-team strong { font-size:13px; font-weight:650; line-height:1.25; }
-  .mc-league .la-standing-team small { font-size:10px; color:var(--good); white-space:nowrap; }
+  .mc-league .la-standing-team small { margin:0; flex-shrink:0; font-size:9px; white-space:nowrap; }
+  .mc-league .la-standing-team .mc-league-qualifier { color:var(--good); font-weight:700; }
   .mc-league-form { display:flex; align-items:center; gap:3px; white-space:nowrap; }
-  .mc-league-form-label, .mc-league-form-empty { font-size:11px; color:var(--silver); }
+  .mc-league-form-label, .mc-league-form-empty { font-size:9px; color:var(--silver); }
   .mc-league-form-label { margin-right:2px; }
-  .mc-league-form-pill { display:inline-grid; place-items:center; min-width:16px; height:17px; border-radius:4px; font:700 11px var(--font-mono); }
+  .mc-league-form-pill { display:inline-grid; place-items:center; min-width:13px; height:14px; border-radius:var(--card-radius-xs,4px); font:700 9px var(--font-mono); }
   .mc-league-form-pill[data-result=W] { color:#75e5ac!important; background:rgba(50,183,119,.14); }
   .mc-league-form-pill[data-result=L] { color:#ffaaa7!important; background:rgba(235,91,85,.14); }
   .mc-league-form-pill[data-result=T] { color:#f2cd80!important; background:rgba(225,173,65,.14); }
   .mc-league .la-standing-rank { font:11px var(--font-mono); color:var(--silver); }
   .mc-league .la-standing-record, .mc-league .la-standing-points { text-align:right; font:11px var(--font-mono); font-variant-numeric:tabular-nums; }
-  .mc-league .la-standings-columns { font:10px var(--font-mono); text-transform:uppercase; color:var(--silver); padding:8px 5px; border-bottom:1px solid rgba(255,255,255,.13); }
+  .mc-league .la-standings-columns { min-height:29px; font:10px var(--font-mono); text-transform:uppercase; color:var(--silver); padding:5px; border-bottom:1px solid rgba(255,255,255,.13); }
   .mc-league .la-standings-columns > :nth-child(n+3) { text-align:right; }
   .mc-league .la-fields > div { padding:7px 0; }
   .mc-league .la-fields :is(dt,dd) { font-size:12px; }
@@ -54,7 +54,30 @@
   .mc-league .mc-league-notice.is-warning { color:#f2cd80!important; }
   .mc-league-overview .mc-primary-move .mc-next-note { margin:4px 0 0; font-size:11px; line-height:1.35; }
   .mc-league-overview .mc-primary-move button { min-height:44px; }
-  .mc-league .lct-mode-toggle button { font-size:11px!important; padding:6px 8px; }
+  .mc-league .lct-status { flex-wrap:nowrap; gap:6px; margin-bottom:6px; }
+  .mc-league .lct-status-copy { flex:1 1 0; }
+  .mc-league .lct-mode-toggle { gap:2px; padding:2px; }
+  .mc-league .lct-mode-toggle button { min-height:44px; font-size:11px!important; padding:5px 7px; }
+  .mc-league-own-odds { display:flex; align-items:center; gap:8px; padding:7px 8px; margin:0 0 8px; border:1px solid var(--gx-edge,rgba(183,206,255,.2)); border-radius:var(--card-radius-sm,8px); background:rgba(183,206,255,.08); }
+  .mc-league-own-odds > strong { font-size:11px; white-space:nowrap; }
+  .mc-league-own-odds dl { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); flex:1; gap:4px; margin:0; text-align:center; }
+  .mc-league-own-odds dt { color:var(--silver); font-size:9px; line-height:1.25; }
+  .mc-league-own-odds dd { margin:2px 0 0; color:var(--cx-accent,var(--gold)); font:700 15px/1.15 var(--font-mono); font-variant-numeric:tabular-nums; }
+  .mc-league .mc-league-odds-table { width:100%; table-layout:fixed; border:1px solid var(--gx-edge,rgba(183,206,255,.2)); border-spacing:0; border-radius:var(--card-radius,10px); overflow:hidden; }
+  .mc-league-odds-table :is(th,td) { padding:0 5px; border-bottom:1px solid rgba(183,206,255,.13); }
+  .mc-league-odds-table th { height:29px; text-align:left; color:var(--silver); font:10px var(--font-mono); }
+  .mc-league-odds-table :is(th,td):first-child { width:25px; color:var(--silver); }
+  .mc-league-odds-table :is(th,td):nth-child(n+3) { width:39px; text-align:right; white-space:nowrap; }
+  .mc-league-odds-table :is(th,td):nth-child(3) { width:54px; }
+  .mc-league-odds-table td { height:44px; font:11px var(--font-mono); font-variant-numeric:tabular-nums; }
+  .mc-league-odds-table tbody tr:last-child > td { border-bottom:0; }
+  .mc-league-odds-table tr.la-own > td { background:rgba(183,206,255,.1); }
+  .mc-league-odds-table tr.la-own > td:first-child { box-shadow:inset 2px 0 var(--cx-accent,var(--gold)); }
+  .mc-league-odds-table td:nth-child(3) { color:var(--cx-accent,var(--gold)); font-weight:700; }
+  .mc-league .mc-league-odds-team { display:flex; flex-direction:column; justify-content:center; gap:1px; width:100%; min-height:44px; min-width:0; margin:0; padding:2px 0; border:0; background:transparent; color:inherit; font-family:var(--font-body); text-align:left; }
+  .mc-league-odds-team strong { display:-webkit-box; width:100%; overflow:hidden; overflow-wrap:anywhere; -webkit-box-orient:vertical; -webkit-line-clamp:2; font-size:13px; font-weight:650; line-height:1.15; }
+  .mc-league-odds-team small { color:var(--silver); font-size:10px; line-height:1.2; }
+  .mc-league .mc-league-odds-team:focus-visible { outline:2px solid var(--cx-accent,var(--gold)); outline-offset:-2px; }
   .la-mobile .mc-overview-summary { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); width:100%; gap:6px; padding:10px; margin:0 0 9px; border:1px solid rgba(222,225,232,.15); border-radius:13px; color:var(--white); background:linear-gradient(125deg,rgba(212,175,55,.11),rgba(84,100,140,.1)); text-align:left; }
   .mc-overview-summary span { min-width:0; }
   .mc-overview-summary small { display:block; color:var(--silver); font-size:10px; }

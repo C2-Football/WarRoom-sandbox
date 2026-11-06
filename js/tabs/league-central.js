@@ -635,6 +635,8 @@ function LeagueCentralTab({
     const qualificationLabel = team => standingsPicture?.mode !== 'standard' ? null : ({ division: 'Division lead', wildcard: 'Wild card' })[team.playoffState];
     const seededStandings = standingsPicture?.mode === 'standard' && standingsView !== 'division';
     const rankHeading = seededStandings ? 'Seed' : '#';
+    const teamName = team => team.teamName || team.displayName || _getOwnerName(team.rosterId);
+    const teamRecord = team => `${team.wins}-${team.losses}-${team.ties || 0}`;
     const rankDescription = seededStandings ? 'Provisional playoff seed' : standingsView === 'division' ? 'Division rank' : 'Rank';
     const renderStandingsTable = ({ teams, showCutline }) => isPhone ? <div className="la-standings" aria-label={liveReady ? `Week ${board.week} live standings` : 'Official standings'}><div className="la-standings-columns" aria-hidden="true"><span>{rankHeading}</span><span>Team</span><span>W–L–T</span><span>PF</span></div>{teams.map((team, index) => {
         const divisionView = hasDivisions && standingsView === 'division';
@@ -646,7 +648,42 @@ function LeagueCentralTab({
         const cutline = cutlineBefore(teams, index, showCutline);
         const form = window.MobileLiveStandingsData?.lastFive?.(team, liveTable?.baselineRows || [], Number(board.week)) || [];
         const formLabel = form.length ? 'Last ' + form.length + ' completed head-to-head games, oldest to newest: ' + form.join(', ') : 'Last 5 completed head-to-head games: form unavailable';
-        return <React.Fragment key={team.rosterId}>{cutline && <p className="la-cutline">{cutline}</p>}<details className={'la-report-row' + (sameId(team.rosterId, myRoster?.roster_id) ? ' la-own' : '')}><summary aria-label={`${rank ?? 'Unranked'}. ${team.teamName || team.displayName || _getOwnerName(team.rosterId)}, ${team.wins}-${team.losses}-${team.ties || 0}, ${score(team.pointsFor)} fantasy points for. ${formLabel}. Show details`}><span className="la-standing-rank">{rank ?? '—'}</span><span className="la-standing-team"><span className="mc-league-team-line"><strong>{team.teamName || team.displayName || _getOwnerName(team.rosterId)}</strong>{qualificationLabel(team) && <small className="lct-qualification">{qualificationLabel(team)}</small>}{movement ? <small>{movement > 0 ? '↑' : '↓'}{Math.abs(movement)}</small> : null}</span><span className="mc-league-form" role="group" aria-label={formLabel} title={formLabel}><span className="mc-league-form-label" aria-hidden="true">Last 5</span>{form.length ? form.map((game, gameIndex) => <span key={gameIndex} className="mc-league-form-pill" data-result={game} aria-hidden="true">{game}</span>) : <span className="mc-league-form-empty" aria-hidden="true">—</span>}</span></span><span className="la-standing-record">{team.wins}-{team.losses}-{team.ties || 0}</span><span className="la-standing-points">{score(team.pointsFor)}</span></summary><dl className="la-fields"><div><dt>Fantasy points for</dt><dd>{score(team.pointsFor)}</dd></div><div><dt>Points against</dt><dd>{score(team.pointsAgainst)}</dd></div>{liveReady ? <><div><dt>Week {board.week}</dt><dd>{result ? (liveContext.historical ? result : { W:'Leading', L:'Trailing', T:'Tied' }[result]) : team.opponentRosterId == null && team.currentPoints != null ? 'Bye' : 'Pending'}</dd></div><div><dt>Current points</dt><dd>{score(team.currentPoints)}{team.opponentRosterId != null && `–${score(team.opponentPoints)}`}</dd></div>{team.medianResult && <div><dt>Median result</dt><dd>{team.medianResult}</dd></div>}<div><dt>Rank movement</dt><dd>{movement == null ? 'No prior rank' : movement ? `${movement > 0 ? 'Up' : 'Down'} ${Math.abs(movement)} since entering Week ${board.week}` : 'Unchanged'}</dd></div></> : <div><dt>Form</dt><dd>{team.streak || '—'}{team.form?.length > 0 && <span className="la-form-history">{team.form.map(game => `Week ${game.week}: ${game.result}${game.pts != null ? ' · ' + Number(game.pts).toFixed(1) : ''}`).join('; ')}</span>}</dd></div>}{team.projWins != null && <div><dt>Projected record</dt><dd>{Number(team.projWins).toFixed(1)}–{Number(team.projLosses || 0).toFixed(1)}</dd></div>}{team.playoffPct != null && <div><dt>Playoff chance</dt><dd>{team.playoffPct}%</dd></div>}</dl>{onOpenTeam && <button type="button" className="mc-team-link" onClick={() => onOpenTeam(team.rosterId, team)}>Roster &amp; team profile →</button>}</details></React.Fragment>;
+        const name = teamName(team), record = teamRecord(team), qualification = qualificationLabel(team);
+        return <React.Fragment key={team.rosterId}>
+            {cutline && <p className="la-cutline">{cutline}</p>}
+            <details className={'la-report-row' + (sameId(team.rosterId, myRoster?.roster_id) ? ' la-own' : '')}>
+                <summary aria-label={`${rank ?? 'Unranked'}. ${name}, ${record}, ${score(team.pointsFor)} fantasy points for. ${qualification ? qualification + '. ' : ''}${formLabel}. Show details`}>
+                    <span className="la-standing-rank">{rank ?? '—'}</span>
+                    <span className="la-standing-team">
+                        <span className="mc-league-team-line">
+                            <strong title={name}>{name}</strong>
+                            {qualification && <small className="mc-league-qualifier" title={qualification}>{team.playoffState === 'division' ? 'DIV' : 'WC'}</small>}
+                            {movement ? <small>{movement > 0 ? '↑' : '↓'}{Math.abs(movement)}</small> : null}
+                        </span>
+                        <span className="mc-league-form" role="group" aria-label={formLabel} title={formLabel}>
+                            <span className="mc-league-form-label" aria-hidden="true">Last 5</span>
+                            {form.length ? form.map((game, gameIndex) => <span key={gameIndex} className="mc-league-form-pill" data-result={game} aria-hidden="true">{game}</span>)
+                                : <span className="mc-league-form-empty" aria-hidden="true">—</span>}
+                        </span>
+                    </span>
+                    <span className="la-standing-record">{record}</span>
+                    <span className="la-standing-points">{score(team.pointsFor)}</span>
+                </summary>
+                <dl className="la-fields">
+                    <div><dt>Fantasy points for</dt><dd>{score(team.pointsFor)}</dd></div>
+                    <div><dt>Points against</dt><dd>{score(team.pointsAgainst)}</dd></div>
+                    {liveReady ? <>
+                        <div><dt>Week {board.week}</dt><dd>{result ? (liveContext.historical ? result : { W:'Leading', L:'Trailing', T:'Tied' }[result]) : team.opponentRosterId == null && team.currentPoints != null ? 'Bye' : 'Pending'}</dd></div>
+                        <div><dt>Current points</dt><dd>{score(team.currentPoints)}{team.opponentRosterId != null && `–${score(team.opponentPoints)}`}</dd></div>
+                        {team.medianResult && <div><dt>Median result</dt><dd>{team.medianResult}</dd></div>}
+                        <div><dt>Rank movement</dt><dd>{movement == null ? 'No prior rank' : movement ? `${movement > 0 ? 'Up' : 'Down'} ${Math.abs(movement)} since entering Week ${board.week}` : 'Unchanged'}</dd></div>
+                    </> : <div><dt>Form</dt><dd>{team.streak || '—'}{team.form?.length > 0 && <span className="la-form-history">{team.form.map(game => `Week ${game.week}: ${game.result}${game.pts != null ? ' · ' + Number(game.pts).toFixed(1) : ''}`).join('; ')}</span>}</dd></div>}
+                    {team.projWins != null && <div><dt>Projected record</dt><dd>{Number(team.projWins).toFixed(1)}–{Number(team.projLosses || 0).toFixed(1)}</dd></div>}
+                    {team.playoffPct != null && <div><dt>Playoff chance</dt><dd>{team.playoffPct}%</dd></div>}
+                </dl>
+                {onOpenTeam && <button type="button" className="mc-team-link" onClick={() => onOpenTeam(team.rosterId, team)}>Roster &amp; team profile →</button>}
+            </details>
+        </React.Fragment>;
     })}</div> : <div className="lct-table-wrap">
         <table className="lct-table" aria-label={liveReady ? `Week ${board.week} live standings` : 'Official standings'}>
             <thead><tr>
@@ -679,7 +716,30 @@ function LeagueCentralTab({
         </table>
     </div>;
 
-    const renderOddsTable = ({ teams }) => isPhone ? <div>{teams.map((team, index) => <details className="la-report-row" key={team.rosterId}><summary><span><strong>{index + 1}. {team.teamName || team.displayName || _getOwnerName(team.rosterId)}</strong><small>{team.wins}-{team.losses} record</small></span><span className="la-main-value"><strong>{team.playoffPct == null ? '—' : team.playoffPct + '%'}</strong><small>Playoffs</small></span><span className="la-detail-cue" aria-hidden="true">+</span></summary><dl className="la-fields">{[['Playoffs',team.playoffPct],['First-round bye',team.byePct],['Title',team.titlePct]].map(([label,value]) => <div key={label}><dt>{label}</dt><dd>{value == null ? '—' : value + '%'}</dd></div>)}</dl></details>)}</div> : (
+    const oddsMetrics = [
+        { key: 'playoffPct', short: 'Playoffs', label: 'Make playoffs', color: GOOD },
+        { key: 'byePct', short: 'Bye', label: 'First-round bye', color: INFO },
+        { key: 'titlePct', short: 'Title', label: 'Win title', color: GOLD },
+    ];
+    const percent = value => value == null ? '—' : value + '%';
+    const renderOddsTable = ({ teams }) => isPhone ? (
+        <table className="mc-league-odds-table" aria-label="Playoff picture">
+            <thead><tr>
+                <th scope="col">#</th><th scope="col">Team</th>
+                {oddsMetrics.map(metric => <th scope="col" key={metric.key} aria-label={metric.label}>{metric.short}</th>)}
+            </tr></thead>
+            <tbody>{teams.map((team, index) => {
+                const name = teamName(team);
+                const identity = <><strong title={name}>{name}</strong><small>{teamRecord(team)}</small></>;
+                return <tr key={team.rosterId} className={sameId(team.rosterId, myRoster?.roster_id) ? 'la-own' : undefined}>
+                    <td>{index + 1}</td>
+                    <td>{onOpenTeam ? <button className="mc-league-odds-team" type="button" aria-label={name + ', ' + teamRecord(team) + ', team profile'} onClick={() => onOpenTeam(team.rosterId, team)}>{identity}</button>
+                        : <span className="mc-league-odds-team">{identity}</span>}</td>
+                    {oddsMetrics.map(metric => <td key={metric.key}>{percent(team[metric.key])}</td>)}
+                </tr>;
+            })}</tbody>
+        </table>
+    ) : (
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
                 <tr>
@@ -856,7 +916,18 @@ function LeagueCentralTab({
             {/* The two things that matter: Standings | Stats */}
             <div id="league-central-standings" className={isPhone ? `mc-league-content mc-league-${phoneLeagueView}` : undefined} style={{ scrollMarginTop: '100px', display: 'grid', gridTemplateColumns: isPhone ? 'minmax(0,1fr)' : 'minmax(0,1.32fr) minmax(0,1fr)', gap: '14px', alignItems: 'start' }}>
 
-                {(!isPhone || (!isChopped && phoneLeagueView === 'standings')) && renderPanel({ title: isPhone && stMode === 'odds' ? 'Playoff picture' : 'Standings', meta: stMode === 'odds' && !isPhone ? '10,000-sim monte carlo' : null, right: isPhone ? <div className="la-tools mc-league-controls">{!noPlayoffs && <label className="mc-league-control"><span className="mc-league-control-label">View</span><select aria-label="Standings view" value={stMode} onChange={event => setStMode(event.target.value)}><option value="table">Standings</option><option value="odds">Playoff picture</option></select></label>}{hasDivisions && stMode === 'table' && <label className="mc-league-control"><span className="mc-league-control-label">Group</span><select aria-label="Standings grouping" value={standingsView} onChange={event => setStandingsView(event.target.value)}><option value="overall">League-wide</option><option value="division">Divisions</option></select></label>}</div> :
+                {(!isPhone || (!isChopped && phoneLeagueView === 'standings')) && renderPanel({ title: isPhone && stMode === 'odds' ? 'Playoff picture' : 'Standings', meta: stMode === 'odds' && !isPhone ? '10,000-sim monte carlo' : null, right: isPhone ? <div className="la-tools mc-league-controls">
+                        {!noPlayoffs && <div className="mc-league-control">
+                            <select aria-label="Standings view" value={stMode} onChange={event => setStMode(event.target.value)}>
+                                <option value="table">Standings</option><option value="odds">Playoff picture</option>
+                            </select>
+                        </div>}
+                        {hasDivisions && stMode === 'table' && <div className="mc-league-control">
+                            <select aria-label="Standings grouping" value={standingsView} onChange={event => setStandingsView(event.target.value)}>
+                                <option value="overall">League-wide</option><option value="division">Divisions</option>
+                            </select>
+                        </div>}
+                    </div> :
                         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                             {hasDivisions && stMode === 'table' && (
                                 <div style={segWrap} role="group" aria-label="Standings grouping">
@@ -887,22 +958,23 @@ function LeagueCentralTab({
                     </>}
                     {/* Your own odds lead the playoff view — the season-odds read,
                         folded into standings instead of a separate slab. */}
-                    {stMode === 'odds' && oddsReady && me && (
+                    {stMode === 'odds' && oddsReady && me && (isPhone ? (
+                        <section className="mc-league-own-odds" aria-label="Your playoff odds">
+                            <strong>Your odds</strong>
+                            <dl>{oddsMetrics.map(metric => <div key={metric.key}><dt aria-label={metric.label}>{metric.short}</dt><dd>{percent(me[metric.key])}</dd></div>)}</dl>
+                        </section>
+                    ) : (
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(160px,100%),1fr))', gap: '9px', marginBottom: '11px' }}>
-                            {[
-                                { lab: 'Make Playoffs', val: me.playoffPct, color: GOOD },
-                                { lab: 'First-Round Bye', val: me.byePct, color: INFO },
-                                { lab: 'Win Title', val: me.titlePct, color: GOLD },
-                            ].map(o => (
-                                <div key={o.lab} style={{ background: WELL, border: '1px solid ' + LINE, borderRadius: 'var(--card-radius-sm, 8px)', padding: '10px 12px' }}>
-                                    <div style={microHdr}>{o.lab}</div>
+                            {oddsMetrics.map(o => (
+                                <div key={o.key} style={{ background: WELL, border: '1px solid ' + LINE, borderRadius: 'var(--card-radius-sm, 8px)', padding: '10px 12px' }}>
+                                    <div style={microHdr}>{o.label}</div>
                                     <div style={{ ...mono, fontSize: '1.7rem', fontWeight: 700, color: o.color, marginTop: '3px', lineHeight: 1 }}>
-                                        {o.val == null ? '—' : o.val + '%'}
+                                        {percent(me[o.key])}
                                     </div>
                                 </div>
                             ))}
                         </div>
-                    )}
+                    ))}
                     {stMode === 'odds' && !oddsReady && (
                         <div style={{ fontFamily: DM, fontSize: '0.8rem', color: MUTED, marginBottom: '10px' }}>
                             {odds.status === 'loading' ? 'Simulating the rest of the season…'
