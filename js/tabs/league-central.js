@@ -27,13 +27,52 @@
 //
 // Exposes: window.LeagueCentralTab
 // ══════════════════════════════════════════════════════════════════
+const overviewNflTeam = team => {
+    const key = String(team || '').trim().toUpperCase();
+    return ({ WSH: 'WAS', JAC: 'JAX', LA: 'LAR', AZ: 'ARI', OAK: 'LV', SD: 'LAC' })[key] || key;
+};
+
+// Compare the reported score with the player's league-scored average entering
+// the week. Prior games and the current result use the same scoring rules.
+function buildLeagueOverviewForm({ board, week, finalTeams, playersData = {}, playedStats = {}, historyFor }) {
+    if (board?.week !== week || board.error || !['ready', 'refreshing'].includes(board.status) || !finalTeams.size) return [];
+    const scores = new Map();
+    for (const row of board.rows || []) {
+        for (const [pid, points] of Object.entries(row.players_points || {})) {
+            if (!Number.isFinite(points) || !finalTeams.has(overviewNflTeam(playersData[pid]?.team))) continue;
+            // The same player can appear on more than one fantasy roster.
+            scores.set(pid, !scores.has(pid) || scores.get(pid) === points ? points : null);
+        }
+    }
+    const notes = [];
+    for (const [pid, points] of scores) {
+        const player = playersData[pid];
+        const name = player.full_name || [player.first_name, player.last_name].filter(Boolean).join(' ');
+        if (!name || points == null) continue;
+        // Sleeper can report zero for someone who did not get into the game.
+        const raw = playedStats[pid];
+        if (points === 0 && !['gp', 'off_snp', 'def_snp', 'st_snp', 'pass_att', 'rush_att', 'rec_tgt', 'fga', 'xpa'].some(key => Number(raw?.[key]) > 0)) continue;
+        const prior = historyFor(pid).filter(game => game.week < week);
+        if (prior.length < 3) continue;
+        const average = prior.reduce((sum, game) => sum + game.pts, 0) / prior.length;
+        const delta = points - average, direction = Math.sign(delta);
+        let streak = 0;
+        if (Math.abs(delta) >= 1) {
+            streak = 1;
+            for (let i = prior.length - 1; i >= 0 && (prior[i].pts - average) * direction >= 1; i--) streak++;
+        }
+        if (Math.abs(delta) < Math.max(5, Math.abs(average) * 0.35) && streak < 3) continue;
+        notes.push({ pid, name, points, average, delta, streak });
+    }
+    return notes.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta) || b.streak - a.streak || a.name.localeCompare(b.name)).slice(0, 3);
+}
+
 // Proactive overview uses reported starters and the current NFL schedule. It never
 // treats a missing feed as a healthy lineup, or a schedule time as a league lock rule.
 function buildLeagueOverviewDecision({ league, roster, playersData = {}, skin, week, games = [], now = Date.now() }) {
     const positions = (league?.roster_positions || []).filter(pos => !['BN', 'IR', 'TAXI', 'RESERVE'].includes(String(pos).toUpperCase()));
     const automatic = skin?.type === 'best_ball' || Number(league?.settings?.best_ball) === 1;
     const known = !!roster && Array.isArray(roster.starters);
-    const normalize = team => ({ WSH: 'WAS', JAC: 'JAX', LA: 'LAR', AZ: 'ARI' })[String(team || '').toUpperCase()] || String(team || '').toUpperCase();
     const gameStatus = game => {
         if (!game || /POSTPONED|CANCEL|SUSPEND|DELAY/i.test(game.statusName || '')) return 'unknown';
         if (game.completed || game.state === 'final') return 'final';
@@ -43,11 +82,11 @@ function buildLeagueOverviewDecision({ league, roster, playersData = {}, skin, w
         return ['pre', 'upcoming'].includes(game.state) && Number.isFinite(start) ? 'upcoming' : 'unknown';
     };
     const byTeam = new Map();
-    games.forEach(game => { byTeam.set(normalize(game.home), game); byTeam.set(normalize(game.away), game); });
+    games.forEach(game => { byTeam.set(overviewNflTeam(game.home), game); byTeam.set(overviewNflTeam(game.away), game); });
     const complete = games.length > 0 && games.every(game => gameStatus(game) === 'final');
     const flags = [], lockedFlags = [];
     const addFlag = (flag, player) => {
-        const status = gameStatus(byTeam.get(normalize(player?.team)));
+        const status = gameStatus(byTeam.get(overviewNflTeam(player?.team)));
         const check = { ...flag, gameStatus: status };
         if (complete || ['final', 'live', 'locked'].includes(status)) lockedFlags.push(check);
         else flags.push(check);
@@ -71,17 +110,18 @@ function buildLeagueOverviewDecision({ league, roster, playersData = {}, skin, w
     }
     const upcoming = games.filter(game => gameStatus(game) === 'upcoming').sort((a, b) => Date.parse(a.kickoff) - Date.parse(b.kickoff));
     const next = upcoming[0] || null;
-    const starterTeams = known ? roster.starters.filter(pid => pid && String(pid) !== '0').map(pid => normalize(playersData[pid]?.team)).filter(Boolean) : [];
+    const starterTeams = known ? roster.starters.filter(pid => pid && String(pid) !== '0').map(pid => overviewNflTeam(playersData[pid]?.team)).filter(Boolean) : [];
     const countStarters = game => {
-        const teams = [normalize(game?.home), normalize(game?.away)].filter(Boolean);
+        const teams = [overviewNflTeam(game?.home), overviewNflTeam(game?.away)].filter(Boolean);
         return starterTeams.filter(team => teams.includes(team)).length;
     };
     const nextStarterGame = upcoming.find(game => countStarters(game) > 0) || null;
-    return { week, known, automatic, flags, lockedFlags, next, startersInNext: countStarters(next),
+    const finalTeams = new Set([...byTeam].filter(([team, game]) => team && gameStatus(game) === 'final').map(([team]) => team));
+    return { week, known, automatic, flags, lockedFlags, next, finalTeams, startersInNext: countStarters(next),
         nextStarterGame, startersInNextStarterGame: countStarters(nextStarterGame), live: games.some(game => ['live', 'locked'].includes(gameStatus(game))), complete };
 }
 
-function LeagueOverviewDecisions({ currentLeague, leagueSkin, myRoster, playersData, setActiveTab }) {
+function LeagueOverviewDecisions({ currentLeague, leagueSkin, myRoster, playersData, scoreBoard, setActiveTab }) {
     // This is always the current week, independent of the scoreboard's history picker.
     const week = window.App.LeagueLiveScores.currentWeek(currentLeague);
     const season = Number(currentLeague?.season);
@@ -110,13 +150,40 @@ function LeagueOverviewDecisions({ currentLeague, leagueSkin, myRoster, playersD
     }, [key, liveSeason]);
     const current = schedule.key === key ? schedule : { status: 'loading', games: [], now: Date.now() };
     const decision = buildLeagueOverviewDecision({ league: currentLeague, roster: myRoster, playersData, skin: leagueSkin, week, games: current.games, now: current.now });
+    const [, refreshHistory] = React.useState(0);
+    React.useEffect(() => {
+        const refresh = () => refreshHistory(value => value + 1);
+        window.addEventListener('wr:weekly-points-loaded', refresh);
+        return () => window.removeEventListener('wr:weekly-points-loaded', refresh);
+    }, []);
+    const wp = window.App.WeeklyProj, state = window.S;
+    const historyScope = wp?.weeklyPointsScope?.(currentLeague?.league_id || currentLeague?.id, season, currentLeague?.scoring_settings);
+    const historyReady = season === liveSeason && (!state?.nflState?.season_type || state.nflState.season_type === 'regular')
+        && scoreBoard?.supported && week >= 4 && historyScope
+        && state?.weeklyPlayerPointsScope === historyScope && state.weeklyPlayerPointsComplete === true
+        && Number(state.weeklyPlayerPointsThroughWeek) >= week - 1;
+    const finishedKey = historyReady && decision.finalTeams.size ? key + '|' + [...decision.finalTeams].sort().join(',') : '';
+    const [played, setPlayed] = React.useState({ key: '', stats: {} });
+    React.useEffect(() => {
+        const sos = window.App?.SOS;
+        if (!finishedKey || !sos?.getWeekStats) return;
+        let active = true;
+        Promise.resolve(sos.getWeekStats(season, week, 'regular')).then(stats => {
+            if (active && stats) setPlayed({ key, stats });
+        }).catch(() => {});
+        return () => { active = false; };
+    }, [finishedKey]);
+    const form = historyReady ? buildLeagueOverviewForm({
+        board: scoreBoard, week, finalTeams: decision.finalTeams, playersData, historyFor: wp.weeklyHistory,
+        playedStats: played.key === key ? played.stats : {},
+    }) : [];
     const nextGame = decision.nextStarterGame || decision.next;
     const nextStarters = decision.nextStarterGame ? decision.startersInNextStarterGame : decision.startersInNext;
     const nextLabel = nextGame ? new Date(nextGame.kickoff).toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }) : null;
     const scheduleLabel = nextLabel ? (decision.nextStarterGame ? 'Your next kickoff · ' : 'Next NFL kickoff · ') + nextLabel
         : decision.live ? 'NFL games are underway' : decision.complete ? 'This week’s NFL games are complete' : current.status === 'loading' ? 'Checking kickoff times…' : 'Kickoff times unavailable';
     const actionableFlags = current.status === 'ready' ? decision.flags.filter(flag => flag.gameStatus === 'upcoming' || (decision.next && ['bye', 'empty', 'unsigned'].includes(flag.kind))) : [];
-    const ask = () => window.dispatchEvent(new CustomEvent('wr:mission-alex-open', { detail: { title: 'Your next move', prompt: 'Help me prioritize my next move in this league. Use these current roster checks and schedule facts: ' + JSON.stringify({ leagueId: currentLeague?.league_id || currentLeague?.id, week, rosterKnown: decision.known, automaticLineup: decision.automatic, starterChecks: actionableFlags, unverifiedStarterChecks: decision.flags.filter(flag => !actionableFlags.includes(flag)), lockedStarterChecks: decision.lockedFlags, nextKickoff: nextGame ? { home: nextGame.home, away: nextGame.away, kickoff: nextGame.kickoff, startersInGame: nextStarters, scope: decision.nextStarterGame ? 'your starters' : 'NFL' } : null, scheduleStatus: current.status }) + '. Listed injury statuses may be stale. Do not recommend replacing players whose games are live, locked, final, or unverified. Confirm current player availability and league lock rules before suggesting a change. Do not invent a waiver deadline, projections, or odds; no move has been submitted.' } }));
+    const ask = () => window.dispatchEvent(new CustomEvent('wr:mission-alex-open', { detail: { title: 'Your next move', prompt: 'Help me prioritize my next move in this league. Use these current roster checks and schedule facts: ' + JSON.stringify({ leagueId: currentLeague?.league_id || currentLeague?.id, week, rosterKnown: decision.known, automaticLineup: decision.automatic, starterChecks: actionableFlags, unverifiedStarterChecks: decision.flags.filter(flag => !actionableFlags.includes(flag)), lockedStarterChecks: decision.lockedFlags, nextKickoff: nextGame ? { home: nextGame.home, away: nextGame.away, kickoff: nextGame.kickoff, startersInGame: nextStarters, scope: decision.nextStarterGame ? 'your starters' : 'NFL' } : null, scheduleStatus: current.status, finishedPlayerForm: form }) + '. Listed injury statuses may be stale. Do not recommend replacing players whose games are live, locked, final, or unverified. Confirm current player availability and league lock rules before suggesting a change. Do not invent a waiver deadline, projections, or odds; no move has been submitted.' } }));
     const primaryFlag = actionableFlags[0];
     const primaryMove = (() => {
         if (decision.automatic) return { message: 'Review your roster depth.', detail: 'Your league sets the scoring lineup automatically.', action: 'Roster', tab: 'myteam' };
@@ -143,6 +210,16 @@ function LeagueOverviewDecisions({ currentLeague, leagueSkin, myRoster, playersD
         </div>
         <p className="mc-next-kickoff">{scheduleLabel}{nextStarters > 0 ? ' · ' + nextStarters + (nextStarters === 1 ? ' starter' : ' starters') : ''}</p>
         {actionableFlags.length > 1 && <p className="mc-next-more">+{actionableFlags.length - 1} more lineup {actionableFlags.length === 2 ? 'issue' : 'issues'} to review in Game Day</p>}
+        {form.length > 0 && <div className="mc-overview-form">
+            <p id="mc-overview-form-heading">Finished game standouts</p>
+            <ul aria-labelledby="mc-overview-form-heading">{form.map(player => {
+                const direction = player.delta > 0 ? 'above' : 'below';
+                return <li key={player.pid} data-trend={direction}>
+                    <div><strong>{player.name}</strong><small>{player.points.toFixed(1)} pts · {player.average.toFixed(1)} season avg</small></div>
+                    <span><strong>{Math.abs(player.delta).toFixed(1)} pts {direction}</strong>{player.streak >= 2 && <small>{player.streak} straight {direction} avg</small>}</span>
+                </li>;
+            })}</ul>
+        </div>}
         <div className="mc-next-actions"><button type="button" onClick={() => setActiveTab?.('fa')}>Explore waivers</button><button type="button" onClick={ask}>Ask Alex</button></div>
     </section>;
 }
@@ -245,9 +322,9 @@ function LeagueCentralTab({
     // Share the existing current-week subscriptions unless a history view needs
     // a separate current feed; disabled hooks create no additional requests.
     const currentWeek = window.App.LeagueLiveScores.currentWeek(currentLeague);
-    const separateOverviewFeed = overview && isPhone && !isChopped && Number(scoreWeek) !== Number(currentWeek);
+    const separateOverviewFeed = overview && isPhone && Number(scoreWeek) !== Number(currentWeek);
     const overviewBoardFeed = window.App.LeagueLiveScores.useScores({ league: currentLeague, week: currentWeek, enabled: separateOverviewFeed });
-    const overviewContextFeed = window.App.LeagueLiveTable?.useContext({ league: currentLeague, board: overviewBoardFeed, playersData, enabled: separateOverviewFeed });
+    const overviewContextFeed = window.App.LeagueLiveTable?.useContext({ league: currentLeague, board: overviewBoardFeed, playersData, enabled: separateOverviewFeed && !isChopped });
     const overviewBoard = separateOverviewFeed ? overviewBoardFeed : board;
     const overviewContext = separateOverviewFeed ? overviewContextFeed : liveContext;
     const [tableSource, setTableSource] = React.useState('live');
@@ -678,7 +755,7 @@ function LeagueCentralTab({
     const overviewTeam = overviewSummaryTeams.find(team => sameId(team.rosterId, myRoster?.roster_id));
     const overviewRank = overviewTeam ? (overviewSummaryLive ? overviewTeam.rank : overviewSummaryTeams.indexOf(overviewTeam) + 1) : null;
     if (overview && isPhone) return <div ref={centralRef} className="la-mobile la-central mc-league-overview">
-        <LeagueOverviewDecisions currentLeague={currentLeague} leagueSkin={resolvedLeagueSkin} myRoster={myRoster} playersData={playersData} setActiveTab={setActiveTab} />
+        <LeagueOverviewDecisions currentLeague={currentLeague} leagueSkin={resolvedLeagueSkin} myRoster={myRoster} playersData={playersData} scoreBoard={overviewBoard} setActiveTab={setActiveTab} />
         {isChopped && window.WrChopBlock && <window.WrChopBlock active compact phone currentLeague={currentLeague} myRoster={myRoster} onOpenLeague={() => setActiveTab?.('central')} />}
         {!isChopped && overviewTeam && <button type="button" className="mc-overview-summary" aria-label="Open your league standing and season outlook" onClick={() => setActiveTab?.('central')}>
             <span><small>{overviewSummaryLive ? 'Live record' : 'Record'}</small><strong>{overviewTeam.wins}–{overviewTeam.losses}{overviewTeam.ties ? '–' + overviewTeam.ties : ''}</strong></span>

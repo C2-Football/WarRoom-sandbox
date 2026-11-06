@@ -17,6 +17,7 @@ function LeagueLiveScoreboard({ currentLeague, myRoster, playersData, getOwnerNa
     const [selection, setSelection] = React.useState(null);
     const [expanded, setExpanded] = React.useState(false);
     const [starterSelection, setStarterSelection] = React.useState(null);
+    const [raceSort, setRaceSort] = React.useState(null);
     const week = selectedWeek != null ? selectedWeek : selection?.leagueId === leagueId ? selection.week : defaultWeek;
     const liveSeason = Number(window.S?.nflState?.season) || new Date().getFullYear();
     const canOpenGameDay = Number(week) === Number(defaultWeek) && (!Number(currentLeague?.season) || Number(currentLeague.season) === liveSeason);
@@ -102,17 +103,34 @@ function LeagueLiveScoreboard({ currentLeague, myRoster, playersData, getOwnerNa
         const value = row && teamPoints(row);
         return typeof value === 'number' && Number.isFinite(value) ? value : null;
     };
+    const sortKey = leagueId + '|' + currentLeague?.season;
+    const sort = raceSort?.key === sortKey && (canOpenGameDay || raceSort.column === 'actual')
+        ? raceSort : { column: 'actual', descending: true };
+    const raceFinish = new Map(raceRows.map(row => [row, canOpenGameDay ? projectedFinish(row) : null]));
+    const sortValue = sort.column === 'actual' ? racePoints : row => raceFinish.get(row);
     raceRows.sort((a, b) => {
-        const left = racePoints(a), right = racePoints(b);
-        return left == null ? right == null ? 0 : 1 : right == null ? -1 : right - left;
+        const left = sortValue(a), right = sortValue(b);
+        if (left == null) return right == null ? 0 : 1;
+        if (right == null) return -1;
+        return sort.descending ? right - left : left - right;
     });
     const scoredRaceRows = raceRows.filter(row => racePoints(row) != null);
-    const lowestRaceScore = scoredRaceRows.length ? racePoints(scoredRaceRows[scoredRaceRows.length - 1]) : null;
+    const lowestRaceScore = scoredRaceRows.length ? Math.min(...scoredRaceRows.map(racePoints)) : null;
     const lowestRaceCount = scoredRaceRows.filter(row => racePoints(row) === lowestRaceScore).length;
     const raceScoresComplete = raceRows.length > 0 && scoredRaceRows.length === raceRows.length;
     const ownRaceRow = raceRows.find(own);
     const ownRaceScore = racePoints(ownRaceRow);
     const ownRaceGap = raceScoresComplete && ownRaceScore != null ? ownRaceScore - lowestRaceScore : null;
+    const raceSortHeader = (column, label, shortLabel = label) => {
+        const active = sort.column === column;
+        const direction = sort.descending ? 'descending' : 'ascending';
+        return <th scope="col" aria-sort={active ? direction : undefined}>
+            <button type="button" className="mc-chop-sort" aria-label={label} disabled={column === 'projected' && !canOpenGameDay}
+                onClick={() => setRaceSort({ key: sortKey, column, descending: !active || !sort.descending })}>
+                <span>{shortLabel}</span><span aria-hidden="true">{active ? sort.descending ? '↓' : '↑' : '↕'}</span>
+            </button>
+        </th>;
+    };
     const updated = board.updatedAt ? new Date(board.updatedAt) : null;
     const loading = ['loading', 'idle', 'refreshing'].includes(board.status);
     const hasRows = (board.rows || []).length > 0;
@@ -213,6 +231,7 @@ function LeagueLiveScoreboard({ currentLeague, myRoster, playersData, getOwnerNa
         {compactChop && <style>{`
             .mc-chop-race .lls-controls :is(button,select){min-height:44px}.mc-chop-race .lls-heading .lls-note{display:none}.mc-chop-race .lls-controls{width:auto;margin-left:auto}.mc-chop-race .lls-header{align-items:center}
             .mc-chop-race-summary{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:10px 0;border-top:1px solid var(--gx-edge,rgba(183,206,255,.2));border-bottom:1px solid var(--gx-edge,rgba(183,206,255,.2))}.mc-chop-race-summary>div{display:grid;gap:3px;min-width:0}.mc-chop-race-summary>div+div{text-align:right}.mc-chop-race-summary span{font-size:11px;line-height:1.35;color:var(--silver)}.mc-chop-race-summary strong{font:650 22px/1.2 var(--font-mono,monospace);font-variant-numeric:tabular-nums;color:var(--gold)}.mc-chop-race-summary>div+div>strong{font-size:clamp(16px,4.7vw,22px)}.mc-chop-race-summary .is-danger strong{color:var(--warn,#efbe72)}
+            .mc-chop-race .mc-chop-sort{display:flex;align-items:center;justify-content:flex-end;gap:3px;width:100%;min-height:44px;padding:0;border:0;background:transparent;color:inherit;font:inherit;text-align:right;cursor:pointer}.mc-chop-race .mc-chop-sort:focus-visible{outline:2px solid var(--gold);outline-offset:-2px}.mc-chop-sort:disabled{cursor:default;opacity:.65}.mc-chop-race-table [aria-sort] .mc-chop-sort{color:var(--white)}
             .mc-chop-race-note{font-size:11px;line-height:1.45;margin:8px 0;color:var(--silver)}.mc-chop-race-table{width:100%;border-collapse:collapse;table-layout:fixed}.mc-chop-race-table th{padding:7px 5px;font-size:10px;font-weight:600;color:var(--silver);text-align:right;border-bottom:1px solid var(--gx-edge,rgba(183,206,255,.2))}.mc-chop-race-table th:first-child{text-align:left;width:auto}.mc-chop-race-table th:not(:first-child){width:63px}.mc-chop-race-table td{padding:0 5px;border-bottom:1px solid rgba(183,206,255,.12)}.mc-chop-race-table td:not(:first-child){text-align:right;font:500 12px var(--font-mono,monospace);font-variant-numeric:tabular-nums;white-space:nowrap}.mc-chop-race-table .is-own{background:rgba(183,206,255,.1)}.mc-chop-race-table .is-risk td:first-child{box-shadow:inset 3px 0 var(--warn,#efbe72)}.mc-chop-race .mc-chop-race-team{display:flex;flex-direction:column;justify-content:center;gap:2px;min-height:44px;min-width:0;width:100%;box-sizing:border-box;padding:6px 2px;border:0;background:transparent;color:var(--white);text-align:left;font:600 12px/1.3 var(--font-body,system-ui,sans-serif)}.mc-chop-race-team>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;width:100%}.mc-chop-race-team>small{font-size:10px;line-height:1.2;color:var(--silver)}.mc-chop-race-team .mc-chop-risk-label{color:var(--warn,#efbe72)}.mc-chop-race-table caption{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
         `}</style>}
         <div className="lls-header">
@@ -238,8 +257,8 @@ function LeagueLiveScoreboard({ currentLeague, myRoster, playersData, getOwnerNa
             </div>
             <p className="mc-chop-race-note">{lowestRaceScore == null ? 'Scores and risk are unavailable; official results decide the chop.' : raceScoresComplete ? 'Lowest score is provisionally at risk; official results decide the chop.' : 'Scores are missing; lowest reported is provisionally at risk, pending official results.'}</p>
             <table className="mc-chop-race-table">
-                <caption>Week {week} survival race, highest actual scores first. Projected finish uses earned points and estimates for unfinished starters; a dash means data is unavailable.</caption>
-                <thead><tr><th scope="col">Team · {raceRows.length} alive · High to low</th><th scope="col">Actual</th><th scope="col">Proj.<br />finish</th></tr></thead>
+                <caption>Week {week} survival race, sorted by {sort.column === 'actual' ? 'actual score' : 'projected finish'} from {sort.descending ? 'high to low' : 'low to high'}. Projected finish uses earned points and estimates for unfinished starters; a dash means data is unavailable.</caption>
+                <thead><tr><th scope="col">Team · {raceRows.length} alive</th>{raceSortHeader('actual', 'Actual')}{raceSortHeader('projected', 'Projected finish', 'Proj. finish')}</tr></thead>
                 <tbody>{raceRows.map(row => {
                     const score = racePoints(row), atRisk = score != null && score === lowestRaceScore;
                     const riskLabel = !raceScoresComplete ? 'Lowest reported' : lowestRaceCount > 1 ? 'Tied low · at risk' : 'At risk';
@@ -248,7 +267,7 @@ function LeagueLiveScoreboard({ currentLeague, myRoster, playersData, getOwnerNa
                     const showStarters = !overview && starterSelection === detailKey;
                     const detailId = `${boardId}-starters-${row.roster_id}`;
                     const teamActionLabel = `${overview ? 'Open ' + ownerName(row) + ' team profile' : 'View ' + ownerName(row) + ' Week ' + week + ' starter scores'}${own(row) ? '. Your team' : ''}${atRisk ? '. ' + riskLabel + '; provisional' : score == null ? '. Awaiting score' : ''}`;
-                    return <React.Fragment key={row.roster_id}><tr className={`${own(row) ? 'is-own' : ''}${atRisk ? ' is-risk' : ''}`}><td>{!overview || onOpenTeam ? <button type="button" className="mc-chop-race-team" aria-label={teamActionLabel} aria-expanded={overview ? undefined : showStarters} aria-controls={overview ? undefined : detailId} onClick={() => overview ? onOpenTeam(row.roster_id) : setStarterSelection(showStarters ? null : detailKey)}>{identity}</button> : <div className="mc-chop-race-team">{identity}</div>}</td><td>{points(score)}</td><td>{points(canOpenGameDay ? projectedFinish(row) : null)}</td></tr>{showStarters && <tr className="mc-chop-race-detail"><td colSpan={3}><div id={detailId} role="region" aria-label={`${ownerName(row)} Week ${week} starter scores`}>{starters(row)}{onOpenTeam && <button type="button" onClick={() => onOpenTeam(row.roster_id)}>Team profile →</button>}</div></td></tr>}</React.Fragment>;
+                    return <React.Fragment key={row.roster_id}><tr className={`${own(row) ? 'is-own' : ''}${atRisk ? ' is-risk' : ''}`}><td>{!overview || onOpenTeam ? <button type="button" className="mc-chop-race-team" aria-label={teamActionLabel} aria-expanded={overview ? undefined : showStarters} aria-controls={overview ? undefined : detailId} onClick={() => overview ? onOpenTeam(row.roster_id) : setStarterSelection(showStarters ? null : detailKey)}>{identity}</button> : <div className="mc-chop-race-team">{identity}</div>}</td><td>{points(score)}</td><td>{points(raceFinish.get(row))}</td></tr>{showStarters && <tr className="mc-chop-race-detail"><td colSpan={3}><div id={detailId} role="region" aria-label={`${ownerName(row)} Week ${week} starter scores`}>{starters(row)}{onOpenTeam && <button type="button" onClick={() => onOpenTeam(row.roster_id)}>Team profile →</button>}</div></td></tr>}</React.Fragment>;
                 })}</tbody>
             </table>
         </div>}

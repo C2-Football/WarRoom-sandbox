@@ -152,3 +152,48 @@ test('Overview restores the original mobile surface and Lenses has an explicit s
     assert.match(canvasSource, /window\.WR\.DashboardLenses/);
     assert.doesNotMatch(canvasSource, /Customize Home|WrDashReorder|Remove widget/);
 });
+
+test('Alex flags finished-game deviations and streaks from verified league history', async () => {
+    const h = fixture();
+    const player = (full_name, team = 'KC') => ({ full_name, team });
+    h.props.playersData = {
+        hot: player('Hot Receiver'), cold: player('Cold Runner'), steadyCold: player('Steady Cold'),
+        dnp: player('Did Not Play'), live: player('Still Playing', 'BUF'), newcomer: player('New Starter'),
+        conflict: player('Conflicting Scores'), ordinary: player('Ordinary Game'),
+    };
+    h.props.scoreBoard = { supported: true, status: 'ready', week: 6, rows: [
+        { players_points: { hot: 27, cold: 0, dnp: 0, steadyCold: 9, live: 35, newcomer: 35, conflict: 35, ordinary: 11 } },
+        { players_points: { hot: 27, conflict: 31 } },
+    ] };
+    const games = {
+        hot: [5, 5, 10, 10, 10], cold: [30, 30, 10, 10, 10], steadyCold: [16, 16, 8, 8, 8],
+        dnp: [30, 30, 10, 10, 10], live: [8, 8, 8], newcomer: [10, 10], conflict: [8, 8, 8], ordinary: [10, 10, 10],
+    };
+    h.window.App.WeeklyProj = {
+        weeklyPointsScope: () => 'l1-scoring',
+        weeklyHistory: pid => [...games[pid].map((pts, i) => ({ week: i + 1, pts })), { week: 6, pts: 999 }],
+    };
+    h.window.App.SOS = { getWeekStats: async () => ({ cold: { off_snp: 25 }, dnp: { gp: 0 } }) };
+    Object.assign(h.window.S, { weeklyPlayerPointsScope: 'l1-scoring', weeklyPlayerPointsComplete: true, weeklyPlayerPointsThroughWeek: 5 });
+    h.render();
+    h.hooks[0] = { key: 'l1|2026|6', status: 'ready', games: [{ home: 'KC', away: 'LV', completed: true }, { home: 'BUF', away: 'NYJ', state: 'in' }], now: Date.now() };
+    assert.doesNotMatch(text(h.render()), /Cold Runner/, 'An unverified zero stays out');
+    const dispose = h.effects[2]();
+    await new Promise(setImmediate);
+    const tree = h.render();
+    const standouts = walk(tree).find(n => n.props?.className === 'mc-overview-form');
+    assert.equal(walk(standouts).filter(n => n.type === 'li').length, 3);
+    assert.match(text(standouts), /Hot Receiver27.0 pts · 8.0 season avg19.0 pts above4 straight above avg/);
+    assert.match(text(standouts), /Cold Runner0.0 pts · 18.0 season avg18.0 pts below4 straight below avg/);
+    assert.match(text(standouts), /Steady Cold.*2.2 pts below4 straight below avg/, 'A sustained streak can qualify without a big single-game swing');
+    assert.doesNotMatch(text(standouts), /Did Not Play|Still Playing|New Starter|Conflicting Scores|Ordinary Game/);
+    button(tree, 'Ask Alex').props.onClick();
+    assert.match(h.events[0].detail.prompt, /"finishedPlayerForm":\[\{"pid":"hot"/);
+    h.props.scoreBoard.status = 'stale';
+    assert.doesNotMatch(text(h.render()), /Hot Receiver/);
+    h.props.scoreBoard.status = 'ready'; h.props.scoreBoard.week = 5;
+    assert.doesNotMatch(text(h.render()), /Hot Receiver/, 'A historical scoreboard never produces current-week insights');
+    h.props.scoreBoard.week = 6; h.window.S.weeklyPlayerPointsScope = 'other-scoring';
+    assert.doesNotMatch(text(h.render()), /Hot Receiver/, 'History from another scoring scope never leaks into the comparison');
+    dispose();
+});

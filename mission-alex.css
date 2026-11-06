@@ -19,3 +19,10 @@
 .mc-overview-decisions header{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:.66rem;text-transform:uppercase;letter-spacing:.08em;color:var(--gold,#d4af37);font-weight:700}.mc-overview-decisions header small{font-size:.66rem;color:var(--silver,#bdb8ad);font-weight:400}
 .mc-overview-decisions h3{font-size:1rem;line-height:1.25;margin:7px 0 5px}.mc-next-kickoff,.mc-next-note{margin:0;font-size:.73rem;line-height:1.5;color:var(--silver,#bdb8ad)}.mc-next-note{margin-top:8px}.mc-overview-decisions ul{list-style:none;padding:0;margin:9px 0 0}.mc-overview-decisions li{display:flex;justify-content:space-between;gap:8px;padding:7px 0;border-top:1px solid rgba(255,255,255,.08);font-size:.73rem;line-height:1.4}.mc-overview-decisions li strong{font-weight:600;min-width:0;overflow-wrap:anywhere}.mc-overview-decisions li span{color:var(--silver,#bdb8ad);text-align:right;max-width:48%;flex-shrink:0}.mc-overview-decisions .mc-next-more{font-size:.7rem;color:var(--silver,#bdb8ad)}
 .la-mobile .mc-next-actions{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:6px;margin-top:10px}.la-mobile .mc-next-actions button{min-height:44px!important;border:1px solid rgba(255,255,255,.14);border-radius:8px;background:rgba(255,255,255,.045);padding:7px 4px;color:var(--white,#f5f2ea);font:inherit;font-size:.72rem!important;cursor:pointer}.la-mobile .mc-next-actions button:first-child{border-color:var(--acc-line1,rgba(212,175,55,.3));color:var(--gold,#d4af37);background:var(--acc-fill1,rgba(212,175,55,.065))}.mc-next-actions button:focus-visible{outline:2px solid var(--gold,#d4af37);outline-offset:2px}
+
+.mc-overview-form>p{margin:9px 0 3px;font-size:.7rem;font-weight:600;color:var(--silver)}
+.mc-overview-decisions .mc-overview-form ul{margin:0}
+.mc-overview-decisions .mc-overview-form li>div{min-width:0}
+.mc-overview-form li small{display:block;font-size:.68rem;line-height:1.35}
+.mc-overview-decisions .mc-overview-form li[data-trend="above"]>span>strong{color:var(--good)}
+.mc-overview-decisions .mc-overview-form li[data-trend="below"]>span>strong{color:var(--warn)}
