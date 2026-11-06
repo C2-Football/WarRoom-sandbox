@@ -2,7 +2,7 @@
 const assert=require('node:assert/strict'), fs=require('node:fs'), vm=require('node:vm');
 const window={App:{NFLByes:{weekForPlayer:p=>p.bye}},S:{currentLeagueId:'league-a',season:2026,nflState:{season:2026},user:{user_id:'owner'}},_playerTags:{}};
 const ctx=vm.createContext({window,Promise,console});
-for (const path of ['js/shared/waiver-roster-read.js','js/shared/roster-waiver-lens.js']) vm.runInContext(fs.readFileSync(path,'utf8'),ctx,{filename:path});
+for (const path of ['js/shared/chopped.js','js/shared/waiver-roster-read.js','js/shared/roster-waiver-lens.js']) vm.runInContext(fs.readFileSync(path,'utf8'),ctx,{filename:path});
 const Lens=window.App.RosterWaiverLens;
 const player=(name,position,more={})=>({full_name:name,position,team:'KC',...more});
 const players={w:player('Starter WR','WR'),r:player('Starter RB','RB'),b:player('Bench RB','RB'),add:player('Available RB','RB'),held:player('Other roster RB','RB'),backup:player('Backup QB','QB',{depth_chart_order:2})};
@@ -56,7 +56,22 @@ assert.equal(pick.dropPid,'q2');assert.equal(pick.weekly.delta,3);assert.equal(p
 assert.equal(Lens.rank(out,{horizon:'both'}).length,0);
 assert(!out.candidates.some(x=>x.pid==='backup'),'High forecast does not verify a starting QB role');
 assert.equal(pick.id,'add:q2');assert.match(pick.cautions.join(' '),/Lowers projected ROS/);
-window.App.Chopped={isChopped:()=>true,isEliminated:()=>true};assert.equal(Lens.evaluate(args).status,'disabled');delete window.App.Chopped;
+const eliminated={roster_id:3,owner_id:'chopped',players:null,settings:{eliminated:5,locked:1}};
+const choppedArgs={...args,league:{...league,total_rosters:3,settings:{...league.settings,type:3}},
+    skin:{type:'chopped',phase:'in_season'},rosters:[...rosters,eliminated]};
+function checkChopped(result) {
+    assert.equal(result.status,'ready',result.reason);
+    assert.equal(result.candidates.find(c=>c.pid==='add')?.weekly.delta,3,'Released rosters do not block a verified weekly upgrade');
+    assert(!result.candidates.some(c=>c.pid==='held'),'Active roster ownership still excludes held players');
+    assert.equal(result.readiness.season,false,'Chopped only compares this week');
+}
+checkChopped(Lens.evaluate(choppedArgs));
+assert.equal(Lens.evaluate({...choppedArgs,projectionsByPid:{...args.projectionsByPid,add:14}}).status,'empty','Season-only gains cannot appear as weekly recommendations');
+assert.equal(eliminated.players,null,'Normalize the input without altering the platform roster');
+assert.equal(Lens.evaluate({...choppedArgs,rosters:[...rosters,{...eliminated,settings:{}}]}).status,'unavailable','Missing active rosters still block ownership comparisons');
+assert.equal(Lens.evaluate({...choppedArgs,rosters:[...rosters,{...eliminated,players:undefined}]}).status,'unavailable','Require an explicit null release from the provider');
+assert.equal(Lens.evaluate({...choppedArgs,league:{...league,total_rosters:3}}).status,'unavailable','Other league formats do not reinterpret missing rosters');
+assert.equal(Lens.evaluate({...choppedArgs,roster:eliminated,userId:'chopped'}).status,'disabled');
 // A Questionable tag can leave canonical ROS unknown while the healthy baseline is verified.
 const conditionalArgs={...args,projectionsByPid:{...args.projectionsByPid,w:{available:true,conditionalParticipation:true,points:{median:20}}},rosState:{...args.rosState,points:{r:180,b:75,add:210},healthyPoints:{w:200}}};
 const conditionalSnapshot=JSON.stringify(conditionalArgs.rosState);
@@ -75,6 +90,7 @@ const wrongWeek=Lens.evaluate({...conditionalArgs,rosState:{...conditionalArgs.r
 assert.equal(wrongWeek.readiness.season,false,'Conditional baseline never bypasses scope checks');
 console.log('PASS roster waiver lens: real legal FLEX alternatives, stable drop/horizons, protected assets, zero/missing forecasts, scope, roster ownership, restrictions and claim handoff');
 (async()=>{
+    checkChopped(await Lens.load(choppedArgs));
     const dynasty={...args,league:{...league,settings:{...league.settings,type:2}},skin:{type:'dynasty',phase:'in_season'},valuesByPid:undefined};
     window.App.LI_LOADED=true;window.App.LI={sourceLeagueId:'previous-league',playerScores:args.valuesByPid};
     let pricing=await Lens.load(dynasty);assert.equal(pricing.status,'unavailable');assert.equal(pricing.candidates.length,0);
