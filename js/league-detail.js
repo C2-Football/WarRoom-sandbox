@@ -3725,6 +3725,11 @@
                     currentLeague, leagueSkin, myRoster, playersData, standings, transactions,
                     sleeperUserId, getOwnerName, getPlayerName, timeAgo, setActiveTab,
                     homeMerged: false, onOpenTeam: openLeagueTeam,
+                    renderSeasonView: seasonView => <LineupTabLazy seasonView={seasonView}
+                        myRoster={myRoster} currentLeague={currentLeague} leagueSkin={leagueSkin}
+                        playersData={playersData} statsData={statsData} statsSeason={timeYear}
+                        stats2025Data={stats2025Data} sleeperUserId={sleeperUserId}
+                        gmStrategy={gmStrategy} setActiveTab={setActiveTab} timeRecomputeTs={timeRecomputeTs} />,
                 }) : viewTab === 'wire' ? <section className="mc-wire-destination"><h2>The Wire</h2><p>Your league’s stories, records, rivalries and weekly editions.</p><button type="button" className="gd-primary" onClick={() => window.dispatchEvent(new CustomEvent('wr:wire-open'))}>Open The Wire</button></section> : viewTab === 'lenses' ? dashboardEl(selectedWidgets) : showLeagueOverview ? <div className="mc-overview"><LeagueCentralTabLazy currentLeague={currentLeague} leagueSkin={leagueSkin} myRoster={myRoster} playersData={playersData} standings={standings} transactions={transactions} sleeperUserId={sleeperUserId} getOwnerName={getOwnerName} getPlayerName={getPlayerName} timeAgo={timeAgo} setActiveTab={setActiveTab} onOpenTeam={openLeagueTeam} overview={true} /></div> : dashboardEl(overviewWidgets, true)}
                 </div>
                 </div>{/* end marginLeft wrapper */}

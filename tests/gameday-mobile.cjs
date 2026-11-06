@@ -7,7 +7,7 @@ const source = babel.transform(fs.readFileSync('js/tabs/lineup.js', 'utf8'), { p
 
 // Render the real mobile branch with state/effects, so navigation and lock
 // behavior are checked alongside score provenance and absent projections.
-async function fixture({ upcoming = false, matchupId = 7, width = 390, rosterView = false, noProjection = false, supported = true, stale = false, withMatchup = false, withBasis = false, withMetrics = false, pro = true, storage = new Map(), seasonData = null, initialView = 'week', forecasts = {}, forecastsByWeek = {}, scoreRowsByWeek = {}, scoreStatus = 'ready', scoreError = null, lensContext = null } = {}) {
+async function fixture({ upcoming = false, matchupId = 7, width = 390, rosterView = false, noProjection = false, supported = true, stale = false, withMatchup = false, withBasis = false, withMetrics = false, pro = true, storage = new Map(), seasonData = null, seasonView = null, initialView = 'week', forecasts = {}, forecastsByWeek = {}, scoreRowsByWeek = {}, scoreStatus = 'ready', scoreError = null, lensContext = null } = {}) {
     const state = [], deps = [], pending = [];
     const events = {};
     const loadedForm = {};
@@ -91,6 +91,7 @@ async function fixture({ upcoming = false, matchupId = 7, width = 390, rosterVie
     vm.runInContext(source, ctx);
     const props = {
         initialView,
+        seasonView,
         rosterView,
         myRoster: { roster_id: 1, starters: ['a', 'b', 'c'], players: ['a', 'b', 'c', 'd'] },
         currentLeague: { league_id: '123', season: 2026, scoring_settings: { pts: 1 }, roster_positions: ['QB', 'RB', 'WR'], rosters: [{ roster_id: 2, owner_id: 'owner2' }], users: [{ user_id: 'owner2', display_name: 'Opponent Name' }] },
@@ -182,7 +183,8 @@ const matchupPanel = node => String(node?.props?.className || '').split(/\s+/).i
     assert.match(textOf(fromOverview.out), /vs Opponent Name/, 'The selected league opponent is retained');
     button(fromOverview.out, 'Lineup').props.onClick(); await fromOverview.render();
     assert(select(fromOverview.out, n => n.props.id === 'gameday-starting-lineup'), 'Lineup remains available from the matchup');
-    button(fromOverview.out, 'Odds').props.onClick(); await fromOverview.render();
+    assert(!button(fromOverview.out, 'Season') && !button(fromOverview.out, 'Odds'), 'Game Day keeps only Lineup and Matchup');
+    button(fromOverview.out, 'Matchup').props.onClick(); await fromOverview.render();
     fromOverview.props.initialView = 'week'; await fromOverview.render();
     assert.equal(button(fromOverview.out, 'Lineup').props['aria-pressed'], true, 'Ordinary entry resets a mounted destination to Lineup');
     const withoutOpponent = await fixture({ initialView: 'matchup', matchupId: null });
@@ -552,8 +554,17 @@ const matchupPanel = node => String(node?.props?.className || '').split(/\s+/).i
     assert(!select(unverifiedFuture.out, node => node.type === 'button' && textOf(node).includes('Bench Option')).props.disabled, 'a local future plan remains editable before the future schedule loads');
     assert(!button(unverifiedFuture.out, 'Use optimal in my plan'), 'missing schedule evidence cannot enable auto-fill');
 
-    const coverage = await fixture({ upcoming: true, seasonData: { byeWatch: [{ week: 8, count: 2, positions: ['WR', 'WR'] }, { week: 4, count: 1, positions: ['QB'] }, { week: 12, count: 1, positions: ['TE'] }] } });
-    button(coverage.out, 'Season').props.onClick(); await coverage.render();
+    const coverage = await fixture({ upcoming: true, seasonView: 'season', seasonData: { byeWatch: [{ week: 8, count: 2, positions: ['WR', 'WR'] }, { week: 4, count: 1, positions: ['QB'] }, { week: 12, count: 1, positions: ['TE'] }] } });
+    assert(!select(coverage.out, n => n.props['aria-label'] === 'Game Day views'), 'League season view omits Game Day navigation');
+    assert(!select(coverage.out, n => n.props.id === 'gameday-starting-lineup'));
+    coverage.props.seasonView = 'odds'; await coverage.render();
+    assert.match(textOf(coverage.out), /Season odds are unavailable/);
+    coverage.props.seasonView = 'season'; await coverage.render();
+    const unprojected = await fixture({ noProjection: true, seasonView: 'odds' });
+    assert.match(textOf(unprojected.out), /Season odds are unavailable/);
+    assert.doesNotMatch(textOf(unprojected.out), /Projections unavailable/);
+    assert.equal(coverage.planWrites.length, 0, 'League season browsing never writes a lineup plan');
+    assert.equal(coverage.forecastCaptures.length, 0, 'League season browsing never captures Game Day forecasts');
     const coverageText = textOf(coverage.out);
     assert.match(coverageText, /Wk 4.*Wk 8.*Wk 12/, 'all coverage weeks appear directly in chronological order');
     assert.doesNotMatch(coverageText, /Later coverage weeks|weeks to review/);

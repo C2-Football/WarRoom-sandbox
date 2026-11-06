@@ -118,8 +118,8 @@ props.leagueSkin.features.showPlayoffOdds = true;
 tree = render();
 find(tree, n => n.type === 'select' && n.props['aria-label'] === 'Standings view').props.onChange({ target: { value: 'odds' } });
 tree = assertRefreshKeepsComponentTypes();
-assert(text(tree).includes('First-round bye'), 'The same refresh guard covers expandable playoff fields');
-console.log('PASS League Central disclosure component identity survives score refresh in standings and playoff views');
+assert(find(tree, n => n.type === 'th' && n.props['aria-label'] === 'First-round bye'), 'The compact playoff table keeps the bye column during refresh');
+console.log('PASS League Central standings and playoff views retain component identity on score refresh');
 
 // Chopped Home has a survival outlook, never a meaningless head-to-head record.
 let survivalProps;
@@ -247,3 +247,20 @@ tree = render();
 assert.equal(walk(tree).filter(node => node.props?.className === 'lct-cutline-label').length, 2);
 assert(find(tree, node => node.type === 'th' && node.props['aria-label'] === 'Division rank'));
 console.log('PASS live playoff integration: Alex-first Overview plus League-wide/divisional cutlines, real division leader and wildcard membership, phone and desktop.');
+
+// League owns phone season navigation, including the loading boundary.
+root.WR.useViewport = () => ({ isPhone: true });
+props.overview = false;
+props.renderSeasonView = view => React.createElement('season-view', { view }, view);
+reset();
+for (const view of ['season', 'odds']) {
+    tree = render();
+    find(tree, n => n.type === 'button' && text(n) === (view === 'season' ? 'Season' : 'Odds')).props.onClick();
+    tree = render();
+    assert.equal(find(tree, n => n.type === 'season-view').props.view, view);
+    assert(!table(tree), 'Season reads replace standings inside League');
+    assert.equal(find(tree, n => n.type === 'button' && text(n) === (view === 'season' ? 'Season' : 'Odds')).props['aria-pressed'], true);
+}
+find(tree, n => n.type === 'button' && text(n) === 'Standings').props.onClick();
+assert(table(render()), 'Returning to standings restores the league table');
+console.log('PASS League Season and Odds navigation');

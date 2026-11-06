@@ -239,6 +239,7 @@ function LeagueCentralTab({
     homeMerged,
     briefSlot,
     kpiSlot,
+    renderSeasonView,
 }) {
     const GOLD = 'var(--gold, #d4af37)';
     const SILVER = 'var(--silver, #bdb8ad)';
@@ -858,8 +859,8 @@ function LeagueCentralTab({
             </div>}
 
             {isPhone && <React.Fragment>
-                <nav className="mc-section-tabs" aria-label="League views">
-                    {[['standings', isChopped ? 'Survival' : 'Standings'], ['scores', 'Scores']].map(([key, label]) => <button type="button" key={key} aria-pressed={phoneLeagueView === key && innerTab === 'league'} onClick={() => { setPhoneLeagueView(key); setInnerTab('league'); setLeagueViewMenuOpen(false); }}>{label}</button>)}
+                <nav className={'mc-section-tabs' + (renderSeasonView ? ' mc-league-season-tabs' : '')} aria-label="League views">
+                    {[['standings', isChopped ? 'Survival' : 'Standings'], ['scores', 'Scores'], ...(renderSeasonView ? [['season', 'Season'], ['odds', 'Odds']] : [])].map(([key, label]) => <button type="button" key={key} aria-pressed={phoneLeagueView === key && innerTab === 'league'} onClick={() => { setPhoneLeagueView(key); setInnerTab('league'); setLeagueViewMenuOpen(false); }}>{label}</button>)}
                     {cupVisible && <button type="button" aria-pressed={innerTab === 'cup'} onClick={() => { setInnerTab('cup'); setLeagueViewMenuOpen(false); }}>Cup</button>}
                     <button type="button" className="mc-league-view-menu" aria-label="Customize League views" aria-expanded={leagueViewMenuOpen} onClick={() => setLeagueViewMenuOpen(open => !open)}>•••</button>
                 </nav>
@@ -906,7 +907,7 @@ function LeagueCentralTab({
                 </div>
             )}
 
-            {cupVisible && innerTab === 'cup' ? <React.Fragment>
+            {isPhone && innerTab === 'league' && ['season', 'odds'].includes(phoneLeagueView) && renderSeasonView ? renderSeasonView(phoneLeagueView) : cupVisible && innerTab === 'cup' ? <React.Fragment>
                 {React.createElement(window.WoeppelCupPanel, { key: leagueId + ':' + season, league: currentLeague, getOwnerName: _getOwnerName, myRoster })}
             </React.Fragment> : homeMerged && innerTab === 'kpis' ? (
                 <div style={{ margin: isPhone ? '0 -14px' : '0 -24px' }}>{kpiSlot}</div>

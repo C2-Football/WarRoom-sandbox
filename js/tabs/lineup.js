@@ -205,7 +205,7 @@ function LineupTab(props) {
 
 function MyLineupTab({
     myRoster, currentLeague, leagueSkin, playersData, statsData, stats2025Data, statsSeason,
-    sleeperUserId, gmStrategy, setActiveTab, timeRecomputeTs, rosterView = false, initialView = 'week',
+    sleeperUserId, gmStrategy, setActiveTab, timeRecomputeTs, rosterView = false, initialView = 'week', seasonView = null,
 }) {
     const metricPreference = window.WR?.PlayerMetrics?.useMetrics(sleeperUserId, currentLeague?.league_id || currentLeague?.id);
     const WP = window.App && window.App.WeeklyProj;
@@ -268,12 +268,13 @@ function MyLineupTab({
         } catch (e) { if (window.wrLog) window.wrLog('lineup.compute', e); return null; }
     }, [myRoster, currentLeague, playersData, statsData, timeRecomputeTs, ctxTick, planningWeek]);
 
-    const liveScores = Live ? Live.useScores({ league: currentLeague, week: planningWeek }) : { rows: [], status: 'unavailable', supported: false };
+    const liveScores = Live ? Live.useScores({ league: currentLeague, week: planningWeek, enabled: !seasonView }) : { rows: [], status: 'unavailable', supported: false };
     const liveRow = (liveScores.rows || []).find(r => String(r.roster_id) === String(myRoster && myRoster.roster_id));
     const platformStarters = liveRow && Array.isArray(liveRow.starters) ? liveRow.starters : ((myRoster && myRoster.starters) || []);
     const [nflGames, setNflGames] = React.useState({ key: '', games: [], updatedAt: 0 });
     const liveKey = leagueScope + '|' + planningWeek;
     React.useEffect(() => {
+        if (seasonView) return;
         let alive = true, busy = false;
         const NC = window.App && window.App.NflContext;
         const refresh = async () => {
@@ -288,7 +289,7 @@ function MyLineupTab({
         const timer = setInterval(refresh, 30000);
         document.addEventListener('visibilitychange', refresh);
         return () => { alive = false; clearInterval(timer); document.removeEventListener('visibilitychange', refresh); };
-    }, [liveKey]);
+    }, [liveKey, seasonView]);
     const games = nflGames.key === liveKey ? nflGames.games : [];
     const statusOfGame = game => window.App?.NflContext?.gameStatus?.(game) || 'unknown';
     const gameFor = pid => {
@@ -323,10 +324,9 @@ function MyLineupTab({
     const [pickerSortChoice, setPickerSortChoice] = React.useState({ scope: '', key: null, dir: -1 });
     const [appliedMoves, setAppliedMoves] = React.useState(null); // phone: swap list shown after Apply Optimal ({sl,cur,opt,gain}[])
     const [explainPid, setExplainPid] = React.useState(null);     // "why this number" ledger target (Pro; tap a projection)
-    // Game Day view (owner ruling 2026-07-30: Season Odds belongs here, not in
-    // Analytics). Phone: This Week | Season | Odds. Desktop already shows the
-    // season rail alongside the lineup, so it only needs This Week | Odds.
-    const [gdView, setGdView] = React.useState('week');           // 'week' | 'odds' (desktop) — phone adds 'season' via phoneView
+    // Phone season views are hosted by League. Desktop keeps its season rail
+    // alongside the lineup and the This Week | Odds switch.
+    const [gdView, setGdView] = React.useState('week');
     React.useEffect(() => {
         setPhoneView(initialView === 'matchup' ? 'matchup' : 'week');
         setGdView('week');
@@ -453,7 +453,7 @@ function MyLineupTab({
     const lensReviewScope = leagueScope + '|' + lensAccount;
     React.useEffect(() => {
         const accept = context => {
-            if (!pro || !context || context.source !== 'roster-lineup-lens' || !lensAccount
+            if (seasonView || !pro || !context || context.source !== 'roster-lineup-lens' || !lensAccount
                 || context.accountKey !== lensAccount
                 || String(context.leagueId) !== String(currentLeague?.league_id || currentLeague?.id)
                 || String(context.season) !== String(currentLeague?.season)
@@ -476,7 +476,7 @@ function MyLineupTab({
         const receive = event => accept(event.detail);
         window.addEventListener('wr:open-lineup-lens', receive);
         return () => window.removeEventListener('wr:open-lineup-lens', receive);
-    }, [lensReviewScope, liveWeek, pro, JSON.stringify(currentLeague?.roster_positions), JSON.stringify(myRoster?.players)]);
+    }, [lensReviewScope, liveWeek, pro, seasonView, JSON.stringify(currentLeague?.roster_positions), JSON.stringify(myRoster?.players)]);
     const reviewForSlot = slot => lensReview?.scope === lensReviewScope && lensReview.week === planningWeek
         && lensReview.slotIndex === slot?.idx ? lensReview : null;
     const suggestedForSlot = slot => {
@@ -569,13 +569,13 @@ function MyLineupTab({
     const [oppRosterId, setOppRosterId] = React.useState(null);
     React.useEffect(() => {
         const M = window.App && window.App.Matchup;
-        if (!M || !myRoster || !currentLeague) return;
+        if (!M || !myRoster || !currentLeague || seasonView) return;
         let alive = true; setOppRosterId(null);
         M.resolveOpponentRosterId({ league: currentLeague, myRosterId: myRoster.roster_id, week: planningWeek })
             .then(id => { if (alive) setOppRosterId(id != null ? String(id) : null); })
             .catch(() => {});
         return () => { alive = false; };
-    }, [lineupKey]);
+    }, [lineupKey, seasonView]);
     const oppResult = React.useMemo(() => {
         if (!WP || !oppRosterId || !currentLeague) return null;
         const oppRoster = (currentLeague.rosters || []).find(r => String(r.roster_id) === String(oppRosterId));
@@ -709,7 +709,7 @@ function MyLineupTab({
         // `pro && isDynastyFormat`. The AV.enhance AI upgrade below is
         // additionally behind hasAmbientAI() (ambient-AI policy seam) — a Pro
         // user without AI still keeps the seeded template.
-        const noteAllowed = pro && optimizerAvailable && !rosterView;
+        const noteAllowed = pro && optimizerAvailable && !rosterView && !seasonView;
         if (!noteAllowed) { setNote(''); return; }
         if (!_projReady) return;                 // wait for real projections (avoid a stale AI-note cache)
         const facts = buildNoteFacts();
@@ -733,13 +733,13 @@ function MyLineupTab({
             }).then(txt => { if (alive && txt && typeof txt === 'string') setNote(txt); }).catch(() => {});
         }
         return () => { alive = false; };
-    }, [lineupKey, ctxTick, oppRosterId, _projReady, seasonData, optimizerAvailable, formWindow, formComplete]);
+    }, [lineupKey, ctxTick, oppRosterId, _projReady, seasonData, optimizerAvailable, formWindow, formComplete, seasonView]);
 
     // Invalidate the game-plan expansion on the same signals the note above
     // regenerates on — otherwise a stale plan for last week or a different
     // league keeps showing, with the trigger button permanently hidden and
     // no way to refresh it.
-    React.useEffect(() => { setGameplanTake(null); }, [lineupKey, ctxTick, oppRosterId, _projReady, seasonData, optimizerAvailable, formWindow, formComplete]);
+    React.useEffect(() => { setGameplanTake(null); }, [lineupKey, ctxTick, oppRosterId, _projReady, seasonData, optimizerAvailable, formWindow, formComplete, seasonView]);
 
     // MFL is the only platform with a public lineup-write API (Sleeper has none).
     const _plat = (window.App && window.App.Matchup && window.App.Matchup._platform) ? window.App.Matchup._platform(currentLeague) : 'sleeper';
@@ -827,14 +827,14 @@ function MyLineupTab({
         // users start from an empty table and set slots manually (the free
         // builder experience); the push guard message tells them to fill all.
         if (!pro) return;
-        if (!isMfl || !_optReady) return;
+        if (!isMfl || !_optReady || seasonView) return;
         if (Object.keys(currentAssign).length || Object.keys(workingAssign).length) return; // platform starters, or user already editing
         const byName = {};
         formOptimal.starters.forEach(s => { (byName[s.slot] = byName[s.slot] || []).push(s.pid); });
         const next = {};
         startingSlots.forEach(sl => { const arr = byName[sl.slotName]; if (arr && arr.length) next[sl.idx] = String(arr.shift()); });
         if (Object.keys(next).length) setWorkingAssign(next);
-    }, [lineupKey, isMfl, _optReady]);
+    }, [lineupKey, isMfl, _optReady, seasonView]);
 
     const projectedPoints = pid => {
         // The existing engine recomputes as data arrives; never call this an archived pregame forecast.
@@ -850,7 +850,7 @@ function MyLineupTab({
     const forecastContextKey = liveKey + '|' + JSON.stringify(Object.entries(currentLeague?.scoring_settings || {}).sort(([a], [b]) => a.localeCompare(b)));
     const [forecastState, setForecastState] = React.useState(() => ({ key: forecastContextKey, data: Forecasts ? Forecasts.read(currentLeague, planningWeek) : { players: {}, persistent: false } }));
     React.useEffect(() => {
-        if (!Forecasts) return;
+        if (!Forecasts || seasonView) return;
         const projections = {}, statuses = {};
         if (gamesFresh) {
             platformStarters.forEach(pid => { projections[pid] = projectedPoints(pid); statuses[pid] = gameState(pid); });
@@ -862,7 +862,7 @@ function MyLineupTab({
         }
         const data = Forecasts.capture({ league: currentLeague, week: planningWeek, projections, statuses });
         setForecastState(previous => previous.key === forecastContextKey && previous.data === data ? previous : { key: forecastContextKey, data });
-    }, [forecastContextKey, result, nflGames, platformStarters.join(','), (liveOpponent?.starters || []).join(','), oppResult]);
+    }, [forecastContextKey, result, nflGames, platformStarters.join(','), (liveOpponent?.starters || []).join(','), oppResult, seasonView]);
     const savedForecasts = forecastState.key === forecastContextKey ? forecastState.data : { players: {}, persistent: true };
     const liveTotal = Live && liveRow ? Live.rosterPoints(liveRow) : null;
     // Phone scores come from the submitted matchup feed, including zero and
@@ -878,11 +878,11 @@ function MyLineupTab({
     const reviewWeek = reviewChoice.scope === forecastContextKey ? Math.max(1, Math.min(planningWeek, Number(reviewChoice.week) || planningWeek)) : planningWeek;
     const historicalReview = reviewWeek < liveWeek;
     const reviewKey = leagueScope + '|review|' + reviewWeek;
-    const historicalScores = Live ? Live.useScores({ league: currentLeague, week: reviewWeek, enabled: reviewWeek !== planningWeek }) : { rows: [], status: 'unavailable', supported: false };
+    const historicalScores = Live ? Live.useScores({ league: currentLeague, week: reviewWeek, enabled: !seasonView && reviewWeek !== planningWeek }) : { rows: [], status: 'unavailable', supported: false };
     const reviewScores = reviewWeek === planningWeek ? liveScores : historicalScores;
     const [reviewNfl, setReviewNfl] = React.useState({ key: '', games: [], updatedAt: 0 });
     React.useEffect(() => {
-        if (reviewWeek === planningWeek) return undefined;
+        if (seasonView || reviewWeek === planningWeek) return undefined;
         let active = true, pending = false;
         const refresh = async () => {
             if (pending || document.hidden || !window.App?.NflContext?.loadScores) return;
@@ -897,7 +897,7 @@ function MyLineupTab({
         const timer = setInterval(refresh, 30000);
         document.addEventListener('visibilitychange', refresh);
         return () => { active = false; clearInterval(timer); document.removeEventListener('visibilitychange', refresh); };
-    }, [reviewKey, planningWeek]);
+    }, [reviewKey, planningWeek, seasonView]);
     const reviewGames = reviewWeek === planningWeek ? games : reviewNfl.key === reviewKey ? reviewNfl.games : [];
     const reviewGamesFresh = reviewWeek === planningWeek ? gamesFresh : reviewNfl.key === reviewKey && Date.now() - reviewNfl.updatedAt < 90000;
     const reviewGameState = pid => {
@@ -1044,6 +1044,19 @@ function MyLineupTab({
     // No whole-tab gate: the partial free/Pro split above (`pro`) supersedes
     // the old STARTSIT_DEPTH block — free users enter and use the manual
     // builder; only the optimizer layer is locked inline.
+
+    // Reuse the existing season reads and gates in League, even when weekly
+    // lineup projections are unavailable. No lineup controls mount here.
+    if (isPhone && seasonView === 'season') return <div className="gd-mobile">{renderRail()}</div>;
+    if (isPhone && seasonView === 'odds') {
+        const chopped = leagueSkin?.type === 'chopped' || window.App?.Chopped?.isChopped?.(currentLeague);
+        const odds = chopped
+            ? window.WrChopBlock && <window.WrChopBlock active phone currentLeague={currentLeague} myRoster={myRoster} />
+            : leagueSkin?.features?.showPlayoffOdds !== false && window.WrSeasonOdds && <window.WrSeasonOdds active
+                currentLeague={currentLeague} myRoster={myRoster} playersData={playersData}
+                statsData={statsData} stats2025Data={stats2025Data} leagueSkin={leagueSkin} pro={pro} onSummary={onSimSummary} />;
+        return <div className="gd-mobile">{odds || <p className="gd-muted">Season odds are unavailable.</p>}</div>;
+    }
 
     if (!WP || !SS) {
         return <div style={{ padding: '24px', color: SILVER }}>Start/Sit engine not loaded.</div>;
@@ -1380,14 +1393,14 @@ function MyLineupTab({
         return (
             <div className="gd-season-rail" style={{ display: 'flex', flexDirection: 'column', gap: '14px', position: isNarrow ? 'static' : 'sticky', top: '16px' }}>
                 {/* Season outlook (or a pre-season placeholder when no schedule yet) */}
-                <div style={{ background: PANEL, border: `1px solid ${LINE}`, borderRadius: 'var(--card-radius-sm, 8px)', padding: '14px 16px' }}>
-                    <div style={{ fontSize: fz('0.64rem'), letterSpacing: '0.07em', color: SILVER, fontWeight: 600 }}>SEASON OUTLOOK</div>
+                <div className="gd-season-card gd-season-overview" style={{ background: PANEL, border: `1px solid ${LINE}`, borderRadius: 'var(--card-radius-sm, 8px)', padding: '14px 16px' }}>
+                    <div className="gd-season-title" style={{ fontSize: fz('0.64rem'), letterSpacing: '0.07em', color: SILVER, fontWeight: 600 }}>SEASON OUTLOOK</div>
                     {!pro ? (
                         // Free: raw current record only — proj record / PF / win% are
                         // season-sim (optimizer) outputs.
                         <React.Fragment>
                             {d && d.summary && d.summary.record ? (
-                                <div style={{ display: 'flex', gap: '16px', margin: '8px 0 10px' }}>
+                                <div className="gd-season-kpis" style={{ display: 'flex', gap: '16px', margin: '8px 0 10px' }}>
                                     <div><div style={{ fontSize: fz('0.6rem'), color: SILVER, letterSpacing: '0.04em' }}>NOW</div><div style={{ fontWeight: 700, color: TEXT }}>{d.summary.record}</div></div>
                                 </div>
                             ) : <div style={{ height: '8px' }} />}
@@ -1397,18 +1410,18 @@ function MyLineupTab({
                         <div style={{ color: SILVER, fontSize: '0.74rem', marginTop: '8px', lineHeight: 1.5 }}>Schedule posts closer to Week 1. Building your <span style={{ color: TEXT, fontWeight: 600 }}>Week 1</span> lineup now — record + win% light up once matchups are set.</div>
                     ) : d && d.summary ? (
                         <React.Fragment>
-                            <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginTop: '8px' }}>
+                            <div className="gd-season-record" style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginTop: '8px' }}>
                                 {/* Prefer the Season Odds simulation's projected record when it
                                     has run: schedule-engine sums per-week win probabilities while
                                     the sim models real scoring distributions and seeding, and two
                                     different projected records on one screen reads as a bug. */}
-                                <span style={{ fontSize: '1.5rem', fontWeight: 800, color: GOLD, fontVariantNumeric: 'tabular-nums' }}>
+                                <span className="gd-season-projected" style={{ fontSize: '1.5rem', fontWeight: 800, color: GOLD, fontVariantNumeric: 'tabular-nums' }}>
                                     {simSummary ? simSummary.projWins + '-' + simSummary.projLosses : d.summary.projRecord}
                                 </span>
                                 <span style={{ fontSize: fz('0.64rem'), color: SILVER }}>proj record</span>
                                 {simSummary ? <span style={{ fontSize: fz('0.64rem'), color: GOLD, fontWeight: 700 }}>· {simSummary.playoffPct}% playoffs</span> : null}
                             </div>
-                            <div style={{ display: 'flex', gap: '16px', marginTop: '9px' }}>
+                            <div className="gd-season-kpis" style={{ display: 'flex', gap: '16px', marginTop: '9px' }}>
                                 <div><div style={{ fontSize: fz('0.6rem'), color: SILVER, letterSpacing: '0.04em' }}>NOW</div><div style={{ fontWeight: 700, color: TEXT }}>{d.summary.record}</div></div>
                                 <div><div style={{ fontSize: fz('0.6rem'), color: SILVER, letterSpacing: '0.04em' }}>PROJ PF</div><div style={{ fontWeight: 700, color: TEXT, fontVariantNumeric: 'tabular-nums' }}>{d.summary.projPF}</div></div>
                                 {d.summary.winPct != null ? <div><div style={{ fontSize: fz('0.6rem'), color: SILVER, letterSpacing: '0.04em' }}>WIN%</div><div style={{ fontWeight: 700, color: TEXT }}>{d.summary.winPct}%</div></div> : null}
@@ -1419,16 +1432,16 @@ function MyLineupTab({
 
                 {/* Bye watch — the weeks you're thinnest (works with or without a schedule) */}
                 {byeWatch.length ? (
-                    <div style={{ background: PANEL, border: `1px solid ${LINE}`, borderRadius: 'var(--card-radius-sm, 8px)', padding: '12px 16px' }}>
-                        <div style={{ fontSize: fz('0.64rem'), letterSpacing: '0.07em', color: SILVER, fontWeight: 600, marginBottom: '6px' }}>BYE WATCH</div>
+                    <div className="gd-season-card gd-season-byes" style={{ background: PANEL, border: `1px solid ${LINE}`, borderRadius: 'var(--card-radius-sm, 8px)', padding: '12px 16px' }}>
+                        <div className="gd-season-title" style={{ fontSize: fz('0.64rem'), letterSpacing: '0.07em', color: SILVER, fontWeight: 600, marginBottom: '6px' }}>BYE WATCH</div>
                         {byeWatch.map(bw => (
-                            <div key={bw.week} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: '6px', padding: '6px 0', fontSize: '0.74rem' }}>
+                            <div className="gd-season-coverage-row" key={bw.week} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: '6px', padding: '6px 0', fontSize: '0.74rem' }}>
                                 <span style={{ minWidth: 0 }}>
                                     <span style={{ color: bw.unfilled ? RED : AMBER, fontWeight: 700 }}>Wk {bw.week}</span>
                                     <span style={{ color: SILVER, marginLeft: '6px' }}>{byeLabel(bw)}{bw.unfilled && bw.count > 0 ? ' · no cover' : ''}</span>
                                 </span>
                                 <span style={{ color: bw.unfilled ? RED : AMBER, fontWeight: 800 }}>{bw.unfilled ? '⚠' : bw.count}</span>
-                                <div style={{ flexBasis: '100%', display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+                                <div className="gd-season-coverage-actions" style={{ flexBasis: '100%', display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
                                     {(bw.positions?.length ? [...new Set(bw.positions)] : [null]).map(position => <button key={position || 'cover'} type="button" onClick={() => {
                                         const dropPid = (myRoster?.players || []).find(pid => window._playerTags?.[pid] === 'cut');
                                         const context = {
@@ -1449,8 +1462,9 @@ function MyLineupTab({
                 ) : null}
 
                 {/* Week-by-week schedule */}
-                <div style={{ background: PANEL, border: `1px solid ${LINE}`, borderRadius: 'var(--card-radius-sm, 8px)', overflow: 'hidden' }}>
-                    <div style={{ padding: '9px 14px', borderBottom: `1px solid ${LINE}`, fontSize: fz('0.64rem'), letterSpacing: '0.07em', color: SILVER, fontWeight: 600 }}>SCHEDULE</div>
+                <div className="gd-season-card gd-season-schedule" style={{ background: PANEL, border: `1px solid ${LINE}`, borderRadius: 'var(--card-radius-sm, 8px)', overflow: 'hidden' }}>
+                    <div className="gd-season-title" style={{ padding: '9px 14px', borderBottom: `1px solid ${LINE}`, fontSize: fz('0.64rem'), letterSpacing: '0.07em', color: SILVER, fontWeight: 600 }}>SCHEDULE</div>
+                    {isPhone && d?.weeks?.length > 0 && !scheduleUnset && <div className="gd-season-schedule-columns"><span>Wk</span><span>Opponent</span><span>{pro ? 'Result / win %' : 'Result'}</span></div>}
                     {scheduleUnset ? (
                         <div style={{ padding: '10px 14px', color: SILVER, fontSize: '0.74rem', opacity: 0.8, lineHeight: 1.5 }}>{pro ? 'Opponents + weekly win% appear here once your league posts the schedule.' : 'Opponents appear here once your league posts the schedule.'}</div>
                     ) : d && d.weeks ? d.weeks.map(w => {
@@ -1458,13 +1472,13 @@ function MyLineupTab({
                         const color = w.result ? (w.result === 'W' ? GREEN : w.result === 'L' ? RED : SILVER) : (wp == null ? SILVER : wp >= 55 ? GREEN : wp <= 45 ? RED : GOLD);
                         const bye = w.byes || {};
                         return (
-                            <div key={w.week} style={{ display: 'grid', gridTemplateColumns: '26px 1fr 52px', gap: '8px', alignItems: 'center', padding: '6px 14px', borderBottom: `1px solid ${LINE}`, background: w.isCurrent ? 'var(--acc-fill2, rgba(212,175,55,0.08))' : 'transparent' }}>
+                            <div className="gd-season-week" data-current={w.isCurrent || undefined} data-result={w.result || undefined} data-outlook={wp == null ? 'unknown' : wp >= 55 ? 'favorable' : wp <= 45 ? 'difficult' : 'even'} key={w.week} style={{ display: 'grid', gridTemplateColumns: '26px 1fr 52px', gap: '8px', alignItems: 'center', padding: '6px 14px', borderBottom: `1px solid ${LINE}`, background: w.isCurrent ? 'var(--acc-fill2, rgba(212,175,55,0.08))' : 'transparent' }}>
                                 <span style={{ fontSize: fz('0.62rem'), color: w.isCurrent ? GOLD : SILVER, fontWeight: 700 }}>W{w.week}</span>
                                 <span style={{ display: 'flex', alignItems: 'center', gap: '5px', minWidth: 0 }}>
                                     <span style={{ minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', fontSize: '0.74rem', color: (w.isPast && !w.result) ? SILVER : TEXT }}>{w.bye ? <span style={{ color: SILVER, opacity: 0.6 }}>bye</span> : w.oppName}</span>
                                     {bye.count ? <span title={bye.unfilled ? "You can't field a full lineup this week" : bye.count + ' of your starters on bye'} style={{ flex: '0 0 auto', fontSize: fz('0.56rem'), fontWeight: 700, color: bye.thin ? (bye.unfilled ? RED : AMBER) : SILVER }}>{bye.unfilled ? '⚠' : bye.count + '·b'}</span> : null}
                                 </span>
-                                <span style={{ textAlign: 'right', fontSize: '0.68rem', fontWeight: 700, color, fontVariantNumeric: 'tabular-nums' }}>
+                                <span className="gd-season-week-result" style={{ textAlign: 'right', fontSize: '0.68rem', fontWeight: 700, color, fontVariantNumeric: 'tabular-nums' }}>
                                     {w.result ? (w.result + (w.myProj != null ? ' ' + Math.round(w.myProj) : '')) : (wp != null ? wp + '%' : w.bye ? '—' : '·')}
                                 </span>
                             </div>
@@ -1622,13 +1636,9 @@ function MyLineupTab({
         return (
             <div className="gd-mobile">
                 {ledgerNode}
-                {/* This Week ⇄ Season toggle (owner ask) — week = matchup +
-                    lineup; season = outlook + schedule. */}
                 <div className="wr-seg gd-view-nav" aria-label="Game Day views">
                     <button aria-pressed={phoneView === 'week'} className={phoneView === 'week' ? 'is-on' : ''} onClick={() => setPhoneView('week')}>Lineup</button>
                     <button aria-pressed={phoneView === 'matchup'} className={phoneView === 'matchup' ? 'is-on' : ''} onClick={() => setPhoneView('matchup')}>Matchup</button>
-                    <button aria-pressed={phoneView === 'season'} className={phoneView === 'season' ? 'is-on' : ''} onClick={() => setPhoneView('season')}>Season</button>
-                    <button aria-pressed={phoneView === 'odds'} className={phoneView === 'odds' ? 'is-on' : ''} onClick={() => setPhoneView('odds')}>Odds</button>
                 </div>
 
                 {(phoneView === 'week' || phoneView === 'matchup') ? <div className={'gd-lineup-controls' + (phoneView === 'matchup' ? ' is-matchup' : '')}>
@@ -1637,16 +1647,7 @@ function MyLineupTab({
                     {phoneView === 'week' && <div className="roster-lineup-form" aria-label="Optimizer form window"><span className="gd-form-label">Average</span>{[['L3', 3], ['L5', 5], ['L8', 8], ['SZN', 'season']].map(([label, value]) => <button type="button" key={label} aria-pressed={formWindow === value} onClick={() => setFormWindow(value)}>{label}</button>)}</div>}
                 </div> : null}
 
-                {phoneView === 'odds' ? (
-                    // No bracket in a chopped league — survival IS the odds view.
-                    leagueSkin?.features?.showPlayoffOdds === false
-                        ? (window.WrChopBlock ? <window.WrChopBlock active currentLeague={currentLeague} myRoster={myRoster} /> : null)
-                    : window.WrSeasonOdds
-                        ? <window.WrSeasonOdds active currentLeague={currentLeague} myRoster={myRoster}
-                            playersData={playersData} statsData={statsData} stats2025Data={stats2025Data}
-                            leagueSkin={leagueSkin} pro={pro} onSummary={onSimSummary} />
-                        : null
-                ) : phoneView === 'matchup' ? matchupPanel : phoneView === 'week' ? (<React.Fragment>
+                {phoneView === 'matchup' ? matchupPanel : (<React.Fragment>
                 <section id="gameday-starting-lineup" className="gd-working-lineup" aria-label="Local lineup plan">
                     <div className="gd-list-heading mc-lineup-heading"><h2>Starting lineup</h2><span className="mc-lineup-total">{workingTotal.toFixed(1)} {formWinLabel} PPG{missingPlanForm ? ' · partial' : ''}</span></div>
                     {pro && canOptimize && !isOptimal ? <button type="button" className="gd-secondary" onClick={applyOptimalWithSummary}>Use optimal in my plan</button> : null}
@@ -1656,10 +1657,6 @@ function MyLineupTab({
                     {trackingLineup ? mobileScoreHelp : null}
                     {dirty || isMfl ? <button type="button" className="gd-secondary" onClick={() => setApplyOpen(true)}>Review planned changes</button> : null}
                 </section>
-                </React.Fragment>) : (<React.Fragment>
-                {/* Season view — outlook + week-by-week schedule (renderRail
-                    carries every existing free/Pro gate). */}
-                {renderRail()}
                 </React.Fragment>)}
 
                 {/* P3-style picker sheet — bench players for the open slot */}

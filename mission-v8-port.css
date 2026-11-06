@@ -281,3 +281,39 @@
 @media (prefers-reduced-transparency:reduce){
   .wr-mission-v8 .header.mc-v8-topbar,.wr-mission-v8 .wr-phone-dock{backdrop-filter:none!important;-webkit-backdrop-filter:none!important;}
 }
+
+/* Mobile League season outlook, bye coverage, and schedule. */
+@media (max-width:767px) {
+  .wr-mission-v8 .mc-league .gd-mobile .gd-season-rail { gap:10px!important; }
+  .wr-mission-v8 .mc-league .gd-season-rail > .gd-season-card { order:0; min-width:0; border:1px solid rgba(183,206,255,.24)!important; border-radius:var(--card-radius-lg,14px)!important; background:linear-gradient(135deg,#243650,#19283e)!important; box-shadow:inset 0 1px rgba(255,255,255,.06); }
+  .wr-mission-v8 .mc-league .gd-season-rail .gd-season-title { color:#cbd8ed!important; font:700 11px/1.3 var(--font-body,sans-serif)!important; letter-spacing:.08em!important; }
+  .wr-mission-v8 .mc-league .gd-season-rail > .gd-season-overview { padding:14px!important; border-color:rgba(230,198,132,.38)!important; background:radial-gradient(ellipse at top right,rgba(225,190,118,.12),transparent 72%),linear-gradient(135deg,#26364d,#19283e)!important; }
+  .wr-mission-v8 .mc-league .gd-season-overview .gd-season-title { color:#ebcf96!important; }
+  .wr-mission-v8 .mc-league .gd-season-rail .gd-season-record { gap:8px!important; margin-top:7px!important; flex-wrap:wrap; }
+  .wr-mission-v8 .mc-league .gd-season-rail .gd-season-record > span { font-size:12px!important; color:#b8c8de!important; }
+  .wr-mission-v8 .mc-league .gd-season-rail .gd-season-record > .gd-season-projected { color:#f4deae!important; font:750 32px/1.1 var(--font-body,sans-serif)!important; letter-spacing:-.04em; }
+  .wr-mission-v8 .mc-league .gd-season-rail .gd-season-kpis { display:grid!important; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px!important; margin-top:12px!important; }
+  .wr-mission-v8 .mc-league .gd-season-kpis > div { min-width:0; padding:8px; border:1px solid rgba(183,206,255,.13); border-radius:var(--card-radius-sm,8px); background:rgba(10,22,39,.36); }
+  .wr-mission-v8 .mc-league .gd-season-rail .gd-season-kpis > div > div:first-child { color:#b5c5dc!important; font:550 10px/1.3 var(--font-body,sans-serif)!important; letter-spacing:.025em!important; }
+  .wr-mission-v8 .mc-league .gd-season-kpis > div > div:last-child { margin-top:4px; color:#eff4fd!important; font:700 16px/1.2 var(--font-body,sans-serif)!important; }
+  .wr-mission-v8 .mc-league .gd-season-rail > .gd-season-byes { padding:12px!important; border-left:3px solid #e4ba6c!important; }
+  .wr-mission-v8 .mc-league .gd-season-byes .gd-season-title { color:#ebca8d!important; }
+  .wr-mission-v8 .mc-league .gd-season-coverage-row { gap:4px 8px!important; padding:8px 0!important; border-top:1px solid rgba(183,206,255,.12); }
+  .wr-mission-v8 .mc-league .gd-season-coverage-row:first-of-type { border-top:0; }
+  .wr-mission-v8 .mc-league .gd-season-rail .gd-season-coverage-row > span { font-size:12px!important; }
+  .wr-mission-v8 .mc-league .gd-season-coverage-actions { gap:6px!important; }
+  .wr-mission-v8 .mc-league .gd-season-rail .gd-season-coverage-actions button { min-height:44px; padding:6px 10px!important; border-color:rgba(230,198,132,.3)!important; border-radius:var(--card-radius-sm,8px)!important; background:rgba(230,198,132,.07)!important; color:#efd6a5!important; font:600 12px/1.3 var(--font-body,sans-serif)!important; }
+  .wr-mission-v8 .mc-league .gd-season-schedule > .gd-season-title { padding:12px!important; border-color:rgba(183,206,255,.16)!important; }
+  .wr-mission-v8 .mc-league .gd-season-schedule-columns { display:grid; grid-template-columns:26px minmax(0,1fr) 82px; gap:8px; padding:7px 12px; color:#aabdd6; background:rgba(9,20,36,.3); font-size:10px; }
+  .wr-mission-v8 .mc-league .gd-season-schedule-columns > :last-child { text-align:right; }
+  .wr-mission-v8 .mc-league .gd-season-rail .gd-season-week { grid-template-columns:26px minmax(0,1fr) 82px!important; min-height:44px; padding:7px 12px!important; border-color:rgba(183,206,255,.1)!important; background:transparent!important; }
+  .wr-mission-v8 .mc-league .gd-season-rail .gd-season-week > span:first-child { color:#aebfd7!important; font-size:11px!important; }
+  .wr-mission-v8 .mc-league .gd-season-rail .gd-season-week span { font-size:12px!important; }
+  .wr-mission-v8 .mc-league .gd-season-week[data-current] { box-shadow:inset 3px 0 #e4c58b; background:rgba(228,197,139,.075)!important; }
+  .wr-mission-v8 .mc-league .gd-season-week > .gd-season-week-result { justify-self:end; min-width:48px; padding:4px 7px; border-radius:var(--card-radius-xs,5px); color:#8de0cb!important; background:rgba(70,184,157,.11); font-weight:700; }
+  .wr-mission-v8 .mc-league .gd-season-week[data-outlook="even"] > .gd-season-week-result { color:#ead29f!important; background:rgba(228,197,139,.09); }
+  .wr-mission-v8 .mc-league .gd-season-week[data-outlook="unknown"] > .gd-season-week-result { color:#b5c5dc!important; background:rgba(183,206,255,.06); }
+  .wr-mission-v8 .mc-league .gd-season-week[data-outlook="difficult"] > .gd-season-week-result { color:#ffbea6!important; background:rgba(231,140,88,.1); }
+  .wr-mission-v8 .mc-league .gd-season-week[data-result="W"] > .gd-season-week-result { color:#8de0cb!important; background:rgba(70,184,157,.11); }
+  .wr-mission-v8 .mc-league .gd-season-week[data-result="L"] > .gd-season-week-result { color:#ffb0a8!important; background:rgba(231,100,88,.1); }
+}

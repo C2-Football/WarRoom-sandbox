@@ -3113,12 +3113,12 @@ WRShared.preloadMany(WR_SHARED_FILES);
 <link rel="stylesheet" href="time-league-mobile.css?v=20260925density1">
 <link rel="stylesheet" href="duat-phone.css?v=20260916mockup2">
 <link rel="stylesheet" href="duat-home-mobile.css?v=20260916mockup2">
-<link rel="stylesheet" href="mission-control.css?v=20261105mobile1">
+<link rel="stylesheet" href="mission-control.css?v=20261106season1">
 <link rel="stylesheet" href="mission-market.css?v=20261020waiversweep1">
 <link rel="stylesheet" href="mission-alex.css?v=20261106form1">
 <link rel="stylesheet" href="mission-trades.css?v=20261022tradecolor1">
-<link rel="stylesheet" href="mission-league-draft.css?v=20261106standings1">
-<link rel="stylesheet" href="mission-v8-port.css?v=20261105mobile1">
+<link rel="stylesheet" href="mission-league-draft.css?v=20261106season1">
+<link rel="stylesheet" href="mission-v8-port.css?v=20261106season1">
 <link rel="stylesheet" href="player-metrics-mobile.css?v=20261025rosterorder1">
 <link rel="stylesheet" href="roster-scoring-visuals.css?v=20261018visualscores1">
 <link rel="stylesheet" href="scoreboard-visual-cues.css?v=20261023scorecues1">
@@ -3217,8 +3217,8 @@ WRShared.preloadMany(WR_SHARED_FILES);
 <script type="text/babel" src="js/post-draft.js?v=20260609postdraft1"></script>
 <script type="text/babel" data-wr-defer="fa" src="js/shared/fa-market-data.js?v=20260910rich3"></script>
 <script type="text/babel" data-wr-defer="fa" src="js/free-agency.js?v=20261022headersort1"></script>
-<!-- Season Odds panel loads with Game Day (owner ruling 2026-07-30) — must
-     precede lineup.js in the group so window.WrSeasonOdds exists on first render. -->
+<!-- League mobile and Game Day desktop share this deferred group. Load
+     the odds panel before lineup.js so it is ready when either surface opens. -->
 <script type="text/babel" data-wr-defer="lineup" src="js/components/season-odds-panel.js?v=20261012mobilepolish2"></script>
 <script type="text/babel" src="js/components/chop-block-panel.js?v=20261012choppedpolish1"></script>
 <link rel="stylesheet" href="league-wire.css?v=20260928logos1">
