@@ -153,21 +153,22 @@ test('Overview restores the original mobile surface and Lenses has an explicit s
     assert.doesNotMatch(canvasSource, /Customize Home|WrDashReorder|Remove widget/);
 });
 
-test('Alex flags finished-game deviations and streaks from verified league history', async () => {
+test('Alex flags finished-game deviations and streaks for the manager’s current roster', async () => {
     const h = fixture();
     const player = (full_name, team = 'KC') => ({ full_name, team });
     h.props.playersData = {
         hot: player('Hot Receiver'), cold: player('Cold Runner'), steadyCold: player('Steady Cold'),
         dnp: player('Did Not Play'), live: player('Still Playing', 'BUF'), newcomer: player('New Starter'),
-        conflict: player('Conflicting Scores'), ordinary: player('Ordinary Game'),
+        opponent: player('Opponent Standout'), dropped: player('Former Player'), ordinary: player('Ordinary Game'),
     };
+    h.props.myRoster = { roster_id: '1', starters: ['hot', 'steadyCold'], players: ['hot', 'cold', 'dnp', 'steadyCold', 'live', 'newcomer', 'ordinary'] };
     h.props.scoreBoard = { supported: true, status: 'ready', week: 6, rows: [
-        { players_points: { hot: 27, cold: 0, dnp: 0, steadyCold: 9, live: 35, newcomer: 35, conflict: 35, ordinary: 11 } },
-        { players_points: { hot: 27, conflict: 31 } },
+        { roster_id: 1, players_points: { hot: 27, cold: 0, dnp: 0, steadyCold: 9, live: 35, newcomer: 35, dropped: 60, ordinary: 11 } },
+        { roster_id: 2, players_points: { hot: 47, opponent: 55 } },
     ] };
     const games = {
         hot: [5, 5, 10, 10, 10], cold: [30, 30, 10, 10, 10], steadyCold: [16, 16, 8, 8, 8],
-        dnp: [30, 30, 10, 10, 10], live: [8, 8, 8], newcomer: [10, 10], conflict: [8, 8, 8], ordinary: [10, 10, 10],
+        dnp: [30, 30, 10, 10, 10], live: [8, 8, 8], newcomer: [10, 10], opponent: [8, 8, 8], dropped: [9, 9, 9], ordinary: [10, 10, 10],
     };
     h.window.App.WeeklyProj = {
         weeklyPointsScope: () => 'l1-scoring',
@@ -186,9 +187,16 @@ test('Alex flags finished-game deviations and streaks from verified league histo
     assert.match(text(standouts), /Hot Receiver27.0 pts · 8.0 season avg19.0 pts above4 straight above avg/);
     assert.match(text(standouts), /Cold Runner0.0 pts · 18.0 season avg18.0 pts below4 straight below avg/);
     assert.match(text(standouts), /Steady Cold.*2.2 pts below4 straight below avg/, 'A sustained streak can qualify without a big single-game swing');
-    assert.doesNotMatch(text(standouts), /Did Not Play|Still Playing|New Starter|Conflicting Scores|Ordinary Game/);
+    assert.doesNotMatch(text(standouts), /Did Not Play|Still Playing|New Starter|Opponent Standout|Former Player|Ordinary Game/);
     button(tree, 'Ask Alex').props.onClick();
     assert.match(h.events[0].detail.prompt, /"finishedPlayerForm":\[\{"pid":"hot"/);
+    assert.doesNotMatch(h.events[0].detail.prompt, /opponent|dropped/);
+    const roster = h.props.myRoster;
+    h.props.myRoster = null;
+    assert.doesNotMatch(text(h.render()), /standouts|Opponent Standout/, 'No roster means no personal insights');
+    h.props.myRoster = { ...roster, roster_id: 3 };
+    assert.doesNotMatch(text(h.render()), /standouts|Opponent Standout/, 'Another row cannot stand in for missing personal scores');
+    h.props.myRoster = roster;
     h.props.scoreBoard.status = 'stale';
     assert.doesNotMatch(text(h.render()), /Hot Receiver/);
     h.props.scoreBoard.status = 'ready'; h.props.scoreBoard.week = 5;

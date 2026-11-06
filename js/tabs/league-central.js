@@ -34,21 +34,17 @@ const overviewNflTeam = team => {
 
 // Compare the reported score with the player's league-scored average entering
 // the week. Prior games and the current result use the same scoring rules.
-function buildLeagueOverviewForm({ board, week, finalTeams, playersData = {}, playedStats = {}, historyFor }) {
+function buildLeagueOverviewForm({ board, roster, week, finalTeams, playersData = {}, playedStats = {}, historyFor }) {
     if (board?.week !== week || board.error || !['ready', 'refreshing'].includes(board.status) || !finalTeams.size) return [];
-    const scores = new Map();
-    for (const row of board.rows || []) {
-        for (const [pid, points] of Object.entries(row.players_points || {})) {
-            if (!Number.isFinite(points) || !finalTeams.has(overviewNflTeam(playersData[pid]?.team))) continue;
-            // The same player can appear on more than one fantasy roster.
-            scores.set(pid, !scores.has(pid) || scores.get(pid) === points ? points : null);
-        }
-    }
+    if (roster?.roster_id == null || !Array.isArray(roster.players)) return [];
+    const ownScores = (board.rows || []).find(row => String(row.roster_id) === String(roster.roster_id))?.players_points;
+    const owned = new Set([...roster.players, ...(roster.reserve || []), ...(roster.taxi || [])].map(String));
     const notes = [];
-    for (const [pid, points] of scores) {
+    for (const [pid, points] of Object.entries(ownScores || {})) {
         const player = playersData[pid];
+        if (!owned.has(pid) || !Number.isFinite(points) || !finalTeams.has(overviewNflTeam(player?.team))) continue;
         const name = player.full_name || [player.first_name, player.last_name].filter(Boolean).join(' ');
-        if (!name || points == null) continue;
+        if (!name) continue;
         // Sleeper can report zero for someone who did not get into the game.
         const raw = playedStats[pid];
         if (points === 0 && !['gp', 'off_snp', 'def_snp', 'st_snp', 'pass_att', 'rush_att', 'rec_tgt', 'fga', 'xpa'].some(key => Number(raw?.[key]) > 0)) continue;
@@ -174,7 +170,7 @@ function LeagueOverviewDecisions({ currentLeague, leagueSkin, myRoster, playersD
         return () => { active = false; };
     }, [finishedKey]);
     const form = historyReady ? buildLeagueOverviewForm({
-        board: scoreBoard, week, finalTeams: decision.finalTeams, playersData, historyFor: wp.weeklyHistory,
+        board: scoreBoard, roster: myRoster, week, finalTeams: decision.finalTeams, playersData, historyFor: wp.weeklyHistory,
         playedStats: played.key === key ? played.stats : {},
     }) : [];
     const nextGame = decision.nextStarterGame || decision.next;
@@ -211,7 +207,7 @@ function LeagueOverviewDecisions({ currentLeague, leagueSkin, myRoster, playersD
         <p className="mc-next-kickoff">{scheduleLabel}{nextStarters > 0 ? ' · ' + nextStarters + (nextStarters === 1 ? ' starter' : ' starters') : ''}</p>
         {actionableFlags.length > 1 && <p className="mc-next-more">+{actionableFlags.length - 1} more lineup {actionableFlags.length === 2 ? 'issue' : 'issues'} to review in Game Day</p>}
         {form.length > 0 && <div className="mc-overview-form">
-            <p id="mc-overview-form-heading">Finished game standouts</p>
+            <p id="mc-overview-form-heading">Your roster’s standouts</p>
             <ul aria-labelledby="mc-overview-form-heading">{form.map(player => {
                 const direction = player.delta > 0 ? 'above' : 'below';
                 return <li key={player.pid} data-trend={direction}>
