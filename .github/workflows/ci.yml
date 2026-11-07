@@ -9,7 +9,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: C2-Football/dhq-shared
-          ref: 3f18b9fde9ea8aa183f4ea2f23e279408ea12c40
+          ref: 2caf7bed41233d61c267f4ed3cbaccc16a650285
           path: shared-src
       - name: Place dependency outside application lint scope
         run: |

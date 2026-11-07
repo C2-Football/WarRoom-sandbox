@@ -165,3 +165,20 @@ test('phone Preferences keeps controls available inside closed sections and anno
     assert.equal(active.length, 1); assert.match(text(active[0]), /^ConservativeCurrent/);
 });
 console.log('PASS ' + passed + ' mobile management behavior tests');
+
+for (const phone of [true, false]) for (const type of [0, 1, 2, 3]) {
+    test(`GM plan format controls: phone=${phone}, type=${type}`, () => {
+        const h = harness(['js/tabs/strategy-editor.js'], phone, {
+            WR: { useViewport: () => ({ isPhone: phone }), MobileSection: ({ title, children }) => ({ type: 'section', props: { title }, children }) },
+            wrAlpha: color => color,
+        });
+        const tree = h.render('StrategyEditorTab', { currentLeague: { league_id: 'gm', settings: { type } }, myRoster: { players: [] }, playersData: {}, gmStrategy: { mode: 'custom' } });
+        const visible = !phone || type === 2;
+        assert.equal(text(tree).includes('GM STRATEGY'), visible);
+        assert.equal(all(tree, n => n.props.title === 'Roster Cutdown Day').length > 0, visible);
+        assert.equal(all(tree, n => n.props.title === 'Timeline').length > 0, visible);
+        assert.equal(all(tree, n => n.props.title === 'Free Agency Filters').length, 1);
+        assert.equal(all(tree, n => n.props.title === 'FAAB / Waivers').length, 1);
+        assert.equal(all(tree, n => n.props.title === 'Priorities').length, 1);
+    });
+}

@@ -382,6 +382,9 @@ const matchupPanel = node => String(node?.props?.className || '').split(/\s+/).i
         const savedBefore = JSON.stringify([...basis.storage]);
         const picker = select(basis.out, node => node.props['aria-label'] === 'Matchup point comparison basis');
         assert(picker, 'Pregame matchup receives the selected league benchmark context');
+        assert.deepEqual(all(picker).filter(n => n.type === 'option').map(n => n.props.value), ['projected', 'average'], 'Offense and team-defense leagues omit IDP average');
+        picker.props.onChange({ target: { value: 'idp-average' } }); await basis.render();
+        assert.equal(select(basis.out, n => n.props['aria-label'] === 'Matchup point comparison basis').props.value, 'projected', 'An unsupported saved IDP basis falls back to projections');
         picker.props.onChange({ target: { value: 'average' } }); await basis.render();
         const panel = select(basis.out, matchupPanel);
         assert.equal(panel.props['data-score-view'], 'average');

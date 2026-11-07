@@ -13,6 +13,9 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
     // called unconditionally (order-safe across resizes).
     const _vp = window.WR.useViewport();
     const _phone = !!_vp.isPhone;
+    const leagueType = window.App?.LeagueSkin?.build?.({ league: currentLeague })?.type
+        || ({ 0: 'redraft', 1: 'keeper', 2: 'dynasty', 3: 'chopped' })[currentLeague?.settings?.type];
+    const showDynastyControls = !_phone || ['dynasty', 'empire'].includes(leagueType);
 
     const getWarRoomStorage = () => window.App?.WrStorage || window.WrStorage || null;
     const getWarRoomKeys = () => window.App?.WR_KEYS || window.WR_KEYS || null;
@@ -398,21 +401,21 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
             {/* ── Header ── */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 10 }}>
                 <div>
-                    <div style={{ fontFamily: 'var(--font-title)', fontSize: '1.5rem', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.04em' }}>GM STRATEGY</div>
+                    <div style={{ fontFamily: 'var(--font-title)', fontSize: '1.5rem', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.04em' }}>{showDynastyControls ? 'GM STRATEGY' : 'GM PLAN'}</div>
                     <div style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--ov-8, rgba(255,255,255,0.45))', fontFamily: 'var(--font-body)', marginTop: 2 }}>
-                        Set your franchise direction — syncs to Scout so Alex knows how to advise you.
+                        {showDynastyControls ? 'Set your franchise direction — syncs to Scout so Alex knows how to advise you.' : 'Set waiver preferences and roster priorities.'}
                     </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <SyncBadge />
                     <button onClick={handleSave} style={styles.saveBtn(syncStatus === 'saving')}>
-                        {syncStatus === 'saving' ? 'Saving…' : 'Save Strategy'}
+                        {syncStatus === 'saving' ? 'Saving…' : showDynastyControls ? 'Save Strategy' : 'Save Plan'}
                     </button>
                 </div>
             </div>
 
             {/* ── Mode (Phase 1: preset-first) ── */}
-            <div style={styles.card}>
+            {showDynastyControls && <div style={styles.card}>
                 {!_phone && <SectionHeader title="Mode" sub={currentMode?.desc + (isCustom ? '' : ' Preset bundles every downstream setting — switch to Custom to tune individually.')} />}
                 {_phone ? <label className="wr-strategy-mode-picker">Your direction<select value={draft.mode} onChange={e => e.target.value === 'custom' ? set('mode', 'custom') : applyPreset(e.target.value)}>{MODES.map(m => <option key={m.value} value={m.value}>{m.label}{m.value === recommendedMode ? ' · Suggested' : ''}</option>)}</select><span>{currentMode?.desc}</span></label> : <div style={{ display: 'grid', gridTemplateColumns: _phone ? '1fr' : 'repeat(auto-fill, minmax(160px, 1fr))', gap: 8 }}>
                     {MODES.map(m => {
@@ -454,7 +457,7 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
                         <strong style={{ color: 'var(--gold)' }}>Preset applied:</strong> aggression <em>{draft.aggression}</em> · draft <em>{draft.draftStyle}</em> · market <em>{draft.marketPosture}</em> · timeline <em>{TIMELINES.find(t => t.value === draft.timeline)?.label || draft.timeline}</em>
                     </div>
                 )}
-            </div>
+            </div>}
 
             {/* ── Trade Acceptance Floor (always visible — drives the Trade Center) ── */}
             <window.WR.MobileSection phone={_phone} title="Trade Acceptance Floor" summary="How likely a partner must be to accept"><div style={styles.card}>
@@ -486,7 +489,7 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
             </div></window.WR.MobileSection>
 
             {/* ── Aggression (Custom only) ── */}
-            {isCustom && <window.WR.MobileSection phone={_phone} title="Aggression" summary="Your appetite for risk"><div style={styles.card}>
+            {showDynastyControls && isCustom && <window.WR.MobileSection phone={_phone} title="Aggression" summary="Your appetite for risk"><div style={styles.card}>
                 <SectionHeader title="Aggression" sub={(currentAggression?.desc || '') + ' Also re-seeds the acceptance floor above.'} />
                 <PillGroup
                     options={AGGRESSION.map(a => ({ value: a.value, label: a.label }))}
@@ -518,7 +521,7 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
             </div></window.WR.MobileSection>
 
             {/* ── Roster Cutdown Day ── */}
-            <window.WR.MobileSection phone={_phone} title="Roster Cutdown Day" summary="Roster limits and effective date"><div style={styles.card}>
+            {showDynastyControls && <window.WR.MobileSection phone={_phone} title="Roster Cutdown Day" summary="Roster limits and effective date"><div style={styles.card}>
                 <SectionHeader title="Roster Cutdown Day" sub="If your league shrinks its roster limits on a set date — an NFL-style cutdown to a smaller active roster + taxi squad — record it here so the Calendar counts it down and My Roster warns you once you're over the new limit." />
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, cursor: 'pointer', fontSize: 'var(--text-label)', color: 'var(--ov-9, rgba(255,255,255,0.75))', fontFamily: 'var(--font-body)' }}>
                     <input type="checkbox" checked={cutdownIsRule} onChange={e => setCutdownIsRule(e.target.checked)}
@@ -568,7 +571,7 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
                         {cutdownRule.setBy === 'commissioner' ? ' · marked as the league rule.' : ' · personal note.'}
                     </div>
                 )}
-            </div></window.WR.MobileSection>
+            </div></window.WR.MobileSection>}
 
             {/* ── Free Agency Filters ── */}
             <window.WR.MobileSection phone={_phone} title="Free Agency Filters" summary="Age, value and position filters"><div style={styles.card}>
@@ -702,7 +705,7 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
             </div></window.WR.MobileSection>
 
             {/* ── Draft Style (Custom only) ── */}
-            {isCustom && <window.WR.MobileSection phone={_phone} title="Draft Style" summary="Your approach to the draft"><div style={styles.card}>
+            {showDynastyControls && isCustom && <window.WR.MobileSection phone={_phone} title="Draft Style" summary="Your approach to the draft"><div style={styles.card}>
                 <SectionHeader title="Draft Style" />
                 <div style={{ display: 'grid', gridTemplateColumns: _phone ? '1fr' : 'repeat(auto-fill, minmax(160px, 1fr))', gap: 8 }}>
                     {DRAFT_STYLES.map(ds => {
@@ -729,7 +732,7 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
                  toward (RB Heavy/Zero-RB/etc.), distinct from Draft Style
                  above (pick-CAPITAL philosophy). Feeds the Big Board's AI
                  lane + Mock/Live Draft recommendation scoring. ── */}
-            {isCustom && archetypeOptions.length > 0 && <window.WR.MobileSection phone={_phone} title="Draft Archetype" summary="Roster construction preferences"><div style={styles.card}>
+            {showDynastyControls && isCustom && archetypeOptions.length > 0 && <window.WR.MobileSection phone={_phone} title="Draft Archetype" summary="Roster construction preferences"><div style={styles.card}>
                 <SectionHeader title="Draft Archetype" />
                 <div style={{ display: 'grid', gridTemplateColumns: _phone ? '1fr' : 'repeat(auto-fill, minmax(160px, 1fr))', gap: 8 }}>
                     {archetypeOptions.map(arch => {
@@ -753,7 +756,7 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
             </div></window.WR.MobileSection>}
 
             {/* ── Market Posture (Custom only) ── */}
-            {isCustom && <window.WR.MobileSection phone={_phone} title="Market Posture" summary="Buying and selling approach"><div style={styles.card}>
+            {showDynastyControls && isCustom && <window.WR.MobileSection phone={_phone} title="Market Posture" summary="Buying and selling approach"><div style={styles.card}>
                 <SectionHeader title="Market Posture" />
                 <div style={{ display: 'grid', gridTemplateColumns: _phone ? '1fr' : 'repeat(auto-fill, minmax(160px, 1fr))', gap: 8 }}>
                     {MARKET_POSTURES.map(mp => {
@@ -777,7 +780,7 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
             </div></window.WR.MobileSection>}
 
             {/* ── Timeline (Custom only) ── */}
-            {isCustom && <window.WR.MobileSection phone={_phone} title="Timeline" summary="When you plan to compete"><div style={styles.card}>
+            {showDynastyControls && isCustom && <window.WR.MobileSection phone={_phone} title="Timeline" summary="When you plan to compete"><div style={styles.card}>
                 <SectionHeader title="Timeline" />
                 <PillGroup
                     options={TIMELINES.map(t => ({ value: t.value, label: t.label }))}
@@ -799,7 +802,7 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
             <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, paddingBottom: 40 }}>
                 <SyncBadge />
                 <button onClick={handleSave} style={styles.saveBtn(syncStatus === 'saving')}>
-                    {syncStatus === 'saving' ? 'Saving…' : 'Save Strategy'}
+                    {syncStatus === 'saving' ? 'Saving…' : showDynastyControls ? 'Save Strategy' : 'Save Plan'}
                 </button>
             </div>
 
@@ -810,7 +813,7 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
             {window.WR && window.WR.ActionBar ? React.createElement(window.WR.ActionBar, {
                 visible: _dirty,
                 label: 'UNSAVED CHANGES',
-                actionLabel: syncStatus === 'saving' ? 'SAVING…' : 'SAVE STRATEGY',
+                actionLabel: syncStatus === 'saving' ? 'SAVING…' : showDynastyControls ? 'SAVE STRATEGY' : 'SAVE PLAN',
                 onAction: handleSave,
                 onOpen: handleSave,
             }) : null}

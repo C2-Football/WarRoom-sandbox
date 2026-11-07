@@ -250,3 +250,10 @@ test('hybrid legal totals combine offensive projections and empirical IDP averag
     assert.equal(waiver.candidates.find(c => c.pid === 'add').weekly.before, 21);
     assert.equal(waiver.candidates.find(c => c.pid === 'add').weekly.after, 32);
 });
+
+test('IDP comparison availability follows defensive roster slots, excluding team defense', () => {
+    const { basis } = fixture();
+    for (const slot of ['DL','DE','DT','NT','IDL','EDGE','LB','MLB','ILB','OLB','DB','CB','S','SS','FS','IDP','IDP_FLEX'])
+        assert.equal(basis.hasIdp({ roster_positions: ['QB', slot, 'BN'] }), true, slot);
+    assert.equal(basis.hasIdp({ roster_positions: ['QB','FLEX','K','DEF','DST','D/ST','BN'], scoring_settings: { idp_tkl: 1 } }), false);
+});

@@ -227,7 +227,7 @@ const basisPlayers = {
     mineQB: { position: 'QB', team: 'BUF' }, theirQB: { position: 'QB', team: 'KC' },
     mineDEF: { position: 'DEF', team: 'BUF' }, theirDEF: { position: 'D/ST', team: 'KC' },
 };
-const basisLeague = { league_id: 'basis-one', season: '2026', scoring_settings: { pts: 1, lb_bonus: 2 } };
+const basisLeague = { league_id: 'basis-one', season: '2026', roster_positions: ['LB', 'DB', 'QB', 'DEF'], scoring_settings: { pts: 1, lb_bonus: 2 } };
 const basisStats = {
     mineLB: { pts: -2, gp: 2, season: 2026 }, theirLB: { pts: 8, gp: 2, season: 2026 },
     mineDB: { pts: -6, gp: 2, season: 2026 }, theirDL: { pts: 12, gp: 3, season: 2026 },

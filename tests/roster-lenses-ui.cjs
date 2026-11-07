@@ -29,7 +29,7 @@ const waiverCandidates = () => [candidate('add-a', 'Available Runner', 3, 10), c
 const tradeCandidates = () => [candidate('trade-a', 'Trade Target', 2, 0, { season: { status: 'unavailable', reason: 'Load the full season.' }, price: { delta: -100, unit: 'DHQ' } }), candidate('trade-b', 'Other Trade Target', 12, 0)];
 const ready = candidates => ({ status: 'ready', week: 6, candidates });
 
-function harness({ integrated = false, pro = true, metrics = false } = {}) {
+function harness({ integrated = false, pro = true, metrics = false, idp = false } = {}) {
     const slots = [], pending = new Map(), events = [], listeners = new Map(), timers = new Map(), calls = [], seasonCalls = [], writes = [], navigations = [], acquisition = [], comparisons = [];
     let index = 0, dirty = false, tree, lens, viewer = 'owner', saveFailure = false;
     const storage = new Map();
@@ -63,7 +63,7 @@ function harness({ integrated = false, pro = true, metrics = false } = {}) {
         taxi: { full_name: 'Taxi Quarterback', position: 'QB', team: 'ATL', age: 22, years_exp: 0 },
     };
     const roster = { roster_id: 1, owner_id: 'owner', players: Object.keys(players), starters: ['starter'], reserve: ['ir'], taxi: ['taxi'], settings: { wins: 0, losses: 0, ties: 0, waiver_budget_used: 25 } };
-    const league = { league_id: 'one', season: '2026', roster_positions: ['WR', 'RB', 'BN'], settings: { type: 0, waiver_budget: 100, reserve_slots: 1, taxi_slots: 1 }, scoring_settings: { rec: 1 }, rosters: [roster] };
+    const league = { league_id: 'one', season: '2026', roster_positions: ['WR', 'RB', 'BN', ...(idp ? ['IDP_FLEX'] : [])], settings: { type: 0, waiver_budget: 100, reserve_slots: 1, taxi_slots: 1 }, scoring_settings: { rec: 1 }, rosters: [roster] };
     const gm = { hasStrategy: true, mode: 'win_now', modeLabel: 'Win now', untouchable: new Set(), targetPositions: new Set(), sellPositions: new Set(), sellRules: [] };
     const plans = new Map([['add-a', { pid: 'add-a', dropPid: 'bench', bid: 7 }]]);
     const root = {
@@ -103,6 +103,7 @@ function harness({ integrated = false, pro = true, metrics = false } = {}) {
         InlineCareerStats: 'career', getPlayerAnnotation: () => null, wrAlpha: color => color,
         setTimeout: fn => fn(), requestAnimationFrame: noop, document: root.document });
     if (metrics) { root.React = React; vm.runInContext(fs.readFileSync('js/shared/player-metrics.js', 'utf8'), context); }
+    vm.runInContext(fs.readFileSync('js/shared/roster-lens-basis.js', 'utf8'), context);
     vm.runInContext(compiledLens, context);
     const api = root.WR.RosterLens;
     const input = { league, roster, players, statsData: {}, priorData: {}, userId: 'owner', gm, skin: { type: 'redraft', features: { showTrades: true, showTaxi: true, showWeeklyVerdict: false } }, revision: 1, isPro: pro, setActiveTab: tab => navigations.push(tab) };
@@ -508,7 +509,7 @@ test('filtered sources stay hidden while visible multi-player trade and open-slo
 });
 
 test('changing point basis clears the old scenario until a newly optimized comparison arrives', async () => {
-    const h = harness(), original = JSON.stringify(h.roster); await openWaivers(h);
+    const h = harness({ idp: true }), original = JSON.stringify(h.roster); await openWaivers(h);
     const prior = h.lens, move = prior.selected;
     assert.equal(h.lens.ui.basis, 'projected'); assert.equal(h.calls[0].options.basis, 'projected');
     const basis = find(h.tree, node => node.type === 'select' && node.props['aria-label'] === 'Point comparison basis');
@@ -547,7 +548,7 @@ test('a late projected result cannot be relabeled as averages or overwrite the a
 });
 
 test('IDP average mode labels each asset source and keeps offensive projections distinct', async () => {
-    const h = harness(); await openWaivers(h); h.change('Point comparison basis', 'idp-average'); await h.flush();
+    const h = harness({ idp: true }); await openWaivers(h); h.change('Point comparison basis', 'idp-average'); await h.flush();
     assert.equal(h.calls.at(-1).options.basis, 'idp-average');
     const idp = candidate('idp-a', 'Tackle Leader', 3, 0, { basis: 'idp-average',
         incoming: [{ pid: 'idp-a', name: 'Tackle Leader', position: 'LB', projection: 0, comparisonBasis: 'average', averageGames: 5, averageSeason: '2026' }], season: { status: 'unavailable', delta: null } });
@@ -564,7 +565,7 @@ test('IDP average mode labels each asset source and keeps offensive projections 
 });
 
 test('average trade scenarios retain age-fit exploration and hand off the selected basis', async () => {
-    const h = harness(), originalStrategy = JSON.stringify(h.gm);
+    const h = harness({ idp: true }), originalStrategy = JSON.stringify(h.gm);
     h.input.skin = { type: 'dynasty', features: { showTrades: true } }; h.render(); h.click('Trades'); await h.flush();
     const first = h.calls[0]; h.change('Point comparison basis', 'average'); await h.flush(); const next = h.calls[1];
     assert.equal(next.options.basis, 'average');
@@ -1007,7 +1008,7 @@ test('lineup coverage outranks numeric upgrades and preserves unknown points and
 });
 
 test('conditional lineup gains stay labeled in collapsed rows and expanded previews without repeated gain copy', async () => {
-    const h = harness({ integrated: true });
+    const h = harness({ integrated: true, idp: true });
     await loadLineup(h, [lineupMove({ conditional: true, reason: '+4.6 projected points this week.' })]);
     const summary = find(rosterTrigger(h, 'starter'), node => node.props.className === 'wr-lens-bar-gain');
     assert.match(text(summary), /\+4\.6lineup ptsIf they play/);
@@ -1057,7 +1058,7 @@ test('lineup schedule refresh runs only while visible and stops when its lens is
 });
 
 test('lineup week rollover clamps the selected week and missing comparisons remain explicit', async () => {
-    const h = harness(); await loadLineup(h);
+    const h = harness({ idp: true }); await loadLineup(h);
     h.root.App.WeeklyProj.currentWeek = () => 7;
     [...h.timers.values()][0].fn(); h.render(); await h.flush();
     assert.equal(h.lens.ui.week, 7); assert.equal(h.calls.at(-1).options.week, 7);
@@ -1071,7 +1072,7 @@ test('lineup week rollover clamps the selected week and missing comparisons rema
 
 
 for (const mode of ['lineup', 'waivers', 'trades']) test(mode + ' average windows are explicit and retained within the league', async () => {
-    const h = harness(); h.lens.setMode(mode); h.render(); await h.flush();
+    const h = harness({ idp: true }); h.lens.setMode(mode); h.render(); await h.flush();
     assert(!find(h.tree, node => node.props['aria-label'] === 'Average points window'), 'Projected comparisons do not show an average window');
     h.change('Point comparison basis', 'average'); await h.flush();
     const selector = find(h.tree, node => node.props['aria-label'] === 'Average points window');
@@ -1114,7 +1115,7 @@ test('changing an average window invalidates visible moves and late responses wi
 });
 
 test('average acquisition previews label both players with their chosen sample and keep offense projections distinct', async () => {
-    const h = harness(); await loadWaivers(h);
+    const h = harness({ idp: true }); await loadWaivers(h);
     h.change('Point comparison basis', 'idp-average'); h.change('Average points window', '3'); await h.flush();
     const move = candidate('idp-recent', 'Recent Defender', 2, 0, { incoming: [{ pid: 'idp-recent', name: 'Recent Defender', position: 'LB', projection: 0, comparisonBasis: 'average', averageWindow: '3', averageGames: 2, averageSeason: '2026' }], outgoing: [{ pid: 'bench', name: 'Bench Runner', projection: -2, comparisonBasis: 'average', averageWindow: '3', averageGames: 3 }], season: { status: 'unavailable', delta: null } });
     h.calls.at(-1).resolve({ ...ready([move]), basis: 'idp-average', averageWindow: '3' }); await h.flush(); chooseMove(h);
@@ -1139,4 +1140,16 @@ test('lineup handoff comparison preserves unknown, genuine zero and signed value
         assert.deepEqual(JSON.parse(JSON.stringify(h.root.WR.lineupLensContext.comparison)), expected);
         assert.equal(h.writes.length, 0);
     }
+});
+
+test('non-IDP leagues hide the mixed average and clear a stale IDP comparison', async () => {
+    const h = harness({ idp: true }); await openWaivers(h);
+    h.change('Point comparison basis', 'idp-average'); await h.flush();
+    assert.equal(h.lens.ui.basis, 'idp-average');
+    h.input.league = { ...h.league, roster_positions: ['QB', 'RB', 'WR', 'DEF', 'BN'] };
+    h.render(); await h.flush();
+    const picker = find(h.tree, n => n.type === 'select' && n.props['aria-label'] === 'Point comparison basis');
+    assert.deepEqual(all(picker, n => n.type === 'option').map(n => n.props.value), ['projected', 'average']);
+    assert.equal(h.lens.ui.basis, 'projected');
+    assert.equal(h.calls.at(-1).options.basis, 'projected');
 });

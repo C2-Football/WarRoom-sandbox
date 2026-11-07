@@ -2081,13 +2081,17 @@
 
     // ── Strategy sub-view — embeds the existing StrategyEditorTab ──────
     function StrategySubview({ props }) {
+        const phone = !!window.WR.useViewport().isPhone;
+        const leagueType = props.leagueSkin?.type || window.App?.LeagueSkin?.build?.({ league: props.currentLeague })?.type
+            || ({ 0: 'redraft', 1: 'keeper', 2: 'dynasty', 3: 'chopped' })[props.currentLeague?.settings?.type];
+        const showDirection = !phone || ['dynasty', 'empire'].includes(leagueType);
         const gm = window.WR.GmMode.useGmEffects(props.currentLeague);
         const assessment = typeof window.assessTeamFromGlobal === 'function' ? window.assessTeamFromGlobal(props.myRoster?.roster_id) : null;
         if (typeof window.StrategyEditorTab !== 'function') {
             return h('div', { style: { padding: '40px', textAlign: 'center', color: 'var(--silver)' } }, 'Strategy editor module not loaded.');
         }
         return h(React.Fragment, null,
-            h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '8px 20px', padding: '12px 16px', marginBottom: '12px', border: '1px solid var(--acc-line1, rgba(212,175,55,.2))', borderRadius: 'var(--card-radius-sm, 8px)', color: 'var(--silver)', fontSize: '.8rem', lineHeight: 1.5 } },
+            showDirection && h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '8px 20px', padding: '12px 16px', marginBottom: '12px', border: '1px solid var(--acc-line1, rgba(212,175,55,.2))', borderRadius: 'var(--card-radius-sm, 8px)', color: 'var(--silver)', fontSize: '.8rem', lineHeight: 1.5 } },
                 h('span', null, 'Your plan: ', h('strong', { style: { color: 'var(--gold)' } }, gm.hasStrategy ? (gm.modeLabel || gm.mode) : 'Choose below')),
                 h('span', null, 'Current assessment: ', h('strong', { style: { color: 'var(--white)' } }, assessment?.tier ? String(assessment.tier).toLowerCase().replace(/^./, c => c.toUpperCase()) : 'Awaiting roster data')),
                 h('span', { style: { flexBasis: '100%' } }, 'Your plan guides future moves. The assessment describes the roster you have today.')

@@ -11,7 +11,7 @@
     const pidOf = asset => text(asset?.pid || asset?.id);
     const nameOf = asset => asset?.name || asset?.player?.full_name || 'Player';
     const metricOf = (candidate, horizon) => candidate?.[horizon === 'season' ? 'season' : 'weekly'];
-    const normalizeBasis = basis => ['average', 'idp-average'].includes(basis) ? basis : 'projected';
+    const normalizeBasis = (basis, league) => basis === 'idp-average' && root.App?.RosterLensBasis?.hasIdp?.(league) ? 'idp-average' : basis === 'average' ? 'average' : 'projected';
     const normalizeWindow = value => ['3', '5'].includes(String(value)) ? String(value) : 'season';
     const averageWindowOf = (lens, asset) => normalizeWindow(asset?.averageWindow || lens.ui.averageWindow);
     const averageLabel = (lens, asset) => (averageWindowOf(lens, asset) === 'season' ? 'Season' : 'L' + averageWindowOf(lens, asset)) + ' avg';
@@ -108,7 +108,7 @@
         // Scope is checked during render too, so old recommendations never flash
         // for a newly selected account or league before its reset effect runs.
         const scopedUi = state.scope === scope ? state : initial(scope);
-        const basis = normalizeBasis(scopedUi.basis);
+        const basis = normalizeBasis(scopedUi.basis, input.league);
         const firstWeek = currentWeek(input);
         const allowSeasonView = scopedUi.mode !== 'lineup' && input.skin?.type !== 'chopped' && (basis === 'projected' || scopedUi.mode === 'trades' && dynastyOf(input));
         const ui = { ...scopedUi, basis, averageWindow: normalizeWindow(scopedUi.averageWindow), week: Math.max(firstWeek, Math.min(18, Number(scopedUi.week) || firstWeek)), horizon: allowSeasonView ? scopedUi.horizon : 'week' };
@@ -274,7 +274,7 @@
             loading: mode !== 'off' && (!result || result.status === 'loading'), seasonLoading: seasonNeeded && selected?.season?.status === 'loading',
             setMode, choose, clear, openReview, savePlan, openModule, openIncoming,
             setHorizon: horizon => update({ horizon: allowSeasonView ? horizon : 'week', selected: selected?.id || '', notice: '', error: false }),
-            setBasis: next => update({ basis: normalizeBasis(next), horizon: 'week', selected: null, review: false, bid: '', notice: '', error: false }),
+            setBasis: next => update({ basis: normalizeBasis(next, input.league), horizon: 'week', selected: null, review: false, bid: '', notice: '', error: false }),
             setAverageWindow: next => update({ averageWindow: normalizeWindow(next), selected: null, review: false, bid: '', notice: '', error: false }),
             setWeek: next => { if (mode === 'lineup') update({ week: Math.max(firstWeek, Math.min(18, Number(next) || firstWeek)), selected: null, review: false, notice: '', error: false }); },
             explore: next => update({ exploreMode: next, selected: null, review: false, notice: '', error: false }),
@@ -331,7 +331,7 @@
                     {lens.mode === 'trades' && dynasty && <label className="wr-lens-strategy"><span>{strategy?.source === 'saved' || lens.input.gm?.hasStrategy ? 'Saved plan' : 'GM direction'}: <strong>{strategy?.savedLabel || lens.input.gm?.modeLabel || 'Compete'}</strong></span>
                         <select aria-label="Explore a trade strategy without saving it" value={lens.ui.exploreMode || ''} onChange={event => lens.explore(event.target.value || null)}><option value="">Follow my plan</option><option value="win_now">Explore win now</option><option value="rebuild">Explore rebuild</option><option value="compete">Explore compete</option></select>
                     </label>}
-                    <div className={"wr-lens-tools" + (lens.ui.basis !== 'projected' ? ' has-average-window' : '')}><select className="wr-lens-basis" aria-label="Point comparison basis" value={lens.ui.basis} onChange={event => lens.setBasis(event.target.value)}><option value="projected">Projected</option><option value="average">Avg points</option><option value="idp-average">IDP avg</option></select>
+                    <div className={"wr-lens-tools" + (lens.ui.basis !== 'projected' ? ' has-average-window' : '')}><select className="wr-lens-basis" aria-label="Point comparison basis" value={lens.ui.basis} onChange={event => lens.setBasis(event.target.value)}><option value="projected">Projected</option><option value="average">Avg points</option>{root.App?.RosterLensBasis?.hasIdp?.(lens.input.league) && <option value="idp-average">IDP avg</option>}</select>
                         {lens.ui.basis !== 'projected' && <select className="wr-lens-average-window" aria-label="Average points window" value={normalizeWindow(lens.ui.averageWindow)} onChange={event => lens.setAverageWindow(event.target.value)}><option value="3">Last 3 games</option><option value="5">Last 5 games</option><option value="season">Season</option></select>}
                         {lineup && <select className="wr-lens-week" aria-label="Lineup week" value={lens.ui.week} onChange={event => lens.setWeek(event.target.value)}>{Array.from({ length: 19 - lens.firstWeek }, (_, index) => lens.firstWeek + index).map(week => <option key={week} value={week}>Wk {week}{week === lens.firstWeek ? ' · Current' : ''}</option>)}</select>}
                         {showHorizon && <div className="wr-lens-horizons" role="group" aria-label="Acquisition projection horizon"><button type="button" aria-pressed={lens.ui.horizon === 'week'} onClick={() => lens.setHorizon('week')}>{lens.mode === 'trades' ? 'Next full week' : 'This week'}</button><button type="button" aria-pressed={lens.ui.horizon === 'season'} onClick={() => lens.setHorizon('season')}>{lens.mode === 'trades' && dynasty ? 'Future fit' : 'Season'}</button></div>}
