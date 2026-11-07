@@ -9,7 +9,7 @@ const ROOT = path.join(__dirname, '..');
 // dhq-shared, not reconai (retired/archived) — dhq-shared is the canonical
 // source app-config.js/bug-capture.js are vendored from; reconai's copies
 // were always byte-identical, this just points at the source that still exists.
-const SHARED_ROOT = path.resolve(ROOT, '..', 'dhq-shared');
+const SHARED_ROOT = process.env.SHARED_SOURCE || path.join(ROOT, 'reconai-shared');
 const rootIndex = read(ROOT, 'index.html');
 const core = read(ROOT, 'js/core.js');
 const components = read(ROOT, 'js/components.js');

@@ -9,21 +9,14 @@ const ROOT = path.join(__dirname, '..');
 // dhq-shared, not reconai (retired/archived) — canonical source bug-capture.js/
 // supabase-client.js are vendored from; reconai's copies were always
 // byte-identical, this just points at the source that still exists.
-const SHARED_ROOT = path.resolve(ROOT, '..', 'dhq-shared');
-// The analytics_rollups migration is the one piece still read from reconai's
-// own repo — analytics_events/ai_rate_limits were created by reconai's
-// migration history but are live War Room tables today (see the shared-
-// Supabase-project audit); the migration's canonical home never moved.
-// Archiving reconai doesn't delete the repo, just blocks pushes, so this
-// keeps working — but it does mean this one check needs a local reconai
-// checkout to exist at ../reconai.
-const RECON_ROOT = path.resolve(ROOT, '..', 'reconai');
+const SHARED_ROOT = process.env.SHARED_SOURCE || path.join(ROOT, 'reconai-shared');
+// The archived analytics migration is an immutable, provenance-recorded fixture.
 const fn = read(ROOT, 'supabase/functions/admin-analytics-report/index.ts');
 const admin = read(ROOT, 'admin.html');
 const landing = read(ROOT, 'landing.html');
 const permissionHardening = read(ROOT, 'supabase/migrations/20260508000000_supabase_permission_hardening.sql');
 const rollup = [
-  read(RECON_ROOT, 'supabase/migrations/016_analytics_rollups.sql'),
+  read(ROOT, 'tests/fixtures/analytics/016_analytics_rollups.sql'),
   read(ROOT, 'supabase/migrations/20260503020000_ai_margin_rollups.sql'),
 ].join('\n');
 const bugCapture = read(SHARED_ROOT, 'bug-capture.js');

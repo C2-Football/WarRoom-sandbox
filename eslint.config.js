@@ -45,6 +45,7 @@ module.exports = [
       "dist-deploy/**",
       "reconai-shared/**",
       "reports/**",
+      "output/**",
       "tests/**",
       "supabase/**",
       "**/*.min.js",

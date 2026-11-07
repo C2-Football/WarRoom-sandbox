@@ -3,13 +3,25 @@ on: [push, pull_request]
 jobs:
   lint:
     runs-on: ubuntu-latest
+    env:
+      SHARED_SOURCE: ${{ runner.temp }}/dhq-shared
     steps:
       - uses: actions/checkout@v4
+      - name: Checkout pinned shared engine
+        uses: actions/checkout@v4
+        with:
+          repository: C2-Football/dhq-shared
+          ref: 3f18b9fde9ea8aa183f4ea2f23e279408ea12c40
+          path: shared-src
+      - name: Place dependency outside application lint scope
+        run: mv shared-src "$SHARED_SOURCE"
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
       - run: npm ci
+      - name: Sync pinned shared engine
+        run: npm run sync:shared
       - run: npx eslint . --ext .js
       - name: Run all regression suites
         run: npm test
