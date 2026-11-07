@@ -3,8 +3,6 @@ on: [push, pull_request]
 jobs:
   lint:
     runs-on: ubuntu-latest
-    env:
-      SHARED_SOURCE: ${{ runner.temp }}/dhq-shared
     steps:
       - uses: actions/checkout@v4
       - name: Checkout pinned shared engine
@@ -14,7 +12,9 @@ jobs:
           ref: 3f18b9fde9ea8aa183f4ea2f23e279408ea12c40
           path: shared-src
       - name: Place dependency outside application lint scope
-        run: mv shared-src "$SHARED_SOURCE"
+        run: |
+          mv shared-src "$RUNNER_TEMP/dhq-shared"
+          echo "SHARED_SOURCE=$RUNNER_TEMP/dhq-shared" >> "$GITHUB_ENV"
       - uses: actions/setup-node@v4
         with:
           node-version: 20
