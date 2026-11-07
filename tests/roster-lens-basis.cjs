@@ -203,7 +203,10 @@ test('waiver fit and incoming asset use average before optimization, with no fal
     assert.notEqual(average.scope, projected.scope); assert.match(candidate.reason, /current-season average/);
     f.args.statsData.old.season = 2025;
     const missing = f.waiver.evaluate({ ...f.args, basis: 'average', week: 6 });
-    assert.equal(missing.readiness.weekly, false); assert(!missing.candidates.some(c => c.weekly.delta != null));
+    assert.equal(missing.readiness.weekly, true, 'The other known starter still supports a measured comparison');
+    const partial = missing.candidates.find(c => c.pid === 'add');
+    assert.equal(partial.weekly.before, 1, 'Prior-season data never becomes a current average');
+    assert.equal(partial.weekly.delta, 11); assert.equal(partial.weekly.partial, true);
 });
 test('MLB/NT/IDL candidates fill their legal LB/DL slots in the canonical waiver read', () => {
     const f = fixture();

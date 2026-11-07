@@ -106,6 +106,24 @@ assert.equal(absentBaseline.readiness.season,false);
 assert.match(absentBaseline.candidates[0].season.reason,/Starter WR/);
 const wrongWeek=Lens.evaluate({...conditionalArgs,rosState:{...conditionalArgs.rosState,week:5}});
 assert.equal(wrongWeek.readiness.season,false,'Conditional baseline never bypasses scope checks');
+// A missing average must not block unrelated, fully measured swaps in any format.
+for (const [type,code] of [['redraft',0],['keeper',1],['dynasty',2],['best_ball',0]]) {
+    const averageArgs={...choppedAverage,league:{...league,settings:{...league.settings,type:code}},
+        skin:{type,phase:'in_season'},rosters};
+    const partial=Lens.evaluate(averageArgs), upgrade=partial.candidates.find(c=>c.pid==='add');
+    assert.equal(partial.status,'ready',type+': '+partial.reason);
+    assert.equal(upgrade?.weekly.delta,3,type+': compare only measured lineup slots');
+    assert.equal(upgrade.weekly.partial,true);
+    assert.equal(upgrade.dropPid,'b');
+    assert.match(partial.comparisonNote,/Unscored starters/i);
+    assert(!partial.candidates.some(c=>c.pid==='unknownReplacement'),type+': unknown starter cannot count as zero');
+    const missing=Lens.evaluate({...averageArgs,statsData:{}});
+    assert.equal(missing.status,'unavailable');
+    assert.equal(missing.suggestProjected,true,type+': offer projections when no averages can be compared');
+    const projected=Lens.evaluate({...averageArgs,basis:'projected',
+        projectionsByPid:{...args.projectionsByPid,w:null},rosState:null});
+    assert.equal(projected.status,'unavailable',type+': missing forecasts still require a complete comparison');
+}
 console.log('PASS roster waiver lens: real legal FLEX alternatives, stable drop/horizons, protected assets, zero/missing forecasts, scope, roster ownership, restrictions and claim handoff');
 (async()=>{
     checkChopped(await Lens.load(choppedArgs));
