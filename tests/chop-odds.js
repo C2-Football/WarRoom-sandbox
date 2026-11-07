@@ -253,9 +253,11 @@ test('a run without myRosterId does not poison the cache', () => {
 });
 
 // ── FAAB pacing against the survival horizon ────────────────────────
+require('../js/shared/waiver-roster-read.js');
 const Faab = require('../js/shared/faab-engine.js');
+const bidPlayers = { x: { position: 'RB' }, y: { position: 'RB' } };
 const faabLeague = (used) => ({
-  league_id: 'CHOP', settings: { type: 3, last_chopped_leg: 17, waiver_budget: 10000 },
+  league_id: 'CHOP', total_rosters: 2, scoring_settings: { rush_yd: 0.1 }, settings: { type: 3, last_chopped_leg: 17, waiver_budget: 10000 },
   roster_positions: ['QB', 'RB', 'WR', 'FLEX'],
   users: [],
   rosters: [
@@ -273,7 +275,7 @@ const faabTxns = () => {
 };
 
 test('pacing: a short horizon lifts the spend cap — unspent budget is wasted', () => {
-  const args = { league: faabLeague(2000), myRosterId: 1, playersData: { p1: { position: 'RB' } }, txns: faabTxns(), targetPos: 'RB', targetStrength: 0.5 };
+  const args = { league: faabLeague(2000), myRosterId: 1, playersData: { ...bidPlayers, p1: { position: 'RB' } }, txns: faabTxns(), targetPos: 'RB', targetStrength: 0.5 };
   const long = Faab.analyze({ ...args, horizonWeeks: 12 });
   const short = Faab.analyze({ ...args, horizonWeeks: 1.2 });
   assert.strictEqual(long.pacing.cap, 0.65, 'a long horizon keeps the normal cap');
@@ -283,7 +285,7 @@ test('pacing: a short horizon lifts the spend cap — unspent budget is wasted',
 test('pacing: flags hoarding when the burn rate leaves budget on the table', () => {
   // $8,000 left, ~$200/wk pace, 6 weeks expected → ~$6,800 unspent at death.
   const out = Faab.analyze({
-    league: faabLeague(2000), myRosterId: 1, playersData: {}, txns: faabTxns(),
+    league: faabLeague(2000), myRosterId: 1, playersData: bidPlayers, txns: faabTxns(),
     targetPos: 'RB', targetStrength: 0.5, horizonWeeks: 6,
   });
   assert.ok(out.pacing, 'pacing reported');
@@ -296,14 +298,26 @@ test('pacing: a team spending to its horizon reads on-pace', () => {
   const txns = [];
   for (let w = 1; w <= 8; w++) txns.push({ type: 'waiver', status: 'complete', leg: w, roster_ids: [1], adds: { y: 1 }, settings: { waiver_bid: 1000 } });
   const out = Faab.analyze({
-    league: faabLeague(8000), myRosterId: 1, playersData: {}, txns,
+    league: faabLeague(8000), myRosterId: 1, playersData: bidPlayers, txns,
     targetPos: 'RB', targetStrength: 0.5, horizonWeeks: 3,
   });
   assert.strictEqual(out.pacing.verdict, 'on-pace', 'spending $1000/wk with $2000 left and 3 weeks to go');
   assert.strictEqual(out.pacing.projectedUnspent, 0);
 });
+test('pacing uses all positions while the bid range uses only the target position', () => {
+  const txns = faabTxns().map(t => t.roster_ids[0] === 1 ? { ...t, settings: { waiver_bid: 1000 } } : t);
+  txns.push({ type: 'waiver', status: 'failed', leg: 8, roster_ids: [1], adds: { z: 1 }, settings: { waiver_bid: 5000 } });
+  txns.push(txns[0], { ...txns[1], transaction_id: 'other-league', league_id: 'elsewhere' });
+  const out = Faab.analyze({ league: faabLeague(8000), myRosterId: 1,
+    playersData: { x: { position: 'RB' }, y: { position: 'WR' }, z: { position: 'WR' } }, txns,
+    targetPos: 'RB', horizonWeeks: 3 });
+  assert.strictEqual(out.pacing.myPacePerWeek, 1000, 'completed WR spending contributes to total budget pace');
+  assert.strictEqual(out.pacing.projectedUnspent, 0);
+  assert.strictEqual(out.sampleSize, 8, 'WR transactions do not enter the RB historical bid sample');
+  assert.strictEqual(out.rec.bid, 500);
+});
 test('pacing: absent horizon leaves the engine byte-identical to before', () => {
-  const args = { league: faabLeague(2000), myRosterId: 1, playersData: {}, txns: faabTxns(), targetPos: 'RB', targetStrength: 0.5 };
+  const args = { league: faabLeague(2000), myRosterId: 1, playersData: bidPlayers, txns: faabTxns(), targetPos: 'RB', targetStrength: 0.5 };
   const out = Faab.analyze(args);
   assert.strictEqual(out.pacing, null, 'no horizon → no pacing block');
   const withLong = Faab.analyze({ ...args, horizonWeeks: 12 });

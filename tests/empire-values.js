@@ -15,11 +15,8 @@ const WeeklyProj = require('../js/shared/weekly-proj.js');
 window.App.StartSit = window.App.StartSit || StartSit;
 window.App.WeeklyProj = window.App.WeeklyProj || WeeklyProj;
 window.App.normPos = p => String(p || '').toUpperCase();
-window.calcFantasyPts = (line, sc) => {
-  let t = 0;
-  for (const k in (sc || {})) if (typeof sc[k] === 'number' && line && line[k] != null) t += line[k] * sc[k];
-  return Math.round(t * 10) / 10;   // mirror the real engine's tenth-point rounding
-};
+// Use the shipped position-aware scorer, including TE reception premiums.
+require('../reconai-shared/sleeper-api.js');
 require('../js/utils/player-value.js');
 const EV = require('../js/shared/empire-values.js');
 const PV = window.App.PlayerValue;
@@ -41,7 +38,7 @@ const PLAYERS = {}, PROJ = {};
 function addPool(prefix, pos, n, build) {
   for (let i = 1; i <= n; i++) {
     const id = prefix + i;
-    PLAYERS[id] = { position: pos, full_name: pos + ' ' + i };
+    PLAYERS[id] = { position: pos, full_name: pos + ' ' + i, team: 'KC', status: 'Active' };
     PROJ[id] = Object.assign({ gp: 17 }, build(i));
   }
 }
@@ -132,7 +129,7 @@ test('identical leagues quote identical prices — nothing drifts on its own', (
 test('one freak valuation cannot rescale a league board', () => {
   // A league that scores a single stat absurdly — the shape of the real
   // IDP-scored-team-defense artifact that compressed a whole board.
-  const freakPlayers = { ...PLAYERS, freak: { position: 'K', full_name: 'Freak Kicker' } };
+  const freakPlayers = { ...PLAYERS, freak: { position: 'K', full_name: 'Freak Kicker', team: 'KC' } };
   const freakProj = { ...PROJ, freak: { gp: 17, fgm: 400 } };
   const out = EV.build({
     leagues: [

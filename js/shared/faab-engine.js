@@ -100,10 +100,11 @@
         const seen = new Set();
         const txns = (opts?.txns || []).filter(t => {
             const ids = Object.keys(t.adds || {}), key = t.transaction_id || JSON.stringify([ids,t.roster_ids,t.created,t.leg,t.settings?.waiver_bid]);
-            if (seen.has(key) || ids.length !== 1 || playersData?.[ids[0]]?.position !== pos || t.league_id && String(t.league_id) !== String(league.league_id || league.id)) return false;
+            if (seen.has(key) || ids.length !== 1 || t.league_id && String(t.league_id) !== String(league.league_id || league.id)) return false;
             seen.add(key); return true;
         });
-        const bids = extractBids(txns, budget);
+        const allBids = extractBids(txns, budget);
+        const bids = allBids.filter(b => playersData?.[b.pid]?.position === pos);
         const coldStart = bids.length < 5;
         const pctsSorted = bids.map(b => b.pct).sort((a, b) => a - b);
         const P = coldStart ? DEFAULT_PCTS : {
@@ -179,12 +180,12 @@
 
         // Burn rate vs the horizon: what you can afford to spend per week, and
         // what you are on track to LEAVE ON THE TABLE if you keep pacing at
-        // the league's average weekly outlay.
+        // your completed weekly outlay across every position.
         const pacing = (horizonWeeks > 0) ? (() => {
             const perWeek = Math.round(myLeft / horizonWeeks);
-            // League's average weekly spend so far, as a pace comparison.
-            const weeksPlayed = Math.max(1, Math.max(...bids.map(b => b.week || 0), 0));
-            const myBids = bids.filter(b => String(b.rosterId) === myId && b.won);
+            // Budget pacing includes every position; the descriptive bid range above stays position-specific.
+            const weeksPlayed = Math.max(1, Math.max(...allBids.map(b => b.week || 0), 0));
+            const myBids = allBids.filter(b => String(b.rosterId) === myId && b.won);
             const mySpend = myBids.reduce((s, b) => s + b.bid, 0);
             const myPace = Math.round(mySpend / weeksPlayed);
             const projectedUnspent = Math.max(0, Math.round(myLeft - myPace * horizonWeeks));

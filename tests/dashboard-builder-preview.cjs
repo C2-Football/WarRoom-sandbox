@@ -33,7 +33,7 @@ function harness() {
     };
 }
 const roster = { roster_id: 1, owner_id: 'owner', players: ['r'], starters: ['r'], settings: {} };
-const league = { league_id: '1234567890123456789', settings: { type: 2 }, roster_positions: ['RB', 'WR', 'BN'], rosters: [roster, { roster_id: 2, owner_id: 'other', players: [] }] };
+const league = { total_rosters: 2, scoring_settings: { rec: 1 }, league_id: '1234567890123456789', settings: { type: 2 }, roster_positions: ['RB', 'WR', 'BN'], rosters: [roster, { roster_id: 2, owner_id: 'other', players: [] }] };
 
 for (const readOnly of [true, false]) {
     const h = harness();
@@ -64,6 +64,7 @@ console.log('PASS Intel preview keeps evidence without publishing lineup/trade o
 for (const readOnly of [true, false]) {
     const h = harness();
     h.window.App.Intelligence = { publishRecommendations: (...args) => h.published.push(args) };
+    vm.runInContext(source('js/shared/waiver-roster-read.js'), h.ctx);
     h.window.App.buildFaRosterRead = () => ({ known: true, rows: [], owned: [] });
     const faSource = source('js/free-agency.js');
     vm.runInContext(faSource.slice(0, faSource.indexOf('    // ── UDFA craze')), h.ctx);

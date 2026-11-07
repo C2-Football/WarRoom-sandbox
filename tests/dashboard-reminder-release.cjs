@@ -28,6 +28,9 @@ try {
     write('reminder-unsubscribe.html', '<!doctype html><script src="js/shared/reminder-unsubscribe.js"></script>');
     write('js/shared/reminder-unsubscribe.js', 'window.unsubscribeFixture = true;\n');
     write('dashboard-reminder-sw.js', fs.readFileSync(path.join(root, 'dashboard-reminder-sw.js')));
+    // The production builder also emits these dynamically loaded history modules.
+    for (const file of ['value-history.js', 'supabase-client.js'])
+        write('reconai-shared/' + file, fs.readFileSync(path.join(root, 'reconai-shared', file)));
     write('data/duat/lore-catalog.json', '{}');
     const dashboardStyles = ['dashboard-lenses.css', 'dashboard-builder.css', 'dashboard-views.css', 'dashboard-reminders.css', 'lens-composition.css'];
     for (const style of dashboardStyles) write(style, fs.readFileSync(path.join(root, style)));

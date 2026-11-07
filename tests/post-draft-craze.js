@@ -247,7 +247,7 @@ console.log('\nWar Room post-draft protocol contract');
       u_wr: { full_name: 'Wr Udfa', position: 'WR', team: 'KC', years_exp: 0, status: 'Active' },
       u_te: { full_name: 'Te Udfa', position: 'TE', team: 'DAL', years_exp: 0, status: 'Active' },
     };
-    const currentLeague = { settings: { type: 2, waiver_budget: 100 }, season: 2026, rosters: [], roster_positions: ['QB', 'RB', 'WR', 'TE', 'FLEX'], scoring_settings: {} };
+    const currentLeague = { settings: { type: 2, waiver_budget: 100 }, season: 2026, total_rosters: 1, rosters: [{ roster_id: 1, players: [], settings: { waiver_budget_used: 0 } }], roster_positions: ['QB', 'RB', 'WR', 'TE', 'FLEX'], scoring_settings: { rec: 1 } };
     const board = ctx.App.buildUdfaCrazeBoard({ playersData, statsData: {}, prevStatsData: {}, myRoster: { roster_id: 1, players: [], settings: {} }, currentLeague });
     eq(board.total, 2, 'two signed UDFAs available (limbo excluded — no team)');
     const wrGroup = board.groups.find(g => g.pos === 'WR');
@@ -290,7 +290,7 @@ console.log('\nWar Room post-draft protocol contract');
       NE: { position: 'DEF', team: 'NE', status: 'Active' },                                                  // no name parts at all
       p_part: { last_name: 'Onlylast', position: 'RB', team: 'BUF', status: 'Active' },                       // partial name
     };
-    const currentLeague = { settings: { type: 2, waiver_budget: 100 }, season: 2026, rosters: [], roster_positions: ['QB', 'RB', 'WR', 'TE', 'DEF'], scoring_settings: {} };
+    const currentLeague = { settings: { type: 2, waiver_budget: 100 }, season: 2026, total_rosters: 1, rosters: [{ roster_id: 1, players: [], settings: { waiver_budget_used: 0 } }], roster_positions: ['QB', 'RB', 'WR', 'TE', 'DEF'], scoring_settings: { rec: 1 } };
     const board = ctx.App.buildFreeAgencyActionBoard({ playersData, statsData: {}, prevStatsData: {}, myRoster: { roster_id: 1, players: [], settings: {} }, currentLeague });
     const byPid = Object.fromEntries(board.actionBoardPlayers.map(x => [x.pid, x.name]));
     eq(byPid.KC, 'Kansas City Chiefs', 'DEF first+last');
@@ -318,7 +318,7 @@ console.log('\nWar Room post-draft protocol contract');
     te1:    { full_name: 'Tee End', position: 'TE', team: 'DAL', age: 26, status: 'Active', years_exp: 4 },
     old_rb: { full_name: 'Old RB',  position: 'RB', team: 'SEA', age: 33, status: 'Active', years_exp: 11 },
   };
-  const currentLeague = { league_id: 'GML', settings: { type: 2, waiver_budget: 100 }, season: 2026, rosters: [], roster_positions: ['QB', 'RB', 'WR', 'TE', 'FLEX'], scoring_settings: {} };
+  const currentLeague = { league_id: 'GML', settings: { type: 2, waiver_budget: 100 }, season: 2026, total_rosters: 1, rosters: [{ roster_id: 1, players: [], settings: { waiver_budget_used: 0 } }], roster_positions: ['QB', 'RB', 'WR', 'TE', 'FLEX'], scoring_settings: { rec: 1 } };
   const baseArgs = { playersData, statsData: {}, prevStatsData: {}, myRoster: { roster_id: 1, players: [], settings: {} }, currentLeague };
   const onBoard = (b, pid) => b.actionBoardPlayers.some(x => x.pid === pid);
 

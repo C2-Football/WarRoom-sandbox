@@ -347,12 +347,13 @@ const matchupPanel = node => String(node?.props?.className || '').split(/\s+/).i
     }
 
     // Reviewing actuals uses the submitted score feed even when the optimizer
-    // or the local starting plan disagrees. A mode change keeps those players.
+    // or the local starting plan disagrees. Started games stay in actual review.
     const review = await fixture({ initialView: 'matchup', withMatchup: true, forecasts: { a: { kind: 'pregame', points: 0 }, b: { kind: 'pregame', points: -5 }, c: { kind: 'first-view', points: 10 }, d: { kind: 'pregame', points: 12 } } });
     review.result.optimal.starters[0].pid = 'd';
     await review.render();
     let reviewPanel = select(review.out, matchupPanel);
-    assert.equal(button(reviewPanel, 'Actual vs proj').props['aria-pressed'], true, 'started submitted scores automatically select actual review');
+    assert.equal(reviewPanel.props['data-score-view'], 'actual', 'started submitted scores automatically select actual review');
+    assert(!button(reviewPanel, 'Actual vs proj') && !button(reviewPanel, 'Projection'), 'actual review needs no redundant display switch');
     assert.match(textOf(reviewPanel), /-2\.50You.*0\.00Them/, 'review header preserves provider zero and negative team totals');
     assert.doesNotMatch(textOf(reviewPanel), /Final points/, 'an incomplete opponent lineup cannot promote the whole matchup to a final');
     assert(!textOf(reviewPanel).includes('Win probability'), 'final actual totals are not mixed with a fresh win forecast');
@@ -364,11 +365,6 @@ const matchupPanel = node => String(node?.props?.className || '').split(/\s+/).i
     assert.match(textOf(actualReviewRows[1]), /Negative Starter-2\.50Pregame\s*-5\.0/, 'signed individual actuals stay distinct from projections');
     assert.match(textOf(actualReviewRows[2]), /Missing Starter—First view\s*10\.0/, 'missing actuals and non-pregame sources stay explicit');
     assert.match(textOf(actualReviewRows[1]), /Opponent.*Not reported—/, 'a truncated submitted opponent list stays unreported rather than an empty zero slot');
-    button(review.out, 'Projection').props.onClick(); await review.render();
-    assert.equal(button(review.out, 'Projection').props['aria-pressed'], true);
-    assert.deepEqual(ownReviewNames(review.out), ['Zero Starter', 'Negative Starter', 'Missing Starter'], 'projection mode reuses the submitted pairing instead of switching to the draft or ideal roster');
-    button(review.out, 'Actual vs proj').props.onClick(); await review.render();
-    assert.equal(button(review.out, 'Actual vs proj').props['aria-pressed'], true);
     const staleReview = await fixture({ initialView: 'matchup', withMatchup: true, scoreStatus: 'stale', scoreError: 'Refresh failed', forecasts: { a: { kind: 'pregame', points: 20 }, b: { kind: 'pregame', points: 20 } } });
     assert.match(textOf(select(staleReview.out, matchupPanel)), /Last available points/);
     button(staleReview.out, 'Show all players').props.onClick(); await staleReview.render();
@@ -377,22 +373,20 @@ const matchupPanel = node => String(node?.props?.className || '').split(/\s+/).i
     const actualWithoutProjection = await fixture({ initialView: 'matchup', withMatchup: true, noProjection: true });
     assert.match(textOf(select(actualWithoutProjection.out, matchupPanel)), /-2\.50You.*0\.00Them/, 'submitted actual review does not depend on optimizer projections being available');
 
-    // Both MyLineupTab render branches supply the selected league's current
-    // stats and players. The benchmark switch stays local to the comparison;
-    // assignments and stored actual/pregame records remain untouched.
-    for (const noProjection of [false, true]) {
-        const basis = await fixture({ initialView: 'matchup', withMatchup: true, withBasis: true, noProjection });
+    // Pregame benchmarks use the selected league's stats on phone and desktop.
+    // Kickoff switches to actuals; neither display can write lineup plans or baselines.
+    for (const width of [390, 1280]) {
+        const basis = await fixture({ initialView: 'matchup', width, upcoming: true, withMatchup: true, withBasis: true });
         const sourceRoster = JSON.stringify(basis.props.myRoster);
         const sourceProjections = JSON.stringify(basis.result.projections);
         const savedBefore = JSON.stringify([...basis.storage]);
-        button(basis.out, 'Projection').props.onClick(); await basis.render();
         const picker = select(basis.out, node => node.props['aria-label'] === 'Matchup point comparison basis');
-        assert(picker, noProjection ? 'Read-only actual review receives benchmark context without the optimizer' : 'Normal Game Day matchup receives benchmark context');
+        assert(picker, 'Pregame matchup receives the selected league benchmark context');
         picker.props.onChange({ target: { value: 'average' } }); await basis.render();
         const panel = select(basis.out, matchupPanel);
         assert.equal(panel.props['data-score-view'], 'average');
         assert.match(textOf(panel), /2026 average points/);
-        assert.match(textOf(select(panel, node => node.props.className === 'gd-matchup-totals')), /8\.0You.*—Them/, 'Unreported opponent slots do not become invented empirical zeroes');
+        assert.match(textOf(select(panel, node => node.props.className === 'gd-matchup-totals')), /8\.0You.*8\.0Them/, 'Pregame lineups use league-scored averages on both sides');
         button(basis.out, 'Show all players').props.onClick(); await basis.render();
         const myRows = all(select(basis.out, matchupPanel)).filter(node => node.props['data-slot-index'] != null);
         assert.match(textOf(myRows[0]), /Zero Starter10\.0Avg · 4 games/);
@@ -402,8 +396,9 @@ const matchupPanel = node => String(node?.props?.className || '').split(/\s+/).i
         basis.props.statsSeason = 2025; await basis.render();
         assert.match(textOf(select(select(basis.out, matchupPanel), node => node.props.className === 'gd-matchup-totals')), /—You.*—Them/, 'The explicitly supplied stats season takes precedence over the league label');
         basis.props.statsSeason = 2026; await basis.render();
-        button(basis.out, 'Actual vs proj').props.onClick(); await basis.render();
-        assert.match(textOf(select(basis.out, matchupPanel)), /-2\.50You.*0\.00Them/, 'Returning to actuals restores the provider scores');
+        await basis.kickoff('KC');
+        assert.equal(select(basis.out, matchupPanel).props['data-score-view'], 'actual', 'Kickoff restores submitted actual scores automatically');
+        assert(!select(basis.out, node => node.props['aria-label'] === 'Matchup point comparison basis'), 'Historical averages cannot replace live actual scoring');
         assert.equal(JSON.stringify(basis.props.myRoster), sourceRoster);
         assert.equal(JSON.stringify(basis.result.projections), sourceProjections);
         assert.equal(JSON.stringify([...basis.storage]), savedBefore, 'Display selection cannot write lineup plans or captured pregame records');
@@ -453,6 +448,10 @@ const matchupPanel = node => String(node?.props?.className || '').split(/\s+/).i
         await f.loadForm('c', form(0));
         assert(select(f.out, n => n.props.className === 'lineup-injury is-danger' && textOf(n) === 'Doubtful'));
         assert(select(f.out, n => n.props.className === 'lineup-injury is-caution' && textOf(n) === 'Questionable'));
+        const unsafeApply = button(f.out, 'Apply Optimal') || button(f.out, 'Use optimal in my plan');
+        assert(!unsafeApply || unsafeApply.props.disabled, 'Unknown participation cannot be auto-filled as confirmed availability');
+        delete f.props.playersData.b.injury_status; delete f.props.playersData.c.injury_status;
+        await f.render();
         const apply = async () => {
             const applyButton = button(f.out, 'Apply Optimal') || button(f.out, 'Use optimal in my plan');
             if (applyButton) { assert(!applyButton.props.disabled); applyButton.props.onClick(); await f.render(); }
