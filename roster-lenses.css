@@ -164,7 +164,20 @@
   .wr-lens-preview.is-inline>.wr-lens-impact>.wr-lens-gain small{font-size:11px}
   .wr-lens-preview.is-inline>.wr-lens-actions{margin-top:5px}
 }
-@media(max-width:767px){.wr-lens-strategy{flex-basis:100%;justify-content:space-between}.wr-lens-strategy>span{flex:1;min-width:100px}.wr-lens-strategy select{flex:0 1 160px;min-width:150px;max-width:180px}.wr-mission-control .wr-roster-lens-active .wr-roster-mobile-summary-main{padding-block:8px}.wr-mission-control .wr-roster-lens-active .wr-roster-mobile-summary h2{font-size:13px}.wr-mission-control .wr-roster-lens-active .wr-roster-mobile-capacity strong{font-size:17px}}
+@media(max-width:767px){.wr-lens-strategy{flex-basis:100%;justify-content:space-between}.wr-lens-strategy>span{flex:1;min-width:100px}.wr-lens-strategy select{flex:0 1 160px;min-width:150px;max-width:180px}}
 @media(min-width:768px){.wr-roster-lens{max-width:860px;width:100%}.wr-lens-switch{max-width:430px}.wr-lens-preview{max-width:760px}.wr-lens-context{justify-content:flex-start;gap:15px}}
 @media(max-width:370px){.wr-lens-context{gap:3px}.wr-lens-impact>div>strong{font-size:20px}.wr-lens-row{padding-inline:8px}.wr-lens-incoming{gap:8px}.wr-lens-gain{font-size:15px}.wr-roster-mobile-player[data-wr-lens-state] .wr-lens-source-badge{display:none}}
 @media(prefers-reduced-motion:no-preference){.wr-lens-preview{animation:wr-lens-lower .2s ease-out;transform-origin:top}@keyframes wr-lens-lower{from{transform:translateY(-5px)}to{transform:translateY(0)}}}
+
+
+@media(max-width:767px){
+  .wr-main-content:has(.wr-roster-lens-active) > .header,
+  .wr-main-content:has(.wr-roster-lens-active) > .wr-workspace-header,
+  .wr-roster-lens-active .wr-roster-mobile-summary{display:none!important}
+  .wr-roster-mobile.wr-roster-lens-active{padding-top:calc(8px + var(--sat,0px))!important}
+  .wr-roster-lens-active .wr-roster-sort-header{padding-inline:4px;background:transparent}
+  .wr-roster-lens-active .wr-roster-sort-header .wr-roster-order-picker{min-height:36px;padding-block:0;font-size:12px!important}
+  .wr-roster-lens-active .wr-roster-sort-header .mc-sort-button,
+  .wr-roster-lens-active .wr-roster-sort-header .mc-sort-static{min-height:36px;padding-block:0;font-size:9px}
+  .wr-roster-lens-active .wr-roster-sort-header .mc-sort-arrow{font-size:8px}
+}
