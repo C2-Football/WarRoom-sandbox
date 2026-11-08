@@ -152,6 +152,7 @@
         const rows = ledger.rows || [];
         if (rows.length < 2) return null;
         const st = league.settings || {};
+        const medianEnabled = Number(st.league_average_match) === 1;
         const playoffTeams = Math.max(2, Math.min(rows.length, Number(st.playoff_teams) || 6));
         // Bye slots = seeds that skip round 1 of a power-of-two bracket.
         const byeSlots = (Math.pow(2, Math.ceil(Math.log2(playoffTeams))) - playoffTeams) || 0;
@@ -161,10 +162,25 @@
         const divOf = {};
         let divTagged = 0;
         (league.rosters || []).forEach(r => {
-            const d = r.settings && Number(r.settings.division);
-            if (d > 0) { divOf[String(r.roster_id)] = d; divTagged++; }
+            const raw = r.settings?.division, d = Number(raw);
+            if (raw != null && String(raw).trim() !== '' && Number.isFinite(d) && d >= 0) { divOf[String(r.roster_id)] = d; divTagged++; }
         });
-        const usedDivisions = nDiv >= 2 && divTagged >= rows.length;
+        const usedDivisions = nDiv >= 2 && divTagged === rows.length && new Set(Object.values(divOf)).size === nDiv;
+
+        // Luck's ledger counts H2H decisions. Median leagues add a separate
+        // decision per played week without counting fantasy points twice.
+        const initialWins = Object.fromEntries(rows.map(t => {
+            const medianWins = medianEnabled ? t.weekly.reduce((sum,g) => {
+                const scores = ledger.weeklyScores?.[g.week];
+                const raw = scores?.find(row => String(row.rosterId) === String(t.rosterId))?.points;
+                const sorted = scores?.map(row => row.points).filter(Number.isFinite).sort((a,b) => a-b);
+                const mid = sorted ? Math.floor(sorted.length/2) : 0;
+                const median = sorted?.length ? sorted.length%2 ? sorted[mid] : (sorted[mid-1]+sorted[mid])/2 : g.median;
+                const points = Number.isFinite(raw) ? raw : g.pts;
+                return sum + (Number.isFinite(median) ? points > median ? 1 : points === median ? 0.5 : 0 : 0);
+            },0) : 0;
+            return [String(t.rosterId),t.wins+t.ties/2+medianWins];
+        }));
 
         const dists = fitDists(rows);
         const futureWeeks = Object.keys(futurePairs).map(Number).sort((a, b) => a - b);
@@ -185,19 +201,28 @@
 
         for (let s = 0; s < sims; s++) {
             const wins = {}, pf = {};
-            rows.forEach(t => { wins[String(t.rosterId)] = t.wins + t.ties / 2; pf[String(t.rosterId)] = t.pf; });
+            rows.forEach(t => { wins[String(t.rosterId)] = initialWins[String(t.rosterId)]; pf[String(t.rosterId)] = t.pf; });
 
             let myCurResult = null;
             for (const w of futureWeeks) {
+                const scores = {};
+                if (medianEnabled) rows.forEach(t => {
+                    const id = String(t.rosterId); scores[id] = sample(dists[id]); pf[id] += scores[id];
+                });
                 for (const pair of futurePairs[w]) {
                     const a = String(pair[0]), b = String(pair[1]);
                     if (!dists[a] || !dists[b]) continue;
-                    const pa = sample(dists[a]), pb = sample(dists[b]);
-                    pf[a] += pa; pf[b] += pb;
+                    const pa = medianEnabled ? scores[a] : sample(dists[a]), pb = medianEnabled ? scores[b] : sample(dists[b]);
+                    if (!medianEnabled) { pf[a] += pa; pf[b] += pb; }
                     if (pa >= pb) wins[a] += 1; else wins[b] += 1;
                     if (myId && w === curWeek && (a === myId || b === myId)) {
                         myCurResult = (a === myId ? pa >= pb : pb > pa) ? 'W' : 'L';
                     }
+                }
+                if (medianEnabled) {
+                    const sorted = Object.values(scores).sort((a,b) => a-b), mid = Math.floor(sorted.length/2);
+                    const median = sorted.length%2 ? sorted[mid] : (sorted[mid-1]+sorted[mid])/2;
+                    Object.entries(scores).forEach(([id,pts]) => { wins[id] += pts > median ? 1 : pts === median ? 0.5 : 0; });
                 }
             }
 
@@ -241,7 +266,7 @@
             // Games from THIS roster's own counted weeks, not row[0]'s — a
             // roster added mid-season has fewer, and borrowing the first
             // roster's count would hand it phantom losses.
-            const totalReg = t.weekly.length + futureWeeks.length;
+            const totalReg = (t.weekly.length + futureWeeks.length) * (medianEnabled ? 2 : 1);
             return {
                 rosterId: t.rosterId,
                 name: t.name,
@@ -266,7 +291,7 @@
             };
         }
 
-        return { rows: out, playoffTeams, byeSlots, usedDivisions, leverage, simCount: sims };
+        return { rows: out, playoffTeams, byeSlots, usedDivisions, leverage, medianEnabled, simCount: sims };
     }
 
     // ── Playoff-weeks SOS ────────────────────────────────────────────

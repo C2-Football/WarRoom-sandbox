@@ -128,6 +128,36 @@ test('odds: division winners are seeded when rosters carry divisions', () => {
   assert.ok(t3.playoffPct > 55, 'division winner slot lifts team 3, got ' + t3.playoffPct);
 });
 
+test('odds: median leagues count historical and future median decisions exactly once', () => {
+  const ledger = Luck.buildLedger({ league: luckLeague, weeklyScores });
+  const league = { ...luckLeague, settings: { playoff_teams: 2, league_average_match: 1 } };
+  const before = JSON.stringify(ledger);
+  const past = Odds.simulate({ league, ledger, futurePairs: {}, sims: 500 });
+  assert.equal(past.medianEnabled, true);
+  assert.equal(past.rows.find(r=>r.rosterId===1).projWins,4,'Two H2H and two median wins');
+  assert.equal(past.rows.find(r=>r.rosterId===1).projLosses,2);
+  const future = Odds.simulate({ league, ledger, futurePairs: {4:[[1,2],[3,4]]}, myRosterId:1, sims:1000 });
+  assert(future.leverage);
+  for(const row of future.rows) assert(Math.abs(row.projWins+row.projLosses-8)<0.11,'Four weeks create eight decisions');
+  const sum=future.rows.reduce((s,r)=>s+r.projWins,0);
+  assert(Math.abs(sum-16)<0.21,'Across four teams and four weeks, H2H plus median award sixteen wins');
+  assert.equal(JSON.stringify(ledger),before,'The simulation does not alter the H2H luck ledger');
+  const preciseScores={1:[{rosterId:1,matchupId:1,points:100.01},{rosterId:2,matchupId:1,points:100.02}]};
+  const preciseLeague={rosters:luckLeague.rosters.slice(0,2),settings:league.settings};
+  const preciseLedger={...Luck.buildLedger({league:preciseLeague,weeklyScores:preciseScores}),weeklyScores:preciseScores};
+  const precise=Odds.simulate({league:preciseLeague,ledger:preciseLedger,sims:500});
+  assert.equal(precise.rows.find(r=>r.rosterId===1).projWins,0,'Rounded display scores do not manufacture a median tie');
+  assert.equal(precise.rows.find(r=>r.rosterId===2).projWins,2);
+});
+
+test('odds: zero-based division IDs participate in division-winner seeding', () => {
+  const {ledger,futurePairs}=oddsFixture();
+  const league={...luckLeague,settings:{playoff_teams:2,divisions:2},rosters:luckLeague.rosters.map(r=>({...r,settings:{division:r.roster_id<=2?0:1}}))};
+  assert.equal(Odds.simulate({league,ledger,futurePairs,sims:500}).usedDivisions,true);
+  league.rosters[0].settings.division=null;
+  assert.equal(Odds.simulate({league,ledger,futurePairs,sims:500}).usedDivisions,false);
+});
+
 // ── FAAB ────────────────────────────────────────────────────────────
 function faabLeague() {
   return {

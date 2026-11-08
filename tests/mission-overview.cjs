@@ -99,13 +99,13 @@ test('an empty starter has a clear short action without duplicated slot wording'
     assert.match(text(tree),/Your starting lineup has an open spot\./);
 });
 
-test('live overview uses the headline for the action and reports game state once',()=>{
+test('live overview switches from lineup preparation to the personal week outlook',()=>{
     const h=fixture(); h.props.myRoster={starters:['a']}; h.render();
     h.hooks[0]={key:'l1|2026|6',status:'ready',games:[{home:'KC',away:'NYJ',state:'live'}],now:Date.now()};
     const tree=h.render();
-    assert.match(text(tree),/Follow your remaining starters\./);
-    assert.match(text(tree),/NFL games are underway/);
-    assert.doesNotMatch(text(tree),/Follow your remaining starters — NFL games are underway/);
+    assert.match(text(tree),/Live week/);
+    assert.match(text(tree),/Your matchup forecast is loading/);
+    assert.doesNotMatch(text(tree),/Replace|Explore waivers|Your next kickoff/);
 });
 
 test('loading or unavailable kickoff data never surfaces stale replacement advice',()=>{
@@ -183,14 +183,17 @@ test('Alex flags finished-game deviations and streaks for the manager’s curren
     await new Promise(setImmediate);
     const tree = h.render();
     const standouts = walk(tree).find(n => n.props?.className === 'mc-overview-form');
-    assert.equal(walk(standouts).filter(n => n.type === 'li').length, 3);
-    assert.match(text(standouts), /Hot Receiver27.0 pts · 8.0 season avg19.0 pts above4 straight above avg/);
-    assert.match(text(standouts), /Cold Runner0.0 pts · 18.0 season avg18.0 pts below4 straight below avg/);
+    assert.equal(walk(standouts).filter(n => n.type === 'li').length, 5);
+    assert.match(text(standouts), /New Starter/);
+    assert.match(text(standouts), /Ordinary Game/);
+    assert.match(text(standouts), /2 more player results/);
+    assert.match(text(standouts), /Hot Receiver27.0 pts · 8.0 season avgStarter · 5 prior games19.0 pts above4 straight above avg/);
+    assert.match(text(standouts), /Cold Runner0.0 pts · 18.0 season avgBench · 5 prior games18.0 pts below4 straight below avg/);
     assert.match(text(standouts), /Steady Cold.*2.2 pts below4 straight below avg/, 'A sustained streak can qualify without a big single-game swing');
-    assert.doesNotMatch(text(standouts), /Did Not Play|Still Playing|New Starter|Opponent Standout|Former Player|Ordinary Game/);
+    assert.doesNotMatch(text(standouts), /Did Not Play|Still Playing|Opponent Standout|Former Player/);
     button(tree, 'Ask Alex').props.onClick();
-    assert.match(h.events[0].detail.prompt, /"finishedPlayerForm":\[\{"pid":"hot"/);
-    assert.doesNotMatch(h.events[0].detail.prompt, /opponent|dropped/);
+    assert.match(h.events[0].detail.prompt, /"finishedPlayerForm":.*"pid":"hot"/);
+    assert.doesNotMatch(h.events[0].detail.prompt, /"pid":"(?:opponent|dropped)"/);
     const roster = h.props.myRoster;
     h.props.myRoster = null;
     assert.doesNotMatch(text(h.render()), /standouts|Opponent Standout/, 'No roster means no personal insights');
@@ -204,4 +207,45 @@ test('Alex flags finished-game deviations and streaks for the manager’s curren
     h.props.scoreBoard.week = 6; h.window.S.weeklyPlayerPointsScope = 'other-scoring';
     assert.doesNotMatch(text(h.render()), /Hot Receiver/, 'History from another scoring scope never leaks into the comparison');
     dispose();
+});
+
+test('live Alex panel renders the personal matchup, win/loss playoff impact and optional Cup together',()=>{
+    const h=fixture();
+    Object.assign(h.props.currentLeague.settings={}, {playoff_teams:4,playoff_week_start:15});
+    h.props.myRoster={roster_id:1,players:['a'],starters:['a']};
+    h.props.scoreBoard={supported:true,week:6,status:'ready',rows:[{roster_id:1,matchup_id:1,forecast:125},{roster_id:2,matchup_id:1,forecast:115}]};
+    h.props.odds={status:'ready',sim:{leverage:{week:6,current:50,ifWin:72,ifLose:31}}};
+    h.props.getOwnerName=()=> 'The opponent';
+    h.window.App.LeagueLiveScores.projectedFinish=row=>row.forecast;
+    h.render();h.hooks[0]={key:'l1|2026|6',status:'ready',games:[{home:'KC',away:'LV',completed:true}],now:Date.now()};
+    const tree=h.render();
+    assert.match(text(tree),/You’re projected to win.*125.0–115.0 vs The opponent/);
+    assert.match(text(tree),/50% entering the week · 72% with a win · 31% with a loss/);
+    assert.match(text(tree),/projected result points toward 72% playoff odds/);
+    assert.doesNotMatch(text(tree),/Replace|Explore waivers|Your Cup outlook/);
+    button(tree,'Ask Alex').props.onClick();assert.match(h.events[0].detail.prompt,/"playoff":\{"current":50/);
+    h.props.leagueSkin={type:'chopped',features:{showPlayoffOdds:false}};
+    assert.doesNotMatch(text(h.render()),/Playoff outlook|% with a win/);
+    h.props.leagueSkin=null;h.props.scoreBoard.status='stale';
+    assert.doesNotMatch(text(h.render()),/You’re projected to win|125.0/);
+});
+
+test('Cup load is read-only and discards a response after navigation',async()=>{
+    const h=fixture();let resolve,request;
+    h.window.App.OD={getClient:()=>({functions:{invoke:(name,args)=>{request={name,...args};return new Promise(r=>resolve=r);}}})};
+    h.render();h.hooks[0]={key:'l1|2026|6',status:'ready',games:[{home:'KC',away:'LV',completed:true}],now:Date.now()};
+    h.render();const cleanup=h.effects[3]();
+    assert.equal(request.name,'league-cup');assert.equal(request.body.action,'load');
+    assert.equal(request.body.leagueId,'l1');assert.equal(request.body.season,'2026');
+    cleanup();resolve({data:{cup:{state:{locked:true}}}});await new Promise(setImmediate);
+    assert.equal(h.hooks[3].key,'','A late Cup response is not applied after navigation');
+});
+
+test('a schedule outage after kickoff retains live-week mode and withholds the forecast',async()=>{
+    const h=fixture();h.window.App.NflContext.loadScoreboard=async()=>{throw Error('offline');};
+    h.render();h.hooks[0]={key:'l1|2026|6',status:'ready',games:[{home:'KC',away:'LV',completed:true}],now:Date.now()};
+    h.render();const cleanup=h.effects[0]();await new Promise(setImmediate);
+    const tree=h.render();assert.match(text(tree),/Live week/);assert.match(text(tree),/schedule could not refresh/);
+    assert.doesNotMatch(text(tree),/Replace|Explore waivers|You’re projected to win/);
+    cleanup();
 });

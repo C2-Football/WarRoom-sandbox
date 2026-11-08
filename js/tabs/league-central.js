@@ -48,8 +48,8 @@ function buildLeagueOverviewForm({ board, roster, week, finalTeams, playersData 
         // Sleeper can report zero for someone who did not get into the game.
         const raw = playedStats[pid];
         if (points === 0 && !['gp', 'off_snp', 'def_snp', 'st_snp', 'pass_att', 'rush_att', 'rec_tgt', 'fga', 'xpa'].some(key => Number(raw?.[key]) > 0)) continue;
-        const prior = historyFor(pid).filter(game => game.week < week);
-        if (prior.length < 3) continue;
+        const prior = historyFor(pid).filter(game => game.week < week && Number.isFinite(game.pts)).sort((a,b) => a.week-b.week);
+        if (!prior.length) continue;
         const average = prior.reduce((sum, game) => sum + game.pts, 0) / prior.length;
         const delta = points - average, direction = Math.sign(delta);
         let streak = 0;
@@ -57,10 +57,131 @@ function buildLeagueOverviewForm({ board, roster, week, finalTeams, playersData 
             streak = 1;
             for (let i = prior.length - 1; i >= 0 && (prior[i].pts - average) * direction >= 1; i--) streak++;
         }
-        if (Math.abs(delta) < Math.max(5, Math.abs(average) * 0.35) && streak < 3) continue;
-        notes.push({ pid, name, points, average, delta, streak });
+        if (Math.abs(delta) < 0.05) continue;
+        notes.push({ pid, name, points, average, delta, streak, games: prior.length,
+            starter: (roster.starters || []).map(String).includes(pid) });
     }
-    return notes.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta) || b.streak - a.streak || a.name.localeCompare(b.name)).slice(0, 3);
+    return notes.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta) || b.streak - a.streak || a.name.localeCompare(b.name));
+}
+
+// Pure, read-only competition previews. A hypothetical finalized week is only
+// passed to the existing Cup engine in memory; shared results are never changed.
+function buildLeagueOverviewCup({ cup, week, rosterId, finishes = {}, name = id => 'Team ' + id, engine = window.WoeppelCup }) {
+    if (!cup?.locked || cup.enabled === false || rosterId == null || !engine) return null;
+    const id = String(rosterId), legacy = cup.version !== 2;
+    const teams = legacy ? Object.values(cup.groups || {}).flat() : cup.teams || [];
+    if (!teams.includes(id)) return null;
+    const title = cup.name || 'League Cup';
+    const note = detail => ({ title, detail });
+    try {
+        engine.validate(cup);
+        const weeks = legacy ? [6,7,8,9,10,11,15,16,17] : engine.schedule(cup);
+        if (week < weeks[0]) return note('Starts Week ' + weeks[0] + '.');
+        const result = !legacy && engine.result(cup);
+        if (result) return note(String(result.champion) === id ? 'You won the Cup.' : name(result.champion) + ' won the Cup.');
+        if (!weeks.includes(week)) return note(week > weeks.at(-1) ? 'Review the final Cup results in League.' : 'Next Cup round: Week ' + weeks.find(w => w > week) + '.');
+        const qualifying = legacy ? week <= 11 : !['knockout','survivor'].includes(cup.format) && week < cup.startWeek + cup.groupWeeks;
+        const prior = weeks.filter(w => w < week);
+        if (prior.some(w => !cup.weeks?.[w]?.final)) return note('Earlier Cup results need finalizing before this week’s outlook is available.');
+        const final = cup.weeks?.[week]?.final === true;
+        const projected = JSON.parse(JSON.stringify(cup));
+        let required;
+        if (legacy) required = qualifying ? teams : engine.knockout(cup).flat().filter(m => m.week === week).flatMap(m => [m.a,m.b]);
+        else required = engine.requiredScoreIds(cup, week);
+        if (!qualifying && !required.includes(id)) {
+            // Automatic byes do not require a fantasy score.
+            if (cup.format !== 'survivor') {
+                const match = engine.knockout(cup).flat().find(m => m.week === week && [m.a,m.b].includes(id));
+                if (match?.bye) return note('You have a bye into the next round.');
+            }
+            return note('You are not competing in this Cup round.');
+        }
+        if (!final) {
+            if (!required.length || required.some(pid => !Number.isFinite(finishes[pid]))) return note('Projected Cup impact is waiting for complete team forecasts.');
+            projected.weeks[week] = { final: true, scores: Object.fromEntries(required.map(pid => [pid, finishes[pid]])) };
+            // A prior commissioner ruling cannot decide a new hypothetical tie.
+            if (qualifying) delete projected.seedRuling;
+            if (projected.tieRulings) Object.keys(projected.tieRulings).filter(key => key.startsWith(week + ':')).forEach(key => delete projected.tieRulings[key]);
+            if (projected.survivorRulings) delete projected.survivorRulings[week];
+        }
+        const prefix = final ? 'After the finalized week: ' : 'If forecasts hold: ';
+        if (qualifying) {
+            const group = legacy ? Object.keys(cup.groups).find(g => cup.groups[g].includes(id)) : cup.format === 'groups' ? Object.keys(cup.groups).find(g => cup.groups[g].includes(id)) : null;
+            const table = state => group ? (legacy ? engine.tables(state) : engine.groupTables(state))[group] : engine.tables(state);
+            const before = table(cup), after = table(projected), me = after.find(r => r.id === id);
+            if (!me) return note('Your Cup standing is unavailable.');
+            const compare = (a,b) => b.points-a.points || b.pf-a.pf;
+            const rank = rows => 1 + rows.filter(row => compare(row, rows.find(r => r.id === id)) < 0).length;
+            const tied = after.filter(row => compare(row, me) === 0).length > 1;
+            const limit = legacy ? 2 : group ? cup.qualifiersPerGroup : cup.qualifierCount;
+            const cutoffTied = rank(after) <= limit && rank(after) + after.filter(row => compare(row, me) === 0).length - 1 > limit;
+            const position = (tied ? 'tied ' : '') + '#' + rank(after) + (group ? ' in Group ' + group : ' in the Cup');
+            const priorTie = before.filter(row => compare(row, before.find(r => r.id === id)) === 0).length > 1;
+            const movement = !final && before.some(row => row.played > 0) && rank(before) !== rank(after) ? ' (from ' + (priorTie ? 'tied ' : '') + '#' + rank(before) + ')' : '';
+            const field = cutoffTied ? 'tied at the qualifying cutline' : rank(after) <= limit ? 'inside the top ' + limit : 'outside the top ' + limit;
+            return note(prefix + position + movement + ' · ' + field + (legacy ? '; third-place wildcards also qualify' : '') + '.');
+        }
+        if (cup.format === 'survivor') {
+            const stage = engine.survivor(projected).find(s => s.week === week);
+            if (stage?.pendingTie?.ids.includes(id)) return note(prefix + 'tied at the survival cutoff; a ruling would be needed.');
+            if (stage?.survivors.includes(id)) return note(prefix + (stage.survivors.length === 1 ? 'you win the Cup.' : 'you survive into the next round.'));
+            if (stage?.eliminated.includes(id)) return note(prefix + 'you are eliminated from the Cup.');
+        }
+        const match = engine.knockout(projected).flat().find(m => m.week === week && [m.a,m.b].includes(id));
+        if (!match) return note('Your next Cup matchup is waiting for the prior round.');
+        const opponent = match.a === id ? match.b : match.a;
+        if (!match.winner) return note(prefix + 'tied with ' + name(opponent) + '; the Cup tiebreak remains unresolved.');
+        if (match.winner === id) {
+            const champion = !legacy && engine.result(projected)?.champion === id;
+            return note(prefix + 'you beat ' + name(opponent) + (champion ? ' and win the Cup.' : ' and advance.'));
+        }
+        const double = !legacy && engine.isDoubleElimination(cup);
+        const consequence = double && match.bracket === 'upper' ? ' and move to the lower bracket.'
+            : double && match.bracket === 'final' && match.a === id ? '; the championship goes to a reset.' : ' and leave the Cup.';
+        return note(prefix + 'you lose to ' + name(opponent) + consequence);
+    } catch (_) { return note('Cup impact is waiting for settled results or a tiebreak ruling.'); }
+}
+
+function buildLeagueOverviewOutlook({ board, roster, league, week, games, playersData, projections, odds, name, chopped = false }) {
+    const live = window.App.LeagueLiveScores;
+    const valid = board?.supported && board.week === week && !board.error && ['ready','refreshing'].includes(board.status);
+    const rows = valid ? board.rows || [] : [];
+    const me = roster?.roster_id == null ? null : rows.find(row => String(row.roster_id) === String(roster.roster_id));
+    const finishes = Object.fromEntries(rows.map(row => [String(row.roster_id), live.projectedFinish?.(row, playersData, games, league, week, projections) ?? null]));
+    if (chopped) {
+        const active = (league.rosters || []).filter(r => !window.App.Chopped?.isAliveInWeek || window.App.Chopped.isAliveInWeek(r,week));
+        const scores = active.map(r => finishes[String(r.roster_id)]);
+        const own = me && finishes[String(me.roster_id)];
+        const known = active.length > 1 && scores.every(Number.isFinite) && Number.isFinite(own);
+        const low = known ? Math.min(...scores) : null;
+        return { headline: known ? own === low ? 'You’re projected at the chop line.' : 'You’re projected above the chop line.' : 'Your survival forecast is loading.',
+            detail: known ? own.toFixed(1) + ' projected points · ' + (own-low).toFixed(1) + ' above the lowest forecast. Official results decide the chop.' : 'Waiting for forecasts for every surviving team.',
+            result: null, final: false, playoff: null, finishes };
+    }
+    const opponents = me?.matchup_id == null ? [] : rows.filter(row => row !== me && row.matchup_id === me.matchup_id);
+    const opponent = opponents.length === 1 ? opponents[0] : null;
+    const own = me ? finishes[String(me.roster_id)] : null, other = opponent ? finishes[String(opponent.roster_id)] : null;
+    const known = Number.isFinite(own) && Number.isFinite(other);
+    const delta = known ? own - other : null;
+    const progress = me && live.starterProgress?.(me, playersData, games, league, week);
+    const theirs = opponent && live.starterProgress?.(opponent, playersData, games, league, week);
+    const complete = p => p && p.finished > 0 && !p.remaining && !p.unknown;
+    const final = complete(progress) && complete(theirs);
+    const result = !known ? null : delta > 0 ? 'win' : delta < 0 ? 'loss' : 'tie';
+    let headline = 'Your matchup forecast is loading.';
+    let detail = 'Waiting for current scores and complete starter forecasts.';
+    if (me && !opponent) { headline = 'No head-to-head opponent this week.'; detail = me.matchup_id == null ? 'You have a bye or no scheduled matchup.' : 'Your opponent’s score has not loaded.'; }
+    if (known) {
+        headline = final ? result === 'win' ? 'You won this week.' : result === 'loss' ? 'You lost this week.' : 'You finished tied.'
+            : result === 'win' ? 'You’re projected to win.' : result === 'loss' ? 'You’re projected to lose.' : 'You’re projected to tie.';
+        detail = own.toFixed(1) + '–' + other.toFixed(1) + ' vs ' + name(opponent.roster_id) + (final ? ' · awaiting official results' : ' projected finish');
+    }
+    const leverage = odds?.status === 'ready' && odds.sim?.leverage?.week === week ? odds.sim.leverage : null;
+    const playoff = leverage && [leverage.ifWin,leverage.ifLose,leverage.current].every(Number.isFinite) ? {
+        current: leverage.current, ifWin: leverage.ifWin, ifLose: leverage.ifLose,
+        projected: result === 'win' ? leverage.ifWin : result === 'loss' ? leverage.ifLose : null,
+    } : null;
+    return { headline, detail, result, final, playoff, finishes };
 }
 
 // Proactive overview uses reported starters and the current NFL schedule. It never
@@ -113,11 +234,11 @@ function buildLeagueOverviewDecision({ league, roster, playersData = {}, skin, w
     };
     const nextStarterGame = upcoming.find(game => countStarters(game) > 0) || null;
     const finalTeams = new Set([...byTeam].filter(([team, game]) => team && gameStatus(game) === 'final').map(([team]) => team));
-    return { week, known, automatic, flags, lockedFlags, next, finalTeams, startersInNext: countStarters(next),
+    return { week, known, automatic, flags, lockedFlags, next, finalTeams, started: games.some(game => ['final','live','locked'].includes(gameStatus(game))), startersInNext: countStarters(next),
         nextStarterGame, startersInNextStarterGame: countStarters(nextStarterGame), live: games.some(game => ['live', 'locked'].includes(gameStatus(game))), complete };
 }
 
-function LeagueOverviewDecisions({ currentLeague, leagueSkin, myRoster, playersData, scoreBoard, setActiveTab }) {
+function LeagueOverviewDecisions({ currentLeague, leagueSkin, myRoster, playersData, scoreBoard, odds, getOwnerName, setActiveTab }) {
     // This is always the current week, independent of the scoreboard's history picker.
     const week = window.App.LeagueLiveScores.currentWeek(currentLeague);
     const season = Number(currentLeague?.season);
@@ -127,6 +248,8 @@ function LeagueOverviewDecisions({ currentLeague, leagueSkin, myRoster, playersD
     React.useEffect(() => {
         let alive = true, pending = false;
         const context = window.App?.NflContext;
+        const unavailable = () => setSchedule(previous => previous.key === key && previous.games.length
+            ? { ...previous, status: 'stale', now: Date.now() } : { key, status: 'unavailable', games: [], now: Date.now() });
         if (!context?.loadScoreboard || season !== liveSeason || !(week >= 1 && week <= 18)) {
             setSchedule({ key, status: 'unavailable', games: [], now: Date.now() }); return;
         }
@@ -134,9 +257,15 @@ function LeagueOverviewDecisions({ currentLeague, leagueSkin, myRoster, playersD
             if (!alive || pending || document.visibilityState === 'hidden') return;
             pending = true;
             try {
-                const games = await context.loadScoreboard(week, season, 2);
-                if (alive) setSchedule({ key, status: Array.isArray(games) && games.length ? 'ready' : 'unavailable', games: Array.isArray(games) ? games : [], now: Date.now() });
-            } catch (_) { if (alive) setSchedule({ key, status: 'unavailable', games: [], now: Date.now() }); }
+                const [games] = await Promise.all([
+                    context.loadScoreboard(week, season, 2),
+                    context.load ? Promise.resolve(context.load([week], season)).catch(() => null) : null,
+                ]);
+                if (alive) {
+                    if (Array.isArray(games) && games.length) setSchedule({ key, status: 'ready', games, now: Date.now() });
+                    else unavailable();
+                }
+            } catch (_) { if (alive) unavailable(); }
             finally { pending = false; }
         };
         refresh();
@@ -150,12 +279,14 @@ function LeagueOverviewDecisions({ currentLeague, leagueSkin, myRoster, playersD
     React.useEffect(() => {
         const refresh = () => refreshHistory(value => value + 1);
         window.addEventListener('wr:weekly-points-loaded', refresh);
-        return () => window.removeEventListener('wr:weekly-points-loaded', refresh);
-    }, []);
+        window.addEventListener('wr:projections-loaded', refresh);
+        window.App?.WeeklyProj?.ensureWeekProjections?.(week);
+        return () => { window.removeEventListener('wr:weekly-points-loaded', refresh); window.removeEventListener('wr:projections-loaded', refresh); };
+    }, [key]);
     const wp = window.App.WeeklyProj, state = window.S;
     const historyScope = wp?.weeklyPointsScope?.(currentLeague?.league_id || currentLeague?.id, season, currentLeague?.scoring_settings);
     const historyReady = season === liveSeason && (!state?.nflState?.season_type || state.nflState.season_type === 'regular')
-        && scoreBoard?.supported && week >= 4 && historyScope
+        && scoreBoard?.supported && week >= 2 && historyScope
         && state?.weeklyPlayerPointsScope === historyScope && state.weeklyPlayerPointsComplete === true
         && Number(state.weeklyPlayerPointsThroughWeek) >= week - 1;
     const finishedKey = historyReady && decision.finalTeams.size ? key + '|' + [...decision.finalTeams].sort().join(',') : '';
@@ -173,13 +304,52 @@ function LeagueOverviewDecisions({ currentLeague, leagueSkin, myRoster, playersD
         board: scoreBoard, roster: myRoster, week, finalTeams: decision.finalTeams, playersData, historyFor: wp.weeklyHistory,
         playedStats: played.key === key ? played.stats : {},
     }) : [];
+    const started = season === liveSeason && decision.started;
+    const cupKey = [currentLeague?.league_id || currentLeague?.id, season].join('|');
+    const [cupState, setCupState] = React.useState({ key: '', status: 'loading', cup: null });
+    React.useEffect(() => {
+        const db = window.App?.OD?.getClient?.() || window.OD?.getClient?.();
+        if (!started || !db) return;
+        let alive = true, pending = false;
+        const refresh = async () => {
+            if (!alive || pending || document.visibilityState === 'hidden') return;
+            pending = true;
+            try {
+                const { data, error } = await db.functions.invoke('league-cup', { body: {
+                    action: 'load', leagueId: String(currentLeague.league_id || currentLeague.id), season: String(season),
+                } });
+                if (error || data?.error) throw Error('Cup unavailable');
+                if (alive) setCupState({ key: cupKey, status: 'ready', cup: data?.cup?.state || null });
+            } catch (_) { if (alive) setCupState({ key: cupKey, status: 'unavailable', cup: null }); }
+            finally { pending = false; }
+        };
+        refresh();
+        const timer = setInterval(refresh, 60000);
+        document.addEventListener('visibilitychange', refresh);
+        return () => { alive = false; clearInterval(timer); document.removeEventListener('visibilitychange', refresh); };
+    }, [cupKey, started]);
+    const ownerName = id => getOwnerName?.(id) || 'Team ' + id;
+    let projections = {};
+    if (started && wp?.projectRoster) {
+        try { projections = wp.projectRoster([...new Set((scoreBoard?.rows || []).flatMap(row => row.starters || []).filter(pid => pid && String(pid) !== '0'))], {
+            playersData, statsData: window._wrStatsData || {}, priorData: state?.priorData || {}, scoring: currentLeague?.scoring_settings || {}, week,
+        }); } catch (_) { /* incomplete forecasts stay unavailable */ }
+    }
+    const outlook = started ? buildLeagueOverviewOutlook({ board: current.status === 'ready' ? scoreBoard : null, roster: myRoster, league: currentLeague, week,
+        games: current.games, playersData, projections, odds, name: ownerName,
+        chopped: leagueSkin?.type === 'chopped' || !!window.App.Chopped?.isChopped?.(currentLeague) }) : null;
+    const cup = cupState.key === cupKey && cupState.status === 'ready' ? buildLeagueOverviewCup({
+        cup: cupState.cup, week, rosterId: myRoster?.roster_id, finishes: outlook?.finishes, name: ownerName,
+    }) : null;
+    const showPlayoffs = leagueSkin?.features?.showPlayoffOdds !== false && leagueSkin?.type !== 'chopped'
+        && Number(currentLeague?.settings?.playoff_teams) > 0 && week < Number(currentLeague?.settings?.playoff_week_start);
     const nextGame = decision.nextStarterGame || decision.next;
     const nextStarters = decision.nextStarterGame ? decision.startersInNextStarterGame : decision.startersInNext;
     const nextLabel = nextGame ? new Date(nextGame.kickoff).toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }) : null;
     const scheduleLabel = nextLabel ? (decision.nextStarterGame ? 'Your next kickoff · ' : 'Next NFL kickoff · ') + nextLabel
         : decision.live ? 'NFL games are underway' : decision.complete ? 'This week’s NFL games are complete' : current.status === 'loading' ? 'Checking kickoff times…' : 'Kickoff times unavailable';
     const actionableFlags = current.status === 'ready' ? decision.flags.filter(flag => flag.gameStatus === 'upcoming' || (decision.next && ['bye', 'empty', 'unsigned'].includes(flag.kind))) : [];
-    const ask = () => window.dispatchEvent(new CustomEvent('wr:mission-alex-open', { detail: { title: 'Your next move', prompt: 'Help me prioritize my next move in this league. Use these current roster checks and schedule facts: ' + JSON.stringify({ leagueId: currentLeague?.league_id || currentLeague?.id, week, rosterKnown: decision.known, automaticLineup: decision.automatic, starterChecks: actionableFlags, unverifiedStarterChecks: decision.flags.filter(flag => !actionableFlags.includes(flag)), lockedStarterChecks: decision.lockedFlags, nextKickoff: nextGame ? { home: nextGame.home, away: nextGame.away, kickoff: nextGame.kickoff, startersInGame: nextStarters, scope: decision.nextStarterGame ? 'your starters' : 'NFL' } : null, scheduleStatus: current.status, finishedPlayerForm: form }) + '. Listed injury statuses may be stale. Do not recommend replacing players whose games are live, locked, final, or unverified. Confirm current player availability and league lock rules before suggesting a change. Do not invent a waiver deadline, projections, or odds; no move has been submitted.' } }));
+    const ask = () => window.dispatchEvent(new CustomEvent('wr:mission-alex-open', { detail: { title: started ? 'Your week so far' : 'Your next move', prompt: (started ? 'Summarize my week so far: only my roster’s finished-game performance against entering-week averages, projected matchup result, conditional playoff impact, and Cup outlook. ' : 'Help me prioritize my next move in this league. ') + 'Use these current roster checks and schedule facts: ' + JSON.stringify({ leagueId: currentLeague?.league_id || currentLeague?.id, week, rosterKnown: decision.known, automaticLineup: decision.automatic, starterChecks: actionableFlags, unverifiedStarterChecks: decision.flags.filter(flag => !actionableFlags.includes(flag)), lockedStarterChecks: decision.lockedFlags, nextKickoff: nextGame ? { home: nextGame.home, away: nextGame.away, kickoff: nextGame.kickoff, startersInGame: nextStarters, scope: decision.nextStarterGame ? 'your starters' : 'NFL' } : null, scheduleStatus: current.status, finishedPlayerForm: form, matchup: outlook ? { headline: outlook.headline, detail: outlook.detail, result: outlook.result, final: outlook.final } : null, playoff: showPlayoffs ? outlook?.playoff : null, cup }) + '. Playoff percentages are season-model estimates conditional on a win or loss, not live win probabilities. Cup forecasts are hypothetical, not finalized results. Listed injury statuses may be stale. Do not recommend replacing players whose games are live, locked, final, or unverified. Confirm current player availability and league lock rules before suggesting a change. Do not invent a waiver deadline, projections, or odds; no move has been submitted.' } }));
     const primaryFlag = actionableFlags[0];
     const primaryMove = (() => {
         if (decision.automatic) return { message: 'Review your roster depth.', detail: 'Your league sets the scoring lineup automatically.', action: 'Roster', tab: 'myteam' };
@@ -198,25 +368,47 @@ function LeagueOverviewDecisions({ currentLeague, leagueSkin, myRoster, playersD
         const status = String(primaryFlag.reason || 'needs monitoring').replace(/^Monitor\s*·\s*/i, '');
         return { message: 'Have a backup for ' + primaryFlag.name + '.', detail: 'Listed ' + status + '.', action: 'Game Day', tab: 'lineup' };
     })();
+    const renderFormPlayer = player => {
+        const direction = player.delta > 0 ? 'above' : 'below';
+        return <li key={player.pid} data-trend={direction}>
+            <div><strong>{player.name}</strong><small>{player.points.toFixed(1)} pts · {player.average.toFixed(1)} season avg</small><small>{player.starter ? 'Starter' : 'Bench'} · {player.games} prior {player.games === 1 ? 'game' : 'games'}</small></div>
+            <span><strong>{Math.abs(player.delta).toFixed(1)} pts {direction}</strong>{player.streak >= 2 && <small>{player.streak} straight {direction} avg</small>}</span>
+        </li>;
+    };
+    const playerResults = form.length > 0 ? <div className="mc-overview-form">
+            <p id="mc-overview-form-heading">Your players · finished games</p>
+            <ul aria-labelledby="mc-overview-form-heading">{form.slice(0,3).map(renderFormPlayer)}</ul>
+            {form.length > 3 && <details><summary>{form.length - 3} more player {form.length === 4 ? 'result' : 'results'}</summary><ul aria-label="More of your player results">{form.slice(3).map(renderFormPlayer)}</ul></details>}
+        </div> : started ? <p className="mc-next-note">{!historyReady ? 'Player comparisons need prior games in this season’s scoring.' : 'Above- and below-average results appear here as your players finish.'}</p> : null;
+
     return <section className="mc-overview-decisions" aria-label="Alex Insights">
-        <header><span>Alex Insights</span><small>{week ? 'Week ' + week : 'Your roster'}</small></header>
+        <header><span>Alex Insights</span><small>{week ? 'Week ' + week + (started ? ' · Live week' : '') : 'Your roster'}</small></header>
+        {started ? <div className="mc-live-week">
+            <div className="mc-primary-move">
+                <div><h3>{outlook.headline}</h3><p className="mc-next-note">{outlook.detail}</p></div>
+                <button type="button" onClick={() => setActiveTab?.('lineup')}>Game Day →</button>
+            </div>
+            {playerResults}
+            {current.status === 'stale' && <p className="mc-next-note">The game schedule could not refresh. Your forecast will return when it reconnects.</p>}
+            {showPlayoffs && <div className="mc-week-impact" aria-label="Your playoff impact">
+                <strong>Playoff outlook</strong>
+                {outlook.playoff ? <>
+                    <p>{outlook.playoff.current}% entering the week · {outlook.playoff.ifWin}% with a win · {outlook.playoff.ifLose}% with a loss</p>
+                    {Number(currentLeague?.settings?.league_average_match) === 1 && <small>Win/loss refers to your matchup; median results are also simulated.</small>}
+                    {outlook.playoff.projected != null && <p>{outlook.final ? 'This result points toward' : 'Your projected result points toward'} {outlook.playoff.projected}% playoff odds <small>· season-model estimate</small></p>}
+                </> : <p>{['idle','loading'].includes(odds?.status) ? 'Loading your win/loss impact…' : 'Win/loss playoff impact is unavailable for this week.'}</p>}
+            </div>}
+            {cup && <div className="mc-week-impact" aria-label="Your Cup outlook"><strong>{cup.title}</strong><p>{cup.detail}</p></div>}
+            {!cup && cupState.key === cupKey && cupState.status === 'unavailable' && <p className="mc-next-note">Cup outlook could not refresh.</p>}
+        </div> : <>
         <div className="mc-primary-move">
             <div><h3>{primaryMove.message}</h3>{primaryMove.detail && <p className="mc-next-note">{primaryMove.detail}</p>}</div>
             <button type="button" onClick={() => setActiveTab?.(primaryMove.tab)}>{primaryMove.action} →</button>
         </div>
         <p className="mc-next-kickoff">{scheduleLabel}{nextStarters > 0 ? ' · ' + nextStarters + (nextStarters === 1 ? ' starter' : ' starters') : ''}</p>
         {actionableFlags.length > 1 && <p className="mc-next-more">+{actionableFlags.length - 1} more lineup {actionableFlags.length === 2 ? 'issue' : 'issues'} to review in Game Day</p>}
-        {form.length > 0 && <div className="mc-overview-form">
-            <p id="mc-overview-form-heading">Your roster’s standouts</p>
-            <ul aria-labelledby="mc-overview-form-heading">{form.map(player => {
-                const direction = player.delta > 0 ? 'above' : 'below';
-                return <li key={player.pid} data-trend={direction}>
-                    <div><strong>{player.name}</strong><small>{player.points.toFixed(1)} pts · {player.average.toFixed(1)} season avg</small></div>
-                    <span><strong>{Math.abs(player.delta).toFixed(1)} pts {direction}</strong>{player.streak >= 2 && <small>{player.streak} straight {direction} avg</small>}</span>
-                </li>;
-            })}</ul>
-        </div>}
-        <div className="mc-next-actions"><button type="button" onClick={() => setActiveTab?.('fa')}>Explore waivers</button><button type="button" onClick={ask}>Ask Alex</button></div>
+        </>}
+        <div className="mc-next-actions"><button type="button" onClick={() => setActiveTab?.(started ? 'central' : 'fa')}>{started ? 'League outlook' : 'Explore waivers'}</button><button type="button" onClick={ask}>Ask Alex</button></div>
     </section>;
 }
 
@@ -277,30 +469,41 @@ function LeagueCentralTab({
     });
 
     // ── Playoff odds + weekly-score ledger (season-odds-panel.js's exact recipe) ──
-    const [odds, setOdds] = React.useState({ status: 'idle' });
+    const oddsKey = [leagueId, season, window.App.LeagueLiveScores.currentWeek(currentLeague), myRoster?.roster_id].join('|');
+    const [oddsState, setOddsState] = React.useState({ status: 'idle' });
+    const odds = oddsState.key === oddsKey ? oddsState : { status: 'idle' };
+    const setOdds = value => setOddsState({ ...value, key: oddsKey });
     const runRef = React.useRef({ key: null });
     React.useEffect(() => {
         if (noPlayoffs) return;
         if (odds.status !== 'idle') return;
-        if (runRef.current.key === leagueId) return;
+        if (runRef.current.key === oddsKey) return;
         const Luck = window.App?.Luck, PO = window.App?.PlayoffOdds, WP = window.App?.WeeklyProj;
         if (!Luck || !PO || !WP || !currentLeague) { setOdds({ status: 'unavailable' }); return; }
-        const runKey = leagueId;
+        const runKey = oddsKey;
         runRef.current.key = runKey;
         const live = () => runRef.current.key === runKey;
         setOdds({ status: 'loading' });
         (async () => {
             try {
-                const curWk = WP.currentWeek();
+                const curWk = window.App.LeagueLiveScores.currentWeek(currentLeague);
                 const pws = Number(currentLeague.settings?.playoff_week_start) || 15;
                 const lastReg = Math.max(1, Math.min(18, pws - 1));
                 const seasonOver = resolvedLeagueSkin?.phase === 'complete' || resolvedLeagueSkin?.phase === 'offseason';
-                const ledger = await Luck.build({ league: currentLeague, throughWeek: seasonOver ? lastReg : undefined });
+                const ledger = await Luck.build({ league: currentLeague, throughWeek: seasonOver ? lastReg : curWk - 1 });
                 const playedWeeks = ledger.weeks.length;
                 let sim = null;
-                if (!seasonOver && playedWeeks >= 2 && curWk <= lastReg) {
+                const start = Math.max(1, Number(currentLeague.settings?.start_week) || 1);
+                const rosterIds = new Set((currentLeague.rosters || []).map(r => String(r.roster_id)));
+                const historyComplete = Array.from({ length: Math.max(0, curWk-start) }, (_,i) => start+i).every(w => ledger.weeks.includes(w))
+                    && ledger.rows.length === rosterIds.size && ledger.rows.every(r => rosterIds.has(String(r.rosterId)) && r.weekly.length === curWk-start);
+                if (!seasonOver && playedWeeks >= 2 && historyComplete && curWk <= lastReg) {
                     const futurePairs = await PO.fetchFuturePairs({ league: currentLeague, fromWeek: curWk, toWeek: lastReg });
-                    sim = PO.simulate({ league: currentLeague, ledger, futurePairs, myRosterId: myRoster?.roster_id, sims: 10000 });
+                    const scheduleComplete = Array.from({ length: lastReg-curWk+1 }, (_,i) => curWk+i).every(w => {
+                        const ids = (futurePairs[w] || []).flat().map(String);
+                        return ids.length === rosterIds.size && new Set(ids).size === rosterIds.size && ids.every(id => rosterIds.has(id));
+                    });
+                    if (scheduleComplete) sim = PO.simulate({ league: currentLeague, ledger, futurePairs, myRosterId: myRoster?.roster_id, sims: 10000 });
                 }
                 if (live()) setOdds({ status: 'ready', ledger, sim, curWk, lastReg });
             } catch (e) {
@@ -308,7 +511,7 @@ function LeagueCentralTab({
                 if (live()) setOdds({ status: 'error' });
             }
         })();
-    }, [odds.status, leagueId, noPlayoffs]);
+    }, [oddsKey, noPlayoffs]);
 
     // ── This week's scoreboard ──
     const [scoreSelection, setScoreSelection] = React.useState(null);
@@ -812,7 +1015,7 @@ function LeagueCentralTab({
     const overviewTeam = overviewSummaryTeams.find(team => sameId(team.rosterId, myRoster?.roster_id));
     const overviewRank = overviewTeam ? (overviewSummaryLive ? overviewTeam.rank : overviewSummaryTeams.indexOf(overviewTeam) + 1) : null;
     if (overview && isPhone) return <div ref={centralRef} className="la-mobile la-central mc-league-overview">
-        <LeagueOverviewDecisions currentLeague={currentLeague} leagueSkin={resolvedLeagueSkin} myRoster={myRoster} playersData={playersData} scoreBoard={overviewBoard} setActiveTab={setActiveTab} />
+        <LeagueOverviewDecisions currentLeague={currentLeague} leagueSkin={resolvedLeagueSkin} myRoster={myRoster} playersData={playersData} scoreBoard={overviewBoard} odds={odds} getOwnerName={_getOwnerName} setActiveTab={setActiveTab} />
         {isChopped && window.WrChopBlock && <window.WrChopBlock active compact phone currentLeague={currentLeague} myRoster={myRoster} onOpenLeague={() => setActiveTab?.('central')} />}
         {!isChopped && overviewTeam && <button type="button" className="mc-overview-summary" aria-label="Open your league standing and season outlook" onClick={() => setActiveTab?.('central')}>
             <span><small>{overviewSummaryLive ? 'Live record' : 'Record'}</small><strong>{overviewTeam.wins}–{overviewTeam.losses}{overviewTeam.ties ? '–' + overviewTeam.ties : ''}</strong></span>
@@ -1075,3 +1278,6 @@ function LeagueCentralTab({
 window.LeagueCentralTab = LeagueCentralTab;
 window.LeagueOverviewDecisions = LeagueOverviewDecisions;
 window.buildLeagueOverviewDecision = buildLeagueOverviewDecision;
+window.buildLeagueOverviewForm = buildLeagueOverviewForm;
+window.buildLeagueOverviewOutlook = buildLeagueOverviewOutlook;
+window.buildLeagueOverviewCup = buildLeagueOverviewCup;

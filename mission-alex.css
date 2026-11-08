@@ -26,3 +26,9 @@
 .mc-overview-form li small{display:block;font-size:.68rem;line-height:1.35}
 .mc-overview-decisions .mc-overview-form li[data-trend="above"]>span>strong{color:var(--good)}
 .mc-overview-decisions .mc-overview-form li[data-trend="below"]>span>strong{color:var(--warn)}
+.mc-week-impact{margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,.08);font-size:.73rem;line-height:1.45;overflow-wrap:anywhere}
+.mc-week-impact>strong{font-size:.72rem;color:var(--white)}
+.mc-week-impact p{margin:3px 0;color:var(--silver)}
+.mc-week-impact small{font-size:.67rem}
+.mc-overview-form details{margin-top:6px}
+.mc-overview-form summary{padding:6px 0;font-size:.72rem;color:var(--silver);cursor:pointer}
