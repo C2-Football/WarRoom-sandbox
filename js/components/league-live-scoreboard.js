@@ -9,7 +9,7 @@ function leagueScoreboardProjectedFinish(...args) {
     return window.App.LeagueLiveScores.projectedFinish(...args);
 }
 
-function LeagueLiveScoreboard({ currentLeague, myRoster, playersData, getOwnerName, getPlayerName, setActiveTab, selectedWeek, onWeekChange, onRefresh, onOpenTeam, fullBoard = false, overview = false }) {
+function LeagueLiveScoreboard({ currentLeague, myRoster, playersData, statsData, priorData, getOwnerName, getPlayerName, setActiveTab, selectedWeek, onWeekChange, onRefresh, onOpenTeam, fullBoard = false, overview = false }) {
     const service = window.App.LeagueLiveScores;
     const isPhone = !!window.WR?.useViewport?.().isPhone;
     const leagueId = currentLeague?.league_id || currentLeague?.id || '';
@@ -32,13 +32,15 @@ function LeagueLiveScoreboard({ currentLeague, myRoster, playersData, getOwnerNa
         const refresh = async () => {
             if (!alive || fetching || document.visibilityState === 'hidden') return;
             fetching = true;
+            // Context and analyst-line refreshes enhance the numbers independently.
+            // A slow weather/opponent request must not hide an already loaded game.
+            if (canOpenGameDay) {
+                Promise.resolve().then(()=>context.load?.([Number(week)],currentLeague.season))
+                    .then(()=>{if(alive)setProjectionRevision(value=>value+1);}).catch(()=>{});
+                Promise.resolve().then(()=>window.App?.WeeklyProj?.ensureWeekProjections?.(week)).catch(()=>{});
+            }
             try {
-                // Use the same opponent/venue context as Game Day so the two
-                // surfaces do not show different fallback projections.
-                const [games] = await Promise.all([
-                    context.loadScores(week, currentLeague.season, 2),
-                    canOpenGameDay && typeof context.load === 'function' ? Promise.resolve(context.load([Number(week)], currentLeague.season)).catch(() => null) : null,
-                ]);
+                const games = await context.loadScores(week, currentLeague.season, 2);
                 if (alive) setNfl({ key: nflKey, games: games || [] });
             } catch (_) {
                 if (alive) setNfl({ key: nflKey, games: [] });
@@ -70,7 +72,7 @@ function LeagueLiveScoreboard({ currentLeague, myRoster, playersData, getOwnerNa
     let projections = {};
     if (canOpenGameDay && nflGames.length && window.App?.WeeklyProj?.projectRoster) {
         try { projections = window.App.WeeklyProj.projectRoster([...new Set((board.rows || []).flatMap(row => row.starters || []).filter(pid => pid && String(pid) !== '0'))], {
-            playersData, statsData: window._wrStatsData || {}, priorData: window.S?.priorData || {}, scoring: currentLeague?.scoring_settings || {}, week,
+            playersData, statsData: statsData || window._wrStatsData || {}, priorData: priorData || window.S?.priorData || {}, scoring: currentLeague?.scoring_settings || {}, week,
         }); } catch (_) { /* Unavailable projections stay a dash. */ }
     }
     const projectedFinish = row => leagueScoreboardProjectedFinish(row, playersData, nflGames, currentLeague, week, projections, service);
@@ -267,7 +269,7 @@ function LeagueLiveScoreboard({ currentLeague, myRoster, playersData, getOwnerNa
                     const showStarters = !overview && starterSelection === detailKey;
                     const detailId = `${boardId}-starters-${row.roster_id}`;
                     const teamActionLabel = `${overview ? 'Open ' + ownerName(row) + ' team profile' : 'View ' + ownerName(row) + ' Week ' + week + ' starter scores'}${own(row) ? '. Your team' : ''}${atRisk ? '. ' + riskLabel + '; provisional' : score == null ? '. Awaiting score' : ''}`;
-                    return <React.Fragment key={row.roster_id}><tr className={`${own(row) ? 'is-own' : ''}${atRisk ? ' is-risk' : ''}`}><td>{!overview || onOpenTeam ? <button type="button" className="mc-chop-race-team" aria-label={teamActionLabel} aria-expanded={overview ? undefined : showStarters} aria-controls={overview ? undefined : detailId} onClick={() => overview ? onOpenTeam(row.roster_id) : setStarterSelection(showStarters ? null : detailKey)}>{identity}</button> : <div className="mc-chop-race-team">{identity}</div>}</td><td>{points(score)}</td><td>{points(raceFinish.get(row))}</td></tr>{showStarters && <tr className="mc-chop-race-detail"><td colSpan={3}><div id={detailId} role="region" aria-label={`${ownerName(row)} Week ${week} starter scores`}>{starters(row)}{onOpenTeam && <button type="button" onClick={() => onOpenTeam(row.roster_id)}>Team profile →</button>}</div></td></tr>}</React.Fragment>;
+                    return <React.Fragment key={row.roster_id}><tr className={`${own(row) ? 'is-own' : ''}${atRisk ? ' is-risk' : ''}`}><td>{!overview || onOpenTeam ? <button type="button" className="mc-chop-race-team" aria-label={teamActionLabel} aria-expanded={overview ? undefined : showStarters} aria-controls={overview ? undefined : detailId} onClick={() => overview ? onOpenTeam(row.roster_id) : setStarterSelection(showStarters ? null : detailKey)}>{identity}</button> : <div className="mc-chop-race-team">{identity}</div>}</td><td>{points(score)}</td><td>{points(raceFinish.get(row))}{raceFinish.get(row)!=null && service.finishAssumption?.(row,projections) && <small className="mc-chop-finish-assumption">if they play</small>}</td></tr>{showStarters && <tr className="mc-chop-race-detail"><td colSpan={3}><div id={detailId} role="region" aria-label={`${ownerName(row)} Week ${week} starter scores`}>{starters(row)}{onOpenTeam && <button type="button" onClick={() => onOpenTeam(row.roster_id)}>Team profile →</button>}</div></td></tr>}</React.Fragment>;
                 })}</tbody>
             </table>
         </div>}

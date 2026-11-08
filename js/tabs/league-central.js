@@ -166,7 +166,7 @@ function buildLeagueOverviewOutlook({ board, roster, league, week, games, player
         const own = me && finishes[String(me.roster_id)];
         const known = active.length > 1 && scores.every(Number.isFinite) && Number.isFinite(own);
         const low = known ? Math.min(...scores) : null;
-        return { headline: known ? own === low ? 'You’re projected at the chop line.' : 'You’re projected above the chop line.' : 'Your survival forecast is loading.',
+        return { chop:window.App.Chopped?.survivalInsight?.({league,roster,board,finishes,games,playersData,projections}), headline: known ? own === low ? 'You’re projected at the chop line.' : 'You’re projected above the chop line.' : 'Your survival forecast is loading.',
             detail: known ? own.toFixed(1) + ' projected points · ' + (own-low).toFixed(1) + ' above the lowest forecast. Official results decide the chop.' : 'Waiting for forecasts for every surviving team.',
             result: null, final: false, playoff: null, finishes };
     }
@@ -250,7 +250,7 @@ function buildLeagueOverviewDecision({ league, roster, playersData = {}, skin, w
         nextStarterGame, startersInNextStarterGame: countStarters(nextStarterGame), live: games.some(game => ['live', 'locked'].includes(gameStatus(game))), complete };
 }
 
-function LeagueOverviewDecisions({ currentLeague, leagueSkin, myRoster, playersData, scoreBoard, odds, getOwnerName, setActiveTab }) {
+function LeagueOverviewDecisions({ currentLeague, leagueSkin, myRoster, playersData, statsData, priorData, scoreBoard, odds, getOwnerName, setActiveTab }) {
     // This is always the current week, independent of the scoreboard's history picker.
     const week = window.App.LeagueLiveScores.currentWeek(currentLeague);
     const season = Number(currentLeague?.season);
@@ -268,11 +268,11 @@ function LeagueOverviewDecisions({ currentLeague, leagueSkin, myRoster, playersD
         const refresh = async () => {
             if (!alive || pending || document.visibilityState === 'hidden') return;
             pending = true;
+            Promise.resolve().then(()=>context.load?.([week],season))
+                .then(()=>{if(alive)refreshHistory(value=>value+1);}).catch(()=>{});
+            Promise.resolve().then(()=>window.App?.WeeklyProj?.ensureWeekProjections?.(week)).catch(()=>{});
             try {
-                const [games] = await Promise.all([
-                    context.loadScoreboard(week, season, 2),
-                    context.load ? Promise.resolve(context.load([week], season)).catch(() => null) : null,
-                ]);
+                const games = await context.loadScoreboard(week, season, 2);
                 if (alive) {
                     if (Array.isArray(games) && games.length) setSchedule({ key, status: 'ready', games, now: Date.now() });
                     else unavailable();
@@ -344,7 +344,7 @@ function LeagueOverviewDecisions({ currentLeague, leagueSkin, myRoster, playersD
     let projections = {};
     if (started && wp?.projectRoster) {
         try { projections = wp.projectRoster([...new Set((scoreBoard?.rows || []).flatMap(row => row.starters || []).filter(pid => pid && String(pid) !== '0'))], {
-            playersData, statsData: window._wrStatsData || {}, priorData: state?.priorData || {}, scoring: currentLeague?.scoring_settings || {}, week,
+            playersData, statsData: statsData || window._wrStatsData || {}, priorData: priorData || state?.priorData || {}, scoring: currentLeague?.scoring_settings || {}, week,
         }); } catch (_) { /* incomplete forecasts stay unavailable */ }
     }
     const outlook = started ? buildLeagueOverviewOutlook({ board: current.status === 'ready' ? scoreBoard : null, roster: myRoster, league: currentLeague, week,
@@ -397,6 +397,10 @@ function LeagueOverviewDecisions({ currentLeague, leagueSkin, myRoster, playersD
     return <section className="mc-overview-decisions" aria-label="Alex Insights">
         <header><span>Alex Insights</span><small>{week ? 'Week ' + week + (started ? ' · Live week' : '') : 'Your roster'}</small></header>
         {started ? <div className="mc-live-week">
+            {outlook?.chop && <div className="mc-week-impact mc-chop-insight" aria-label="Your Chopped survival outlook">
+                <strong>{outlook.chop.title}</strong><p data-tone={outlook.chop.tone}>{outlook.chop.detail}</p><p>{outlook.chop.message}</p>
+                {outlook.chop.status==='projected' && <small>{outlook.chop.noMoves?'Lineup locked · ':''}{outlook.chop.conditional?'If questionable players play · ':''}Projected · official results decide the chop</small>}
+            </div>}
             {playerResults}
             {showPlayoffs && <div className="mc-week-impact" aria-label="Your playoff impact">
                 <strong>Playoff outlook</strong>
@@ -425,6 +429,8 @@ function LeagueCentralTab({
     leagueSkin,
     myRoster,
     playersData,
+    statsData,
+    priorData,
     standings,
     transactions,
     getOwnerName,
@@ -998,7 +1004,7 @@ function LeagueCentralTab({
 
     const renderScoreboard = () => window.LeagueLiveScoreboard && React.createElement(window.LeagueLiveScoreboard, {
         key: leagueId + ':' + season,
-        currentLeague, myRoster, playersData, onOpenTeam,
+        currentLeague, myRoster, playersData, statsData, priorData, onOpenTeam,
         getOwnerName: _getOwnerName, getPlayerName: _getPlayerName, setActiveTab,
         selectedWeek: scoreWeek, onWeekChange: week => setScoreSelection({ key: `${leagueId}|${season}`, week }),
         onRefresh: liveContext?.refresh, fullBoard: isPhone, overview,
@@ -1023,7 +1029,7 @@ function LeagueCentralTab({
     const overviewTeam = overviewSummaryTeams.find(team => sameId(team.rosterId, myRoster?.roster_id));
     const overviewRank = overviewTeam ? (overviewSummaryLive ? overviewTeam.rank : overviewSummaryTeams.indexOf(overviewTeam) + 1) : null;
     if (overview && isPhone) return <div ref={centralRef} className="la-mobile la-central mc-league-overview">
-        <LeagueOverviewDecisions currentLeague={currentLeague} leagueSkin={resolvedLeagueSkin} myRoster={myRoster} playersData={playersData} scoreBoard={overviewBoard} odds={odds} getOwnerName={_getOwnerName} setActiveTab={setActiveTab} />
+        <LeagueOverviewDecisions currentLeague={currentLeague} leagueSkin={resolvedLeagueSkin} myRoster={myRoster} playersData={playersData} statsData={statsData} priorData={priorData} scoreBoard={overviewBoard} odds={odds} getOwnerName={_getOwnerName} setActiveTab={setActiveTab} />
         {isChopped && window.WrChopBlock && <window.WrChopBlock active compact phone currentLeague={currentLeague} myRoster={myRoster} onOpenLeague={() => setActiveTab?.('central')} />}
         {!isChopped && overviewTeam && <button type="button" className="mc-overview-summary" aria-label="Open your league standing and season outlook" onClick={() => setActiveTab?.('central')}>
             <span><small>{overviewSummaryLive ? 'Live record' : 'Record'}</small><strong>{overviewTeam.wins}–{overviewTeam.losses}{overviewTeam.ties ? '–' + overviewTeam.ties : ''}</strong></span>

@@ -5,6 +5,7 @@ const Cup = require('../js/shared/woeppel-cup.js');
 const window = { App: {}, WoeppelCup: Cup };
 const context = vm.createContext({ window, console });
 vm.runInContext(fs.readFileSync('js/shared/league-live-scores.js','utf8'),context);
+vm.runInContext(fs.readFileSync('js/shared/chopped.js','utf8'),context);
 vm.runInContext(Babel.transform(fs.readFileSync('js/tabs/league-central.js','utf8'),{ presets:['react'] }).code,context);
 window.App.NflContext = { gameStatus: game => game?.completed ? 'final' : game?.state === 'in' ? 'live' : game?.state === 'pre' ? 'upcoming' : 'unknown' };
 const league = { league_id:'l1',season:2026,settings:{playoff_teams:2,playoff_week_start:15},rosters:[1,2,3,4].map(roster_id=>({roster_id})) };
@@ -179,4 +180,47 @@ test('legacy Cup live scores include both teams in the manager’s real Cup pair
     assert.match(read.scoreText,/Your score 100.0 · Owner 4 70.0/);
     assert.match(read.detail,/As scores stand/);assert.equal(read.tone,'good');
     assert.equal(Object.keys(cup.weeks).length,0);
+});
+
+function chopFixture({week=9,alive=10,points=5}={}){
+    const rosters=Array.from({length:18},(_,i)=>({roster_id:i+1,players:['p'+(i+1)],settings:i<alive?{}:{eliminated:i-alive+1}}));
+    const league={league_id:'chop',season:2026,total_rosters:18,settings:{type:3,start_week:1,max_subs:0},roster_positions:['QB'],rosters};
+    const rows=rosters.slice(0,alive).map(r=>({roster_id:r.roster_id,starters:r.players}));
+    return {league,roster:rosters[0],board:{supported:true,status:'ready',week,rows},
+        finishes:Object.fromEntries(rows.map((r,i)=>[String(r.roster_id),i===0?points:20+i])),
+        playersData:Object.fromEntries(rows.map(r=>[r.players?.[0]||r.starters[0],{team:'KC'}])),games:[{home:'KC',away:'DAL',state:'in'}]};
+}
+const survival=args=>window.App.Chopped.survivalInsight(args);
+
+test('personal Chop watch triggers only at the bottom or one/two places above it',()=>{
+    let args=chopFixture(),read=survival(args);
+    assert.equal(read.placesAbove,0);assert.equal(read.noMoves,true);assert.match(read.message,/Hopes and prayers/);
+    assert.match(read.detail,/5.0 projected pts · Lowest of 10/);
+    read=survival(chopFixture({points:22.5}));assert.equal(read.placesAbove,2);assert.match(read.detail,/2 places above/);
+    assert.equal(survival(chopFixture({points:30})),null,'Comfortably clear teams do not get a danger joke');
+    args.finishes['2']=5;read=survival(args);assert.match(read.title,/Tied/);
+    for(const bad of [{...args.board,status:'stale'},{...args.board,error:'offline'},{...args.board,supported:false}])assert.equal(survival({...args,board:bad}),null);
+    args.finishes['3']=null;assert.equal(survival(args),null,'An unknown rival forecast prevents a confident ordinal rank');
+});
+
+test('hopes and prayers requires verified locks, never just an empty bench or missing options',()=>{
+    for(const change of [
+        {games:[{home:'KC',away:'DAL',state:'pre'}]},
+        {games:[]},
+        {games:[{home:'KC',away:'DAL',state:'in',statusName:'STATUS_POSTPONED'}]},
+        {playersData:{p1:{team:'UNKNOWN'}}},
+    ]){const read=survival({...chopFixture(),...change});assert.equal(read.noMoves,false);assert.doesNotMatch(read.message,/Hopes and prayers/);assert.match(read.message,/remaining starters/);}
+    const args=chopFixture();args.league.settings.max_subs=1;
+    assert.equal(survival(args).noMoves,false,'Configured in-game substitutions remain an option');
+    args.league.settings.max_subs=0;args.board.rows[0].starters=['0'];
+    assert.equal(survival(args).noMoves,false,'An empty slot is not a locked lineup');
+});
+
+test('Chop humor distinguishes early risk, late heartbreak and official elimination',()=>{
+    const early=chopFixture({week:2,alive:17}),late=chopFixture({week:16,alive:3});
+    assert.doesNotMatch(survival(early).message,/next year|chopped|eliminated/,'A projection never writes the farewell speech');
+    assert.match(survival(late).message,/trophy.*😢/);
+    early.roster.settings.eliminated=2;
+    const out=survival(early);assert.equal(out.status,'eliminated');assert.match(out.message,/Better luck next year/);
+    late.roster.settings.eliminated=16;assert.match(survival(late).message,/good run.*😢/);
 });

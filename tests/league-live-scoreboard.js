@@ -136,9 +136,15 @@ assert.equal(finish({points:-2,starters:['done','bye','0']},progressPlayers,prog
 assert.equal(finish({points:0,starters:['later']},progressPlayers,progressGames,props.currentLeague,2,{later:{statLine:{median:{pass_yd:0,pass_td:0}},points:{median:0}}},service),0,'A genuine zero projection remains zero');
 for (const median of [{},{gp:1},{season:2026,week:2}]) assert.equal(finish({points:0,starters:['later']},progressPlayers,progressGames,props.currentLeague,2,{later:{statLine:{median},points:{median:0}}},service),null,'Metadata-only projections stay unavailable');
 for (const row of [{points:null,starters:['done']},{points:40,starters:['postponed']},{points:40,starters:['missing']},{points:40,starters:['live']},{points:40,starters:['later']}]) assert.equal(finish(row,progressPlayers,progressGames,props.currentLeague,2,{},service),null,'Required missing data stays unavailable');
-App.WeeklyProj={projectRoster:()=>({p2:estimates.live})};
+let projectionOptions;
+App.WeeklyProj={projectRoster:(_ids,options)=>{projectionOptions=options;return {p2:estimates.live};}};
 progressTree=render({fullBoard:true,selectedWeek:2,playersData:{p1:progressPlayers.done,p2:progressPlayers.live}});
 assert(nodes(progressTree).some(n=>n.props?.className==='mc-score-projection'&&/Proj\. finish.*10\.00/.test(text(n))),'Projected finish renders alongside actual score');
+const scopedStats={p2:{gp:1,rush_yd:100}}, scopedPrior={p2:{gp:1,rush_yd:80}};
+render({fullBoard:true,selectedWeek:2,statsData:scopedStats,priorData:scopedPrior});
+assert.strictEqual(projectionOptions.statsData,scopedStats,'The scoreboard uses current league stats directly, without waiting for the global bridge');
+assert.strictEqual(projectionOptions.priorData,scopedPrior);
+
 const pastProgress = render({ fullBoard: true, selectedWeek: 1, playersData: { p1: progressPlayers.done, p2: progressPlayers.live } });
 assert(!nodes(pastProgress).some(n => n.props?.className === 'mc-score-progress'), 'Current player team metadata cannot invent historical progress');
 assert(!nodes(pastProgress).some(n=>n.props?.className==='mc-score-projection'),'Current projections cannot invent historical finishes');
@@ -311,5 +317,11 @@ console.log('League scoreboard render checks passed.');
     assert.deepEqual(JSON.parse(JSON.stringify(calls)),[['scores',2,'2026',2],['context',[2],'2026']],'Current scoreboard loads the same week and season matchup context as Game Day');
     assert(hooks.some(value=>value?.key==='2026|2'&&value.games?.length),'NFL progress updates after context is ready');
     cleanup();
+    // Optional matchup/weather context must never hold a usable schedule hostage.
+    App.NflContext.load=()=>new Promise(()=>{});
+    hooks=[];render({fullBoard:true,selectedWeek:2});
+    const release=effects[0]();await new Promise(resolve=>setImmediate(resolve));
+    assert(hooks.some(value=>value?.key==='2026|2'&&value.games?.length),'A pending optional context request cannot hide projected finishes');
+    release();
     console.log('League scoreboard projection context checks passed.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

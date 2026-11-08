@@ -114,12 +114,58 @@
         };
     }
 
+    // A personal, current-week read. No ranking against an incomplete field and
+    // no "nothing left to do" claim without verified starter locks.
+    function survivalInsight({ league, roster, board, finishes = {}, games = [], playersData = {}, projections = {}, now = Date.now() }) {
+        if (!isChopped(league) || roster?.roster_id == null || !board?.week) return null;
+        const week = Number(board.week), start = Number(league.settings?.start_week) || 1;
+        const final = finalChopWeek(league,league.rosters), out = eliminatedWeek(roster);
+        const stage = w => final-w <= 3 ? 'late' : w-start < Math.max(1,Math.ceil((final-start+1)/3)) ? 'early' : 'middle';
+        if (out && out <= week) return { status:'eliminated',tone:'bad',title:'The axe found us. 🪓',
+            detail:'Chopped in Week '+out, noMoves:true,
+            message:stage(out)==='early' ? 'A short run, a loud exit. Better luck next year, coach. 🫡'
+                : stage(out)==='late' ? 'You gave it a good run, coach. So close to the trophy. 😢' : 'We had a good run. The revenge tour starts next season. 🫡' };
+        if (!board.supported || board.error || !['ready','refreshing'].includes(board.status)) return null;
+        const active = aliveRosters(league.rosters || [],week), id = String(roster.roster_id);
+        const ids = active.map(r=>String(r.roster_id));
+        if (active.length < 2 || new Set(ids).size !== ids.length || !ids.includes(id) || ids.some(rid=>!Number.isFinite(finishes[rid]))) return null;
+        const mine = Math.round(finishes[id]*100), values = ids.map(rid=>Math.round(finishes[rid]*100));
+        const placesAbove = values.filter(points=>points<mine).length;
+        if (placesAbove>2) return null;
+        const tied = values.filter(points=>points===mine).length>1;
+        const ownRow = (board.rows || []).find(r=>String(r.roster_id)===id);
+        const slots = (league.roster_positions || []).filter(pos=>!['BN','BE','BENCH','IR','TAXI','RES','RESERVE'].includes(String(pos).toUpperCase()));
+        const normalize = value=>({WSH:'WAS',JAC:'JAX',LA:'LAR',AZ:'ARI',OAK:'LV',SD:'LAC'})[String(value||'').toUpperCase()]||String(value||'').toUpperCase();
+        const locked = pid=>{
+            if (!pid || String(pid)==='0' || !(roster.players || []).map(String).includes(String(pid))) return false;
+            const team=normalize(playersData[pid]?.team);
+            if(!team)return false;
+            const game=games.find(g=>[normalize(g.home),normalize(g.away)].includes(team));
+            if (!game || /POSTPONED|CANCEL|SUSPEND|DELAY/i.test(game.statusName||'')) return false;
+            const status=App.NflContext?.gameStatus?.(game,now);
+            return ['live','final'].includes(status);
+        };
+        const substitutions = Number(league.settings?.max_subs)>0 || Number(league.settings?.sub_start_time_eligibility)>0;
+        const noMoves = !substitutions && slots.length>0 && ownRow?.starters?.length===slots.length && ownRow.starters.every(locked);
+        const atBottom=placesAbove===0, late=stage(week)==='late'||active.length<=4;
+        const title = atBottom ? tied ? 'Tied at the projected chop line. 🪓' : 'The axe is circling. 🪓' : 'A little too close to the axe. 🪓';
+        const detail = finishes[id].toFixed(1)+' projected pts · '+(atBottom ? (tied?'Tied lowest':'Lowest')+' of '+active.length
+            : placesAbove+' '+(placesAbove===1?'place':'places')+' above the chop line · +'+((mine-Math.min(...values))/100).toFixed(1)+' pts');
+        const message = noMoves ? atBottom ? late ? 'Not this close to the trophy… 😢 Hopes and prayers mode: activated.'
+            : 'Hopes and prayers mode: activated. 🕯️ No farewell speech yet, coach.'
+            : 'Lineup locked. Stress-refreshing the scores is now a team sport. 😅'
+            : atBottom ? 'The axe is circling, but the door is still open. Check your remaining starters before we light the candles.'
+                : 'Sweaty-palms territory. Check your remaining starters; let’s keep the axe somebody else’s problem. 😅';
+        return {status:'projected',title,detail,message,tone:atBottom?'bad':'neutral',placesAbove,noMoves,
+            conditional:active.some(r=>App.LeagueLiveScores?.finishAssumption?.((board.rows||[]).find(row=>String(row.roster_id)===String(r.roster_id)),projections))};
+    }
+
     const api = {
         CHOPPED_TYPE,
         isChopped, lastChoppedLeg, finalChopWeek,
         eliminatedWeek, isEliminated, isAliveInWeek,
         aliveRosters, eliminatedRosters,
-        state,
+        state, survivalInsight,
     };
     App.Chopped = api;
     /* global module */
