@@ -494,6 +494,27 @@
             return {champion:final.winner,runnerUp,winnerScore:final.winner===final.a?final.x:final.y,runnerScore:final.winner===final.a?final.y:final.x,week:final.week};
         }
     };
-    const api={tournament,formats,configure:tournament.configure,roundCount,isDoubleElimination,doubleElimination,stageLabel,groupConfig,withGroupConfig,championshipWeek,championshipWeeks,withChampionshipWeek,groupTables:tournament.groupTables,survivor:tournament.survivor,result:tournament.result,schedule:tournament.schedule,requiredScoreIds:tournament.requiredScoreIds,...Object.fromEntries(Object.keys(legacy).map(k=>[k,s=>s?.version===2?tournament[k](s):legacy[k](s)]))};root.WoeppelCup=api;
+    // Display-only overlay: provider scores never finalize or persist Cup results.
+    function scorePreview(state, week, board) {
+        const empty = { scores: {}, live: false, state };
+        if (!state?.locked || state.enabled === false || state.weeks?.[week]?.final
+            || board?.week !== week || !board.supported || board.error || !['ready','refreshing'].includes(board.status)) return empty;
+        let ids;
+        try {
+            ids = state.version === 2 ? tournament.requiredScoreIds(state,week)
+                : week >= 6 && week <= 11 ? Object.values(state.groups).flat()
+                    : legacy.knockout(state).flat().filter(m=>m.week===week).flatMap(m=>[m.a,m.b]);
+        } catch (_) { return empty; }
+        const scores = {};
+        for (const row of board.rows || []) {
+            const id = String(row.roster_id);
+            const value = typeof row.custom_points === 'number' && Number.isFinite(row.custom_points) ? row.custom_points : row.points;
+            if (ids.includes(id) && typeof value === 'number' && Number.isFinite(value)) scores[id] = value;
+        }
+        if (!Object.keys(scores).length) return empty;
+        return { live: true, scores, state: { ...state, weeks: { ...state.weeks,
+            [week]: { scores, final: false, fetchedAt: board.updatedAt ? new Date(board.updatedAt).toISOString() : null } } } };
+    }
+    const api={tournament,scorePreview,formats,configure:tournament.configure,roundCount,isDoubleElimination,doubleElimination,stageLabel,groupConfig,withGroupConfig,championshipWeek,championshipWeeks,withChampionshipWeek,groupTables:tournament.groupTables,survivor:tournament.survivor,result:tournament.result,schedule:tournament.schedule,requiredScoreIds:tournament.requiredScoreIds,...Object.fromEntries(Object.keys(legacy).map(k=>[k,s=>s?.version===2?tournament[k](s):legacy[k](s)]))};root.WoeppelCup=api;
     if(typeof module!=='undefined')module.exports=api;
 })(typeof window!=='undefined'?window:globalThis);

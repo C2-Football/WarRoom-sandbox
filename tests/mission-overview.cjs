@@ -104,7 +104,7 @@ test('live overview switches from lineup preparation to the personal week outloo
     h.hooks[0]={key:'l1|2026|6',status:'ready',games:[{home:'KC',away:'NYJ',state:'live'}],now:Date.now()};
     const tree=h.render();
     assert.match(text(tree),/Live week/);
-    assert.match(text(tree),/Your matchup forecast is loading/);
+    assert.doesNotMatch(text(tree),/matchup forecast|Game Day →/);
     assert.doesNotMatch(text(tree),/Replace|Explore waivers|Your next kickoff/);
 });
 
@@ -219,7 +219,7 @@ test('live Alex panel renders the personal matchup, win/loss playoff impact and 
     h.window.App.LeagueLiveScores.projectedFinish=row=>row.forecast;
     h.render();h.hooks[0]={key:'l1|2026|6',status:'ready',games:[{home:'KC',away:'LV',completed:true}],now:Date.now()};
     const tree=h.render();
-    assert.match(text(tree),/You’re projected to win.*125.0–115.0 vs The opponent/);
+    assert.doesNotMatch(text(tree),/You’re projected to win|125.0–115.0|Game Day →|matchup forecast/);
     assert.match(text(tree),/50% entering the week · 72% with a win · 31% with a loss/);
     assert.match(text(tree),/projected result points toward 72% playoff odds/);
     assert.doesNotMatch(text(tree),/Replace|Explore waivers|Your Cup outlook/);
@@ -245,7 +245,7 @@ test('a schedule outage after kickoff retains live-week mode and withholds the f
     const h=fixture();h.window.App.NflContext.loadScoreboard=async()=>{throw Error('offline');};
     h.render();h.hooks[0]={key:'l1|2026|6',status:'ready',games:[{home:'KC',away:'LV',completed:true}],now:Date.now()};
     h.render();const cleanup=h.effects[0]();await new Promise(setImmediate);
-    const tree=h.render();assert.match(text(tree),/Live week/);assert.match(text(tree),/schedule could not refresh/);
+    const tree=h.render();assert.match(text(tree),/Live week/);assert.doesNotMatch(text(tree),/forecast|Game Day →/);
     assert.doesNotMatch(text(tree),/Replace|Explore waivers|You’re projected to win/);
     cleanup();
 });

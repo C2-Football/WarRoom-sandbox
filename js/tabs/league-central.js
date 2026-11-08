@@ -66,21 +66,30 @@ function buildLeagueOverviewForm({ board, roster, week, finalTeams, playersData 
 
 // Pure, read-only competition previews. A hypothetical finalized week is only
 // passed to the existing Cup engine in memory; shared results are never changed.
-function buildLeagueOverviewCup({ cup, week, rosterId, finishes = {}, name = id => 'Team ' + id, engine = window.WoeppelCup }) {
+function buildLeagueOverviewCup({ cup, week, rosterId, finishes = {}, liveScores = {}, name = id => 'Team ' + id, engine = window.WoeppelCup }) {
     if (!cup?.locked || cup.enabled === false || rosterId == null || !engine) return null;
     const id = String(rosterId), legacy = cup.version !== 2;
     const teams = legacy ? Object.values(cup.groups || {}).flat() : cup.teams || [];
     if (!teams.includes(id)) return null;
     const title = cup.name || 'League Cup';
-    const note = detail => ({ title, detail });
+    let scoreText = '';
+    const note = (detail, tone = 'neutral') => ({ title, detail, tone, scoreText });
     try {
         engine.validate(cup);
         const weeks = legacy ? [6,7,8,9,10,11,15,16,17] : engine.schedule(cup);
         if (week < weeks[0]) return note('Starts Week ' + weeks[0] + '.');
         const result = !legacy && engine.result(cup);
-        if (result) return note(String(result.champion) === id ? 'You won the Cup.' : name(result.champion) + ' won the Cup.');
+        if (result) return note(String(result.champion) === id ? 'You won the Cup.' : name(result.champion) + ' won the Cup.', String(result.champion) === id ? 'good' : 'neutral');
         if (!weeks.includes(week)) return note(week > weeks.at(-1) ? 'Review the final Cup results in League.' : 'Next Cup round: Week ' + weeks.find(w => w > week) + '.');
         const qualifying = legacy ? week <= 11 : !['knockout','survivor'].includes(cup.format) && week < cup.startWeek + cup.groupWeeks;
+        if (Number.isFinite(liveScores[id])) {
+            scoreText = 'Your score ' + liveScores[id].toFixed(1);
+            try {
+                const matches = qualifying ? engine.fixtures(cup).filter(m=>m.week===week) : cup.format==='survivor' ? [] : engine.knockout(cup).flat().filter(m=>m.week===week);
+                const match = matches.find(m=>[m.a,m.b].includes(id)), other = match && (match.a===id?match.b:match.a);
+                if (other && Number.isFinite(liveScores[other])) scoreText += ' · ' + name(other) + ' ' + liveScores[other].toFixed(1);
+            } catch (_) { /* current score remains useful before prior stages settle */ }
+        }
         const prior = weeks.filter(w => w < week);
         if (prior.some(w => !cup.weeks?.[w]?.final)) return note('Earlier Cup results need finalizing before this week’s outlook is available.');
         const final = cup.weeks?.[week]?.final === true;
@@ -96,15 +105,17 @@ function buildLeagueOverviewCup({ cup, week, rosterId, finishes = {}, name = id 
             }
             return note('You are not competing in this Cup round.');
         }
+        const forecastReady = required.length && required.every(pid=>Number.isFinite(finishes[pid]));
         if (!final) {
-            if (!required.length || required.some(pid => !Number.isFinite(finishes[pid]))) return note('Projected Cup impact is waiting for complete team forecasts.');
-            projected.weeks[week] = { final: true, scores: Object.fromEntries(required.map(pid => [pid, finishes[pid]])) };
+            const scores = forecastReady ? finishes : liveScores;
+            if (!required.length || required.some(pid => !Number.isFinite(scores[pid]))) return note('Cup impact is waiting for the remaining team scores.');
+            projected.weeks[week] = { final: true, scores: Object.fromEntries(required.map(pid => [pid, scores[pid]])) };
             // A prior commissioner ruling cannot decide a new hypothetical tie.
             if (qualifying) delete projected.seedRuling;
             if (projected.tieRulings) Object.keys(projected.tieRulings).filter(key => key.startsWith(week + ':')).forEach(key => delete projected.tieRulings[key]);
             if (projected.survivorRulings) delete projected.survivorRulings[week];
         }
-        const prefix = final ? 'After the finalized week: ' : 'If forecasts hold: ';
+        const prefix = final ? 'After the finalized week: ' : forecastReady ? 'If forecasts hold: ' : 'As scores stand: ';
         if (qualifying) {
             const group = legacy ? Object.keys(cup.groups).find(g => cup.groups[g].includes(id)) : cup.format === 'groups' ? Object.keys(cup.groups).find(g => cup.groups[g].includes(id)) : null;
             const table = state => group ? (legacy ? engine.tables(state) : engine.groupTables(state))[group] : engine.tables(state);
@@ -119,13 +130,14 @@ function buildLeagueOverviewCup({ cup, week, rosterId, finishes = {}, name = id 
             const priorTie = before.filter(row => compare(row, before.find(r => r.id === id)) === 0).length > 1;
             const movement = !final && before.some(row => row.played > 0) && rank(before) !== rank(after) ? ' (from ' + (priorTie ? 'tied ' : '') + '#' + rank(before) + ')' : '';
             const field = cutoffTied ? 'tied at the qualifying cutline' : rank(after) <= limit ? 'inside the top ' + limit : 'outside the top ' + limit;
-            return note(prefix + position + movement + ' · ' + field + (legacy ? '; third-place wildcards also qualify' : '') + '.');
+            const tone = cutoffTied ? 'neutral' : rank(after) <= limit ? 'good' : legacy && rank(after) === 3 ? 'neutral' : 'bad';
+            return note(prefix + position + movement + ' · ' + field + (legacy ? '; third-place wildcards also qualify' : '') + '.', tone);
         }
         if (cup.format === 'survivor') {
             const stage = engine.survivor(projected).find(s => s.week === week);
             if (stage?.pendingTie?.ids.includes(id)) return note(prefix + 'tied at the survival cutoff; a ruling would be needed.');
-            if (stage?.survivors.includes(id)) return note(prefix + (stage.survivors.length === 1 ? 'you win the Cup.' : 'you survive into the next round.'));
-            if (stage?.eliminated.includes(id)) return note(prefix + 'you are eliminated from the Cup.');
+            if (stage?.survivors.includes(id)) return note(prefix + (stage.survivors.length === 1 ? 'you win the Cup.' : 'you survive into the next round.'), 'good');
+            if (stage?.eliminated.includes(id)) return note(prefix + 'you are eliminated from the Cup.', 'bad');
         }
         const match = engine.knockout(projected).flat().find(m => m.week === week && [m.a,m.b].includes(id));
         if (!match) return note('Your next Cup matchup is waiting for the prior round.');
@@ -133,12 +145,12 @@ function buildLeagueOverviewCup({ cup, week, rosterId, finishes = {}, name = id 
         if (!match.winner) return note(prefix + 'tied with ' + name(opponent) + '; the Cup tiebreak remains unresolved.');
         if (match.winner === id) {
             const champion = !legacy && engine.result(projected)?.champion === id;
-            return note(prefix + 'you beat ' + name(opponent) + (champion ? ' and win the Cup.' : ' and advance.'));
+            return note(prefix + 'you beat ' + name(opponent) + (champion ? ' and win the Cup.' : ' and advance.'), 'good');
         }
         const double = !legacy && engine.isDoubleElimination(cup);
         const consequence = double && match.bracket === 'upper' ? ' and move to the lower bracket.'
             : double && match.bracket === 'final' && match.a === id ? '; the championship goes to a reset.' : ' and leave the Cup.';
-        return note(prefix + 'you lose to ' + name(opponent) + consequence);
+        return note(prefix + 'you lose to ' + name(opponent) + consequence, 'bad');
     } catch (_) { return note('Cup impact is waiting for settled results or a tiebreak ruling.'); }
 }
 
@@ -338,8 +350,9 @@ function LeagueOverviewDecisions({ currentLeague, leagueSkin, myRoster, playersD
     const outlook = started ? buildLeagueOverviewOutlook({ board: current.status === 'ready' ? scoreBoard : null, roster: myRoster, league: currentLeague, week,
         games: current.games, playersData, projections, odds, name: ownerName,
         chopped: leagueSkin?.type === 'chopped' || !!window.App.Chopped?.isChopped?.(currentLeague) }) : null;
+    const cupScorePreview = window.WoeppelCup?.scorePreview?.(cupState.key === cupKey ? cupState.cup : null, week, scoreBoard);
     const cup = cupState.key === cupKey && cupState.status === 'ready' ? buildLeagueOverviewCup({
-        cup: cupState.cup, week, rosterId: myRoster?.roster_id, finishes: outlook?.finishes, name: ownerName,
+        cup: cupState.cup, week, rosterId: myRoster?.roster_id, finishes: outlook?.finishes, liveScores: cupScorePreview?.scores, name: ownerName,
     }) : null;
     const showPlayoffs = leagueSkin?.features?.showPlayoffOdds !== false && leagueSkin?.type !== 'chopped'
         && Number(currentLeague?.settings?.playoff_teams) > 0 && week < Number(currentLeague?.settings?.playoff_week_start);
@@ -384,21 +397,16 @@ function LeagueOverviewDecisions({ currentLeague, leagueSkin, myRoster, playersD
     return <section className="mc-overview-decisions" aria-label="Alex Insights">
         <header><span>Alex Insights</span><small>{week ? 'Week ' + week + (started ? ' · Live week' : '') : 'Your roster'}</small></header>
         {started ? <div className="mc-live-week">
-            <div className="mc-primary-move">
-                <div><h3>{outlook.headline}</h3><p className="mc-next-note">{outlook.detail}</p></div>
-                <button type="button" onClick={() => setActiveTab?.('lineup')}>Game Day →</button>
-            </div>
             {playerResults}
-            {current.status === 'stale' && <p className="mc-next-note">The game schedule could not refresh. Your forecast will return when it reconnects.</p>}
             {showPlayoffs && <div className="mc-week-impact" aria-label="Your playoff impact">
                 <strong>Playoff outlook</strong>
                 {outlook.playoff ? <>
-                    <p>{outlook.playoff.current}% entering the week · {outlook.playoff.ifWin}% with a win · {outlook.playoff.ifLose}% with a loss</p>
+                    <p>{outlook.playoff.current}% entering the week · <span data-tone="good">{outlook.playoff.ifWin}% with a win</span> · <span data-tone="bad">{outlook.playoff.ifLose}% with a loss</span></p>
                     {Number(currentLeague?.settings?.league_average_match) === 1 && <small>Win/loss refers to your matchup; median results are also simulated.</small>}
-                    {outlook.playoff.projected != null && <p>{outlook.final ? 'This result points toward' : 'Your projected result points toward'} {outlook.playoff.projected}% playoff odds <small>· season-model estimate</small></p>}
+                    {outlook.playoff.projected != null && <p data-tone={outlook.playoff.projected > outlook.playoff.current ? 'good' : outlook.playoff.projected < outlook.playoff.current ? 'bad' : 'neutral'}>{outlook.final ? 'This result points toward' : 'Your projected result points toward'} {outlook.playoff.projected}% playoff odds <small>· season-model estimate</small></p>}
                 </> : <p>{['idle','loading'].includes(odds?.status) ? 'Loading your win/loss impact…' : 'Win/loss playoff impact is unavailable for this week.'}</p>}
             </div>}
-            {cup && <div className="mc-week-impact" aria-label="Your Cup outlook"><strong>{cup.title}</strong><p>{cup.detail}</p></div>}
+            {cup && <div className="mc-week-impact" aria-label="Your Cup outlook"><strong>{cup.title}</strong>{cup.scoreText && <p className="mc-cup-score">{cup.scoreText}</p>}<p data-tone={cup.tone}>{cup.detail}</p>{cupScorePreview?.live && <small>Live scores · auto refresh · not finalized</small>}</div>}
             {!cup && cupState.key === cupKey && cupState.status === 'unavailable' && <p className="mc-next-note">Cup outlook could not refresh.</p>}
         </div> : <>
         <div className="mc-primary-move">

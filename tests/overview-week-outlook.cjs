@@ -92,7 +92,7 @@ test('Cup forecast handles configured dates, participation, disabled drafts, mis
     assert.equal(cupRun(cup,week,{rosterId:99}),null);
     assert.equal(cupRun({...cup,locked:false},week),null);
     assert.equal(cupRun({...cup,enabled:false},week),null);
-    assert.match(cupRun(cup,week,{finishes:{1:10}}).detail,/complete team forecasts/);
+    assert.match(cupRun(cup,week,{finishes:{1:10}}).detail,/remaining team scores/);
     assert.match(cupRun(cup,week+1).detail,/Earlier Cup results need finalizing/);
 });
 
@@ -138,5 +138,45 @@ test('legacy Woeppel Cup respects its group draw and wildcard rules',()=>{
     const finishes=Object.fromEntries(Array.from({length:12},(_,i)=>[String(i+1),200-i*10]));
     const read=window.buildLeagueOverviewCup({cup,week:6,rosterId:1,finishes,name});
     assert.match(read.detail,/#1 in Group A/);assert.match(read.detail,/third-place wildcards/);
+    assert.equal(Object.keys(cup.weeks).length,0);
+});
+
+test('Cup insights use one consistent live-score basis when any forecast is missing',()=>{
+    const cup=cupFixture();
+    const liveScores={1:20,2:10,3:0,4:-2};
+    const read=cupRun(cup,cup.startWeek,{finishes:{1:900,2:300,3:null,4:900},liveScores});
+    assert.match(read.detail,/As scores stand: #1/);assert.equal(read.tone,'good');
+    assert.equal(read.scoreText,'Your score 20.0');
+    assert.doesNotMatch(read.detail,/forecasts|900/);
+    const lose=cupRun({...cup,qualifierCount:2},cup.startWeek,{finishes:{},liveScores,rosterId:4});
+    assert.equal(lose.tone,'bad');assert.match(lose.detail,/outside the top 2/);
+    const original=JSON.stringify(cup);
+    cupRun(cup,cup.startWeek,{finishes:{},liveScores});assert.equal(JSON.stringify(cup),original);
+});
+
+test('Cup score overlays preserve finals, zeros, negative points and custom totals without changing standings',()=>{
+    const cup=cupFixture(),week=cup.startWeek;
+    const board={week,supported:true,status:'ready',updatedAt:100,rows:[
+        {roster_id:1,points:10,custom_points:0},{roster_id:2,points:-2},{roster_id:3,points:null},{roster_id:4,points:'12'},
+        {roster_id:99,points:900},
+    ]};
+    const original=JSON.stringify(cup),preview=Cup.scorePreview(cup,week,board);
+    assert.equal(preview.live,true);assert.deepEqual(preview.scores,{'1':0,'2':-2});
+    assert.equal(preview.state.weeks[week].final,false);
+    assert.deepEqual(Cup.tables(preview.state),Cup.tables(cup),'Automatic scores never count as finalized results');
+    assert.equal(JSON.stringify(cup),original);
+    for(const changed of [{...board,status:'stale'},{...board,error:'offline'},{...board,week:week+1},{...board,supported:false}])assert.equal(Cup.scorePreview(cup,week,changed).live,false);
+    cup.weeks[week]={final:true,scores:{1:100,2:90,3:80,4:70}};
+    const finalized=Cup.scorePreview(cup,week,board);
+    assert.equal(finalized.live,false);assert.equal(finalized.state.weeks[week].scores['1'],100);
+});
+
+test('legacy Cup live scores include both teams in the manager’s real Cup pairing',()=>{
+    const cup={locked:true,drawMargin:4,weeks:{},groups:{A:['1','2','3','4'],B:['5','6','7','8'],C:['9','10','11','12']}};
+    const board={week:6,supported:true,status:'ready',rows:Array.from({length:12},(_,i)=>({roster_id:i+1,points:100-i*10}))};
+    const preview=Cup.scorePreview(cup,6,board);
+    const read=window.buildLeagueOverviewCup({cup,week:6,rosterId:1,liveScores:preview.scores,name});
+    assert.match(read.scoreText,/Your score 100.0 · Owner 4 70.0/);
+    assert.match(read.detail,/As scores stand/);assert.equal(read.tone,'good');
     assert.equal(Object.keys(cup.weeks).length,0);
 });

@@ -29,7 +29,7 @@ const assertSaveBlocked = (tree, reason) => {
 function harness({ canManage = false, saved = null, deny = false, saveError = '', deferSaves = false, deferLoads = false, legacy = false, teamCount = 5 } = {}) {
     let slots = [], dependencies = [], pendingEffects = [], index = 0, dirty = true, tree;
     const calls = [], storage = new Map(), intervals = [];
-    const config = { canManage, saved, deny, saveError, deferSaves, pendingSaves: [], deferLoads, pendingLoads: [], matchups: [] };
+    const config = { canManage, saved, deny, saveError, deferSaves, pendingSaves: [], deferLoads, pendingLoads: [], matchups: [], board: null, currentWeek: 9, subscriptions: [] };
     const React = {
         useState(initial) { const i = index++; if (!(i in slots)) slots[i] = typeof initial === 'function' ? initial() : initial; return [slots[i], value => { const next = typeof value === 'function' ? value(slots[i]) : value; if (next !== slots[i]) { slots[i] = next; dirty = true; } }]; },
         useRef(initial) { const i = index++; if (!(i in slots)) slots[i] = { current: initial }; return slots[i]; },
@@ -51,7 +51,8 @@ function harness({ canManage = false, saved = null, deny = false, saveError = ''
         if (config.deferLoads) await new Promise(resolve => config.pendingLoads.push(resolve));
         return { data, error: null };
     } } };
-    const context = { React, console, document: { visibilityState: 'visible' }, setInterval: fn => intervals.push(fn), clearInterval() {}, localStorage: { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value) }, window: { WoeppelCup: Cup, App: { OD: { getClient: () => client } }, location: { pathname: '/dist-preview/index.html' }, confirm: () => true, prompt: () => 'Verified league tiebreak evidence', fetchMatchups: async () => config.matchups } };
+    const liveScores = { currentWeek: () => config.currentWeek, useScores: options => { config.subscriptions.push({week:options.week,enabled:options.enabled}); return options.enabled ? config.board : null; } };
+    const context = { React, console, document: { visibilityState: 'visible' }, setInterval: fn => intervals.push(fn), clearInterval() {}, localStorage: { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value) }, window: { WoeppelCup: Cup, App: { LeagueLiveScores: liveScores, OD: { getClient: () => client } }, location: { pathname: '/dist-preview/index.html' }, confirm: () => true, prompt: () => 'Verified league tiebreak evidence', fetchMatchups: async () => config.matchups } };
     vm.createContext(context); vm.runInContext(source, context);
     const props = { league: { ...league, rosters: Array.from({ length: legacy ? 12 : teamCount }, (_, i) => ({ roster_id: i + 1 })) }, getOwnerName: id => 'Team ' + id, myRoster: { roster_id: 1 } };
     const render = () => { index = 0; dirty = false; tree = (legacy ? context.LegacyWoeppelCupPanel : context.window.WoeppelCupPanel)(props); pendingEffects.splice(0).forEach(effect => effect()); return tree; };
@@ -62,7 +63,7 @@ function harness({ canManage = false, saved = null, deny = false, saveError = ''
     async function finishSave() { assert.equal(config.pendingSaves.length, 1, 'Exactly one save is awaiting the server'); config.pendingSaves.shift()(); return flush(); }
     async function backgroundRefresh() { intervals.forEach(fn => fn()); return flush(); }
     async function finishLoad() { assert.equal(config.pendingLoads.length, 1, 'Exactly one refresh is awaiting the server'); config.pendingLoads.shift()(); return flush(); }
-    return { calls, config, storage, flush, click, choose, rename, finishSave, backgroundRefresh, finishLoad, prepareEdit: (original, draft) => structuredClone(context.prepareCupEdit(original, draft, Cup.tournament)), get tree() { return tree; } };
+    return { calls, config, storage, flush, click, choose, rename, finishSave, backgroundRefresh, finishLoad, pushBoard: board => {config.board=board;dirty=true;return flush();}, prepareEdit: (original, draft) => structuredClone(context.prepareCupEdit(original, draft, Cup.tournament)), get tree() { return tree; } };
 }
 (async () => {
     const loading = harness({ canManage: true, deferLoads: true }); await loading.flush();
@@ -508,5 +509,26 @@ function harness({ canManage = false, saved = null, deny = false, saveError = ''
     const backup = JSON.parse(legacyRace.storage.get('wr_woeppel_v1_' + league.league_id + '_' + league.season));
     assert.equal(backup.locked, true, 'Legacy local backup records the confirmed server lock');
     assert.deepEqual(backup.groups, legacyDraw.groups);
-    console.log('PASS Cup panel: permission-aware saves, final-week scheduling, group draw/setup and remount, result provenance across edits, duplicate-tap guards, all sample formats, score overrides, legacy routing and save/refresh races');
+    const autoCup={...Cup.configure(league,'points'),enabled:true,locked:true,startWeek:9,groupWeeks:1,knockoutStart:10};
+    const auto=harness({saved:autoCup});await auto.flush();
+    assert.equal(control(auto.tree,'Tournament week').props.value,9,'Cup opens on the current competition week');
+    const providerBoard={supported:true,status:'ready',week:9,rows:[1,2,3,4,5].map(id=>({roster_id:id,points:id===1?0:id===2?-2:id*10}))};
+    await auto.pushBoard(providerBoard);
+    const liveBlock=find(auto.tree,node=>node.props['aria-label']==='Live Cup scores');
+    assert(liveBlock);assert.match(text(liveBlock),/Team 10.00/);assert.match(text(liveBlock),/Team 2-2.00/);
+    assert.match(text(auto.tree),/auto refresh every 30s · not finalized/);
+    assert(auto.config.subscriptions.some(s=>s.week===9&&s.enabled));
+    const updated=structuredClone(providerBoard);updated.rows[0].points=23.5;
+    await auto.pushBoard(updated);assert.match(text(find(auto.tree,node=>node.props['aria-label']==='Live Cup scores')),/Team 123.50/);
+    assert.equal(writes(auto).length,0,'Score subscription updates never write or finalize Cup state');
+    assert.equal(auto.config.saved.weeks[9],undefined,'Live data remains a local preview');
+    const finalCup={...autoCup,weeks:{9:{final:true,scores:{1:100,2:90,3:80,4:70,5:60}}}};
+    const immutable=harness({saved:finalCup});await immutable.flush();await immutable.pushBoard(providerBoard);
+    assert(!immutable.config.subscriptions.some(s=>s.enabled),'Finalized weeks do not subscribe to automatic score changes');
+    assert.equal(immutable.config.saved.weeks[9].scores['1'],100);
+    const legacyAuto=harness({legacy:true,saved:{...legacyDraw,locked:true}});await legacyAuto.flush();
+    const legacyBoard={...providerBoard,rows:Array.from({length:12},(_,i)=>({roster_id:i+1,points:31+i}))};
+    await legacyAuto.pushBoard(legacyBoard);assert.match(text(legacyAuto.tree),/31.00/);assert.match(text(legacyAuto.tree),/Live scores · auto refresh/);
+    assert.equal(writes(legacyAuto).length,0,'Legacy auto scores do not save previews or lock results');
+    console.log('PASS Cup panel: permission-aware saves, final-week scheduling, group draw/setup and remount, result provenance across edits, duplicate-tap guards, all sample formats, score overrides, legacy routing, live score subscriptions and save/refresh races');
 })().catch(error => { console.error(error); process.exitCode = 1; });
