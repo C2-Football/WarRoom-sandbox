@@ -1153,3 +1153,14 @@ test('non-IDP leagues hide the mixed average and clear a stale IDP comparison', 
     assert.equal(h.lens.ui.basis, 'projected');
     assert.equal(h.calls.at(-1).options.basis, 'projected');
 });
+
+test('waiver lists show positive gains on the chosen horizon while keeping an explicit comparison stable', async () => {
+    const h=harness();
+    await loadWaivers(h,[candidate('week','Weekly upgrade',3,-2),candidate('season','Season upgrade',0,20),
+        candidate('loss','Weekly loss',-2,25),candidate('unknown','Unknown weekly',null,30)]);
+    assert.deepEqual(Array.from(h.lens.options,c=>c.id),['week'],'This week cannot promote season-only, losing or unscored moves');
+    chooseMove(h,'week');
+    h.click('Season'); await h.flush();
+    assert.deepEqual(Array.from(h.lens.options,c=>c.id),['unknown','loss','season']);
+    assert.equal(h.lens.selected.id,'week','An explicitly chosen move keeps its real alternate-horizon tradeoff');
+});

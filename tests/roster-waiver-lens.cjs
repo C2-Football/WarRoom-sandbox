@@ -124,6 +124,18 @@ for (const [type,code] of [['redraft',0],['keeper',1],['dynasty',2],['best_ball'
         projectionsByPid:{...args.projectionsByPid,w:null},rosState:null});
     assert.equal(projected.status,'unavailable',type+': missing forecasts still require a complete comparison');
 }
+const balancedRoster={roster_id:1,owner_id:'owner',players:['mainQ','reserveQ','oldDef'],settings:{waiver_budget_used:0}};
+const balancedArgs={...args,league:{...league,roster_positions:['QB','DEF','BN']},roster:balancedRoster,
+    rosters:[balancedRoster,rosters[1]],players:{held:players.held,
+        mainQ:player('Starting QB','QB',{depth_chart_order:1}),reserveQ:player('Backup QB on roster','QB',{depth_chart_order:1}),
+        oldDef:player('Existing Defense','DEF'),newDef:player('Better Defense','DEF')},
+    valuesByPid:{mainQ:5000,reserveQ:100,oldDef:500,newDef:1000},
+    projectionsByPid:{mainQ:22,reserveQ:18,oldDef:3,newDef:8},
+    rosState:{...args.rosState,points:{mainQ:220,reserveQ:180,oldDef:50,newDef:80}}};
+const defensiveUpgrade=Lens.evaluate(balancedArgs).candidates.find(c=>c.pid==='newDef');
+assert.equal(defensiveUpgrade?.dropPid,'oldDef','The actual waiver service replaces defense instead of spending QB reserve depth');
+assert.equal(defensiveUpgrade.weekly.delta,5);
+assert.equal(defensiveUpgrade.handoff.dropPid,'oldDef','Claim handoff uses the same safe outgoing player');
 console.log('PASS roster waiver lens: real legal FLEX alternatives, stable drop/horizons, protected assets, zero/missing forecasts, scope, roster ownership, restrictions and claim handoff');
 (async()=>{
     checkChopped(await Lens.load(choppedArgs));

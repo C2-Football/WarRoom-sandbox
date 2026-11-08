@@ -120,8 +120,9 @@
         live.current = { key, scope, input, ui, mode };
         const result = load.key === key ? load.value : null;
         const lineup = mode === 'lineup' ? lineupChoices(result) : null;
-        const options = lineup ? lineup.options : mode === 'trades' && ui.horizon === 'week' ? (result?.candidates || []) : ranked(result?.candidates, ui.horizon);
-        const selectionPool = lineup ? [...lineup.byAnchor.values()].flat() : options;
+        const rankedOptions = lineup ? lineup.options : mode === 'trades' && ui.horizon === 'week' ? (result?.candidates || []) : ranked(result?.candidates, ui.horizon);
+        const options = mode === 'waivers' ? rankedOptions.filter(candidate => deltaOf(candidate, ui.horizon) > 0) : rankedOptions;
+        const selectionPool = lineup ? [...lineup.byAnchor.values()].flat() : mode === 'waivers' ? result?.candidates || [] : options;
         const baseSelected = selectionPool.find(candidate => candidate.id === ui.selected) || null;
         const seasonKey = JSON.stringify([key, baseSelected?.id]);
         const lazySeason = seasonLoad.key === seasonKey ? seasonLoad.value?.season : null;
@@ -312,7 +313,7 @@
         if (!lens?.enabled) return null;
         const active = lens.mode !== 'off', result = lens.result, selected = lens.selected;
         const anchor = text(selected?.anchorPlayerId || selected?.dropPid || pidOf(selected?.outgoing?.[0]));
-        const inline = !!anchor && inlinePids?.has(anchor);
+        const inline = !!anchor && inlinePids?.has(anchor) && lens.options.some(candidate => candidate.id === selected?.id);
         const fallbackOptions = compact || !inlinePids ? lens.options : lens.options.filter(candidate =>
             !inlinePids.has(text(candidate.anchorPlayerId || candidate.dropPid || pidOf(candidate.outgoing?.[0]))));
         const strategy = result?.strategy;
@@ -342,7 +343,7 @@
                     {result?.participationNotice && <p className="wr-lens-note" role="status">{result.participationNotice}</p>}
                     {selected && !lineup && (!inline || compact) && <Impact lens={lens} />}
                     {!selected && lens.ui.selected && <p className="wr-lens-note" role="status">Move no longer available. Choose another.</p>}
-                    {!lens.options.length ? <p className="wr-lens-status" role="status">{result?.reason || (lineup ? 'No clear upgrades.' : 'No upgrades found.')}</p> : <React.Fragment>
+                    {!lens.options.length ? <React.Fragment><p className="wr-lens-status" role="status">{result?.reason || (lineup ? 'No clear upgrades.' : 'No upgrades found.')}</p>{selected && !lineup && (!inline || compact) && <Preview lens={lens} candidate={selected} />}</React.Fragment> : <React.Fragment>
                         {lineup && result?.reason && <p className="wr-lens-note" role="status">{result.reason}</p>}
                         {(!inline || compact) && selected && <Preview lens={lens} candidate={selected} />}
                         {fallbackOptions.some(candidate => candidate.id !== selected?.id) && <div className="wr-lens-alternatives" aria-label={lineup ? 'Other lineup swaps' : 'Other acquisition ideas'}>{fallbackOptions.filter(candidate => candidate.id !== selected?.id).slice(0, 4).map(candidate => {
