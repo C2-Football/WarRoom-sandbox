@@ -398,19 +398,19 @@ function LeagueOverviewDecisions({ currentLeague, leagueSkin, myRoster, playersD
         <header><span>Alex Insights</span><small>{week ? 'Week ' + week + (started ? ' · Live week' : '') : 'Your roster'}</small></header>
         {started ? <div className="mc-live-week">
             {outlook?.chop && <div className="mc-week-impact mc-chop-insight" aria-label="Your Chopped survival outlook">
-                <strong>{outlook.chop.title}</strong><p data-tone={outlook.chop.tone}>{outlook.chop.detail}</p><p>{outlook.chop.message}</p>
-                {outlook.chop.status==='projected' && <small>{outlook.chop.noMoves?'Lineup locked · ':''}{outlook.chop.conditional?'If questionable players play · ':''}Projected · official results decide the chop</small>}
+                <strong>{outlook.chop.title}{outlook.chop.noMoves && <span className="mc-mobile-status" title="Starting lineup locked"> · Locked</span>}{outlook.chop.conditional && <span className="mc-mobile-status"> · If they play</span>}</strong><p data-tone={outlook.chop.tone}>{outlook.chop.detail}</p><p>{outlook.chop.message}</p>
+                {outlook.chop.status==='projected' && <small data-mobile-caption>{outlook.chop.noMoves?'Lineup locked · ':''}{outlook.chop.conditional?'If questionable players play · ':''}Projected · official results decide the chop</small>}
             </div>}
             {playerResults}
             {showPlayoffs && <div className="mc-week-impact" aria-label="Your playoff impact">
                 <strong>Playoff outlook</strong>
                 {outlook.playoff ? <>
                     <p>{outlook.playoff.current}% entering the week · <span data-tone="good">{outlook.playoff.ifWin}% with a win</span> · <span data-tone="bad">{outlook.playoff.ifLose}% with a loss</span></p>
-                    {Number(currentLeague?.settings?.league_average_match) === 1 && <small>Win/loss refers to your matchup; median results are also simulated.</small>}
-                    {outlook.playoff.projected != null && <p data-tone={outlook.playoff.projected > outlook.playoff.current ? 'good' : outlook.playoff.projected < outlook.playoff.current ? 'bad' : 'neutral'}>{outlook.final ? 'This result points toward' : 'Your projected result points toward'} {outlook.playoff.projected}% playoff odds <small>· season-model estimate</small></p>}
+                    {Number(currentLeague?.settings?.league_average_match) === 1 && <small data-mobile-caption>Win/loss refers to your matchup; median results are also simulated.</small>}
+                    {outlook.playoff.projected != null && <p data-tone={outlook.playoff.projected > outlook.playoff.current ? 'good' : outlook.playoff.projected < outlook.playoff.current ? 'bad' : 'neutral'}>{outlook.final ? 'This result points toward' : 'Your projected result points toward'} {outlook.playoff.projected}% playoff odds <small data-mobile-caption>· season-model estimate</small></p>}
                 </> : <p>{['idle','loading'].includes(odds?.status) ? 'Loading your win/loss impact…' : 'Win/loss playoff impact is unavailable for this week.'}</p>}
             </div>}
-            {cup && <div className="mc-week-impact" aria-label="Your Cup outlook"><strong>{cup.title}</strong>{cup.scoreText && <p className="mc-cup-score">{cup.scoreText}</p>}<p data-tone={cup.tone}>{cup.detail}</p>{cupScorePreview?.live && <small>Live scores · auto refresh · not finalized</small>}</div>}
+            {cup && <div className="mc-week-impact" aria-label="Your Cup outlook"><strong>{cup.title}{cupScorePreview?.live && <span className="mc-mobile-status" aria-label="Live scores, not finalized"> · Live</span>}</strong>{cup.scoreText && <p className="mc-cup-score">{cup.scoreText}</p>}<p data-tone={cup.tone}>{cup.detail}</p>{cupScorePreview?.live && <small data-mobile-caption>Live scores · auto refresh · not finalized</small>}</div>}
             {!cup && cupState.key === cupKey && cupState.status === 'unavailable' && <p className="mc-next-note">Cup outlook could not refresh.</p>}
         </div> : <>
         <div className="mc-primary-move">
@@ -1172,7 +1172,7 @@ function LeagueCentralTab({
                             </div>
                             {liveContext?.enabled && <div className="lct-mode-toggle" role="group" aria-label="Standings source"><button type="button" aria-pressed={tableSource === 'live'} onClick={() => setTableSource('live')}>{liveContext.historical ? `Week ${board.week}` : 'Live'}</button><button type="button" aria-pressed={tableSource === 'official'} onClick={() => setTableSource('official')}>Official</button></div>}
                         </div>
-                        <p className={'lct-note mc-league-notice' + (standingsWarning ? ' is-warning' : '')}>{phoneStandingsNotice}</p>
+                        <p data-mobile-caption={!standingsWarning || undefined} className={'lct-note mc-league-notice' + (standingsWarning ? ' is-warning' : '')}>{phoneStandingsNotice}</p>
                     </>}
                     {/* Your own odds lead the playoff view — the season-odds read,
                         folded into standings instead of a separate slab. */}

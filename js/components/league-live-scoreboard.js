@@ -257,7 +257,7 @@ function LeagueLiveScoreboard({ currentLeague, myRoster, playersData, statsData,
                 <div><span>Your actual · Week {week}</span><strong>{points(ownRaceScore)}</strong></div>
                 <div className={ownRaceGap === 0 ? 'is-danger' : undefined}><strong>{ownRaceGap == null ? '—' : `${ownRaceGap > 0 ? '+' : ''}${points(ownRaceGap)} pts`}</strong><span>{!ownRaceRow ? 'Not in this week’s field' : ownRaceGap == null ? 'Gap unavailable' : ownRaceGap === 0 ? lowestRaceCount > 1 ? 'Tied at lowest · in danger' : 'Lowest · in danger' : 'Above the current lowest'}</span></div>
             </div>
-            <p className="mc-chop-race-note">{lowestRaceScore == null ? 'Scores and risk are unavailable; official results decide the chop.' : raceScoresComplete ? 'Lowest score is provisionally at risk; official results decide the chop.' : 'Scores are missing; lowest reported is provisionally at risk, pending official results.'}</p>
+            <p data-mobile-caption={raceScoresComplete || undefined} className="mc-chop-race-note">{lowestRaceScore == null ? 'Scores and risk are unavailable; official results decide the chop.' : raceScoresComplete ? 'Lowest score is provisionally at risk; official results decide the chop.' : 'Scores are missing; lowest reported is provisionally at risk, pending official results.'}</p>
             <table className="mc-chop-race-table">
                 <caption>Week {week} survival race, sorted by {sort.column === 'actual' ? 'actual score' : 'projected finish'} from {sort.descending ? 'high to low' : 'low to high'}. Projected finish uses earned points and estimates for unfinished starters; a dash means data is unavailable.</caption>
                 <thead><tr><th scope="col">Team · {raceRows.length} alive</th>{raceSortHeader('actual', 'Actual')}{raceSortHeader('projected', 'Projected finish', 'Proj. finish')}</tr></thead>
@@ -285,7 +285,7 @@ function LeagueLiveScoreboard({ currentLeague, myRoster, playersData, statsData,
         </div>}
         {!isPhone && (expanded || fullBoard) && nflGames.length > 0 && <details style={{ marginTop: 16 }}>
             <summary>NFL game scores · Week {week}</summary>
-            <p className="lls-note">NFL scoreboard · Refreshes every minute. Kickoff times are shown in your local time.</p>
+            <p data-mobile-caption className="lls-note">NFL scoreboard · Refreshes every minute. Kickoff times are shown in your local time.</p>
             <div className="lls-grid">{nflGames.map((game, index) => {
                 const state = window.App.NflContext.gameStatus?.(game) || 'unknown';
                 const kickoff = game.kickoff ? new Date(game.kickoff) : null;
@@ -298,7 +298,7 @@ function LeagueLiveScoreboard({ currentLeague, myRoster, playersData, statsData,
             })}</div>
         </details>}
         <div className="lls-footer">
-            <p className="lls-note">{updated && !Number.isNaN(updated.getTime()) ? `${isPhone && !expanded ? '' : 'Updated '}${updated.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} · ` : ''}{expanded || compactChop ? 'Sleeper scores refresh every 30 seconds while visible. Scoring may be delayed or corrected. A dash means no score was reported.' : isPhone ? 'Sleeper' : 'Sleeper · Refreshes every 30s'}{expanded && chopped && !compactChop ? ' Positions are provisional; eliminations follow league results.' : ''}</p>
+            <p data-mobile-caption className="lls-note">{updated && !Number.isNaN(updated.getTime()) ? `${isPhone && !expanded ? '' : 'Updated '}${updated.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} · ` : ''}{expanded || compactChop ? 'Sleeper scores refresh every 30 seconds while visible. Scoring may be delayed or corrected. A dash means no score was reported.' : isPhone ? 'Sleeper' : 'Sleeper · Refreshes every 30s'}{expanded && chopped && !compactChop ? ' Positions are provisional; eliminations follow league results.' : ''}</p>
             {setActiveTab && !fullBoard && <button type="button" onClick={() => setActiveTab('lineup')}>My Game Plan →</button>}
         </div>
     </section>;

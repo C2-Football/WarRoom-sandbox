@@ -300,7 +300,7 @@ function WrSeasonOdds({ active, currentLeague, myRoster, playersData, statsData,
                             Export for league chat
                         </button>
                     ) : null}
-                    <span className="gd-odds-note" style={{ ...microHdr, textTransform: 'none', letterSpacing: 0 }}>All-play = your record if you played everyone every week. Luck = actual wins − expected.</span>
+                    <span data-mobile-caption className="gd-odds-note" style={{ ...microHdr, textTransform: 'none', letterSpacing: 0 }}>All-play = your record if you played everyone every week. Luck = actual wins − expected.</span>
                 </div>
                 {myLuck && myLuck.weekly.length ? (
                     <div className="gd-odds-weekly" style={{ marginTop: '14px', overflowX: 'auto' }}>

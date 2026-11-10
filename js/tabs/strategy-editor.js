@@ -237,7 +237,7 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
     const SectionHeader = ({ title, sub }) => (
         <div style={{ marginBottom: 10 }}>
             <div style={{ fontFamily: 'var(--font-title)', fontSize: 'var(--text-body, 1rem)', color: 'var(--acc-line4, rgba(212,175,55,0.6))', letterSpacing: '0.16em', textTransform: 'uppercase' }}>{title}</div>
-            {sub && <div style={{ fontSize: 'var(--text-label)', color: 'var(--ov-8, rgba(255,255,255,0.4))', marginTop: 2 }}>{sub}</div>}
+            {sub && <div data-mobile-caption style={{ fontSize: 'var(--text-label)', color: 'var(--ov-8, rgba(255,255,255,0.4))', marginTop: 2 }}>{sub}</div>}
         </div>
     );
 
@@ -402,7 +402,7 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 10 }}>
                 <div>
                     <div style={{ fontFamily: 'var(--font-title)', fontSize: '1.5rem', fontWeight: 700, color: 'var(--gold)', letterSpacing: '0.04em' }}>{showDynastyControls ? 'GM STRATEGY' : 'GM PLAN'}</div>
-                    <div style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--ov-8, rgba(255,255,255,0.45))', fontFamily: 'var(--font-body)', marginTop: 2 }}>
+                    <div data-mobile-caption style={{ fontSize: 'var(--text-body, 1rem)', color: 'var(--ov-8, rgba(255,255,255,0.45))', fontFamily: 'var(--font-body)', marginTop: 2 }}>
                         {showDynastyControls ? 'Set your franchise direction — syncs to Scout so Alex knows how to advise you.' : 'Set waiver preferences and roster priorities.'}
                     </div>
                 </div>
@@ -417,7 +417,7 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
             {/* ── Mode (Phase 1: preset-first) ── */}
             {showDynastyControls && <div style={styles.card}>
                 {!_phone && <SectionHeader title="Mode" sub={currentMode?.desc + (isCustom ? '' : ' Preset bundles every downstream setting — switch to Custom to tune individually.')} />}
-                {_phone ? <label className="wr-strategy-mode-picker">Your direction<select value={draft.mode} onChange={e => e.target.value === 'custom' ? set('mode', 'custom') : applyPreset(e.target.value)}>{MODES.map(m => <option key={m.value} value={m.value}>{m.label}{m.value === recommendedMode ? ' · Suggested' : ''}</option>)}</select><span>{currentMode?.desc}</span></label> : <div style={{ display: 'grid', gridTemplateColumns: _phone ? '1fr' : 'repeat(auto-fill, minmax(160px, 1fr))', gap: 8 }}>
+                {_phone ? <label className="wr-strategy-mode-picker">Your direction<select value={draft.mode} onChange={e => e.target.value === 'custom' ? set('mode', 'custom') : applyPreset(e.target.value)}>{MODES.map(m => <option key={m.value} value={m.value}>{m.label}{m.value === recommendedMode ? ' · Suggested' : ''}</option>)}</select><span data-mobile-caption>{currentMode?.desc}</span></label> : <div style={{ display: 'grid', gridTemplateColumns: _phone ? '1fr' : 'repeat(auto-fill, minmax(160px, 1fr))', gap: 8 }}>
                     {MODES.map(m => {
                         const active = draft.mode === m.value;
                         return (
@@ -447,13 +447,13 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
                     })}
                 </div>}
                 {recommendedMode && (
-                    <div style={{ marginTop: 12, fontSize: 'var(--text-label)', color: 'var(--ov-9, rgba(255,255,255,0.7))', fontFamily: 'var(--font-body)', lineHeight: 1.5 }}>
+                    <div data-mobile-caption style={{ marginTop: 12, fontSize: 'var(--text-label)', color: 'var(--ov-9, rgba(255,255,255,0.7))', fontFamily: 'var(--font-body)', lineHeight: 1.5 }}>
                         <span style={{ color: 'var(--gold)', fontWeight: 700 }}>★ Recommended for your roster:</span> {MODES.find(m => m.value === recommendedMode)?.label}
                         {teamRec?.tierLabel ? <> — your team grades <em>{teamRec.tierLabel}</em>.</> : '.'} You can still pick any direction.
                     </div>
                 )}
                 {!isCustom && (
-                    <div style={{ marginTop: 14, padding: '10px 12px', background: 'var(--acc-fill1, rgba(212,175,55,0.06))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: 6, fontSize: 'var(--text-label)', color: 'var(--ov-9, rgba(255,255,255,0.7))', fontFamily: 'var(--font-body)', lineHeight: 1.5 }}>
+                    <div data-mobile-caption style={{ marginTop: 14, padding: '10px 12px', background: 'var(--acc-fill1, rgba(212,175,55,0.06))', border: '1px solid var(--acc-line1, rgba(212,175,55,0.2))', borderRadius: 6, fontSize: 'var(--text-label)', color: 'var(--ov-9, rgba(255,255,255,0.7))', fontFamily: 'var(--font-body)', lineHeight: 1.5 }}>
                         <strong style={{ color: 'var(--gold)' }}>Preset applied:</strong> aggression <em>{draft.aggression}</em> · draft <em>{draft.draftStyle}</em> · market <em>{draft.marketPosture}</em> · timeline <em>{TIMELINES.find(t => t.value === draft.timeline)?.label || draft.timeline}</em>
                     </div>
                 )}
@@ -512,7 +512,7 @@ function StrategyEditorTab({ currentLeague, myRoster, playersData, gmStrategy, s
                         aria-label="Minimum FAAB bid"
                         style={{ ...inputStyle, maxWidth: 120 }}
                     />
-                    <span style={{ fontSize: 'var(--text-label)', color: 'var(--ov-8, rgba(255,255,255,0.45))', fontFamily: 'var(--font-body)' }}>
+                    <span data-mobile-caption style={{ fontSize: 'var(--text-label)', color: 'var(--ov-8, rgba(255,255,255,0.45))', fontFamily: 'var(--font-body)' }}>
                         {draft.faabMinBid > 0
                             ? 'Overriding the imported league setting.'
                             : `Unset — using the imported league setting${currentLeague?.settings?.waiver_budget_min ? ` ($${currentLeague.settings.waiver_budget_min})` : ' (currently $0 — likely not reported by your platform)'}.`}

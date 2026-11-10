@@ -159,7 +159,7 @@ function MatchupBreakdown({ matchup, comparison, week, pro, pmeta, upgrade, comp
         {pro && !actualMode && benchmarkContext && Basis?.comparison && <div className="gd-matchup-benchmark-tools"><select aria-label="Matchup point comparison basis" value={basis} onChange={event => setBenchmarkChoice({ scope, basis: ['average', 'idp-average'].includes(event.target.value) ? event.target.value : 'projected' })}><option value="projected">Projected</option><option value="average">Avg points</option>{hasIdp && <option value="idp-average">IDP avg</option>}</select>{empirical && nativeAverages && !prepared && <span role="status">Loading averages…</span>}</div>}
         <div className="gd-matchup-heading">
             <div><div className="gd-matchup-eyebrow">Week {week} · {actualMode ? comparison.headerLabel : empirical ? basisLabel : reviewing ? 'Submitted lineup projections' : 'Matchup outlook'}</div><h2>vs {oppName}</h2>
-                {!compact && !empirical && <p>{reviewing ? 'Submitted starters · actual points against their saved projections' : 'Projected points · your lineup plan vs their ' + (pro ? 'optimal' : 'current') + ' lineup'}</p>}
+                {!compact && !empirical && <p data-mobile-caption>{reviewing ? 'Submitted starters · actual points against their saved projections' : 'Projected points · your lineup plan vs their ' + (pro ? 'optimal' : 'current') + ' lineup'}</p>}
                 <div className="gd-matchup-totals"><span><strong>{actualMode ? actualFmt(myTotal) : fmt(myTotal)}</strong><small>You</small>{actualMode && <small>Proj {fmt(comparison.projectedMine)}</small>}</span><span className="gd-matchup-versus">vs</span><span><strong>{actualMode ? actualFmt(theirTotal) : fmt(theirTotal)}</strong><small>Them</small>{actualMode && <small>Proj {fmt(comparison.projectedTheirs)}</small>}</span></div>
             </div>
             {pro && !reviewing && !empirical ? <div className={'gd-matchup-odds is-' + tone(margin)}><strong>{fc.winPct == null ? '—' : fc.winPct + '%'}</strong><span>Win probability</span><small>{margin == null ? 'Forecast unavailable' : margin === 0 ? 'Even projection' : fmt(Math.abs(margin)) + ' pts ' + (margin > 0 ? 'ahead' : 'behind')}</small></div> : null}
@@ -168,12 +168,12 @@ function MatchupBreakdown({ matchup, comparison, week, pro, pmeta, upgrade, comp
         {pro ? <React.Fragment>
             {!compact && !reviewing && !empirical && <p className="gd-matchup-context">Their current lineup: {fmt(matchup?.oppCurTotal)} · Optimal: {fmt(matchup?.oppIdealTotal)}{Number.isFinite(matchup?.oppCurTotal) && matchup.oppIdealTotal - matchup.oppCurTotal > 0.5 ? <span> · {fmt(matchup.oppIdealTotal - matchup.oppCurTotal)} projected points on their bench</span> : null}</p>}
             <div className="gd-matchup-focus" aria-label="Matchup key edges">
-                <div className="is-ahead"><small>{actualMode ? 'Actual edge' : 'Your biggest edge'}</small><strong>{best ? best.pos + ' +' + fmt(best.delta) : incomplete ? 'Incomplete data' : actualMode ? 'No lead yet' : empirical ? 'No benchmark edge' : 'No projected edge'}</strong><span>{actualMode ? 'Points scored so far' : best ? 'Your strongest position advantage' : 'Look for gains in the close slots'}</span></div>
-                <div className="is-behind"><small>{actualMode ? 'Actual gap' : 'Biggest gap'}</small><strong>{toughest ? toughest.pos + ' −' + fmt(Math.abs(toughest.delta)) : incomplete ? 'Incomplete data' : actualMode ? 'No deficit' : empirical ? 'No benchmark deficit' : 'No projected deficit'}</strong><span>{actualMode ? 'Points scored so far' : toughest ? 'Their strongest position advantage' : incomplete ? empirical ? 'Some benchmarks are unavailable' : 'Some projections are unavailable' : 'No position group trails'}</span></div>
-                <div className="is-close"><small>{actualMode ? 'Final vs pregame' : 'Close contests'}</small><strong>{actualMode ? comparison.myDelta == null ? comparison.allFinal ? 'No baseline' : 'In progress' : (comparison.myDelta > 0 ? '+' : '') + fmt(comparison.myDelta) : close.length + ' ' + (close.length === 1 ? 'slot' : 'slots')}</strong><span>{actualMode ? comparison.myDelta == null ? 'Player results below' : 'Your submitted lineup' : empirical ? 'Within 2 benchmark points' : 'Within 2 projected points'}</span></div>
+                <div className="is-ahead"><small>{actualMode ? 'Actual edge' : 'Your biggest edge'}</small><strong>{best ? best.pos + ' +' + fmt(best.delta) : incomplete ? 'Incomplete data' : actualMode ? 'No lead yet' : empirical ? 'No benchmark edge' : 'No projected edge'}</strong><span data-mobile-caption>{actualMode ? 'Points scored so far' : best ? 'Your strongest position advantage' : 'Look for gains in the close slots'}</span></div>
+                <div className="is-behind"><small>{actualMode ? 'Actual gap' : 'Biggest gap'}</small><strong>{toughest ? toughest.pos + ' −' + fmt(Math.abs(toughest.delta)) : incomplete ? 'Incomplete data' : actualMode ? 'No deficit' : empirical ? 'No benchmark deficit' : 'No projected deficit'}</strong><span data-mobile-caption>{actualMode ? 'Points scored so far' : toughest ? 'Their strongest position advantage' : incomplete ? empirical ? 'Some benchmarks are unavailable' : 'Some projections are unavailable' : 'No position group trails'}</span></div>
+                <div className="is-close"><small>{actualMode ? 'Final vs pregame' : 'Close contests'}</small><strong>{actualMode ? comparison.myDelta == null ? comparison.allFinal ? 'No baseline' : 'In progress' : (comparison.myDelta > 0 ? '+' : '') + fmt(comparison.myDelta) : close.length + ' ' + (close.length === 1 ? 'slot' : 'slots')}</strong><span data-mobile-caption>{actualMode ? comparison.myDelta == null ? 'Player results below' : 'Your submitted lineup' : empirical ? 'Within 2 benchmark points' : 'Within 2 projected points'}</span></div>
             </div>
             <div className="gd-matchup-section-heading"><h3>Position strength</h3><button type="button" className="gd-matchup-show-all" aria-pressed={allOpen} aria-controls={listId} disabled={!expandable.length} onClick={() => setExpanded({ scope, groups: allOpen ? [] : expandable.map(row => row.key) })}>{allOpen ? 'Hide all players' : 'Show all players'}</button></div>
-            <p className="gd-matchup-position-help">{actualMode ? 'Actual and projection side by side · tap a row for players.' : 'By lineup slot · tap a row for players. You lead ' + leads + ' of ' + rows.length + ' slots.'}</p>
+            <p data-mobile-caption className="gd-matchup-position-help">{actualMode ? 'Actual and projection side by side · tap a row for players.' : 'By lineup slot · tap a row for players. You lead ' + leads + ' of ' + rows.length + ' slots.'}</p>
             <div className="gd-position-legend"><span>You ◀</span><span>▶ Opponent</span></div>
             <div className="gd-position-list" id={listId}>{positions.map((position, groupIndex) => {
                 const open = openGroups.includes(position.key), detailId = listId + '-group-' + groupIndex;
@@ -193,7 +193,7 @@ function MatchupBreakdown({ matchup, comparison, week, pro, pmeta, upgrade, comp
                     </div>
                 </div>;
             })}</div>
-            {!compact && <p className="gd-matchup-key">Green: your edge · Red: their edge · Gold outline: within 2 pts{rows.some(row => row.delta == null) ? empirical ? ' · Some benchmarks unavailable' : ' · Some projections unavailable' : ''}</p>}
+            {!compact && <p data-mobile-caption className="gd-matchup-key">Green: your edge · Red: their edge · Gold outline: within 2 pts{rows.some(row => row.delta == null) ? empirical ? ' · Some benchmarks unavailable' : ' · Some projections unavailable' : ''}</p>}
         </React.Fragment> : upgrade}
     </section>;
 }
@@ -372,7 +372,7 @@ function MyLineupTab({
         <button type="button" aria-label="Previous lineup week" disabled={planningWeek <= liveWeek} onClick={() => setWeekChoice({ scope: leagueScope, week: planningWeek - 1 })}>‹</button>
         <label><span>Lineup week</span><select aria-label="Lineup week" aria-describedby="gd-lineup-week-context" value={planningWeek} onChange={event => setWeekChoice({ scope: leagueScope, week: Number(event.target.value) })}>
             {Array.from({ length: 19 - liveWeek }, (_, index) => liveWeek + index).map(week => <option key={week} value={week}>{isPhone ? 'Wk ' : 'Week '}{week}{week === liveWeek ? (isPhone ? ' · Current' : ' · This week') : ''}</option>)}
-        </select><small id="gd-lineup-week-context">{isFutureWeek ? 'Future lineup · saved on this device' : 'This week’s lineup'}</small></label>
+        </select><small data-mobile-caption={!isFutureWeek || undefined} id="gd-lineup-week-context">{isFutureWeek ? 'Future lineup · saved on this device' : 'This week’s lineup'}</small></label>
         <button type="button" aria-label="Next lineup week" disabled={planningWeek >= 18} onClick={() => setWeekChoice({ scope: leagueScope, week: planningWeek + 1 })}>›</button>
     </div>;
     const gradeColor = g => (g === 'A' ? GREEN : g === 'B' ? GOLD : g === 'C' ? SILVER : g === 'D' ? AMBER : RED);
@@ -1011,12 +1011,12 @@ function MyLineupTab({
             <div className="roster-lineup-heading"><div><div className="gd-eyebrow">Week {liveWeek}</div><h2>Starting lineup</h2></div>
                 <div className="roster-lineup-form" aria-label="Player form window">{[['L3', 3], ['L5', 5], ['L8', 8], ['SZN', 'season']].map(([label, value]) => <button type="button" key={label} aria-pressed={formWindow === value} onClick={() => setFormWindow(value)}>{label}</button>)}</div>
             </div>
-            <p className="roster-lineup-hint">{tracking ? 'Started players are locked. You can still plan changes for later games.' : 'Plan your starters here. Live scores appear when games begin.'} {isMfl ? 'Set your final lineup on MFL.' : 'Set your final lineup on your league platform.'}</p>
+            <p data-mobile-caption className="roster-lineup-hint">{tracking ? 'Started players are locked. You can still plan changes for later games.' : 'Plan your starters here. Live scores appear when games begin.'} {isMfl ? 'Set your final lineup on MFL.' : 'Set your final lineup on your league platform.'}</p>
             <div className="roster-lineup-actions">
                 {pro ? <button type="button" className="gd-primary" disabled={!canOptimize} onClick={applyOptimal}>Apply Optimal</button> : null}
                 <span>{formWinLabel} PPG · {workingTotal.toFixed(1)} lineup total{missingPlanForm ? ' · partial' : ''}</span>
             </div>
-            <p className="roster-lineup-hint">{formHelp}</p>
+            <p data-mobile-caption className="roster-lineup-hint">{formHelp}</p>
             {tracking ? mobileScoreboard : null}
             <div className="roster-lineup-players">{[...slots].sort((a, b) => (SLOT_DISPLAY_ORDER[a.slotName] ?? 50) - (SLOT_DISPLAY_ORDER[b.slotName] ?? 50)).map(sl => {
                 const pid = assigned[sl.idx] || null;
@@ -1666,7 +1666,7 @@ function MyLineupTab({
                     {openSl ? (
                         <div className="gd-mobile-sheet" style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '8px 14px 4px' }}>
                             {lensReviewNote(openSl)}
-                            <div className="mc-swap-summary"><span>SIT</span><strong>{openPid ? pmeta(openPid).name : 'Empty slot'}</strong><small>Choose the player to START below</small></div>
+                            <div className="mc-swap-summary"><span>SIT</span><strong>{openPid ? pmeta(openPid).name : 'Empty slot'}</strong><small data-mobile-caption>Choose the player to START below</small></div>
                             {metricPreference && <window.WR.PlayerMetrics.Picker preference={metricPreference} />}
                             <div className="wr-seg">
                                 {[['L3', 3], ['L5', 5], ['L8', 8], ['SZN', 'season']].map(opt => (
@@ -1681,7 +1681,7 @@ function MyLineupTab({
                                     {' · Lo '}<span style={{ color: SILVER, fontWeight: 700 }}>{openFs.low.toFixed(1)}</span>
                                 </div>
                             ) : null}
-                            <div style={{ fontFamily: MONO, fontSize: MICRO, letterSpacing: '0.05em', color: SILVER, textTransform: 'uppercase' }}>Eligible for {openSl.slotName.replace('_', ' ')} — tap to start</div>
+                            <div data-mobile-caption style={{ fontFamily: MONO, fontSize: MICRO, letterSpacing: '0.05em', color: SILVER, textTransform: 'uppercase' }}>Eligible for {openSl.slotName.replace('_', ' ')} — tap to start</div>
                             {sortHeader(true)}
                             {openElig.map(pickRow)}
                             {!openElig.length ? <div style={{ color: SILVER, fontSize: '0.74rem', opacity: 0.7 }}>No eligible bench players.</div> : null}
@@ -1850,7 +1850,7 @@ function MyLineupTab({
                         </div>
                     </div>
                 </div>
-                <p className="roster-lineup-hint">{formHelp}</p>
+                <p data-mobile-caption className="roster-lineup-hint">{formHelp}</p>
                 {!pro && GatedRow ? (
                     <div style={{ marginTop: '12px' }}>
                         <GatedRow title="Lineup optimizer" sub="Optimal lineup + points left on bench, floor–ceiling bands, matchup grades and win odds" feature={STARTSIT_FEAT} />
@@ -1898,7 +1898,7 @@ function MyLineupTab({
                                             </div>
                                         ) : null;
                                     })() : null}
-                                    <div style={{ padding: '5px 14px', fontSize: fz('0.58rem'), letterSpacing: '0.05em', color: SILVER, textTransform: 'uppercase' }}>Eligible for {sl.slotName.replace('_', ' ')} — tap to start</div>
+                                    <div data-mobile-caption style={{ padding: '5px 14px', fontSize: fz('0.58rem'), letterSpacing: '0.05em', color: SILVER, textTransform: 'uppercase' }}>Eligible for {sl.slotName.replace('_', ' ')} — tap to start</div>
                                     {lensReviewNote(sl)}
                                     {elig.map(epid => {
                                         const isCur = String(pid) === String(epid);

@@ -2112,7 +2112,7 @@ function MyTeamTab({
             {byeSummary.weeks.map(group => <span key={group.week} style={{ padding: '3px 7px', borderRadius: 'var(--card-radius-xs, 5px)', border: '1px solid var(--ov-6, rgba(255,255,255,.12))', color: group.pids.length > 1 || group.week === byeWeekNow ? 'var(--warn, #f0a500)' : 'var(--silver)' }}>W{group.week} · {group.pids.length}</span>)}
           </span>
         </summary>
-        <p style={{ fontSize: '0.75rem', margin: '10px 0' }}>Players unavailable each week. Plan replacements before the chop.</p>
+        <p data-mobile-caption style={{ fontSize: '0.75rem', margin: '10px 0' }}>Players unavailable each week. Plan replacements before the chop.</p>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '8px' }}>
           {byeSummary.weeks.map(group => <div key={group.week} style={{ fontSize: '0.78rem', lineHeight: 1.5 }}>
             <strong style={{ color: group.pids.length > 1 || group.week === byeWeekNow ? 'var(--warn, #f0a500)' : 'var(--white)' }}>W{group.week}{group.week === byeWeekNow ? ' · This week' : ''} · {group.pids.length} out</strong>

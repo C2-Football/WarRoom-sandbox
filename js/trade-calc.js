@@ -343,7 +343,7 @@
                     {metric('Playoff chance', data.playoffs?.available ? pct(data.playoffs.beforePct) : '—', data.playoffs?.available ? pct(data.playoffs.afterPct) : '—', data.playoffs?.available ? signed(displayedPctDelta(data.playoffs.beforePct, data.playoffs.afterPct), compact ? ' pp' : ' percentage points', 0) : 'Unavailable', data.playoffs?.available ? metricTrend(data.playoffs.beforePct, data.playoffs.afterPct) : 'neutral')}
                 </div>
                 <p className="tc-season-lineup" data-trend={compact ? metricTrend(data.powerRank?.beforePoints, data.powerRank?.afterPoints) : undefined}>{compact ? <><span>Projected lineup</span><strong>{num(data.powerRank?.beforePoints)} → {num(data.powerRank?.afterPoints)}</strong><span>pts/week</span>{knownNumber(data.powerRank?.beforePoints) && knownNumber(data.powerRank?.afterPoints) ? <b>{signed(data.powerRank.afterPoints - data.powerRank.beforePoints)}</b> : null}</> : <>Projected lineup: {num(data.powerRank?.beforePoints)} → {num(data.powerRank?.afterPoints)} pts/week {knownNumber(data.powerRank?.beforePoints) && knownNumber(data.powerRank?.afterPoints) ? '(' + signed(data.powerRank.afterPoints - data.powerRank.beforePoints) + ')' : ''}</>}</p>
-                {data.wins?.decisionsPerWeek === 2 && <p className="tc-season-coverage">Standings wins include your matchup and an extra league-median result each week.</p>}
+                {data.wins?.decisionsPerWeek === 2 && <p data-mobile-caption className="tc-season-coverage">Standings wins include your matchup and an extra league-median result each week.</p>}
                 <p className="tc-season-coverage">{data.status === 'limited' ? 'Partial evidence · ' : ''}{data.coverage?.projected ?? 0}/{data.coverage?.total ?? data.remainingWeeks ?? 0} remaining matchups projected{data.playoffs?.available && data.playoffs.simCount ? ' · ' + data.playoffs.simCount.toLocaleString() + ' season simulations' : ''}</p>
                 {!data.playoffs?.available && data.playoffs?.reason && <p className="tc-season-warning">Playoff odds unavailable: {data.playoffs.reason}</p>}
                 {children}
@@ -352,7 +352,7 @@
                     {controller.refresh && <button type="button" className="tc-dhq-detail-toggle" onClick={controller.refresh}>Refresh season estimate</button>}
                     {data.wins?.beforeFinal != null && data.wins?.afterFinal != null && <p>Expected final {data.wins.decisionsPerWeek === 2 ? 'standings wins' : 'wins'}: {num(data.wins.beforeFinal, 2)} → {num(data.wins.afterFinal, 2)}</p>}
                     {data.playoffs?.available && <p>{data.playoffs.byeBeforePct != null && data.playoffs.byeAfterPct != null ? 'First-round bye chance: ' + pct(data.playoffs.byeBeforePct) + ' → ' + pct(data.playoffs.byeAfterPct) : 'First-round byes: none in this bracket.'}</p>}
-                    <p className="tc-season-method">Before → after trade. Power rank compares average projected starting-lineup points over the remaining regular season. It can differ from Home’s current scoring rank.</p>
+                    <p data-mobile-caption className="tc-season-method">Before → after trade. Power rank compares average projected starting-lineup points over the remaining regular season. It can differ from Home’s current scoring rank.</p>
                     <div className="tc-season-weeks-wrap"><table className="tc-season-weeks"><caption>Remaining games</caption><thead><tr><th scope="col">Game</th><th scope="col">Your points</th><th scope="col">Win chance</th></tr></thead><tbody>
                         {(data.weeks || []).map(row => <tr key={row.week}><th scope="row"><b>Week {row.week}</b><span>{row.opponentName || 'Opponent unavailable'}</span>{row.opponentBeforePoints != null && <small>Opponent {num(row.opponentBeforePoints)}{row.opponentAfterPoints !== row.opponentBeforePoints ? ' → ' + num(row.opponentAfterPoints) : ''} pts</small>}</th><td>{num(row.beforePoints)}<span>→ {num(row.afterPoints)}</span><small>{signed(row.pointsDelta, ' pts')}</small></td><td>{pct(row.beforeWinPct)}<span>→ {pct(row.afterWinPct)}</span><small>{signed(displayedPctDelta(row.beforeWinPct, row.afterWinPct), ' pp', 0)}</small></td></tr>)}
                     </tbody></table></div>
@@ -423,7 +423,7 @@
                     {!mobileDetails && <div className="tc-season-deal-summary" aria-label="Deal value and negotiation context">
                         <div><span>Deal value</span><strong style={{ color: verdictColor }}>{grade?.grade || '--'} value grade · {diffDisplay}</strong><small>You send {totalA?.toLocaleString() ?? 'unknown'} / receive {totalB?.toLocaleString() ?? 'unknown'} season value</small>{faabDelta !== 0 && <small>FAAB {faabDelta > 0 ? '+' : ''}${faabDelta}</small>}</div>
                         <div><span>Negotiation context</span>{_pro ? <><strong style={{ color: likelihoodColor }}>{likelihood == null ? 'Unknown' : likelihood + '/100 score'}</strong><small>Hand-set price, fit and owner-context comparison. Not a probability or data-quality rating.</small></> : <><strong>Pro</strong><small>Negotiation context and negotiation reads.</small></>}</div>
-                        <p>Deal value measures the price. The season verdict measures the projected effect on your games.</p>
+                        <p data-mobile-caption>Deal value measures the price. The season verdict measures the projected effect on your games.</p>
                     </div>}
                 </TcSeasonImpact>)}
                 {!seasonal && <>
@@ -3952,7 +3952,7 @@
                         <div className="tc-finder-run">
                             <div>
                                 <strong>{focusR ? `Trade ideas for ${focusR.label}` : selectedPartner && !finderPoolOn ? `Explore trades with ${selectedPartner.ownerName}` : 'Ready to explore your league?'}</strong>
-                                <p>{finderPoolOn ? `Look for ${activeIntent === 'shop' ? 'offers for your players' : activeIntent === 'picks' ? 'draft-pick deals' : 'roster improvements'} across ${partnerBoard.length} other teams.` : 'Ideas update below for your selected player or trade partner.'}</p>
+                                <p data-mobile-caption>{finderPoolOn ? `Look for ${activeIntent === 'shop' ? 'offers for your players' : activeIntent === 'picks' ? 'draft-pick deals' : 'roster improvements'} across ${partnerBoard.length} other teams.` : 'Ideas update below for your selected player or trade partner.'}</p>
                             </div>
                             {finderPoolOn && <button type="button" className="tc-center-primary" disabled={scanArmed} onClick={() => setScanForKey(finderLoopKey)}>{!scanArmed ? 'Find trade ideas' : finderPool.done ? 'Ideas up to date' : `Searching ${finderPool.scanned}/${finderPool.total}…`}</button>}
                         </div>
@@ -3966,8 +3966,8 @@
                 </section>
 
                 <details className="tc-finder-browse" open={finderBrowseOpen} onToggle={e => { if (e.currentTarget.open !== finderBrowseOpen) setFinderBrowseOpen(e.currentTarget.open); }}>
-                    <summary><strong>{finderPicksMode ? 'Browse draft picks' : browsingMyRoster ? 'Browse my players' : 'Browse players'}</strong><span>Choose a target or add to your trade</span></summary>
-                    <p className="tc-finder-board-help">Select a row to find trade ideas for that {finderPicksMode ? 'pick' : 'player'}. Use <strong>+ Build</strong> to add it directly to your trade.</p>
+                    <summary><strong>{finderPicksMode ? 'Browse draft picks' : browsingMyRoster ? 'Browse my players' : 'Browse players'}</strong><span data-mobile-caption>Choose a target or add to your trade</span></summary>
+                    <p data-mobile-caption className="tc-finder-board-help">Select a row to find trade ideas for that {finderPicksMode ? 'pick' : 'player'}. Use <strong>+ Build</strong> to add it directly to your trade.</p>
                         {finderPicksMode ? (
                             /* Intent=Picks → a draft-pick board with an Owned/League scope
                                toggle (the phone board, ported): Owned = your picks (→ YOU
@@ -4278,7 +4278,7 @@
                         }
                     `}</style>
                     <header className="tc-center-header">
-                        <div><h2>Trade Desk</h2><p>{active === 'dna' ? 'Understand the managers you trade with.' : active === 'log' ? 'Track your saved ideas and completed league trades.' : 'Find a deal that helps your team, or build one yourself.'}</p></div>
+                        <div><h2>Trade Desk</h2><p data-mobile-caption>{active === 'dna' ? 'Understand the managers you trade with.' : active === 'log' ? 'Track your saved ideas and completed league trades.' : 'Find a deal that helps your team, or build one yourself.'}</p></div>
                         <button type="button" className="tc-center-build" onClick={() => setTcTab(active === 'builder' ? 'desk' : 'builder')}>{active === 'builder' ? 'Back to Trade Finder' : _verdict.hasTrade ? 'Edit my trade' : '+ Build a trade'}</button>
                     </header>
                     <div className="tc-center-nav">{renderTcTabNav()}</div>

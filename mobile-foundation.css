@@ -36,3 +36,13 @@
   .wr-card-list-heading { flex-wrap:wrap; }
   .wr-card-list-heading > span:not([aria-hidden]) { font:500 14px/1.4 var(--font-body)!important; letter-spacing:0!important; text-transform:none!important; white-space:normal!important; opacity:1!important; }
 }
+
+.mc-mobile-status { display: none; }
+
+/* Optional explanatory copy is marked at its source. Keep measurement labels,
+   live/estimated states, errors and decision facts visible on phones. */
+@media (max-width: 767px) {
+  .mc-mobile-status { display: inline; }
+  [data-mobile-caption],
+  .wr-strategy-editor .wr-mobile-section > summary > small { display: none !important; }
+}
