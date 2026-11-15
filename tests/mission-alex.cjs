@@ -40,6 +40,30 @@ test('context preserves negative and zero evidence, missingness, reserve status 
     assert.match(context, /Missing|unknown/);
 });
 
+test('conversation context applies current global topics without treating them as league capabilities', async () => {
+    let preferences = { focus: { cups: false, performance: false, trades: true }, channel: { inApp: false } };
+    const h = harness({ WR: { AlexSettings: { get: () => preferences } } });
+    const chat = h.conversation();
+    chat.setDraft('What should I focus on this week?'); await chat.send();
+    const context = h.calls[0][2];
+    const topicLine = context.split('\n').find(line => line.startsWith('Global Alex topic preferences: '));
+    const topics = JSON.parse(topicLine.slice('Global Alex topic preferences: '.length));
+    assert(topics.muted.includes('cups'));
+    assert(topics.muted.includes('performance'));
+    assert(topics.enabled.includes('trades'));
+    assert.equal(topics.inAppCards, false);
+    assert.match(context, /Do not volunteer muted topics/);
+    assert.match(context, /direct user question about a muted topic overrides/);
+    assert.match(context, /inAppCards preference never blocks a direct reply/);
+    assert.match(context, /never infer a competition from fantasy format alone/);
+    assert.match(context, /A topic being enabled is not evidence/);
+    preferences = { ...preferences, focus: { ...preferences.focus, cups: true } };
+    chat.setDraft('Does this league have a Cup?'); await chat.send();
+    const updated = JSON.parse(h.calls[1][2].split('\n').find(line => line.startsWith('Global Alex topic preferences: ')).slice('Global Alex topic preferences: '.length));
+    assert(updated.enabled.includes('cups'), 'Each reply reads current settings rather than a stale chat-open snapshot');
+    assert.match(h.calls[1][2], /requested competition is unconfirmed, say what is unknown/);
+});
+
 test('ratings persist by authenticated account, league and season and inform subsequent prompts', async () => {
     const h = harness(), chat = h.conversation();
     chat.setDraft('What is my priority?'); await chat.send(); const id = chat.state.messages[1].id;

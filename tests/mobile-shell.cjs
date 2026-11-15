@@ -57,7 +57,7 @@ const restricted = fixture({ open: true, options: { showTrades: false, showGmOff
 const labels = restricted.nodes.filter(n => n.type === 'button').map(restricted.text);
 assert.ok(labels.includes('Waivers›'));
 assert.ok(!labels.includes('Trade Desk›'));
-assert.ok(!labels.includes('Alex preferences›'));
+assert.ok(labels.includes('Alex preferences›'), 'Global Alex preferences remain reachable in Chopped');
 assert.ok(labels.includes('Lenses›'), 'Lenses remains available in seasonal league menus');
 
 for (const opts of [{ phone: false }, { keyboard: true }]) {

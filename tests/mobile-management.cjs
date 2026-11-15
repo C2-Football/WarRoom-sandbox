@@ -140,14 +140,17 @@ test('phone Decision review exposes every asset in a large trade without changin
     assert.equal(all(ledger, n => n.type === 'li').length, 12); assert.match(text(ledger), /Full player f/); assert.match(text(ledger), /2032 R1/);
     assert.match(text(tree), /DHQ/);
 });
-test('phone Preferences keeps controls available inside closed sections and announces toggles', () => {
+test('phone Preferences exposes global topics and keeps advanced controls inside closed sections', () => {
     const wrapper = kind => props => ({ type: kind, props, children: props.children });
     let saved;
     const h = harness(['js/tabs/alex-insights.js'], true, { WR: { Card: wrapper('card'), useViewport: () => ({ isPhone: true }),
         MobileSection: props => ({ type: 'details', props: { open: false }, children: [{ type: 'summary', props: {}, children: props.title }, props.children] }), AlexSettings: { save: value => saved = value } }, wrAlpha: color => color });
     let tree = h.render('AlexInsightsTab', { workspaceView: 'settings', currentLeague: {}, playersData: {}, myRoster: { roster_id: 1, players: [] } });
     const sections = all(tree, n => n.type === 'details'); assert.equal(sections.length, 3); assert.ok(sections.every(n => !n.props.open));
-    assert.match(text(sections), /Focus areas & notifications/); assert.match(text(sections), /Asset priorities/);
+    assert.match(text(sections), /Notifications/); assert.match(text(sections), /Asset priorities/);
+    assert.match(text(tree), /Topics across all leagues/);
+    assert.doesNotMatch(text(sections), /Player results|League outlook|Cups/, 'Global topic choices remain visible without expanding advanced settings');
+    assert.equal(button(tree, 'Cups').props['aria-pressed'], true);
     const slider = all(tree, n => n.type === 'input' && n.props['aria-label'] === 'Alert threshold')[0]; assert.ok(slider); slider.props.onChange({ target: { value: 80 } }); assert.equal(saved.alertThreshold, 80);
     assert.equal(button(tree, 'Trades').props['aria-pressed'], true); assert.equal(button(tree, 'Email (coming soon)').props.disabled, true);
     const props = { workspaceView: 'settings', currentLeague: {}, playersData: {}, myRoster: { roster_id: 1, players: [] } };

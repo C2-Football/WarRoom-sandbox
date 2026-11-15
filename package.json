@@ -25,7 +25,7 @@
     "test:draft-recap": "node tests/draft-recap.js",
     "test:post-draft-craze": "node tests/post-draft-craze.js",
     "test:draft-strategy-studio": "node tests/draft-strategy-studio.js",
-    "test:ai": "node tests/ai-routing.js && node tests/alex-format-context.cjs",
+    "test:ai": "node tests/ai-routing.js && node tests/alex-format-context.cjs && node tests/alex-settings.cjs && node tests/mission-alex.cjs",
     "test:ai-scale": "node scripts/ai-scale-load-model.cjs",
     "test:billing": "node tests/billing-schema.js && node tests/billing-recovery.cjs && node tests/billing-events-db.cjs && node tests/billing-checkout-recovery.cjs",
     "test:security": "node tests/security-contract.js && node tests/security-audit-regression.cjs && node tests/proxy-reconcile.cjs && node tests/legacy-password-upgrade.cjs && node tests/security-audit-db.cjs && node tests/security-preview-http.cjs && node tests/account-storage.cjs && node tests/account-session.cjs && node tests/password-reset-atomic.cjs && node tests/onboarding-account-session.cjs && node tests/account-session-rls.cjs && node tests/app-account-callbacks.cjs && node tests/account-password.cjs && node tests/reset-operational-compat.cjs && node tests/hosted-auth-reconciliation.cjs && node tests/account-provisioning-atomic.cjs && node tests/hosted-operations-reconciliation.cjs && node tests/account-deletion-recovery.cjs && node tests/account-deletion-sql.cjs && node tests/account-deletion-checkouts.cjs && npm run test:c2-release",

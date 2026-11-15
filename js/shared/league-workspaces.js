@@ -28,7 +28,7 @@
         { tab: 'research-reports', workspace: 'research', label: 'Custom reports', analysis: 'reports', phoneHidden: true },
         { tab: 'lenses', workspace: 'lenses', label: 'Lenses' },
         { tab: 'settings', workspace: 'settings', label: 'Settings' },
-        { tab: 'gm-settings', workspace: 'settings', label: 'Alex preferences', alex: 'settings', capability: 'gm' },
+        { tab: 'gm-settings', workspace: 'settings', label: 'Alex preferences', alex: 'settings' },
         { tab: 'legend', workspace: 'help', label: 'Help & glossary' },
         // Legacy Office links retain their internal saved view and controls.
         { tab: 'alex', workspace: 'team', label: "GM's Office", alex: null, legacy: true, capability: 'gm' },

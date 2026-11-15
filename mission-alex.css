@@ -42,3 +42,32 @@
 .mc-chop-insight>strong{font-size:.82rem}
 
 .mc-chop-finish-assumption{display:block;font-size:.6rem;line-height:1.3;color:var(--silver);font-weight:400}
+
+/* Keep the personal read legible inside the compact mobile shell. */
+.mc-overview-decisions header{align-items:flex-start;text-transform:none;letter-spacing:0}
+.mc-overview-decisions header>div{min-width:0}
+.mc-overview-decisions header strong{display:block;font-size:15px;line-height:1.4}
+.mc-overview-decisions .mc-insights-week{display:block;margin-top:3px;color:var(--silver,#c3cddd);font-size:13px;font-weight:500;line-height:1.4}
+.mc-overview-decisions .mc-insights-settings{flex-shrink:0;min-height:44px;padding:8px 11px;border:1px solid var(--acc-line1,rgba(183,206,255,.3));border-radius:9px;background:rgba(183,206,255,.09);color:var(--white,#f5f2ea);font:600 14px var(--font-body,sans-serif);cursor:pointer}
+.mc-overview-decisions :is(button,summary):focus-visible{outline:2px solid var(--gold,#b7ceff);outline-offset:3px}
+.mc-overview-decisions .mc-week-impact{margin-top:16px;padding-top:12px;font-size:15px;line-height:1.5}
+.mc-overview-decisions .mc-week-impact>strong{display:block;font-size:16px;line-height:1.4}
+.mc-overview-decisions .mc-week-impact p{margin:8px 0 0}
+.mc-overview-decisions .mc-chop-insight{margin-top:14px;padding-top:0}
+.mc-overview-decisions .mc-chop-insight>strong{font-size:18px}
+.mc-insight-statuses{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+.mc-insight-statuses span{border:1px solid rgba(183,206,255,.3);border-radius:6px;padding:3px 7px;font-size:13px;font-weight:600;line-height:1.4;color:var(--white,#f5f2ea)}
+.mc-overview-decisions .mc-overview-form{margin-top:18px}
+.mc-overview-decisions .mc-overview-form>p{display:flex;justify-content:space-between;gap:12px;margin:0 0 6px;font-size:13px;line-height:1.5;font-weight:600}
+.mc-overview-decisions .mc-overview-form li{gap:10px;padding:12px 0;font-size:15px;line-height:1.4;align-items:flex-start}
+.mc-overview-decisions .mc-overview-form li>div>strong{font-weight:700}
+.mc-overview-decisions .mc-overview-form .mc-form-score{margin-top:5px;font-size:14px;font-variant-numeric:tabular-nums;color:var(--silver,#c3cddd)}
+.mc-overview-decisions .mc-overview-form .mc-form-delta{max-width:none;white-space:nowrap;font-size:15px;font-variant-numeric:tabular-nums}
+.mc-overview-decisions .mc-overview-form .mc-form-bench{display:inline-block;max-width:none;margin-left:6px;font-size:12px;line-height:1.5;color:var(--silver,#c3cddd)}
+.mc-overview-decisions .mc-overview-form summary{display:flex;align-items:center;min-height:44px;padding:4px 0;font-size:14px}
+.mc-overview-decisions .mc-overview-form summary::before{content:'▸';margin-right:7px}
+.mc-overview-decisions .mc-overview-form details[open]>summary::before{content:'▾'}
+.la-mobile .mc-overview-decisions .mc-next-actions{display:flex;gap:8px;margin-top:16px}
+.la-mobile .mc-overview-decisions .mc-next-actions button{flex:1;font-size:14px!important;min-height:44px!important}
+.wr-mission-v8 .mc-overview-decisions .mc-overview-form>p,
+.wr-mission-v8 .mc-overview-decisions .mc-week-impact p{color:var(--cx-ink,#edf3ff)!important}

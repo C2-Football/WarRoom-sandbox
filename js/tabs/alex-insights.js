@@ -21,7 +21,7 @@
     // hasn't loaded yet (e.g., script-order edge case).
     const DEFAULT_SETTINGS = (window.WR?.AlexSettings?.DEFAULTS) || {
         alertThreshold: 70, maxAlertsPerWeek: 6, minPointsDelta: 2.5, tradeAggression: 50,
-        focus: { startSit: true, trades: true, waivers: true, draft: true, injury: false, streaming: false, gmStyle: false },
+        focus: { startSit: true, performance: true, leagueOutlook: true, cups: true, trades: true, waivers: true, draft: true, injury: false, streaming: false, gmStyle: false },
         channel: { inApp: true, email: false, push: false },
     };
     function loadSettings() { return window.WR?.AlexSettings?.get?.() || { ...DEFAULT_SETTINGS }; }
@@ -1786,16 +1786,8 @@
         // tuning only.
         const resolvedLeagueSkin = leagueSkin || window.App?.LeagueSkin?.getCurrent?.() || null;
         const skinFeatures = resolvedLeagueSkin?.features || {};
-        // Dynasty (E6): the two weekly focus chips hide — unless the pref is
-        // currently ON, so users can still switch the deterministic pattern
-        // cards off (the chip disappears once toggled off).
-        const allowRedraft = window.App?.Intelligence?.allowRedraftFeatures
-            ? window.App.Intelligence.allowRedraftFeatures(currentLeague) : true;
         const baseDraftYear = String(parseInt(currentLeague?.season || new Date().getFullYear(), 10) || new Date().getFullYear());
         const draftYearOptions = [baseDraftYear, String(Number(baseDraftYear) + 1), String(Number(baseDraftYear) + 2)];
-        const settingsIntro = resolvedLeagueSkin?.features?.showDynastyValue === false
-            ? 'These knobs control which behavioral insights surface in Overview, how confidently Alex needs to be before flagging something, and where you get pinged. Defaults follow this league format - use the presets below if you want a different vibe.'
-            : 'These knobs control which behavioral insights surface in Overview, how confidently Alex needs to be before flagging something, and where you get pinged. Defaults are tuned for active dynasty managers - use the presets below if you want a different vibe.';
         const targetPositions = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF'].concat(skinFeatures.showIDP === false ? [] : ['DL', 'LB', 'DB']);
         const draftPickYears = skinFeatures.showFuturePicks === false ? [baseDraftYear] : draftYearOptions;
         const update = (patch) => { const next = { ...settings, ...patch }; setSettings(next); saveSettings(next); };
@@ -1824,7 +1816,7 @@
             key: k, 'aria-pressed': !!settings.focus[k], onClick: () => updateFocus(k, !settings.focus[k]),
             style: {
                 minHeight: '44px',
-                padding: '6px 12px', borderRadius: 'var(--card-radius-sm)', fontSize: 'var(--text-label, 0.75rem)', fontWeight: 500,
+                padding: '8px 12px', borderRadius: 'var(--card-radius-sm)', fontSize: 'var(--text-body, 1rem)', fontWeight: 600,
                 cursor: 'pointer', fontFamily: 'var(--font-body)',
                 border: '1px solid ' + (settings.focus[k] ? 'var(--acc-line3, rgba(212,175,55,0.4))' : 'var(--ov-6, rgba(255,255,255,0.1))'),
                 background: settings.focus[k] ? 'var(--acc-fill2, rgba(212,175,55,0.12))' : 'var(--ov-1, rgba(255,255,255,0.02))',
@@ -1869,11 +1861,21 @@
         };
 
         return h('div', { className: 'gm-settings-content' },
-            // Intro card
-            h('div', { style: { padding: '12px 16px', marginBottom: '14px', background: 'rgba(124,107,248,0.04)', border: '1px solid rgba(124,107,248,0.15)', borderRadius: 'var(--card-radius, 10px)' } },
-                h('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--purple)', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '4px', fontFamily: 'var(--font-title)' } }, 'How Alex talks to you'),
-                h('div', { style: { fontSize: 'var(--text-body, 1rem)', color: 'var(--silver)', opacity: 0.85, lineHeight: 1.5 } },
-                    'Choose how often Alex speaks up. Presets save immediately.')
+            h(window.WR.Card, { padding: 'var(--card-pad-lg)', style: { marginBottom: '14px' } },
+                h('h3', { style: { color: 'var(--white)', fontSize: 'var(--text-title, 1.125rem)', margin: '0 0 8px' } }, 'Topics across all leagues'),
+                h('p', { style: { color: 'var(--silver)', fontSize: 'var(--text-body, 1rem)', lineHeight: 1.5, margin: '0 0 14px' } }, 'Saved on this device. Cups appear only in leagues with a Cup.'),
+                h('div', { role: 'group', 'aria-label': 'Alex topics across all leagues', style: { display: 'flex', flexWrap: 'wrap', gap: '8px' } },
+                    focusChip('startSit', 'Lineup'),
+                    focusChip('performance', 'Player results'),
+                    focusChip('leagueOutlook', 'League outlook'),
+                    focusChip('cups', 'Cups'),
+                    focusChip('trades', 'Trades'),
+                    focusChip('waivers', 'Waivers'),
+                    focusChip('draft', 'Draft'),
+                    focusChip('injury', 'Injury watch'),
+                    focusChip('streaming', 'Streaming'),
+                    focusChip('gmStyle', 'GM style')
+                )
             ),
             h('div', { className: 'gm-office-settings-grid' },
                 h(window.WR.Card, { padding: 'var(--card-pad-lg)' },
@@ -1891,28 +1893,16 @@
                     sliderRow('Max alerts per week', 'Caps how many cards Alex shows in Overview. Lower = curated.', 'maxAlertsPerWeek', 1, 20, 1),
                     sliderRow('Min projected-points delta', 'Smallest swing (in projected fantasy points) Alex bothers flagging on lineup or waiver moves.', 'minPointsDelta', 0, 10, 0.5, v => Number(v).toFixed(1) + ' pts')),
                 ),
-                h(PreferenceDetails, { title: 'Focus areas & notifications' },
-                    sectionTitle({ title: 'Focus areas', sub: 'Which categories Alex monitors' }),
-                    h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '7px' } },
-                        (allowRedraft || !!settings?.focus?.startSit) && focusChip('startSit', 'Start / Sit'),
-                        focusChip('trades', 'Trades'),
-                        focusChip('waivers', 'Waivers'),
-                        focusChip('draft', 'Draft'),
-                        focusChip('injury', 'Injury watch'),
-                        (allowRedraft || !!settings?.focus?.streaming) && focusChip('streaming', 'Streaming'),
-                        focusChip('gmStyle', 'GM style')
-                    ),
-                    h('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.6, marginTop: '12px', lineHeight: 1.5 } },
-                        'Alex only surfaces insights for active areas. Decision History still logs everything regardless.'),
-                    h('div', { style: { marginTop: '20px', paddingTop: '16px', borderTop: '1px solid var(--ov-4, rgba(255,255,255,0.06))' } },
+                h(PreferenceDetails, { title: 'Notifications' },
+                    h('div', null,
                         sectionTitle({ title: 'Notifications', sub: 'Where you get pinged' }),
                         h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '7px' } },
-                            chanChip('inApp', 'GM Office cards'),
+                            chanChip('inApp', 'Alex insight cards'),
                             chanChip('email', 'Email (coming soon)', { disabled: true, title: 'Email delivery is not wired yet.' }),
                             chanChip('push', 'Push (coming soon)', { disabled: true, title: 'Push delivery is not wired yet.' }),
                         ),
                         h('div', { style: { fontSize: 'var(--text-label, 0.75rem)', color: 'var(--silver)', opacity: 0.55, marginTop: '10px', lineHeight: 1.5 } },
-                            'GM Office cards controls whether Alex surfaces behavioral cards here. Email and push delivery need the notification service before they can be enabled.'),
+                            'Alex insight cards controls in-app insights across your leagues.'),
                     )
                 ),
             ),

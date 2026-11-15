@@ -20,6 +20,9 @@
 //                             persisted blobs load and as a strategy-less fallback.
 //   focus: {
 //     startSit:  bool
+//     performance: bool
+//     leagueOutlook: bool
+//     cups:      bool
 //     trades:    bool
 //     waivers:   bool
 //     draft:     bool
@@ -44,43 +47,52 @@
             picks: { '2026': true, '2027': true, '2028': false },
             faab: true,
         },
-        focus: { startSit: true, trades: true, waivers: true, draft: true, injury: false, streaming: false, gmStyle: false },
+        focus: { startSit: true, performance: true, leagueOutlook: true, cups: true, trades: true, waivers: true, draft: true, injury: false, streaming: false, gmStyle: false },
         channel: { inApp: true, email: false, push: false },
     };
 
     let _cache = null;
 
+    function normalize(value) {
+        const raw = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+        const rawTP = raw.tradePriority || {};
+        return {
+            ...DEFAULTS,
+            ...raw,
+            focus: { ...DEFAULTS.focus, ...(raw.focus || {}) },
+            channel: { ...DEFAULTS.channel, ...(raw.channel || {}) },
+            tradePriority: {
+                positions: { ...DEFAULTS.tradePriority.positions, ...(rawTP.positions || {}) },
+                picks: { ...DEFAULTS.tradePriority.picks, ...(rawTP.picks || {}) },
+                faab: rawTP.faab !== undefined ? rawTP.faab : DEFAULTS.tradePriority.faab,
+            },
+        };
+    }
+
     function load() {
         if (_cache) return _cache;
         try {
-            const raw = JSON.parse(localStorage.getItem(KEY) || 'null');
-            if (raw && typeof raw === 'object') {
-                const rawTP = raw.tradePriority || {};
-                _cache = {
-                    ...DEFAULTS,
-                    ...raw,
-                    focus: { ...DEFAULTS.focus, ...(raw.focus || {}) },
-                    channel: { ...DEFAULTS.channel, ...(raw.channel || {}) },
-                    tradePriority: {
-                        positions: { ...DEFAULTS.tradePriority.positions, ...(rawTP.positions || {}) },
-                        picks: { ...DEFAULTS.tradePriority.picks, ...(rawTP.picks || {}) },
-                        faab: rawTP.faab !== undefined ? rawTP.faab : DEFAULTS.tradePriority.faab,
-                    },
-                };
-                return _cache;
-            }
+            _cache = normalize(JSON.parse(localStorage.getItem(KEY) || 'null'));
+            return _cache;
         } catch (_) { /* fall through to defaults */ }
-        _cache = { ...DEFAULTS, focus: { ...DEFAULTS.focus }, channel: { ...DEFAULTS.channel } };
+        _cache = normalize(null);
         return _cache;
     }
 
     function save(next) {
-        _cache = next;
-        try { localStorage.setItem(KEY, JSON.stringify(next)); } catch (_) {}
-        try { window.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: next })); } catch (_) {}
+        _cache = normalize(next);
+        try { localStorage.setItem(KEY, JSON.stringify(_cache)); } catch (_) {}
+        try { window.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: _cache })); } catch (_) {}
     }
 
     function get() { return load(); }
+
+    // Preferences are shared across leagues on this device. Consumers still
+    // check league capabilities before presenting an enabled topic.
+    function isTopicEnabled(topic) {
+        const s = load();
+        return s.channel?.inApp !== false && (!topic || s.focus?.[topic] !== false);
+    }
 
     // RETIRED AS MASTER: GM Strategy (WR.GmMode) is now the single source of
     // truth for the trade acceptance floor. This defers to GmMode.effects when a
@@ -110,13 +122,12 @@
     function shouldShow(insight) {
         if (!insight) return false;
         const s = load();
-        if (s.channel?.inApp === false) return false;
+        if (!isTopicEnabled(insight.focus)) return false;
         if (insight.confidence != null && insight.confidence < (s.alertThreshold || 0)) return false;
         if (insight.pointsDelta != null && Math.abs(Number(insight.pointsDelta) || 0) < (s.minPointsDelta || 0)) return false;
         // No focus tag => always allowed (infrastructural insight without a
         // domain, e.g., AI-generated novel finds). Tagged insights must have
         // their focus area enabled.
-        if (insight.focus && s.focus && s.focus[insight.focus] === false) return false;
         return true;
     }
 
@@ -146,6 +157,7 @@
         EVENT_NAME,
         get,
         save,
+        isTopicEnabled,
         actionableTradeAcceptanceFloor,
         shouldShow,
         filterInsights,

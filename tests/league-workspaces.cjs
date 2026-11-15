@@ -71,6 +71,15 @@ test('callers cannot mutate shared routing metadata', () => {
     assert.equal(W.resolve('calendar').workspace, 'league');
     assert.equal(W.navigation()[0].tab, 'dashboard');
 });
+test('global Alex preferences stay reachable when the league has no GM office', () => {
+    for (const isPhone of [true, false]) {
+        const options = { isPhone, showGmOffice: false, leagueType: 'chopped' };
+        assert.equal(W.resolve('gm-settings', options).tab, 'gm-settings');
+        assert.equal(W.resolve('gm-settings', options).alex, 'settings');
+        assert(W.views('settings', options).some(route => route.tab === 'gm-settings'));
+        assert.equal(W.resolve('strategy', options).tab, 'myteam');
+    }
+});
 test('phone navigation has focused destinations and its own mock draft route', () => {
     const phone={isPhone:true};
     for (const [tab,fallback] of Object.entries({'team-outlook':'myteam','market-review':'fa','research-players':'stats','research-reports':'stats'})) {

@@ -51,7 +51,8 @@ const desktop = tabs(groups({ isPhone: false, leagueType: 'dynasty' }));
 for (const tab of ['team-outlook', 'market-review', 'research-players', 'research-reports']) assert(desktop.includes(tab), 'Browser retains ' + tab);
 assert(!desktop.includes('mock-draft'), 'Phone-only mock-draft stays out of browser navigation');
 const chopped = tabs(groups({ isPhone: false, leagueType: 'chopped', showTrades: false, showGmOffice: false, showGameDay: false }));
-for (const tab of ['trades', 'strategy', 'decisions', 'patterns', 'gm-settings', 'lineup']) assert(!chopped.includes(tab), 'Capability gate excludes ' + tab);
+for (const tab of ['trades', 'strategy', 'decisions', 'patterns', 'lineup']) assert(!chopped.includes(tab), 'Capability gate excludes ' + tab);
+assert(chopped.includes('gm-settings'), 'Global Alex preferences remain available in Chopped');
 
 for (const options of [
     { isPhone: false, leagueType: 'dynasty' },

@@ -13,7 +13,7 @@ function fixture() {
     vm.runInContext(Babel.transform(source,{presets:['react']}).code,context);
     const league = {league_id:'l1',season:2026,roster_positions:['QB','WR','FLEX','BN','IR']};
     const players = {a:{full_name:'Healthy Starter',position:'QB',team:'KC'}, b:{full_name:'Bye Receiver',position:'WR',team:'BUF',testBye:6}, c:{full_name:'Listed Out',position:'RB',team:'NYJ',injury_status:'Out'}};
-    const props={currentLeague:league,myRoster:{starters:['a','b','c']},playersData:players,setActiveTab:tab=>events.push(tab)};
+    const props={currentLeague:league,myRoster:{roster_id:1,starters:['a','b','c']},playersData:players,setActiveTab:tab=>events.push(tab)};
     return {window,events,effects,hooks,props,setWeek:value=>week=value,read:extra=>window.buildLeagueOverviewDecision({league,roster:props.myRoster,playersData:players,week:6,now:Date.parse('2026-10-07T12:00:00Z'),...extra}),render(){cursor=0;effects.length=0;return window.LeagueOverviewDecisions(props);}};
 }
 const walk = node => node && typeof node==='object' ? [node,...(node.children||[]).flat(Infinity).flatMap(walk)] : [];
@@ -187,9 +187,10 @@ test('Alex flags finished-game deviations and streaks for the manager’s curren
     assert.match(text(standouts), /New Starter/);
     assert.match(text(standouts), /Ordinary Game/);
     assert.match(text(standouts), /2 more player results/);
-    assert.match(text(standouts), /Hot Receiver27.0 pts · 8.0 season avgStarter · 5 prior games19.0 pts above4 straight above avg/);
-    assert.match(text(standouts), /Cold Runner0.0 pts · 18.0 season avgBench · 5 prior games18.0 pts below4 straight below avg/);
-    assert.match(text(standouts), /Steady Cold.*2.2 pts below4 straight below avg/, 'A sustained streak can qualify without a big single-game swing');
+    assert.match(text(standouts), /Hot Receiver27.0 pts · Avg 8.0\+19.0 pts/);
+    assert.match(text(standouts), /Cold RunnerBench0.0 pts · Avg 18.0−18.0 pts/);
+    assert.match(text(standouts), /Steady Cold.*−2.2 pts/, 'A sustained streak can qualify without a big single-game swing');
+    assert.doesNotMatch(text(standouts), /prior games|straight/);
     assert.doesNotMatch(text(standouts), /Did Not Play|Still Playing|Opponent Standout|Former Player/);
     button(tree, 'Ask Alex').props.onClick();
     assert.match(h.events[0].detail.prompt, /"finishedPlayerForm":.*"pid":"hot"/);
@@ -239,6 +240,145 @@ test('Cup load is read-only and discards a response after navigation',async()=>{
     assert.equal(request.body.leagueId,'l1');assert.equal(request.body.season,'2026');
     cleanup();resolve({data:{cup:{state:{locked:true}}}});await new Promise(setImmediate);
     assert.equal(h.hooks[3].key,'','A late Cup response is not applied after navigation');
+});
+
+test('Cup discovery errors and explicit no-Cup leagues stay silent',async()=>{
+    for (const response of [{error:{message:'No session'}}, {data:{cup:null}}, {data:{}},
+        {data:{cup:{state:{version:2,locked:true,enabled:true,teams:{bad:'shape'}}}}},
+        {data:{cup:{state:{locked:true,groups:{A:{bad:'shape'},B:[],C:[]}}}}}]) {
+        const h=fixture();
+        h.window.App.OD={getClient:()=>({functions:{invoke:async()=>response}})};
+        h.render();h.hooks[0]={key:'l1|2026|6',status:'ready',games:[{home:'KC',away:'LV',completed:true}],now:Date.now()};
+        h.render();const cleanup=h.effects[3]();await new Promise(setImmediate);
+        assert.doesNotMatch(text(h.render()),/Cup outlook|League Cup/);
+        assert.equal(h.hooks[3].cup,null,'Discovery never invents a Cup');
+        button(h.render(),'Ask Alex').props.onClick();
+        assert.doesNotMatch(h.events.at(-1).detail.prompt,/Cup outlook|Cup forecasts/,'Alex is not asked to discuss an unconfirmed Cup');
+        cleanup();
+    }
+});
+
+test('a confirmed personal Cup still renders and reaches Ask Alex',async()=>{
+    const h=fixture(),Cup=require('../js/shared/woeppel-cup.js');
+    h.props.currentLeague.rosters=Array.from({length:4},(_,i)=>({roster_id:i+1}));
+    const cup=Cup.configure(h.props.currentLeague,'points');
+    Object.assign(cup,{locked:true,enabled:true,name:'Our Cup'});
+    h.window.WoeppelCup=Cup;
+    h.window.App.OD={getClient:()=>({functions:{invoke:async()=>({data:{cup:{state:cup}}})}})};
+    h.render();h.hooks[0]={key:'l1|2026|6',status:'ready',games:[{home:'KC',away:'LV',completed:true}],now:Date.now()};
+    h.render();const cleanup=h.effects[3]();await new Promise(setImmediate);
+    const tree=h.render();assert.match(text(tree),/Our Cup/);
+    button(tree,'Ask Alex').props.onClick();assert.match(h.events.at(-1).detail.prompt,/Cup outlook/);
+    assert.match(h.events.at(-1).detail.prompt,/"cup":\{"title":"Our Cup"/);
+    assert.match(h.events.at(-1).detail.prompt,/Cup forecasts are hypothetical/);
+    cleanup();
+});
+
+test('a known Cup retains refresh status but a confirmed absence clears it',async()=>{
+    const h=fixture();let response={data:{cup:{state:{version:2,teams:['1'],locked:true,enabled:true,name:'Our Cup'}}}};
+    h.window.App.OD={getClient:()=>({functions:{invoke:async()=>response}})};
+    h.render();h.hooks[0]={key:'l1|2026|6',status:'ready',games:[{home:'KC',away:'LV',completed:true}],now:Date.now()};
+    const refresh=async()=>{h.render();const cleanup=h.effects[3]();await new Promise(setImmediate);cleanup();return h.render();};
+    await refresh();
+    for (const failure of [{error:{message:'Offline'}},{data:{}},{data:{cup:{state:[]}}},
+        {data:{cup:{state:{version:2,locked:true,enabled:true,teams:{bad:'shape'}}}}},
+        {data:{cup:{state:{locked:true,enabled:true,groups:{A:{bad:'shape'},B:[],C:[]}}}}},
+        {data:{cup:{state:{locked:true,groups:['1','2']}}}},
+        {data:{cup:{state:{locked:true,groups:{A:['1']}}}}}]) {
+        response=failure;
+        assert.match(text(await refresh()),/Cup outlook could not refresh/);
+        assert.equal(h.hooks[3].cup.name,'Our Cup','Failed or malformed responses retain the known Cup');
+    }
+    response={data:{cup:null}};
+    assert.doesNotMatch(text(await refresh()),/Cup outlook/);
+    response={error:{message:'Offline'}};
+    assert.doesNotMatch(text(await refresh()),/Cup outlook/,'A no-Cup league stays silent on subsequent outages');
+});
+
+test('malformed Cup participants cannot crash a mounted overview before engine validation',()=>{
+    const h=fixture();h.window.WoeppelCup=require('../js/shared/woeppel-cup.js');h.render();
+    h.hooks[0]={key:'l1|2026|6',status:'ready',games:[{home:'KC',away:'LV',completed:true}],now:Date.now()};
+    for (const cup of [
+        {version:2,locked:true,enabled:true,teams:{bad:'shape'}},
+        {locked:true,enabled:true,groups:{A:{bad:'shape'},B:[],C:[]}},
+        {locked:true,enabled:true,groups:['1','2']},
+        {version:2,locked:true,enabled:true,teams:[null]},
+    ]) {
+        h.hooks[3]={key:'l1|2026',status:'ready',cup};
+        assert.doesNotThrow(()=>h.render());
+        assert.doesNotMatch(text(h.render()),/Cup outlook|League Cup/);
+        button(h.render(),'Ask Alex').props.onClick();
+        assert.doesNotMatch(h.events.at(-1).detail.prompt,/Cup outlook|Cup forecasts/);
+    }
+});
+
+test('Cup status is scoped to the active league and season before effects run',async()=>{
+    const h=fixture();h.render();
+    h.hooks[0]={key:'l1|2026|6',status:'ready',games:[{home:'KC',away:'LV',completed:true}],now:Date.now()};
+    h.hooks[3]={key:'l1|2026',status:'unavailable',cup:{version:2,teams:['1'],locked:true,enabled:true,name:'Old Cup'}};
+    assert.match(text(h.render()),/Cup outlook could not refresh/);
+    h.props.currentLeague={...h.props.currentLeague,league_id:'l2'};
+    h.hooks[0]={...h.hooks[0],key:'l2|2026|6'};
+    assert.doesNotMatch(text(h.render()),/Cup outlook/,'Prior league errors do not flash while the new league loads');
+    h.props.currentLeague={...h.props.currentLeague,league_id:'l1',season:2025};
+    h.window.S.nflState.season=2025;h.hooks[0]={...h.hooks[0],key:'l1|2025|6'};
+    assert.doesNotMatch(text(h.render()),/Cup outlook/,'Prior season errors do not flash either');
+});
+
+test('Cup errors are hidden when its tournament is a draft, paused or the topic is disabled',()=>{
+    const h=fixture();h.render();
+    h.hooks[0]={key:'l1|2026|6',status:'ready',games:[{home:'KC',away:'LV',completed:true}],now:Date.now()};
+    for (const cup of [{version:2,teams:['1'],locked:false},{version:2,teams:['1'],locked:true,enabled:false},{version:2,teams:['2'],locked:true,enabled:true},{groups:{A:['2']},locked:true,enabled:true}]) {
+        h.hooks[3]={key:'l1|2026',status:'unavailable',cup};
+        assert.doesNotMatch(text(h.render()),/Cup outlook/);
+    }
+    h.window.WR={AlexSettings:{isTopicEnabled:topic=>topic!=='cups'}};
+    h.hooks[3]={key:'l1|2026',status:'unavailable',cup:{version:2,teams:['1'],locked:true,enabled:true}};
+    let requests=0;
+    h.window.App.OD={getClient:()=>({functions:{invoke:async()=>{requests++;return {data:{cup:null}};}}})};
+    assert.doesNotMatch(text(h.render()),/Cup outlook/);
+    h.effects[3]();assert.equal(requests,0,'Disabled Cup topics do not poll');
+});
+
+test('global Alex topics filter live content and Ask Alex evidence together',()=>{
+    const h=fixture();let disabled=new Set();
+    h.window.WR={AlexSettings:{isTopicEnabled:topic=>!disabled.has(topic)}};
+    h.props.currentLeague.settings={playoff_teams:4,playoff_week_start:15};
+    h.props.myRoster={roster_id:1,players:['a'],starters:['a']};
+    h.props.scoreBoard={supported:true,week:6,status:'ready',rows:[{roster_id:1,matchup_id:1,forecast:125,players_points:{a:30}},{roster_id:2,matchup_id:1,forecast:115}]};
+    h.props.odds={status:'ready',sim:{leverage:{week:6,current:50,ifWin:72,ifLose:31}}};
+    h.window.App.LeagueLiveScores.projectedFinish=row=>row.forecast;
+    h.window.App.WeeklyProj={weeklyPointsScope:()=> 'l1-scoring',weeklyHistory:()=>[{week:1,pts:10},{week:2,pts:10},{week:3,pts:10}]};
+    Object.assign(h.window.S,{weeklyPlayerPointsScope:'l1-scoring',weeklyPlayerPointsComplete:true,weeklyPlayerPointsThroughWeek:5});
+    h.render();h.hooks[0]={key:'l1|2026|6',status:'ready',games:[{home:'KC',away:'LV',completed:true}],now:Date.now()};
+    let tree=h.render();assert.match(text(tree),/Healthy Starter/);assert.match(text(tree),/Playoff outlook/);
+    disabled=new Set(['performance','leagueOutlook']);tree=h.render();
+    assert.doesNotMatch(text(tree),/Healthy Starter|Playoff outlook|League outlook/);
+    button(tree,'Ask Alex').props.onClick();
+    assert.doesNotMatch(h.events.at(-1).detail.prompt,/finishedPlayerForm|finished-player performance|"matchup"|"playoff"|"survival"|league outlook/);
+    h.props.leagueSkin={type:'chopped'};h.window.App.Chopped={survivalInsight:()=>({title:'Chop danger',detail:'Risky',message:'Caption'})};
+    tree=h.render();assert.doesNotMatch(text(tree),/Chop danger/);
+    button(tree,'Ask Alex').props.onClick();assert.doesNotMatch(h.events.at(-1).detail.prompt,/Chop danger|"survival"/);
+});
+
+test('global lineup and waiver topics remove pregame advice and its prompt evidence',()=>{
+    const h=fixture();h.window.WR={AlexSettings:{isTopicEnabled:topic=>!['startSit','waivers'].includes(topic)}};
+    h.render();h.hooks[0]={key:'l1|2026|6',status:'ready',games:[{home:'KC',away:'NYJ',state:'pre',kickoff:'2099-10-08T20:00:00Z'}],now:Date.now()};
+    const tree=h.render();assert.doesNotMatch(text(tree),/Replace|Game Day|kickoff|Explore waivers/);
+    button(tree,'Ask Alex').props.onClick();
+    assert.doesNotMatch(h.events.at(-1).detail.prompt,/"lineup"|starterChecks|nextKickoff|rosterKnown/);
+});
+
+test('Alex Settings opens the shared settings route and saved preferences trigger updates',()=>{
+    const h=fixture();let listener,unsubscribed=false,enabled=true;
+    h.window.WR={AlexSettings:{isTopicEnabled:()=>enabled,subscribe:fn=>{listener=fn;return ()=>{unsubscribed=true;};}}};
+    const tree=h.render();button(tree,'Settings').props.onClick();assert.equal(h.events[0],'gm-settings');
+    const cleanup=h.effects[4]();const before=h.hooks[4];enabled=false;listener();
+    assert.equal(h.hooks[4],before+1);
+    assert.doesNotMatch(text(h.render()),/Game Day|Explore waivers/);
+    button(h.render(),'Ask Alex').props.onClick();
+    assert.match(h.events.at(-1).detail.prompt,/My proactive topics are off/);
+    cleanup();assert.equal(unsubscribed,true);
 });
 
 test('a schedule outage after kickoff retains live-week mode and withholds the forecast',async()=>{
