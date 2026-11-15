@@ -433,13 +433,14 @@ function LeagueOverviewDecisions({ currentLeague, leagueSkin, myRoster, playersD
     const renderFormPlayer = player => {
         const direction = player.delta > 0 ? 'above' : 'below';
         return <li key={player.pid} data-trend={direction}>
-            <div><strong>{player.name}</strong>{!player.starter && <span className="mc-form-bench">Bench</span>}
-                <div className="mc-form-score">{player.points.toFixed(1)} pts · Avg {player.average.toFixed(1)}</div></div>
-            <span className="mc-form-delta" aria-label={Math.abs(player.delta).toFixed(1) + ' points ' + direction + ' season average'}><strong>{player.delta > 0 ? '+' : '−'}{Math.abs(player.delta).toFixed(1)} pts</strong></span>
+            <strong className="mc-form-name" aria-label={player.name + (player.starter ? '' : ', bench')}>{player.name}</strong>
+            <span className="mc-form-final" aria-label={'Final score: ' + player.points.toFixed(1) + ' points'}>{player.points.toFixed(1)}</span>
+            <span className="mc-form-average" aria-label={'Season average: ' + player.average.toFixed(1) + ' points'}>{player.average.toFixed(1)}</span>
+            <span className="mc-form-delta" aria-label={Math.abs(player.delta).toFixed(1) + ' points ' + direction + ' season average'}><strong>{player.delta > 0 ? '+' : '−'}{Math.abs(player.delta).toFixed(1)}</strong></span>
         </li>;
     };
     const playerResults = showPerformance && form.length > 0 ? <div className="mc-overview-form">
-            <p id="mc-overview-form-heading">Finished players <span>vs avg</span></p>
+            <div className="mc-form-columns"><span id="mc-overview-form-heading">Finished players</span><span>Final</span><span>Avg</span><span aria-label="Difference from average">+/−</span></div>
             <ul aria-labelledby="mc-overview-form-heading">{form.slice(0,3).map(renderFormPlayer)}</ul>
             {form.length > 3 && <details><summary>{form.length - 3} more player {form.length === 4 ? 'result' : 'results'}</summary><ul aria-label="More of your player results">{form.slice(3).map(renderFormPlayer)}</ul></details>}
         </div> : null;

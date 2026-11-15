@@ -24,8 +24,6 @@
 .mc-overview-decisions .mc-overview-form ul{margin:0}
 .mc-overview-decisions .mc-overview-form li>div{min-width:0}
 .mc-overview-form li small{display:block;font-size:.68rem;line-height:1.35}
-.mc-overview-decisions .mc-overview-form li[data-trend="above"]>span{color:var(--insight-good,#45df91)}
-.mc-overview-decisions .mc-overview-form li[data-trend="below"]>span{color:var(--insight-bad,#ff8585)}
 .mc-overview-decisions .mc-overview-form li[data-trend]>span>strong{color:inherit}
 .mc-week-impact{margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,.08);font-size:.73rem;line-height:1.45;overflow-wrap:anywhere}
 .mc-week-impact>strong{font-size:.72rem;color:var(--white)}
@@ -58,16 +56,18 @@
 .mc-insight-statuses{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
 .mc-insight-statuses span{border:1px solid rgba(183,206,255,.3);border-radius:6px;padding:3px 7px;font-size:13px;font-weight:600;line-height:1.4;color:var(--white,#f5f2ea)}
 .mc-overview-decisions .mc-overview-form{margin-top:18px}
-.mc-overview-decisions .mc-overview-form>p{display:flex;justify-content:space-between;gap:12px;margin:0 0 6px;font-size:13px;line-height:1.5;font-weight:600}
-.mc-overview-decisions .mc-overview-form li{gap:10px;padding:12px 0;font-size:15px;line-height:1.4;align-items:flex-start}
-.mc-overview-decisions .mc-overview-form li>div>strong{font-weight:700}
-.mc-overview-decisions .mc-overview-form .mc-form-score{margin-top:5px;font-size:14px;font-variant-numeric:tabular-nums;color:var(--silver,#c3cddd)}
-.mc-overview-decisions .mc-overview-form .mc-form-delta{max-width:none;white-space:nowrap;font-size:15px;font-variant-numeric:tabular-nums}
-.mc-overview-decisions .mc-overview-form .mc-form-bench{display:inline-block;max-width:none;margin-left:6px;font-size:12px;line-height:1.5;color:var(--silver,#c3cddd)}
+.mc-overview-decisions .mc-overview-form :is(.mc-form-columns,li){display:grid;grid-template-columns:minmax(0,1fr) 3.8ch 3.8ch 4.8ch;column-gap:8px;align-items:center;font-size:14px;font-variant-numeric:tabular-nums}
+.mc-overview-decisions .mc-overview-form .mc-form-columns{margin:0 0 6px;line-height:1.5;font-weight:600;color:var(--silver,#c3cddd)}
+.mc-overview-decisions .mc-overview-form .mc-form-columns>span:not(:first-child){text-align:right}
+.mc-overview-decisions .mc-overview-form li{padding:13px 0;line-height:1.4}
+.mc-overview-decisions .mc-overview-form .mc-form-name{font-size:15px;font-weight:700;overflow-wrap:normal}
+.mc-overview-decisions .mc-overview-form li>span{max-width:none;white-space:nowrap;color:var(--white,#f5f2ea)}
+.mc-overview-decisions .mc-overview-form li[data-trend="above"]>.mc-form-delta{color:var(--insight-good,#45df91)}
+.mc-overview-decisions .mc-overview-form li[data-trend="below"]>.mc-form-delta{color:var(--insight-bad,#ff8585)}
 .mc-overview-decisions .mc-overview-form summary{display:flex;align-items:center;min-height:44px;padding:4px 0;font-size:14px}
 .mc-overview-decisions .mc-overview-form summary::before{content:'▸';margin-right:7px}
 .mc-overview-decisions .mc-overview-form details[open]>summary::before{content:'▾'}
 .la-mobile .mc-overview-decisions .mc-next-actions{display:flex;gap:8px;margin-top:16px}
 .la-mobile .mc-overview-decisions .mc-next-actions button{flex:1;font-size:14px!important;min-height:44px!important}
-.wr-mission-v8 .mc-overview-decisions .mc-overview-form>p,
+.wr-mission-v8 .mc-overview-decisions .mc-overview-form .mc-form-columns,
 .wr-mission-v8 .mc-overview-decisions .mc-week-impact p{color:var(--cx-ink,#edf3ff)!important}

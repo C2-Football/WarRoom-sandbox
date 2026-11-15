@@ -187,10 +187,11 @@ test('Alex flags finished-game deviations and streaks for the manager’s curren
     assert.match(text(standouts), /New Starter/);
     assert.match(text(standouts), /Ordinary Game/);
     assert.match(text(standouts), /2 more player results/);
-    assert.match(text(standouts), /Hot Receiver27.0 pts · Avg 8.0\+19.0 pts/);
-    assert.match(text(standouts), /Cold RunnerBench0.0 pts · Avg 18.0−18.0 pts/);
-    assert.match(text(standouts), /Steady Cold.*−2.2 pts/, 'A sustained streak can qualify without a big single-game swing');
-    assert.doesNotMatch(text(standouts), /prior games|straight/);
+    assert.match(text(standouts), /Hot Receiver27.08.0\+19.0/);
+    assert.match(text(standouts), /Cold Runner0.018.0−18.0/);
+    assert.match(text(standouts), /Steady Cold.*−2.2/, 'A sustained streak can qualify without a big single-game swing');
+    assert.doesNotMatch(text(standouts), /prior games|straight|Bench|Starter ·/);
+    assert(walk(standouts).some(n => n.props?.['aria-label'] === 'Cold Runner, bench'), 'Bench players remain identified accessibly');
     assert.doesNotMatch(text(standouts), /Did Not Play|Still Playing|Opponent Standout|Former Player/);
     button(tree, 'Ask Alex').props.onClick();
     assert.match(h.events[0].detail.prompt, /"finishedPlayerForm":.*"pid":"hot"/);
