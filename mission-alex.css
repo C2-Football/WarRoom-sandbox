@@ -53,6 +53,7 @@
 .mc-overview-decisions .mc-week-impact p{margin:8px 0 0}
 .mc-overview-decisions .mc-chop-insight{margin-top:14px;padding-top:0}
 .mc-overview-decisions .mc-chop-insight>strong{font-size:18px}
+.mc-overview-decisions .mc-chop-insight>p{font-size:20px;font-weight:700;line-height:1.4;font-variant-numeric:tabular-nums}
 .mc-insight-statuses{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
 .mc-insight-statuses span{border:1px solid rgba(183,206,255,.3);border-radius:6px;padding:3px 7px;font-size:13px;font-weight:600;line-height:1.4;color:var(--white,#f5f2ea)}
 .mc-overview-decisions .mc-overview-form{margin-top:18px}
