@@ -262,7 +262,8 @@ test('existing module components consume the league skin contract for labels and
   sourceHas(freeAgencySrc, 'leagueSkin: resolvedLeagueSkin', 'Free Agency roster guard must receive the active skin');
   sourceHas(tradeCalcSrc, 'const valueSourceLabel = resolvedLeagueSkin?.features?.showDynastyValue === false ? \'format-adjusted values\' : \'dynasty valuations\';', 'Trade analyzer must describe the active value source');
   sourceHas(tradeCalcSrc, 'leagueSkin: resolvedLeagueSkin', 'Trade roster guard must receive the active skin');
-  sourceHas(alexInsightsSrc, 'Defaults follow this league format - use the presets below', 'Alex settings copy must adapt for non-dynasty skins');
+  sourceHas(alexInsightsSrc, 'Topics across all leagues', 'Alex topic settings must clearly apply across league formats');
+  sourceHas(alexInsightsSrc, 'Saved on this device.', 'Alex preferences must disclose their persistence scope');
   sourceHas(alexInsightsSrc, "const targetPositions = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF'].concat(skinFeatures.showIDP === false ? [] : ['DL', 'LB', 'DB']);", 'Alex settings target positions must hide IDP when the skin says so');
   sourceHas(alexInsightsSrc, 'const baseDraftYear = String(parseInt(currentLeague?.season || new Date().getFullYear(), 10) || new Date().getFullYear());', 'Alex settings pick chips must derive the base year from the league season');
   sourceHas(alexInsightsSrc, 'const draftPickYears = skinFeatures.showFuturePicks === false ? [baseDraftYear] : draftYearOptions;', 'Alex settings pick chips must respect future-pick visibility');
@@ -370,7 +371,8 @@ test('decision history renders complete trade assets and dedupes DHQ mirror rows
 });
 
 test('model settings controls map to live behavior or clearly disabled future delivery', () => {
-  sourceHas(alexSettingsSrc, 's.channel?.inApp === false', 'in-app notification setting must affect surfaced cards');
+  sourceHas(alexSettingsSrc, 'if (!isTopicEnabled(insight.focus)) return false;', 'surfaced cards must use the shared topic preference gate');
+  sourceHas(alexSettingsSrc, 's.channel?.inApp !== false', 'the shared topic gate must honor the in-app notification setting');
   sourceHas(alexSettingsSrc, 'insight.pointsDelta != null', 'min point delta setting must be enforced for point-swing insights');
   sourceHas(alexSettingsSrc, 'function actionableTradeAcceptanceFloor(settings, leagueId)', 'trade aggression must own the actionable trade acceptance floor');
   sourceHas(alexSettingsSrc, 'return Math.round(75 - ((aggression - 50) / 50) * 20);', 'balanced trade aggression should default to a 75% acceptance floor and loosen upward');
