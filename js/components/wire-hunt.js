@@ -45,7 +45,7 @@ window.WrWireHuntDesk = function WireHuntDesk({league, weeks, race, seasons, pos
     const historyLine = team => {
         const owner = league.rosters.find(r => String(r.roster_id) === team.id)?.owner_id;
         const old = archive.get(owner);
-        const path = owner && priorBracket?.season === String(priorLeague?.season) && priorBracket.paths.find(p => String(p.team.ownerId) === String(owner));
+        const path = owner && priorBracket?.season === String(priorLeague?.season) ? priorBracket.paths.find(p => String(p.team.ownerId) === String(owner)) : null;
         const lastLoss = path?.rounds.find(r => r.outcome === 'eliminated');
         const postseasonLine = path?.champion ? ' This owner won the '+priorBracket.season+' championship.' : lastLoss ? ' Their '+priorBracket.season+' playoff run ended in the '+lastLoss.label.toLowerCase()+'.' : '';
         if (!old) return postseasonLine.trim();
