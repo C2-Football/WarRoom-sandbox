@@ -1418,14 +1418,14 @@ function MyLineupTab({
                                     the sim models real scoring distributions and seeding, and two
                                     different projected records on one screen reads as a bug. */}
                                 <span className="gd-season-projected" style={{ fontSize: '1.5rem', fontWeight: 800, color: GOLD, fontVariantNumeric: 'tabular-nums' }}>
-                                    {simSummary ? simSummary.projWins + '-' + simSummary.projLosses : d.summary.projRecord}
+                                    {simSummary ? simSummary.projWins + '-' + simSummary.projLosses : d.summary.projRecord ?? '—'}
                                 </span>
                                 <span style={{ fontSize: fz('0.64rem'), color: SILVER }}>proj record</span>
                                 {simSummary ? <span style={{ fontSize: fz('0.64rem'), color: GOLD, fontWeight: 700 }}>· {simSummary.playoffPct}% playoffs</span> : null}
                             </div>
                             <div className="gd-season-kpis" style={{ display: 'flex', gap: '16px', marginTop: '9px' }}>
                                 <div><div style={{ fontSize: fz('0.6rem'), color: SILVER, letterSpacing: '0.04em' }}>NOW</div><div style={{ fontWeight: 700, color: TEXT }}>{d.summary.record}</div></div>
-                                <div><div style={{ fontSize: fz('0.6rem'), color: SILVER, letterSpacing: '0.04em' }}>PROJ PF</div><div style={{ fontWeight: 700, color: TEXT, fontVariantNumeric: 'tabular-nums' }}>{d.summary.projPF}</div></div>
+                                <div><div style={{ fontSize: fz('0.6rem'), color: SILVER, letterSpacing: '0.04em' }}>PROJ PF</div><div style={{ fontWeight: 700, color: TEXT, fontVariantNumeric: 'tabular-nums' }}>{d.summary.projPF ?? '—'}</div></div>
                                 {d.summary.winPct != null ? <div><div style={{ fontSize: fz('0.6rem'), color: SILVER, letterSpacing: '0.04em' }}>WIN%</div><div style={{ fontWeight: 700, color: TEXT }}>{d.summary.winPct}%</div></div> : null}
                             </div>
                         </React.Fragment>

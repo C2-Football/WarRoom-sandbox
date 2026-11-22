@@ -1392,7 +1392,7 @@
             const roster = (currentLeague.rosters || []).find(r => String(r.roster_id) === String(expandedDnaOwner));
             if (roster && window.App?.Schedule?.buildSeason) {
                 window.App.Schedule.buildSeason({ league: currentLeague, myRoster: roster, playersData, statsData }).then(result => {
-                    if (alive && !result?.scheduleUnset && result?.summary?.remainingWeeks > 0) setOwnerForecast({ rid: roster.roster_id, record: result.summary.projRecord });
+                    if (alive && !result?.scheduleUnset && result?.summary?.remainingWeeks > 0 && result.summary.projRecord != null) setOwnerForecast({ rid: roster.roster_id, record: result.summary.projRecord });
                 }).catch(() => { /* leave the unavailable forecast explicit */ });
             }
             return () => { alive = false; };

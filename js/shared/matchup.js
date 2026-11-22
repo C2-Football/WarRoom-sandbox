@@ -31,7 +31,8 @@
             const p = projections && projections[pid];
             if (!p || !p.points || p.available === false) return;
             const pts = p.points;
-            const med = pts[obj] != null ? pts[obj] : (pts.median || 0);
+            const med = pts[obj] ?? pts.median;
+            if (!Number.isFinite(med)) return;
             const f = pts.floor != null ? pts.floor : med;
             const c = pts.ceiling != null ? pts.ceiling : med;
             const sd = Math.max(0.5, (c - f) / 2);

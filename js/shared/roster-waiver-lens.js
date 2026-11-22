@@ -131,7 +131,7 @@
         const valueOf=pid => own(args.valuesByPid,pid) ? number(args.valuesByPid[pid]) : null;
         const conditionalPids=new Set(Object.keys(args.projectionsByPid || {}).filter(pid => args.projectionsByPid[pid]?.conditionalParticipation));
         // Missing averages can coexist with a verified gain in other lineup slots.
-        const allowPartialWeekly=basis !== 'projected';
+        const allowPartialWeekly=true;
         const options={week,protectedPids,project,rosProject:ros,allowPartialWeekly,conditionalPids};
         const horizons=type === 'chopped' ? ['week'] : ['week','season'];
         const reads=horizons.map(horizon => App.buildFaRosterRead(args.roster,{...args.league,rosters:args.rosters},players,valueOf,{...options,horizon}));
@@ -150,9 +150,9 @@
             ? 'Current-season averages are historical benchmarks, not rest-of-season forecasts. Choose Projected for a season comparison.'
             : missingRos.length ? 'ROS forecast unavailable for ' + missingRos.map(pid => players[pid]?.full_name || pid).join(', ') + '.' : null;
         const conditionalRos=pid => number(args.rosState?.points?.[pid]) == null && args.projectionsByPid?.[pid]?.conditionalParticipation === true && ros(pid) != null;
-        if (beforeWeek == null && beforeRos == null && allowPartialWeekly) return result(args,'unavailable',
+        if (beforeWeek == null && beforeRos == null && basis !== 'projected') return result(args,'unavailable',
             'There aren’t enough scores to compare on this basis.',{suggestProjected:true});
-        if (beforeWeek == null && beforeRos == null) return result(args,'unavailable',basis === 'projected' ? 'Lineup forecasts are incomplete. Missing forecasts stay unknown.'
+        if (beforeWeek == null && beforeRos == null) return result(args,'unavailable',basis === 'projected' ? 'Too few player projections to compare waiver moves. Try Avg points to compare recent performance.'
             : basis === 'average' ? 'Current-season average comparisons are incomplete. Missing averages stay unknown.' : 'Current-season averages or required projections are incomplete for this comparison.');
         Object.entries(players).forEach(([pid,p]) => {
             const pos=norm(p.position), value=valueOf(pid);
@@ -189,13 +189,13 @@
                 const price={bid:null,remaining:budget != null && spent != null ? Math.max(0,budget-spent):null,minimum:number(args.league.settings?.waiver_budget_min),basis:'Choose your maximum on the claim plan; no winning bid is predicted.'};
                 candidates.push({id,pid,dropPid,anchorPlayerId:dropPid,player:p,drop:dropPid ? players[dropPid]:null,
                     incoming:[incoming],outgoing:outgoing ? [outgoing]:[],weekly,season,price,cautions,requiresLockCheck:true,
-                    basis,averageWindow:windowOf(args),reason:partial ? '+'+delta.toFixed(1)+' points across compared lineup slots.' : delta > 0 ? '+'+delta.toFixed(1)+(basis === 'average' ? (windowOf(args) === 'season' ? ' current-season average lineup points.' : ' last '+windowOf(args)+' games average lineup points.'):basis === 'idp-average' ? ' mixed-basis lineup points.':' projected lineup points this week.') : '+'+rosDelta.toFixed(1)+' projected ROS lineup points.',
+                    basis,averageWindow:windowOf(args),reason:partial && delta > 0 ? '+'+delta.toFixed(1)+' points across compared lineup slots.' : delta > 0 ? '+'+delta.toFixed(1)+(basis === 'average' ? (windowOf(args) === 'season' ? ' current-season average lineup points.' : ' last '+windowOf(args)+' games average lineup points.'):basis === 'idp-average' ? ' mixed-basis lineup points.':' projected lineup points this week.') : '+'+rosDelta.toFixed(1)+' projected ROS lineup points.',
                     handoff:{pid,dropPid,position:pos,leagueId:idOf(args.league),week,basis,averageWindow:windowOf(args),source:'roster-waiver-lens',reason:'Compare '+incoming.name+(outgoing ? ' for '+outgoing.name : ' using an open roster spot')+'. '+(delta == null ? 'Lineup comparison unavailable.' : (partial ? 'Change across compared lineup slots ' : basis === 'projected' ? 'Week lineup gain ':'Average-basis lineup change ')+(delta>0?'+':'')+delta.toFixed(1)+'.')+(basis !== 'projected' ? ' Historical averages are not forecasts.':rosDelta == null ? ' ROS gain unavailable.' : ' ROS lineup gain '+(rosDelta>0?'+':'')+rosDelta.toFixed(1)+'.')}});
             });
         });
-        return result(args,candidates.length ? 'ready':'empty',candidates.length ? null:allowPartialWeekly ? 'No upgrade found with the available scores.' : 'No confirmed upgrade with the available forecasts.',{
-            comparisonNote:partial && candidates.length ? 'Gains use available scores. Any unscored starters stay in both lineups.' : null,
-            suggestProjected:allowPartialWeekly && partial && !candidates.length,
+        return result(args,candidates.length ? 'ready':'empty',candidates.length ? null:basis !== 'projected' ? 'No upgrade found with the available scores.' : 'No confirmed upgrade with the available forecasts.',{
+            comparisonNote:partial && candidates.some(c => c.weekly.delta != null) ? 'Gains use available scores. Any unscored starters stay in both lineups.' : null,
+            suggestProjected:basis !== 'projected' && partial && !candidates.length,
             week,candidates:candidates.sort((a,b) => (b.weekly.delta ?? -Infinity)-(a.weekly.delta ?? -Infinity) || a.id.localeCompare(b.id)),
             readiness:{weekly:beforeWeek != null,season:beforeRos != null},before:{weekly:beforeWeek,season:beforeRos},
             basisDescription:basis !== 'projected' ? App.RosterLensBasis.describe(basis,windowOf(args)).description : type === 'chopped' ? 'This-week lineup points; survival probability changes are not modeled.' : 'Best legal lineup before and after one alternative move. ROS holds rosters fixed.'});

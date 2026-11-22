@@ -1074,12 +1074,12 @@
             if (!isPro) return [];
             const state = window.App?.PlayerValue?.rosState?.();
             const validRos = state && String(state.leagueId) === acquisitionLeagueId && Number(state.week) === Number(marketWeek) && marketIsCurrent;
-            const options = { ...waiverRosterOptions({currentLeague,playersData,statsData,prevStatsData}), horizon: streamHorizon,
+            const options = { ...waiverRosterOptions({currentLeague,playersData,statsData,prevStatsData}), horizon: streamHorizon, allowPartialWeekly: true,
                 rosProject: pid => validRos ? state.points?.[pid] ?? null : null };
             const read=buildFaRosterRead(myRoster,currentLeague,playersData,pid=>waiverValue(pid,currentLeague,resolvedLeagueSkin),options);
             return applyGmFaFilters(availablePlayers, getGmFaFilters(currentLeague)).slice(0, 300).filter(x=>waiverRoleRead(x.p,currentLeague,resolvedLeagueSkin).eligible).map(fa=>({fa,fit:read.fit(fa.pos,fa.dhq,fa)}))
                 .filter(({fit}) => streamHorizon === 'season' ? fit.rosGain > 0 : streamHorizon === 'both' ? fit.weeklyGain != null && fit.rosGain != null && fit.weeklyGain >= 0 && fit.rosGain >= 0 && (fit.weeklyGain > 0 || fit.rosGain > 0) : fit.weeklyGain > 0)
-                .map(({fa,fit})=>({pos:fa.pos,fa,worstName:'best available lineup',worstProj:read.beforeWeekly.total,delta:fit.weeklyGain,rosGain:fit.rosGain,rosPoints:fit.candidateRosPoints,dropPid:fit.dropPid,dropName:fit.dropName}))
+                .map(({fa,fit})=>({pos:fa.pos,fa,worstName:read.beforeWeekly.partial ? 'scored starters' : 'best available lineup',partial:read.beforeWeekly.partial,worstProj:read.beforeWeekly.total,delta:fit.weeklyGain,rosGain:fit.rosGain,rosPoints:fit.candidateRosPoints,dropPid:fit.dropPid,dropName:fit.dropName}))
                 .sort((a,b)=>streamHorizon === 'season' ? b.rosGain-a.rosGain : (b.delta ?? -Infinity)-(a.delta ?? -Infinity));
         },[isPro,skinFeatures.showStreaming,availablePlayers,myRoster,playersData,statsData,prevStatsData,currentLeague,resolvedLeagueSkin,timeRecomputeTs,marketDataVersion,streamHorizon,acquisitionLeagueId,marketWeek,marketIsCurrent]);
         const streaming = streamCandidates.filter(o => o.delta > 0 && Number.isFinite(o.fa.proj));
@@ -1593,7 +1593,7 @@
             const row = o => <button type="button" className="fa-weekly-stream" key={o.fa.pid}
                 onClick={() => window.WR?.openAcquisition ? window.WR.openAcquisition({ pid: o.fa.pid, dropPid: o.dropPid, position: o.pos, leagueId: acquisitionLeagueId, source: 'weekly-streams', reason: signed(o.delta) + ' lineup pts this week; ' + signed(o.rosGain) + ' projected ROS lineup pts' }) : openFaPlayer(o.fa.pid)}>
                 <span className="fa-weekly-stream-player"><strong>{playerName(o.fa.p, o.fa.pid)}</strong><span>{o.pos} · {o.fa.p.team}</span><span>{o.dropName ? 'Suggested drop: ' + o.dropName : 'Use an open roster spot'}</span></span>
-                <span className="fa-weekly-stream-stats"><span><strong>{points(o.fa.proj)}</strong>Week proj</span><span><strong>{points(o.rosPoints)}</strong>ROS pts</span><span><strong style={{color:o.delta < 0 ? 'var(--bad, #ef7777)' : undefined}}>{signed(o.delta)}</strong>Week lineup gain</span><span><strong style={{color:o.rosGain < 0 ? 'var(--bad, #ef7777)' : undefined}}>{signed(o.rosGain)}</strong>ROS lineup gain</span></span>
+                <span className="fa-weekly-stream-stats"><span><strong>{points(o.fa.proj)}</strong>Week proj</span><span><strong>{points(o.rosPoints)}</strong>ROS pts</span><span><strong style={{color:o.delta < 0 ? 'var(--bad, #ef7777)' : undefined}}>{signed(o.delta)}</strong>{o.partial ? 'Scored slots gain' : 'Week lineup gain'}</span><span><strong style={{color:o.rosGain < 0 ? 'var(--bad, #ef7777)' : undefined}}>{signed(o.rosGain)}</strong>ROS lineup gain</span></span>
                 <span className="fa-weekly-stream-action">Plan claim →</span>
             </button>;
             return <section className="fa-weekly-streams" aria-label="This week’s streaming plays">

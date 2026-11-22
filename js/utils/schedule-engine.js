@@ -136,10 +136,10 @@
                         const theirs = WP.optimalForRoster(oppRoster, league, { ...projOpts, week: w });
                         const myDist = M.dist(mine.optimal.starters.map(s => s.pid), mine.projections, 'median');
                         const oppDist = M.dist(theirs.optimal.starters.map(s => s.pid), theirs.projections, 'median');
-                        const fc = M.forecast(myDist, oppDist);
-                        // winPct null = a side had no projectable players — no
-                        // forecast for this week (don't paint a 99% "win").
-                        if (fc.winPct != null) {
+                        const complete = myDist.n > 0 && myDist.n === mine.optimal.slots?.length
+                            && oppDist.n > 0 && oppDist.n === theirs.optimal.slots?.length;
+                        const fc = complete ? M.forecast(myDist, oppDist) : null;
+                        if (fc?.winPct != null) {
                             winPct = fc.winPct; margin = fc.margin; myProj = fc.projMe; oppProj = fc.projOpp;
                             if (!isPast) {
                                 futureWins += fc.winPct / 100;
@@ -194,16 +194,17 @@
         const projLosses = losses + futureLosses;
         const r1 = n => Math.round(n * 10) / 10;
 
+        const missingWeeks = rows.filter(row => !row.isPast && !row.bye && row.winPct == null).length;
         const summary = {
             week: curWk,
             record: wins + '-' + losses + (ties ? '-' + ties : ''),
-            projWins: r1(projWins),
-            projLosses: r1(projLosses),
-            projRecord: r1(projWins) + '-' + r1(projLosses) + (ties ? '-' + ties : ''),
-            projPF: r1(pf + futurePF),
+            projWins: missingWeeks ? null : r1(projWins),
+            projLosses: missingWeeks ? null : r1(projLosses),
+            projRecord: missingWeeks ? null : r1(projWins) + '-' + r1(projLosses) + (ties ? '-' + ties : ''),
+            projPF: missingWeeks ? null : r1(pf + futurePF),
             // Forward-looking only: average of remaining-week forecasts. No
             // record-percentage fallback — a season record is not a "WIN%".
-            winPct: winPctCount ? Math.round(winPctSum / winPctCount) : null,
+            winPct: !missingWeeks && winPctCount ? Math.round(winPctSum / winPctCount) : null,
             remainingWeeks: winPctCount,
         };
 
@@ -212,7 +213,7 @@
         // (or any projected/actual result) means the core lineup resolved.
         const hasSignal = byeWatch.length > 0 || coreStarterPids.length > 0
             || rows.some(r => (r.myProj || 0) > 0 || (r.oppProj || 0) > 0 || r.result);
-        if (hasSignal) _cache[cacheKey] = { ts: Date.now(), data };
+        if (hasSignal && !missingWeeks) _cache[cacheKey] = { ts: Date.now(), data };
         return data;
     }
 
