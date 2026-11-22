@@ -3127,6 +3127,7 @@ WRShared.preloadMany(WR_SHARED_FILES);
 <link rel="stylesheet" href="roster-scoring-visuals.css?v=20261018visualscores1">
 <link rel="stylesheet" href="scoreboard-visual-cues.css?v=20261023scorecues1">
 <link rel="stylesheet" href="roster-lenses.css?v=20261107focus1">
+<link rel="stylesheet" href="empire-lenses.css?v=20261122">
 <link rel="stylesheet" href="mobile-live-standings.css?v=20261019playoffviews1">
 <link rel="stylesheet" href="player-compare.css?v=20261012compare2">
 <link rel="stylesheet" href="team-compare.css?v=20261012compare3">
@@ -3174,8 +3175,9 @@ WRShared.preloadMany(WR_SHARED_FILES);
 <script src="js/shared/playoff-odds.js?v=20260805ch1"></script>
 <script src="js/shared/trade-season-impact.js?v=20261022rosterlenses1"></script>
 <script src="js/shared/roster-lens-basis.js?v=20261022idpaverage1"></script>
-<script src="js/shared/roster-waiver-lens.js?v=20261122forecastcoverage1"></script>
-<script src="js/shared/roster-lineup-lens.js?v=20261101lineuplens1"></script>
+<script src="js/shared/empire-lenses.js?v=20261122"></script>
+<script src="js/shared/roster-waiver-lens.js?v=20261122forecastcoverage2"></script>
+<script src="js/shared/roster-lineup-lens.js?v=20261122empire1"></script>
 <script src="js/shared/roster-trade-lens.js?v=20261022idpaverage1"></script>
 <script src="js/shared/faab-engine.js?v=20260805ch3"></script>
 <script src="js/utils/gamelog-engine.js?v=20260702scout1"></script>
@@ -3340,7 +3342,8 @@ WRShared.preloadMany(WR_SHARED_FILES);
 <script type="text/babel" data-wr-defer="alex" src="js/tabs/alex-insights.js?v=20261012mobilepolish2"></script>
 <!-- Group "empire": hub-level Empire Dashboard (Pro mode), loaded by app.js when
      Pro mode activates — also provides window.App.buildEmpireDna etc. -->
-<script type="text/babel" data-wr-defer="empire" src="js/tabs/global-view.js?v=20260920-seasonal1"></script>
+<script type="text/babel" data-wr-defer="empire" src="js/components/empire-lens-board.js?v=20261122"></script>
+<script type="text/babel" data-wr-defer="empire" src="js/tabs/global-view.js?v=20261122empire1"></script>
 <!-- Group "commish": the Commissioner's Office React surface — panels first
      (the office resolves window.WrCommish* at render), office last. -->
 <script type="text/babel" data-wr-defer="commish" src="js/components/commish-network-panel.js?v=20260915audit5"></script>
@@ -3382,9 +3385,9 @@ WRShared.preloadMany(WR_SHARED_FILES);
 <script type="text/babel" data-wr-defer="alex" src="js/tabs/strategy-editor.js?v=20260915audit5"></script>
 <!-- 7. League detail: coordinator shell, depends on all above -->
     <script type="text/babel" src="js/components/mission-alex.js?v=20261007mission1"></script>
-    <script type="text/babel" src="js/league-detail.js?v=20261025rosterorder1"></script>
+    <script type="text/babel" src="js/league-detail.js?v=20261122empire1"></script>
 <!-- 8. App: OwnerDashboard + ReactDOM.render (loads last) -->
-<script type="text/babel" src="js/app.js?v=20261021vaultresume1"></script>
+<script type="text/babel" src="js/app.js?v=20261122empire1"></script>
 
 <!-- All JSX code extracted to js/ modules. Only bootstrap remains. -->
 <script>

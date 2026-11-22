@@ -297,7 +297,7 @@
             args.statsData ?? (current && state.statsData ? state.statsData : fetchStats(args.league.season)),
             args.priorData ?? args.priorStatsData ?? (current && state.priorData ? state.priorData : fetchStats(Number(args.league.season) - 1)),
             args.projectionsByPid || args.basis === 'average' ? null : args.week > args.currentWeek ? futureProvider(args)
-                : Promise.resolve(App.WeeklyProj?.ensureWeekProjections?.(args.week)).catch(() => null),
+                : Promise.resolve(App.WeeklyProj?.ensureWeekProjections?.(args.week, { season: args.league.season })).catch(() => null),
             args.games ? args.games : Promise.resolve(App.NflContext?.loadScores?.(args.week, args.league.season, 2)).catch(() => []),
             submittedLineup(args),
         ]);

@@ -218,7 +218,7 @@
         args.drafts=args.drafts || (current && sameSeason ? state.drafts:[]) || [];
         args.players=args.players || (current && sameSeason ? state.players:null) || {};
         const fetchStats=async season => typeof root.fetchSeasonStats === 'function' ? await root.fetchSeasonStats(String(season)).catch(()=>({})) : {};
-        const providerPromise=args.projectionsByPid || basisOf(args) === 'average' ? Promise.resolve(null) : App.WeeklyProj?.ensureWeekProjections?.(args.week);
+        const providerPromise=args.projectionsByPid || basisOf(args) === 'average' ? Promise.resolve(null) : App.WeeklyProj?.ensureWeekProjections?.(args.week, { season: args.league.season });
         const [stats,prior,providerLines]=await Promise.all([
             args.statsData != null ? args.statsData : current && sameSeason && state.statsData ? state.statsData : fetchStats(args.league.season),
             args.priorData != null ? args.priorData : current && sameSeason && state.priorData ? state.priorData : fetchStats(Number(args.league.season)-1),

@@ -2076,14 +2076,14 @@ function useEmpireDecisionJournal(api) {
     return { tick, drafts, failure, edit, commit, retry, hasPending, discard };
 }
 
-function EmpireDashboard({ allLeagues, playersData, sleeperUserId, onEnterLeague: enterLeague, onBack: leaveEmpire, onRefresh, refreshing, hasNonSleeperLeagues, portfolioCoverage }) {
+function EmpireDashboard({ allLeagues, playersData, sleeperUserId, onEnterLeague: enterLeague, onBack: leaveEmpire, onRefresh, refreshing, hasNonSleeperLeagues, portfolioCoverage, lensView, onLensView, lensCache, openLenses, onWorkspaceChange, startInEmpire, onStartInEmpire }) {
     const { useState, useMemo, useCallback, useEffect, useRef } = React;
     const emptyFilters = { league: '', status: '', position: '', agePhase: '', tier: '', exposure: '', assetType: '' };
     const [filters, setFilters] = useState(emptyFilters);
     const [sort, setSort] = useState('dhq');
     const [detail, setDetail] = useState(null);
     const [filtersOpen, setFiltersOpen] = useState(false);
-    const [workspace, setWorkspace] = useState('overview');
+    const [workspace, setWorkspace] = useState(openLenses ? 'lenses' : 'overview');
     const [actionView, setActionView] = useState('priority');
     const decisionApi = window.App?.EmpireDecisions || null;
     const decisionJournal = useEmpireDecisionJournal(decisionApi);
@@ -2390,7 +2390,7 @@ function EmpireDashboard({ allLeagues, playersData, sleeperUserId, onEnterLeague
     const shareBasis = model.totals.useValueShare ? 'Dynasty DHQ share' : 'asset count';
     const signalTone = sev => sev === 'high' ? 'var(--k-e74c3c, #e74c3c)' : sev === 'medium' ? 'var(--k-f0a500, #f0a500)' : 'var(--k-2ecc71, #2ecc71)';
     const filterActive = (key, value) => filters[key] === value;
-    const rootClassName = 'empire-root' + ((new URLSearchParams(window.location.search || '').has('dev') || ['localhost', '127.0.0.1'].includes(window.location.hostname || '')) ? ' is-local-preview' : '');
+    const rootClassName = 'empire-root wr-mission-v8' + ((new URLSearchParams(window.location.search || '').has('dev') || ['localhost', '127.0.0.1'].includes(window.location.hostname || '')) ? ' is-local-preview' : '');
 
     const actionForSignal = useCallback((signal) => {
         if (signal.pid) {
@@ -2416,6 +2416,7 @@ function EmpireDashboard({ allLeagues, playersData, sleeperUserId, onEnterLeague
         : ['lab', 'scout', 'index', 'player', 'slice', 'quality'].includes(detail?.type) ? 'assets' : workspace;
     const openWorkspace = (key) => {
         setWorkspace(key);
+        onWorkspaceChange?.(key);
         clearFilters();
         setActionView('priority');
         setAssetView('allocation');
@@ -2425,6 +2426,7 @@ function EmpireDashboard({ allLeagues, playersData, sleeperUserId, onEnterLeague
     };
     const openWorkspaceView = (group, view) => {
         setWorkspace(group);
+        onWorkspaceChange?.(group);
         if (view.type === 'moves') setActionView(view.view || 'priority');
         setDetail(view.type ? { type: view.type, groupBy: 'none', sortBy: 'dhq' } : null);
         if (view.assetView) setAssetView(view.assetView);
@@ -2433,6 +2435,7 @@ function EmpireDashboard({ allLeagues, playersData, sleeperUserId, onEnterLeague
     const renderWorkspaceNav = () => {
         const groups = [
             { key: 'overview', label: 'Overview', views: [] },
+            { key: 'lenses', label: 'Lenses', views: [] },
             { key: 'actions', label: 'Actions', views: [
                 { label: 'Priority queue', type: 'moves', view: 'priority' },
                 { label: 'Trade opportunities', type: 'moves', view: 'opportunities' },
@@ -2459,7 +2462,7 @@ function EmpireDashboard({ allLeagues, playersData, sleeperUserId, onEnterLeague
             {decisionJournal.failure && <div role="alert" data-testid="empire-decision-save-error" style={{ padding: 12, fontSize: 'var(--text-body, 1rem)', lineHeight: 1.5 }}><strong>Decision not saved</strong><div>{decisionJournal.failure.message} Your edits remain open in this page.</div><button className="empire-action" type="button" onClick={decisionJournal.retry}>Retry saving decision</button><button className="empire-ghost" type="button" onClick={decisionJournal.discard}>Discard unsaved edits</button></div>}
             {!model.pickCapital.complete && model.provinces.length > 0 && <div role="status" data-testid="empire-pick-coverage" style={{ padding: '12px', fontSize: 'var(--text-body, 1rem)', lineHeight: 1.5, color: 'var(--gold)' }}><strong>Pick ownership incomplete</strong><div>{model.pickCapital.verifiedLeagues} of {model.provinces.length} loaded leagues verified.{model.pickCapital.staleLeagues > 0 ? ' ' + model.pickCapital.staleLeagues + ' use saved ownership.' : ''} Unavailable picks are excluded from totals.{model.pickCapital.unknownDraftLeagues > 0 ? ' Current-year draft progress is unverified for ' + model.pickCapital.unknownDraftLeagues + ' league(s); those picks are excluded.' : ''}</div><button className="empire-action" type="button" disabled={!!refreshing} onClick={onRefresh}>{refreshing ? 'Loading…' : 'Retry pick sync'}</button></div>}
             <nav aria-label="Empire workspaces" className="empire-workspace-primary">
-                {groups.map(g => <button key={g.key} type="button" aria-current={group.key === g.key ? 'page' : undefined} onClick={() => openWorkspace(g.key)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginRight: 7, verticalAlign: 'middle' }}>{EMPIRE_ICON_PATHS[({ overview: 'home', actions: 'zap', leagues: 'layers', assets: 'briefcase' })[g.key]].map((d, i) => <path key={i} d={d} />)}</svg><span>{g.label}</span></button>)}
+                {groups.map(g => <button key={g.key} type="button" data-empire-workspace={g.key} aria-current={group.key === g.key ? 'page' : undefined} onClick={() => openWorkspace(g.key)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginRight: 7, verticalAlign: 'middle' }}>{EMPIRE_ICON_PATHS[({ overview: 'home', lenses: 'target', actions: 'zap', leagues: 'layers', assets: 'briefcase' })[g.key]].map((d, i) => <path key={i} d={d} />)}</svg><span>{g.label}</span></button>)}
             </nav>
             {!!group.views.length && <nav aria-label={group.label + ' views'} className="empire-workspace-secondary">
                 {group.views.map(v => <button key={v.label} type="button" aria-current={(v.type ? detail?.type === v.type && (!v.view || actionView === v.view) : !detail && (v.assetView ? assetView === v.assetView : group.key === 'leagues')) ? 'page' : undefined} onClick={() => openWorkspaceView(group.key, v)}>{v.label}</button>)}
@@ -3488,7 +3491,7 @@ const renderScoutDetail = () => {
                     <button className="empire-back" type="button" aria-label="Back to hub" onClick={onBack}>{"<"}</button>
                     <div className="empire-title">
                         <strong>Empire</strong>
-                        <span>{model.totals.leagues} {model.coverage.complete ? 'leagues' : 'loaded leagues'} · asset allocation · exposure · pick capital</span>
+                        <span>{model.totals.leagues} {model.coverage.complete ? 'leagues' : 'loaded leagues'}</span>
                     </div>
                     {freshness && model.coverage.complete && model.pickCapital.complete ? (
                         <span className={'empire-live' + (freshness.live ? '' : ' is-stale')} style={{ marginLeft: 12 }}
@@ -3502,7 +3505,8 @@ const renderScoutDetail = () => {
                     </button>
                     <div className="empire-user">{userName}</div>
                 </div>
-                <details className="empire-summary" open={!phone} hidden={!allLeagues?.length}><summary>Portfolio snapshot <span>{model.totals.leagues} {model.coverage.complete ? 'leagues' : 'loaded leagues'}</span></summary>
+                {onStartInEmpire && <label className="empire-start"><input type="checkbox" checked={startInEmpire} onChange={event => onStartInEmpire(event.target.checked)} /> Start in Empire</label>}
+                <details className="empire-summary" open={!phone} hidden={!allLeagues?.length || workspace === 'lenses'}><summary>Portfolio snapshot <span>{model.totals.leagues} {model.coverage.complete ? 'leagues' : 'loaded leagues'}</span></summary>
                 <div className="empire-kpis" data-testid="empire-command-strip" hidden={!allLeagues?.length}>
                     {/* Command Bridge KPI strip — empire-wide overview (mockup contract), with
                         week-over-week deltas from the snapshot store. Lens filters drive the asset
@@ -3512,6 +3516,12 @@ const renderScoutDetail = () => {
             </header>
 
             <main className="empire-shell" data-workspace={workspace} data-asset-view={assetView}>
+                {workspace === 'lenses' && lensView && <EmpireLensBoard leagues={enabledLeagues} players={playersData} sleeperUserId={sleeperUserId}
+                    view={lensView} onView={onLensView} cache={lensCache} onOpenLeague={(league, tab) => {
+                        if (!decisionJournal.hasPending()) onLensView({ scroll: window.scrollY });
+                        onEnterLeague(league, tab, true);
+                    }} />}
+                {workspace === 'overview' && <button className="empire-action empire-phone-actions" type="button" onClick={() => openWorkspace('actions')}>Actions</button>}
                 <div className="empire-viewbar" aria-label="Empire portfolio views">
                     <span className="empire-filter-label">View</span>
                     {lensButton('All', {}, 'var(--gold)')}

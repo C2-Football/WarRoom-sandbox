@@ -308,6 +308,10 @@
     // Main hub modes are available on production and local instances.
     // Existing subscription and commissioner-ownership checks still apply.
     const EMPIRE_ENABLED = true;
+    function canEnterEmpire() {
+        const tier = typeof getUserTier === 'function' ? getUserTier() : 'free';
+        return EMPIRE_ENABLED && (EMPIRE_FREE_PRELIVE || ['pro', 'warroom', 'war_room', 'commissioner'].includes(tier));
+    }
     window.App.EMPIRE_ENABLED = EMPIRE_ENABLED;
     const COMMISH_ENABLED = true;
     window.App.COMMISH_ENABLED = COMMISH_ENABLED;
@@ -540,6 +544,14 @@
         const linkedRouteRequestRef = React.useRef(0);
         const [allWireOpen, setAllWireOpen] = useState(false);
         const [proMode, setProMode] = useState(false); // Empire Dashboard mode
+        const [empireLensView, setEmpireLensView] = useState({ mode: 'waivers', basis: 'projected', expanded: {}, scroll: 0 });
+        const [empireOpenLenses, setEmpireOpenLenses] = useState(false);
+        const [empireStartup, setEmpireStartup] = useState({ key: '', enabled: false });
+        const empireLensCache = React.useRef({ context: '', rows: {} });
+        const checkedEmpireStartup = React.useRef(false);
+        const updateEmpireLensView = patch => setEmpireLensView(previous => ({ ...previous, ...patch }));
+        const empireOwnerKey = window.App.EmpireLenses?.ownerKey(sleeperUser?.user_id);
+        const empireStartKey = empireOwnerKey ? 'wr_empire_start_v1_' + encodeURIComponent(empireOwnerKey) : '';
         const [leagueQuery, setLeagueQuery] = useState('');
         const [hubAllLeagues, setHubAllLeagues] = useState(false);
         const [showConnect, setShowConnect] = useState(false); // hub: show platform connect / add-league view
@@ -563,6 +575,7 @@
         const [mflPendingResult, setMflPendingResult] = useState(null);
         const visibleEspnLeagues = PLATFORM_SANDBOX_ACCESS ? espnLeagues : [];
         const visibleMflLeagues = MFL_SANDBOX_ACCESS ? mflLeagues : [];
+        const empireLeagues = React.useMemo(() => [...sleeperLeagues, ...visibleEspnLeagues, ...visibleMflLeagues], [sleeperLeagues, espnLeagues, mflLeagues]);
         useEffect(() => {
             const connected = [...sleeperLeagues, ...visibleEspnLeagues, ...visibleMflLeagues];
             window.App.PortfolioContext.player = pid => buildPortfolioPlayerContext(connected, sleeperUser?.user_id, pid, sleeperCoverage.status === 'idle' ? null : sleeperCoverage);
@@ -660,6 +673,10 @@
         function restoreLinkedLeague(league, route, providerUserId = sleeperUser?.user_id) {
             if (!accountSessionCurrent()) return;
             isNavigatingRef.current = true;
+            if (route.fromEmpire && canEnterEmpire()) {
+                setProMode(true);
+                setEmpireOpenLenses(route.empireLenses === true);
+            }
             setActiveLeagueId(league.id);
             setSelectedLeague(league);
             const tab = route.tab === 'brief' ? 'dashboard' : (route.tab || defaultTab);
@@ -667,7 +684,7 @@
             AppStorage.set(APP_WR_KEYS.LAST_LEAGUE_ID, league.id);
             AppStorage.set(APP_WR_KEYS.LAST_LEAGUE_NAME, league.name);
             rememberHubLastVisit(league, providerUserId);
-            history.replaceState({ view: 'league', leagueId: league.id, tab }, '', routeUrl(buildHash(league.id, tab)));
+            history.replaceState({ view: 'league', leagueId: league.id, tab, ...(route.fromEmpire && { fromEmpire: true, empireLenses: route.empireLenses }) }, '', routeUrl(buildHash(league.id, tab)));
             setTimeout(() => { isNavigatingRef.current = false; }, 0);
         }
         async function resolveLinkedLeagueRoute(route) {
@@ -873,6 +890,8 @@
                 const state = e.state;
                 const hashRoute = parseHash(window.location.hash);
                 const nextState = state || (hashRoute.leagueId ? { view: 'league', leagueId: hashRoute.leagueId, tab: hashRoute.tab } : null);
+                setProMode(canEnterEmpire() && (nextState?.view === 'pro' || nextState?.fromEmpire === true));
+                if (nextState?.view === 'pro' || nextState?.fromEmpire) setEmpireOpenLenses(nextState.empireLenses === true);
                 if (nextState && nextState.view === 'league' && nextState.leagueId) {
                     const allLeagues = [...sleeperLeagues, ...visibleEspnLeagues, ...visibleMflLeagues];
                     const league = allLeagues.find(l => String(l.id) === String(nextState.leagueId)) || linkedLeaguesRef.current.get(String(nextState.leagueId));
@@ -915,8 +934,46 @@
             initialRouteAppliedRef.current = true;
             linkedRouteRequestRef.current++;
             setLeagueRouteStatus({ status: 'idle' });
-            restoreLinkedLeague(league, route);
+            restoreLinkedLeague(league, { ...route, fromEmpire: history.state?.fromEmpire, empireLenses: history.state?.empireLenses });
         }, [loading, sleeperLeagues, sleeperCoverage, espnLeagues, mflLeagues, sleeperUser?.user_id]);
+
+        useEffect(() => {
+            if (!empireStartKey || !accountSessionCurrent()) return;
+            const enabled = AppStorage.get(empireStartKey) === true;
+            setEmpireStartup({ key: empireStartKey, enabled });
+            if (checkedEmpireStartup.current) return;
+            checkedEmpireStartup.current = true;
+            const query = new URLSearchParams(window.location.search || '');
+            if (!canEnterEmpire() || parseHash(window.location.hash).leagueId || window.location.hash
+                || ['vault', 'duat', 'tl_invite'].some(key => query.has(key))) return;
+            const state = history.state;
+            if (state?.view === 'pro' || enabled) {
+                setProMode(true);
+                setEmpireOpenLenses(state?.view === 'pro' ? state.empireLenses === true : true);
+                history.replaceState({ view: 'pro', empireLenses: state?.view === 'pro' ? state.empireLenses === true : true }, '', routeUrl(''));
+            }
+        }, [empireStartKey]);
+
+        function setStartInEmpire(enabled) {
+            if (!empireStartKey || !accountSessionCurrent()) return;
+            AppStorage.set(empireStartKey, enabled);
+            setEmpireStartup({ key: empireStartKey, enabled });
+        }
+
+        function openEmpire() {
+            if (!accountSessionCurrent() || !canEnterEmpire()) return;
+            cancelLinkedLeagueRoute(true);
+            checkedEmpireStartup.current = true;
+            setEmpireOpenLenses(false);
+            setProMode(true);
+            history.pushState({ view: 'pro', empireLenses: false }, '', routeUrl(''));
+        }
+
+        function changeEmpireWorkspace(workspace) {
+            const empireLenses = workspace === 'lenses';
+            setEmpireOpenLenses(empireLenses);
+            if (history.state?.view === 'pro') history.replaceState({ view: 'pro', empireLenses }, '', routeUrl(''));
+        }
 
         // Show Empire Dashboard (Pro mode)
         // global-view.js is a deferred module group (see js/module-loader.js); load it
@@ -1271,16 +1328,21 @@
             return (
                 <ErrorBoundary>
                     <_EmpireDash
-                        allLeagues={[...sleeperLeagues, ...visibleEspnLeagues, ...visibleMflLeagues]}
+                        allLeagues={empireLeagues}
                         playersData={empirePlayers}
                         sleeperUserId={sleeperUser?.user_id}
                         onRefresh={refreshEmpirePortfolio}
                         refreshing={empireRefreshing || loading}
                         portfolioCoverage={sleeperCoverage}
                         hasNonSleeperLeagues={!!(visibleEspnLeagues.length || visibleMflLeagues.length)}
-                        onEnterLeague={(league) => {
-                            handleSelectLeague(league);
-                        }}
+                        lensView={empireLensView}
+                        lensCache={empireLensCache}
+                        onLensView={updateEmpireLensView}
+                        openLenses={empireOpenLenses}
+                        onWorkspaceChange={changeEmpireWorkspace}
+                        startInEmpire={empireStartup.key === empireStartKey && empireStartup.enabled}
+                        onStartInEmpire={empireStartKey ? setStartInEmpire : undefined}
+                        onEnterLeague={(league, tab, fromLenses) => handleSelectLeague(league, tab, { empireLenses: fromLenses === true })}
                         onBack={() => {
                             setProMode(false);
                             if (!isNavigatingRef.current) {
@@ -1375,6 +1437,7 @@
                         league={selectedLeague}
                         lensLeagues={[...sleeperLeagues, ...visibleEspnLeagues, ...visibleMflLeagues]}
                         lensPortfolioCoverage={sleeperCoverage}
+                        returningToEmpire={proMode}
                         onOpenAllWire={() => setAllWireOpen(true)}
                         onBack={(navigation) => {
                             if (window.App.NavigationGuard?.canNavigate() === false) return;
@@ -1385,7 +1448,7 @@
                             if (leagueSelector) setProMode(false);
                             // Return to Empire Dashboard if Pro mode was active, otherwise hub
                             if (!isNavigatingRef.current) {
-                                history.pushState({ view: proMode && !leagueSelector ? 'pro' : 'hub' }, '', routeUrl(''));
+                                history.pushState(proMode && !leagueSelector ? { view: 'pro', empireLenses: empireOpenLenses } : { view: 'hub' }, '', routeUrl(''));
                             }
                         }}
                         activeTab={activeTab}
@@ -1540,8 +1603,7 @@
 
         // Signed-in experience hub. Keep product entry points and league selection distinct.
         function FranchisePicker({ leagues, onSelect }) {
-            const tier = typeof getUserTier === 'function' ? getUserTier() : 'free';
-            const isPaid = EMPIRE_FREE_PRELIVE || tier === 'pro' || tier === 'warroom' || tier === 'war_room' || tier === 'commissioner';
+            const isPaid = canEnterEmpire();
             const query = leagueQuery.trim().toLowerCase();
             const resume = leagues.find(l => String(l.id) === String(lastLeagueId));
             const focusLeague = resume || leagues[0];
@@ -1588,7 +1650,7 @@
                         {(EMPIRE_ENABLED || COMMISH_ENABLED) && <section id="hub-management" className="hub-management" aria-labelledby="hub-management-title">
                             <div className="hub-section-heading"><div><h2 id="hub-management-title">Across your leagues</h2></div></div>
                             <div className="hub-management-cards">
-                                {EMPIRE_ENABLED && <button type="button" className="hub-experience-card empire-hero" onClick={() => { cancelLinkedLeagueRoute(true); if (isPaid) setProMode(true); else if (typeof window.showProLaunchPage === 'function') window.showProLaunchPage(); else window.location.href = distPrefix + 'landing.html'; }}>
+                                {EMPIRE_ENABLED && <button type="button" className="hub-experience-card empire-hero" onClick={() => { if (isPaid) openEmpire(); else if (typeof window.showProLaunchPage === 'function') window.showProLaunchPage(); else window.location.href = distPrefix + 'landing.html'; }}>
                                     <span className="hub-card-top"><ProTierIcon size={34} /><span className="hub-product-tag">{isPaid ? 'PORTFOLIO' : 'PRO'}</span></span>
                                     <strong>Empire</strong><span className="hub-card-description">Players, picks, and exposure.</span>
                                     <span className="hub-card-action">{isPaid ? 'Open Empire' : 'Explore Empire Pro'} <span aria-hidden="true">↗</span></span>
@@ -1616,17 +1678,18 @@
             );
         }
 
-        function handleSelectLeague(league) {
+        function handleSelectLeague(league, tab = defaultTab, empireReturn) {
             if (!accountSessionCurrent() || window.App.NavigationGuard?.canNavigate() === false) return;
             cancelLinkedLeagueRoute();
             setActiveLeagueId(league.id);
             setSelectedLeague(league);
-            setActiveTab(defaultTab);
+            setActiveTab(tab);
+            if (empireReturn) setEmpireOpenLenses(empireReturn.empireLenses);
             AppStorage.set(APP_WR_KEYS.LAST_LEAGUE_ID, league.id);
             AppStorage.set(APP_WR_KEYS.LAST_LEAGUE_NAME, league.name);
             rememberHubLastVisit(league, sleeperUser?.user_id);
             if (!isNavigatingRef.current) {
-                history.pushState({ view: 'league', leagueId: league.id, tab: defaultTab }, '', routeUrl(buildHash(league.id, defaultTab)));
+                history.pushState({ view: 'league', leagueId: league.id, tab, ...(empireReturn && { fromEmpire: true, ...empireReturn }) }, '', routeUrl(buildHash(league.id, tab)));
             }
         }
 
@@ -1634,7 +1697,7 @@
             if (window.App.NavigationGuard?.canNavigate() === false) return;
             setActiveTab(tab);
             if (!isNavigatingRef.current && selectedLeague) {
-                history.pushState({ view: 'league', leagueId: selectedLeague.id, tab }, '', routeUrl(buildHash(selectedLeague.id, tab)));
+                history.pushState({ view: 'league', leagueId: selectedLeague.id, tab, ...(proMode && { fromEmpire: true, empireLenses: empireOpenLenses }) }, '', routeUrl(buildHash(selectedLeague.id, tab)));
             }
         }
 

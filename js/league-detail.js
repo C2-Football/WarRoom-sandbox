@@ -437,7 +437,7 @@
     }
 
     // League Detail Component
-    function LeagueDetail({ lensLeagues = [], lensPortfolioCoverage, league, onBack, onOpenAllWire, sleeperUserId, onOpenSettings, settingsProps = {}, activeTab: propActiveTab, onTabChange }) {
+    function LeagueDetail({ lensLeagues = [], lensPortfolioCoverage, league, onBack, onOpenAllWire, sleeperUserId, onOpenSettings, settingsProps = {}, activeTab: propActiveTab, onTabChange, returningToEmpire }) {
         const [loading, setLoading] = useState(true);
         const [error, setError] = useState(null);
         const [playersData, setPlayersData] = useState({});
@@ -2973,6 +2973,7 @@
                       })()}
                     </div>
 
+                    {returningToEmpire && <button type="button" className="wr-empire-return wr-empire-return-sidebar" onClick={() => onBack()} aria-label="Back to Empire"><span aria-hidden="true">‹</span>{!sidebarCollapsed && ' Empire'}</button>}
                     <button
                         className="wr-sidebar-toggle"
                         onClick={() => setSidebarCollapsed(prev => !prev)}
@@ -3182,6 +3183,7 @@
                         return (
                             <React.Fragment>
                                 <div className="wr-phone-lhdr" style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, paddingLeft: '2px' }}>
+                                    {returningToEmpire && <button type="button" className="wr-empire-return" onClick={() => onBack()} aria-label="Back to Empire"><span aria-hidden="true">‹</span></button>}
                                     <button type="button" className="mc-menu-trigger" aria-label="Open all views" aria-haspopup="dialog" onClick={() => window.dispatchEvent(new CustomEvent('wr:phone-menu'))}>
                                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
                                     </button>
