@@ -9,6 +9,8 @@ const { test } = require('node:test');
 const app = fs.readFileSync(path.join(__dirname, '../js/app.js'), 'utf8');
 const pickerSource = app.slice(app.indexOf('        function FranchisePicker('), app.indexOf('        function handleSelectLeague('));
 const helpers = app.slice(app.indexOf('        function leagueHealth('), app.indexOf('        // Pro tier icon'));
+const empireAccess = app.slice(app.indexOf('    function canEnterEmpire()'), app.indexOf('    window.App.EMPIRE_ENABLED'));
+const empireEntry = app.slice(app.indexOf('        function openEmpire()'), app.indexOf('        function changeEmpireWorkspace('));
 const walk = node => !node || typeof node !== 'object' ? [] : Array.isArray(node) ? node.flatMap(walk) : [node, ...walk(node.children)];
 const all = (tree, predicate) => walk(tree).filter(predicate);
 const text = node => node == null || typeof node === 'boolean' ? '' : Array.isArray(node) ? node.map(text).join('') : typeof node === 'object' ? text(node.children) : String(node);
@@ -25,6 +27,9 @@ function fixture(overrides = {}) {
         sleeperUser: { user_id: 'me' }, sleeperLeagues: [], sleeperUsername: 'fixture',
         sleeperCoverage: { status: 'ready', knownCount: 0, unavailable: [] },
         leagueRouteStatus: { status: 'idle' }, cancelLinkedLeagueRoute: () => {},
+        accountSessionCurrent: () => true, checkedEmpireStartup: { current: false },
+        setEmpireOpenLenses: () => {}, routeUrl: () => '/index.html',
+        history: { pushState(state) { this.state = state; } },
         loadSleeperData: () => events.push('retry-sync'),
         setShowSettings: () => events.push('settings'), setShowConnect: () => events.push('connect'),
         setProMode: () => events.push('empire'), openCommishOffice: () => events.push('commissioner'),
@@ -33,7 +38,7 @@ function fixture(overrides = {}) {
     });
     context.setLeagueQuery = value => { context.leagueQuery = value; };
     context.setHubAllLeagues = value => { context.hubAllLeagues = value; };
-    vm.runInContext(Babel.transform(helpers + '\n' + pickerSource, { presets: ['react'] }).code, context);
+    vm.runInContext(Babel.transform([helpers, empireAccess, empireEntry, pickerSource].join('\n'), { presets: ['react'] }).code, context);
     return { context, events, render: leagues => context.FranchisePicker({ leagues, onSelect: selected => events.push(selected.id) }) };
 }
 
@@ -111,6 +116,8 @@ test('compact product entries keep paid routing and commissioner eligibility', (
     assert.match(text(all(render([]), cls('commish-hero'))[0]), /Checking commissioner access/);
     context.getUserTier = () => 'pro'; context.commishCount = 1; tree = render([]);
     all(tree, cls('empire-hero'))[0].props.onClick(); assert.equal(events.pop(), 'empire');
+    assert.equal(context.history.state.view, 'pro');
+    assert.equal(context.history.state.empireLenses, false);
     commissioner = all(tree, cls('commish-hero'))[0];
     assert.equal(commissioner.props.disabled, false);
     commissioner.props.onClick(); assert.equal(events.pop(), 'commissioner');
