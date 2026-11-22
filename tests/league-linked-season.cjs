@@ -118,7 +118,9 @@ test('actual route controller cannot reopen a canceled link or publish a delayed
 
 test('initial route reports an unconnected account and allows late provider hydration to supersede lookup', async () => {
     const start = source.indexOf('        React.useEffect(() => {\n            if (initialRouteAppliedRef.current)');
-    const effect = source.slice(start, source.indexOf('        // Show Empire Dashboard', start));
+    const end = source.indexOf('\n        useEffect(() => {', start);
+    assert.ok(start >= 0 && end > start, 'extract the initial linked-league route effect');
+    const effect = source.slice(start, end);
     const fixture = api(), first = controller(fixture.fetcher).context;
     const init = context => Object.assign(context, { React: { useEffect: fn => fn() }, loading: false, sleeperLeagues: [],
         sleeperCoverage: {}, espnLeagues: [], mflLeagues: [], visibleEspnLeagues: [], visibleMflLeagues: [] });
