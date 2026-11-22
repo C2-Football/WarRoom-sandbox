@@ -115,3 +115,30 @@
   .wr-journal-grid>.wr-journal-story,.wr-wire-lookback>.wr-journal-story{display:block}
   .wr-journal-grid .wr-journal-story-copy,.wr-journal-story-copy{display:flow-root}
 }
+
+/* The Wire's weekly playoff edition */
+.wr-hunt {color:#202721;background:#fbfaf5;border:1px solid #c9c9bb;border-top:5px solid #1c493c;padding:clamp(14px,3vw,28px);min-width:0;overflow-wrap:anywhere;margin-bottom:16px}
+.wr-hunt header small,.wr-hunt blockquote small {font:700 11px/1.4 system-ui;letter-spacing:.13em;text-transform:uppercase;color:#33624f}
+.wr-hunt header h3 {font:700 clamp(26px,4vw,43px)/1.04 Georgia,serif;letter-spacing:-.035em;margin:8px 0;color:#142e25}
+.wr-hunt p {font:15px/1.5 Georgia,serif;margin:8px 0;color:#2a312d}
+.wr-hunt blockquote {border-left:3px solid #b87933;background:#f2ece1;margin:15px 0;padding:9px 14px}
+.wr-hunt blockquote p {font-style:italic;margin:3px 0}
+.wr-hunt .wr-hunt-stakes {border-top:1px solid #ccc9bb;padding-top:12px}
+.wr-hunt-stakes b {color:#843f22}
+.wr-hunt-board {display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.wr-hunt-board h4 {font:bold 22px Georgia,serif;margin:6px 0}
+.wr-hunt small,.wr-hunt-games span {font:12px/1.4 system-ui;color:#49564e}
+.wr-hunt-row {display:grid;grid-template-columns:minmax(0,1fr) 65px 62px;gap:6px;padding:7px 0;align-items:center;font:14px/1.3 system-ui}
+.wr-hunt summary,.wr-hunt button {cursor:pointer}
+.wr-hunt-row small,.wr-hunt-games span {display:block}
+.wr-hunt-row > :nth-child(n+2) {text-align:right;font-variant-numeric:tabular-nums}
+.wr-hunt-labels {font-size:11px;font-weight:bold;color:#47584d;border-bottom:1px solid #bbbfb4}
+.wr-hunt-table details {border-bottom:1px solid #d4d6cc}
+.wr-hunt-table .wr-hunt-cut {border-top:2px dashed #a75532}
+.wr-hunt button {background:#1c493c;color:white;border:0;padding:7px 12px;border-radius:3px;font:600 13px system-ui;margin:10px 0}
+.wr-hunt-draw,.wr-hunt-method {margin-top:8px;font:600 13px/1.5 system-ui}
+.wr-hunt-games {list-style:none;padding:0;margin:8px 0}
+.wr-hunt-games li {padding:6px 0;border-bottom:1px solid #d4d6cc;font:14px/1.35 system-ui}
+.wr-hunt-fixture {background:#e5eee7;border-top:2px solid #39664f;padding:12px 14px;margin:14px 0}
+.wr-hunt-fixture h4 {font:bold 20px/1.15 Georgia,serif;margin:4px 0}
+.wr-hunt-fixture small {font-weight:700;text-transform:uppercase;letter-spacing:.08em}

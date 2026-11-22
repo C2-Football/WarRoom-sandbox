@@ -197,6 +197,9 @@
 
         const acc = {};
         rows.forEach(t => { acc[String(t.rosterId)] = { playoff: 0, bye: 0, title: 0, seedSum: 0, winSum: 0 }; });
+        const exitCounts = opts.weeklyExit ? Object.fromEntries(rows.map(t => [String(t.rosterId), 0])) : null;
+        const opponents = exitCounts ? Object.fromEntries(rows.map(t => [String(t.rosterId), new Map()])) : null;
+        const nextResults = exitCounts ? Object.fromEntries(rows.map(t => [String(t.rosterId), { won:false, wins:0, inWithWin:0, inWithLoss:0 }])) : null;
         const lev = myId ? { winPlayoff: 0, winN: 0, losePlayoff: 0, loseN: 0 } : null;
 
         for (let s = 0; s < sims; s++) {
@@ -215,6 +218,10 @@
                     const pa = medianEnabled ? scores[a] : sample(dists[a]), pb = medianEnabled ? scores[b] : sample(dists[b]);
                     if (!medianEnabled) { pf[a] += pa; pf[b] += pb; }
                     if (pa >= pb) wins[a] += 1; else wins[b] += 1;
+                    if (nextResults && w === curWeek) {
+                        nextResults[a].won = pa >= pb;
+                        nextResults[b].won = pb > pa;
+                    }
                     if (myId && w === curWeek && (a === myId || b === myId)) {
                         myCurResult = (a === myId ? pa >= pb : pb > pa) ? 'W' : 'L';
                     }
@@ -223,6 +230,14 @@
                     const sorted = Object.values(scores).sort((a,b) => a-b), mid = Math.floor(sorted.length/2);
                     const median = sorted.length%2 ? sorted[mid] : (sorted[mid-1]+sorted[mid])/2;
                     Object.entries(scores).forEach(([id,pts]) => { wins[id] += pts > median ? 1 : pts === median ? 0.5 : 0; });
+                }
+                if (exitCounts && w === curWeek) {
+                    const remaining = (futureWeeks.length - 1) * (medianEnabled ? 2 : 1);
+                    const ranked = Object.keys(wins).sort((a, b) => wins[b] - wins[a] || pf[b] - pf[a]);
+                    const cutoff = wins[ranked[playoffTeams - 1]];
+                    ranked.slice(playoffTeams).forEach(id => {
+                        if (!remaining || wins[id] + remaining < cutoff) exitCounts[id]++;
+                    });
                 }
             }
 
@@ -241,7 +256,18 @@
                 seeds = order.slice(0, playoffTeams);
             }
 
+            if (nextResults) {
+                for (const [id, result] of Object.entries(nextResults)) {
+                    if (result.won) result.wins++;
+                    if (seeds.includes(id)) result[result.won ? 'inWithWin' : 'inWithLoss']++;
+                }
+            }
             seeds.forEach((id, i) => {
+                if (opponents && i >= byeSlots) {
+                    const opponent = seeds[seeds.length - 1 - (i - byeSlots)];
+                    const counts = opponents[id];
+                    counts.set(opponent, (counts.get(opponent) || 0) + 1);
+                }
                 acc[id].playoff += 1;
                 acc[id].seedSum += i + 1;
                 if (i < byeSlots) acc[id].bye += 1;
@@ -263,6 +289,11 @@
         const out = rows.map(t => {
             const a = acc[String(t.rosterId)];
             const projWins = a.winSum / sims;
+            const next = nextResults?.[String(t.rosterId)];
+            const nextGame = next && next.wins >= 25 && sims-next.wins >= 25 ? {
+                ifWin:Math.round(100*next.inWithWin/next.wins), ifLoss:Math.round(100*next.inWithLoss/(sims-next.wins))
+            } : null;
+            const firstOpponent = opponents && [...opponents[String(t.rosterId)]].sort((x,y) => y[1]-x[1])[0];
             // Games from THIS roster's own counted weeks, not row[0]'s — a
             // roster added mid-season has fewer, and borrowing the first
             // roster's count would hand it phantom losses.
@@ -272,6 +303,7 @@
                 name: t.name,
                 record: t.wins + '-' + t.losses + (t.ties ? '-' + t.ties : ''),
                 playoffPct: pct(a.playoff),
+                ...(exitCounts ? { weeklyExitPct: pct(exitCounts[String(t.rosterId)]), nextGame, firstOpponent: firstOpponent ? { id:firstOpponent[0], pct:pct(firstOpponent[1]) } : null } : {}),
                 byePct: byeSlots ? pct(a.bye) : null,
                 titlePct: pct(a.title),
                 avgSeed: a.playoff ? Math.round((a.seedSum / a.playoff) * 10) / 10 : null,
