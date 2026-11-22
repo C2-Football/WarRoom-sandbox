@@ -68,12 +68,13 @@
 .empire-lens-board :is(button, summary, select, input):focus-visible { outline: 2px solid #a6caff; outline-offset: -2px; }
 .empire-start { display: inline-flex; align-items: center; gap: 8px; margin: 0 24px; min-height: 44px; color: var(--silver); font-weight: 600; cursor: pointer; }
 .empire-start input { accent-color: var(--gold); min-height: auto !important; }
-.empire-phone-actions { display: none; }
 .wr-empire-return { min-width: 44px; flex: 0 0 auto; border-color: var(--acc-line1); font-weight: 700; }
 .wr-empire-return span { font-size: 1.4rem; line-height: 1; vertical-align: text-bottom; }
 .wr-empire-return-sidebar { margin: 0 6px 8px; min-width: 0; }
 
 @media (max-width: 767px) {
+    .empire-lens-heading { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+    .empire-lens-heading button { display: none; }
     .empire-lens-controls { position: relative; }
     .empire-lens-filter-list { position: absolute; inset: 44px 0 auto; z-index: 3; box-shadow: 0 10px 24px #0007; }
     .empire-root.wr-mission-v8 { padding-bottom: calc(62px + env(safe-area-inset-bottom, 0px)); box-sizing: border-box; }
@@ -81,13 +82,11 @@
     .empire-root .empire-topbar, .empire-root.is-local-preview .empire-topbar { padding: calc(5px + env(safe-area-inset-top, 0px)) 12px 5px; gap: 8px; min-height: 52px; }
     .empire-root .empire-workspace-nav { padding: 0; background: transparent; border: 0; }
     .empire-root .empire-workspace-nav > :not(nav) { max-height: 24vh; overflow: auto; }
-    .empire-root .empire-workspace-primary { position: fixed; z-index: 70; inset: auto 0 0; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; padding: 5px 8px calc(5px + env(safe-area-inset-bottom, 0px)); background: #202e47f5; border-top: 1px solid var(--gx-edge); box-shadow: 0 -8px 24px #0004; }
+    .empire-root .empire-workspace-primary { position: fixed; z-index: 70; inset: auto 0 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; padding: 5px 8px calc(5px + env(safe-area-inset-bottom, 0px)); background: #202e47f5; border-top: 1px solid var(--gx-edge); box-shadow: 0 -8px 24px #0004; }
     .empire-root .empire-workspace-primary button { display: grid; place-items: center; gap: 2px; max-width: none; padding: 3px; }
     .empire-root .empire-workspace-primary button svg { display: block; margin: 0 !important; }
-    .empire-root .empire-workspace-primary [data-empire-workspace="actions"] { display: none; }
     .empire-root .empire-workspace-secondary { padding: 5px 8px; margin: 0; }
     .empire-root .empire-user, .empire-root .empire-live { display: none; }
     .empire-root .empire-start { min-height: 44px; display: flex; margin-inline: 12px; }
     .empire-root .empire-shell[data-workspace="lenses"] { padding: 10px 12px; }
-    .empire-root .empire-phone-actions { display: inline-block; }
 }

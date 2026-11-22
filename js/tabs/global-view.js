@@ -2429,11 +2429,12 @@ function EmpireDashboard({ allLeagues, playersData, playersLoaded, sleeperUserId
         onWorkspaceChange?.(key);
         clearFilters();
         setActionView('priority');
-        setAssetView('allocation');
+        setAssetView(phone ? 'players' : 'allocation');
         setAssetQuery('');
         setDetail(key === 'actions' ? { type: 'moves' } : null);
         window.scrollTo({ top: 0, behavior: 'instant' });
     };
+    const backFromDetail = () => workspace === 'actions' ? openWorkspace('overview') : setDetail(null);
     const openWorkspaceView = (group, view) => {
         setWorkspace(group);
         onWorkspaceChange?.(group);
@@ -2472,9 +2473,9 @@ function EmpireDashboard({ allLeagues, playersData, playersLoaded, sleeperUserId
                 <p>Dynasty uses DHQ. Seasonal values use league scoring. Keeper costs need separate verification. Different formats are totaled separately.</p>
                 {markData?.status === 'unavailable' ? <button className="empire-action" type="button" onClick={() => setMarkRetry(value => value + 1)}>Retry seasonal values</button> : !markData ? <p role="status">Loading seasonal values…</p> : <p>Season {markData.season}. Unmatched holdings are unpriced.</p>}
             </details>}
-            {model.coverage.complete === false && <div role="status" data-testid="empire-coverage" style={{ padding: '12px', fontSize: 'var(--text-body, 1rem)', lineHeight: 1.5, color: 'var(--gold)' }}><strong>{portfolioCoverage.knownCount == null ? 'League coverage unverified' : portfolioCoverage.loadedCount + ' of ' + portfolioCoverage.knownCount + ' Sleeper leagues loaded'}</strong><div>Totals and exposure percentages cover the {model.provinces.length} loaded, included league(s). Holdings in unavailable leagues are unknown.{portfolioCoverage.staleCount > 0 ? ' ' + portfolioCoverage.staleCount + ' league(s) use last loaded data.' : ''}</div><button className="empire-action" type="button" disabled={!!refreshing} onClick={onRefresh}>{refreshing ? 'Loading…' : 'Retry league sync'}</button></div>}
+            {model.coverage.complete === false && <details className="empire-sync" data-testid="empire-coverage"><summary>{portfolioCoverage.knownCount == null ? 'League coverage unverified' : portfolioCoverage.loadedCount + ' of ' + portfolioCoverage.knownCount + ' Sleeper leagues loaded'}</summary><div>Totals and exposure percentages cover the {model.provinces.length} loaded, included league(s). Holdings in unavailable leagues are unknown.{portfolioCoverage.staleCount > 0 ? ' ' + portfolioCoverage.staleCount + ' league(s) use last loaded data.' : ''}</div><button className="empire-action" type="button" disabled={!!refreshing} onClick={onRefresh}>{refreshing ? 'Loading…' : 'Retry league sync'}</button></details>}
             {decisionJournal.failure && <div role="alert" data-testid="empire-decision-save-error" style={{ padding: 12, fontSize: 'var(--text-body, 1rem)', lineHeight: 1.5 }}><strong>Decision not saved</strong><div>{decisionJournal.failure.message} Your edits remain open in this page.</div><button className="empire-action" type="button" onClick={decisionJournal.retry}>Retry saving decision</button><button className="empire-ghost" type="button" onClick={decisionJournal.discard}>Discard unsaved edits</button></div>}
-            {!model.pickCapital.complete && model.provinces.length > 0 && <div role="status" data-testid="empire-pick-coverage" style={{ padding: '12px', fontSize: 'var(--text-body, 1rem)', lineHeight: 1.5, color: 'var(--gold)' }}><strong>Pick ownership incomplete</strong><div>{model.pickCapital.verifiedLeagues} of {model.provinces.length} loaded leagues verified.{model.pickCapital.staleLeagues > 0 ? ' ' + model.pickCapital.staleLeagues + ' use saved ownership.' : ''} Unavailable picks are excluded from totals.{model.pickCapital.unknownDraftLeagues > 0 ? ' Current-year draft progress is unverified for ' + model.pickCapital.unknownDraftLeagues + ' league(s); those picks are excluded.' : ''}</div><button className="empire-action" type="button" disabled={!!refreshing} onClick={onRefresh}>{refreshing ? 'Loading…' : 'Retry pick sync'}</button></div>}
+            {!model.pickCapital.complete && model.provinces.length > 0 && <details className="empire-sync" data-testid="empire-pick-coverage"><summary>Pick ownership incomplete</summary><div>{model.pickCapital.verifiedLeagues} of {model.provinces.length} loaded leagues verified.{model.pickCapital.staleLeagues > 0 ? ' ' + model.pickCapital.staleLeagues + ' use saved ownership.' : ''} Unavailable picks are excluded from totals.{model.pickCapital.unknownDraftLeagues > 0 ? ' Current-year draft progress is unverified for ' + model.pickCapital.unknownDraftLeagues + ' league(s); those picks are excluded.' : ''}</div><button className="empire-action" type="button" disabled={!!refreshing} onClick={onRefresh}>{refreshing ? 'Loading…' : 'Retry pick sync'}</button></details>}
             <nav aria-label="Empire workspaces" className="empire-workspace-primary">
                 {groups.map(g => <button key={g.key} type="button" data-empire-workspace={g.key} aria-current={group.key === g.key ? 'page' : undefined} onClick={() => openWorkspace(g.key)}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginRight: 7, verticalAlign: 'middle' }}>{EMPIRE_ICON_PATHS[({ overview: 'home', lenses: 'target', actions: 'zap', leagues: 'layers', assets: 'briefcase' })[g.key]].map((d, i) => <path key={i} d={d} />)}</svg><span>{g.label}</span></button>)}
             </nav>
@@ -2580,7 +2581,7 @@ function EmpireDashboard({ allLeagues, playersData, playersLoaded, sleeperUserId
                 <div className="empire-header">
                     {renderWorkspaceNav()}
                     <div className="empire-topbar">
-                        <button className="empire-back" type="button" aria-label="Back to Empire" onClick={() => setDetail(null)}>{"<"}</button>
+                        <button className="empire-back" type="button" aria-label="Back to Empire" onClick={backFromDetail}>{"<"}</button>
                         <div className="empire-title"><strong>Player Portfolio</strong></div>
                     </div>
                 </div>
@@ -2632,7 +2633,7 @@ function EmpireDashboard({ allLeagues, playersData, playersLoaded, sleeperUserId
                 <div className="empire-header">
                     {renderWorkspaceNav()}
                     <div className="empire-topbar">
-                        <button className="empire-back" type="button" aria-label="Back to Empire" onClick={() => setDetail(null)}>{"<"}</button>
+                        <button className="empire-back" type="button" aria-label="Back to Empire" onClick={backFromDetail}>{"<"}</button>
                         <div className="empire-title"><strong>League Portfolio</strong></div>
                         <button className="empire-action" type="button" onClick={() => onEnterLeague(province.league)}>Open League</button>
                     </div>
@@ -2692,7 +2693,7 @@ function EmpireDashboard({ allLeagues, playersData, playersLoaded, sleeperUserId
                 <div className="empire-header">
                     {renderWorkspaceNav()}
                     <div className="empire-topbar">
-                        <button className="empire-back" type="button" aria-label="Back to Empire" onClick={() => setDetail(null)}>{"<"}</button>
+                        <button className="empire-back" type="button" aria-label="Back to Empire" onClick={backFromDetail}>{"<"}</button>
                         <div className="empire-title"><strong>Portfolio Slice</strong><span>{slice.title || 'Filtered workspace'}</span></div>
                         <button className="empire-action" type="button" onClick={() => { setFilters(sliceFilters); setWorkspace('assets'); setAssetView('players'); setDetail(null); }}>Apply As Filter</button>
                     </div>
@@ -2738,16 +2739,11 @@ function EmpireDashboard({ allLeagues, playersData, playersLoaded, sleeperUserId
                 <div className="empire-header">
                     {renderWorkspaceNav()}
                     <div className="empire-topbar">
-                        <button className="empire-back" type="button" aria-label="Back to Empire" onClick={() => setDetail(null)}>{"<"}</button>
+                        <button className="empire-back" type="button" aria-label="Back to Empire" onClick={backFromDetail}>{"<"}</button>
                         <div className="empire-title"><strong>Actions</strong></div>
                     </div>
                 </div>
                 <main className="empire-detail">
-                    <section className="empire-detail-hero">
-                        <div>
-                            <h1>{actionView === 'priority' ? 'Priority queue' : actionView === 'journal' ? 'Decision journal' : 'Trade opportunities'}</h1>
-                        </div>
-                    </section>
                     {actionView === 'priority' && <section className="empire-panel" data-testid="empire-full-priority-queue">
                         <div className="empire-stack">
                             {actionQueue.length ? actionQueue.map((action, i) => {
@@ -2895,8 +2891,8 @@ function EmpireDashboard({ allLeagues, playersData, playersLoaded, sleeperUserId
                 <div className="empire-header">
                     {renderWorkspaceNav()}
                     <div className="empire-topbar">
-                        <button className="empire-back" type="button" aria-label="Back to Empire" onClick={() => setDetail(null)}>{"<"}</button>
-                        <div className="empire-title"><strong>Negotiation HUD</strong><span>{theirA?.ownerName || theirA?.teamName || 'Owner'} · {league?.name || 'League'}</span></div>
+                        <button className="empire-back" type="button" aria-label="Back to Empire" onClick={backFromDetail}>{"<"}</button>
+                        <div className="empire-title"><strong>Owner profile</strong><span>{theirA?.ownerName || theirA?.teamName || 'Owner'} · {league?.name || 'League'}</span></div>
                         {canOpenEmpireTradeDesk(model.provinces.find(p => String(p.id) === String(leagueId))) && <button className="empire-action" type="button" style={{ marginLeft: 'auto' }} onClick={() => setDetail({ type: 'tradeDesk', leagueId, seedOwnerId: ownerId })}>Propose Trade</button>}
                         {league?.league ? <button className="empire-action" type="button" onClick={() => onEnterLeague(league.league || league)}>Open League</button> : null}
                     </div>
@@ -2950,7 +2946,7 @@ function EmpireDashboard({ allLeagues, playersData, playersLoaded, sleeperUserId
                 <div className="empire-header">
                     {renderWorkspaceNav()}
                     <div className="empire-topbar">
-                        <button className="empire-back" type="button" aria-label="Back to Empire" onClick={() => setDetail(null)}>{"<"}</button>
+                        <button className="empire-back" type="button" aria-label="Back to Empire" onClick={backFromDetail}>{"<"}</button>
                         <div className="empire-title"><strong>Market Index</strong></div>
                         <div className="empire-user">{userName}</div>
                     </div>
@@ -3000,7 +2996,7 @@ const renderThreatDetail = () => {
       <div className="empire-header">
                     {renderWorkspaceNav()}
         <div className="empire-topbar">
-          <button className="empire-back" type="button" aria-label="Back to Empire" onClick={() => setDetail(null)}>{"<"}</button>
+          <button className="empire-back" type="button" aria-label="Back to Empire" onClick={backFromDetail}>{"<"}</button>
           <div className="empire-title"><strong>Rivals</strong></div>
           <div className="empire-user">{userName}</div>
         </div>
@@ -3067,7 +3063,7 @@ const renderWarDetail = () => {
             <div className="empire-header">
                     {renderWorkspaceNav()}
                 <div className="empire-topbar">
-                    <button className="empire-back" type="button" aria-label="Back to Empire" onClick={() => setDetail(null)}>{"<"}</button>
+                    <button className="empire-back" type="button" aria-label="Back to Empire" onClick={backFromDetail}>{"<"}</button>
                     <div className="empire-title"><strong>Competitive Windows</strong></div>
                     <div className="empire-user">{userName}</div>
                 </div>
@@ -3159,7 +3155,7 @@ const renderOutlookDetail = () => {
             <div className="empire-header">
                     {renderWorkspaceNav()}
                 <div className="empire-topbar">
-                    <button className="empire-back" type="button" aria-label="Back to Empire" onClick={() => setDetail(null)}>{"<"}</button>
+                    <button className="empire-back" type="button" aria-label="Back to Empire" onClick={backFromDetail}>{"<"}</button>
                     <div className="empire-title"><strong>Season Outlook</strong></div>
                     <div className="empire-user">{userName}</div>
                 </div>
@@ -3231,7 +3227,7 @@ const renderTradeDeskDetail = (d) => {
                 <div className="empire-header">
                     {renderWorkspaceNav()}
                     <div className="empire-topbar">
-                        <button className="empire-back" type="button" aria-label="Back to Empire" onClick={() => setDetail(null)}>{"<"}</button>
+                        <button className="empire-back" type="button" aria-label="Back to Empire" onClick={backFromDetail}>{"<"}</button>
                         <div className="empire-title"><strong>Trade Desk</strong></div>
                         <div className="empire-user">{userName}</div>
                     </div>
@@ -3307,7 +3303,7 @@ const renderProvincesDetail = () => {
       <div className="empire-header">
                     {renderWorkspaceNav()}
         <div className="empire-topbar">
-          <button className="empire-back" type="button" aria-label="Back to Empire" onClick={() => setDetail(null)}>{"<"}</button>
+          <button className="empire-back" type="button" aria-label="Back to Empire" onClick={backFromDetail}>{"<"}</button>
           <div className="empire-title"><strong>League Map</strong></div>
           <div className="empire-user">{userName}</div>
         </div>
@@ -3384,18 +3380,12 @@ const renderScoutDetail = () => {
       <div className="empire-header">
                     {renderWorkspaceNav()}
         <div className="empire-topbar">
-          <button className="empire-back" type="button" aria-label="Back to Empire" onClick={() => setDetail(null)}>{"<"}</button>
+          <button className="empire-back" type="button" aria-label="Back to Empire" onClick={backFromDetail}>{"<"}</button>
           <div className="empire-title"><strong>Player Rankings</strong></div>
           <div className="empire-user">{userName}</div>
         </div>
       </div>
       <main className="empire-detail empire-rankings-detail">
-        <section className="empire-detail-hero">
-          <div>
-            <h1>Players</h1>
-          </div>
-        </section>
-
         <details className="empire-ranking-options" open={phone ? undefined : true}><summary>Sort &amp; board details</summary>
         <div className="empire-detail-metrics">
           <div className="empire-metric"><span>Board Size</span><strong>{s.boardSize}</strong></div>
@@ -3453,6 +3443,45 @@ const renderScoutDetail = () => {
   );
 };
 
+    const snapshot = workspace === 'overview' && <>
+        {onStartInEmpire && <label className="empire-start">
+            <input type="checkbox" checked={startInEmpire} onChange={event => onStartInEmpire(event.target.checked)} /> Start in Empire
+        </label>}
+        {!!allLeagues?.length && <details className="empire-summary" open={!phone}>
+            <summary>Portfolio snapshot</summary>
+            <div className="empire-kpis" data-testid="empire-command-strip">{bridge.kpis.map(kpiTile)}</div>
+        </details>}
+    </>;
+
+    const leagueList = () => (
+        <div className="empire-panel">
+            <div className="empire-panel-head"><strong>Leagues</strong><em>{filtered.provinces.length} shown</em></div>
+            <div className="empire-stack">
+                {filtered.provinces.length ? filtered.provinces
+                    .slice()
+                    .sort((a, b) => b.totalDHQ - a.totalDHQ || (b.healthScore || 0) - (a.healthScore || 0))
+                    .map(province => (
+                        <button key={province.id} className="empire-league-card" style={{ '--tone': province.tierColor }} type="button" onClick={() => setDetail({ type: 'league', leagueId: province.id })}>
+                            <EmpireLeagueIdentity province={province}>
+                                <strong>{province.name}</strong>
+                                <span>{[province.preDraftEmpty ? 'Pre-draft' : province.tier, province.recordLabel, province.powerRank && 'Rank ' + province.powerRank + '/' + province.teams].filter(Boolean).join(' · ')}</span>
+                                {province.pickFeedPresent && <em>{province.pickCount} {province.currentDraftUnknown ? 'known picks' : province.pickFeedReady ? 'picks' : 'saved picks'} · {province.premiumPickCount} R1–2</em>}
+                            </EmpireLeagueIdentity>
+                            <div style={{ textAlign: 'right' }}>
+                                <b>{province.totalValue != null ? empireCompact(province.totalValue) + ' ' + province.valueLabel : (province.preDraftEmpty ? 'Pre-Draft' : 'Value unavailable')}</b>
+                                {!province.preDraftEmpty && province.healthScore != null ? (
+                                    <div className="empire-health-mini" title={'Roster health ' + province.healthScore}>
+                                        <div className="empire-health-track"><div className="empire-health-fill" style={{ width: province.healthScore + '%', background: empireHealthColor(province.healthScore) }} /></div>
+                                        <span className="empire-health-num" style={{ color: empireHealthColor(province.healthScore) }}>{province.healthScore}</span>
+                                    </div>
+                                ) : null}
+                            </div>
+                        </button>
+                    )) : <div className="empire-empty"><strong>No leagues</strong>Reset filters or check roster sync.</div>}
+            </div>
+        </div>
+    );
+
     if (detail?.type === 'lab') return <div className={rootClassName}>
         <EmpireStyles /><header className="empire-header">{renderWorkspaceNav()}<div className="empire-topbar"><button className="empire-back" aria-label="Back to Empire overview" type="button" onClick={() => openWorkspace('overview')}>{"<"}</button><div className="empire-title"><strong>Portfolio Lab</strong></div></div></header>
         <EmpirePortfolioLab model={model} onOpen={setDetail} />
@@ -3494,7 +3523,7 @@ const renderScoutDetail = () => {
                 <div className="empire-topbar">
                     <button className="empire-back" type="button" aria-label="Back to hub" onClick={onBack}>{"<"}</button>
                     <div className="empire-title">
-                        <strong>Empire</strong>
+                        <strong>{phone && workspace !== 'overview' ? ({ lenses: 'Lenses', assets: 'Assets', leagues: 'Leagues' })[workspace] || 'Empire' : 'Empire'}</strong>
                         <span>{model.totals.leagues} {model.coverage.complete ? 'leagues' : 'loaded leagues'}</span>
                     </div>
                     {freshness && model.coverage.complete && model.pickCapital.complete ? (
@@ -3503,20 +3532,15 @@ const renderScoutDetail = () => {
                             {freshness.label}
                         </span>
                     ) : null}
-                    <button className="empire-action" type="button" style={{ marginLeft: 'auto' }} disabled={!!refreshing} onClick={onRefresh}
+                    {phone && workspace === 'lenses' && <button className="empire-action" type="submit" form="empire-refresh-lenses">Refresh lenses</button>}
+                    {!(phone && workspace === 'lenses') && <button className="empire-action" type="button" style={{ marginLeft: 'auto' }} disabled={!!refreshing} onClick={onRefresh}
                         title={hasNonSleeperLeagues ? "Re-syncs Sleeper leagues' rosters, standings and scoring — ESPN/MFL leagues update on their own connection cycle" : "Re-sync every league's rosters, standings and scoring"}>
                         {refreshing ? 'Refreshing…' : justSynced ? 'Synced ✓' : 'Refresh Leagues'}
-                    </button>
+                    </button>}
                     <div className="empire-user">{userName}</div>
                 </div>
-                {workspace === 'overview' && onStartInEmpire && <label className="empire-start"><input type="checkbox" checked={startInEmpire} onChange={event => onStartInEmpire(event.target.checked)} /> Start in Empire</label>}
-                <details className="empire-summary" open={!phone} hidden={!allLeagues?.length || workspace !== 'overview'}><summary>Portfolio snapshot</summary>
-                <div className="empire-kpis" data-testid="empire-command-strip" hidden={!allLeagues?.length}>
-                    {/* Command Bridge KPI strip — empire-wide overview (mockup contract), with
-                        week-over-week deltas from the snapshot store. Lens filters drive the asset
-                        table below, not these portfolio-level KPIs. */}
-                    {bridge.kpis.map(kpiTile)}
-                </div></details>
+
+                {!phone && snapshot}
             </header>
 
             <main className="empire-shell" data-workspace={workspace} data-asset-view={assetView}>
@@ -3525,7 +3549,16 @@ const renderScoutDetail = () => {
                         if (!decisionJournal.hasPending()) onLensView({ scroll: window.scrollY });
                         onEnterLeague(league, tab, true);
                     }} />}
-                {workspace === 'overview' && <button className="empire-action empire-phone-actions" type="button" onClick={() => openWorkspace('actions')}>Actions</button>}
+                {phone && workspace === 'overview' && allLeagues?.length > 0 && <div className="empire-home-stats">
+                    {[
+                        ['Leagues', model.provinces.length, 'leagues'],
+                        ['Players', model.exposure.length, 'assets'],
+                        ['Priorities', actionQueue.length, 'actions'],
+                    ].map(([label, value, target]) => <button key={target} type="button" onClick={() => openWorkspace(target)}>
+                        <strong>{value}</strong><span>{label}</span>
+                    </button>)}
+                </div>}
+                {workspace !== 'lenses' && <>
                 <div className="empire-viewbar" aria-label="Empire portfolio views">
                     <span className="empire-filter-label">View</span>
                     {lensButton('All', {}, 'var(--gold)')}
@@ -3592,18 +3625,17 @@ const renderScoutDetail = () => {
                 ) : null}
                 {hasNoResults ? (
                     <div className="empire-empty" data-testid="empire-empty-state">
-                        <strong>{!allLeagues?.length ? 'Your portfolio starts with a league' : activeFilters ? 'No portfolio results match this view' : 'Your portfolio data is not ready'}</strong>
-                        {!allLeagues?.length ? 'Connect your leagues from the hub to see their players, picks and opportunities here.' : activeFilters ? 'No leagues, players or picks match these filters.' : 'Refresh your leagues to load the available roster and pick data.'}
+                        <strong>{!allLeagues?.length ? 'No connected leagues' : activeFilters ? 'No portfolio results match this view' : 'Your portfolio data is not ready'}</strong>
                         <div style={{ marginTop: 12 }}><button className="empire-action" type="button" onClick={!allLeagues?.length ? onBack : activeFilters ? clearFilters : onRefresh}>{!allLeagues?.length ? 'Connect a league in the hub' : activeFilters ? 'Reset Filters' : refreshing ? 'Refreshing…' : 'Refresh leagues'}</button></div>
                     </div>
                 ) : (
                     <>
                         <section className="empire-command-deck" data-testid="empire-bridge">
-                            <div className="empire-panel empire-command-primary">
+                            {!phone && <div className="empire-panel empire-command-primary">
                                 <div className="empire-panel-head"><strong>Empire Brief</strong></div>
 
                                 <div className="empire-command-focus">{briefText}</div>
-                            </div>
+                            </div>}
                             <div className="empire-panel">
                                 <div className="empire-panel-head"><strong>Priorities</strong></div>
                                 <div className="empire-priority-list">
@@ -3611,13 +3643,13 @@ const renderScoutDetail = () => {
                                         <button key={i} type="button" className="empire-signal" style={{ '--tone': signalTone(action.severity) }} onClick={() => actionForQueue(action)}>
                                             <div className="empire-signal-top"><strong>{action.title}</strong>{action.metric ? <b>{action.metric}</b> : null}</div>
                                             <span>{action.detail}</span>
-                                            <em>{action.cta}</em>
                                         </button>
-                                    )) : <div className="empire-empty"><strong>No priorities flagged</strong>No moves stand out in the available data.</div>}
+                                    )) : <div className="empire-empty"><strong>No priorities flagged</strong></div>}
                                 </div>
                                 {actionQueue.length > 3 ? <div className="empire-section-footer"><button className="empire-action" type="button" onClick={() => { setActionView('priority'); setDetail({ type: 'moves' }); }}>View all {actionQueue.length} priorities →</button></div> : null}
                             </div>
                         </section>
+                        {phone && workspace === 'overview' && leagueList()}
                         <EmpireSecondaryDetails active={phone && workspace === 'overview'}>
                         {workspace !== 'assets' && <section className="empire-panel empire-lab-entry">
                             <strong>Portfolio Lab</strong>
@@ -3732,32 +3764,8 @@ const renderScoutDetail = () => {
                                 </div>
                             </div>
 
-                            <div className="empire-panel">
-                                <div className="empire-panel-head"><strong>Leagues</strong><em>{filtered.provinces.length} shown</em></div>
-                                <div className="empire-stack">
-                                    {filtered.provinces.length ? filtered.provinces
-                                        .slice()
-                                        .sort((a, b) => b.totalDHQ - a.totalDHQ || (b.healthScore || 0) - (a.healthScore || 0))
-                                        .map(province => (
-                                            <button key={province.id} className="empire-league-card" style={{ '--tone': province.tierColor }} type="button" onClick={() => setDetail({ type: 'league', leagueId: province.id })}>
-                                                <EmpireLeagueIdentity province={province}>
-                                                    <strong>{province.name}</strong>
-                                                    <span>{[province.preDraftEmpty ? 'Pre-draft' : province.tier, province.recordLabel, province.powerRank && 'Rank ' + province.powerRank + '/' + province.teams].filter(Boolean).join(' · ')}</span>
-                                                    {province.pickFeedPresent && <em>{province.pickCount} {province.currentDraftUnknown ? 'known picks' : province.pickFeedReady ? 'picks' : 'saved picks'} · {province.premiumPickCount} R1–2</em>}
-                                                </EmpireLeagueIdentity>
-                                                <div style={{ textAlign: 'right' }}>
-                                                    <b>{province.totalValue != null ? empireCompact(province.totalValue) + ' ' + province.valueLabel : (province.preDraftEmpty ? 'Pre-Draft' : 'Value unavailable')}</b>
-                                                    {!province.preDraftEmpty && province.healthScore != null ? (
-                                                        <div className="empire-health-mini" title={'Roster health ' + province.healthScore}>
-                                                            <div className="empire-health-track"><div className="empire-health-fill" style={{ width: province.healthScore + '%', background: empireHealthColor(province.healthScore) }} /></div>
-                                                            <span className="empire-health-num" style={{ color: empireHealthColor(province.healthScore) }}>{province.healthScore}</span>
-                                                        </div>
-                                                    ) : null}
-                                                </div>
-                                            </button>
-                                        )) : <div className="empire-empty"><strong>No leagues</strong>Reset filters or check roster sync.</div>}
-                                </div>
-                            </div>
+                            {phone && workspace === 'lenses' && <button className="empire-action" type="submit" form="empire-refresh-lenses">Refresh lenses</button>}
+                    {!(phone && workspace === 'overview') && leagueList()}
                         </section>}
                         </EmpireSecondaryDetails>
 
@@ -3790,13 +3798,15 @@ const renderScoutDetail = () => {
                                 <div>
                                     <strong>{filters.assetType === 'picks' ? 'Draft Picks' : 'Player Holdings'}</strong>
                                 </div>
-                                <div className="empire-sort-row">
+                                {phone ? <select className="empire-sort-select" aria-label="Sort holdings by" value={sort} onChange={event => setSort(event.target.value)}>
+                                    {['dhq', 'exposure', 'age', 'position', 'league'].map(key => <option value={key} key={key}>{key === 'dhq' ? 'Value' : key[0].toUpperCase() + key.slice(1)}</option>)}
+                                </select> : <div className="empire-sort-row">
                                     {['dhq', 'exposure', 'age', 'position', 'league'].map(key => (
                                         <button key={key} className={'empire-ghost' + (sort === key ? ' is-active' : '')} type="button" onClick={() => setSort(key)}>{key === 'dhq' ? 'value basis' : key}</button>
                                     ))}
-                                </div>
+                                </div>}
                             </div>
-                            {filters.assetType !== 'picks' && <label className="empire-asset-search">Find a player or league<input type="search" value={assetQuery} onChange={e => setAssetQuery(e.target.value)} /></label>}
+                            {filters.assetType !== 'picks' && <label className="empire-asset-search"><input aria-label="Find a player or league" placeholder="Find player or league" type="search" value={assetQuery} onChange={e => setAssetQuery(e.target.value)} /></label>}
                             {filters.assetType === 'picks' ? (
                                 <div className="empire-quality-grid" style={{ padding: 12, marginTop: 0 }}>
                                     {model.provinces.some(province => province.format !== 'dynasty') && <p data-testid="empire-pick-format-note" style={{ gridColumn: '1 / -1', fontSize: 'var(--text-body, 1rem)', lineHeight: 1.5 }}>Seasonal leagues show this draft year only. Keeper rights include future years, with costs and eligibility still to verify. Non-dynasty pick values are unpriced.</p>}
@@ -3817,13 +3827,14 @@ const renderScoutDetail = () => {
                             ) : (
                                 <div className="empire-empty">
                                     <strong>No players match the current filters</strong>
-                                    {assetQuery ? 'Try another name or clear your search.' : 'Adjust the filters to return to more assets.'}
                                     <button type="button" className="empire-action" onClick={() => assetQuery ? setAssetQuery('') : clearFilters()}>{assetQuery ? 'Clear search' : 'Reset filters'}</button>
                                 </div>
                             )}
                         </section>}
                     </>
                 )}
+                </>}
+                {phone && workspace === 'overview' && snapshot}
                 {workspace === 'overview' && scoreItems.length ? (
                     <section className="empire-scores" aria-label="NFL scores">
                         {scoreItems.map((score, i) => <span key={i}>{score}</span>)}

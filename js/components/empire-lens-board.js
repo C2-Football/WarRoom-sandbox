@@ -169,10 +169,10 @@ function EmpireLensBoard({ leagues, players, playersLoaded, sleeperUserId, view,
                         : 'No recommendations in the selected leagues.';
     const changeLeague = (entry, enabled) => onView({ leagueScope: accountKey, leagueOverrides: { ...overrides, [entry.key]: enabled } });
     return <section className="empire-lens-board" aria-labelledby="empire-lenses-title">
-        <div className="empire-lens-heading">
+        <form id="empire-refresh-lenses" className="empire-lens-heading" onSubmit={event => { event.preventDefault(); setRefresh(value => value + 1); }}>
             <h1 id="empire-lenses-title">Lenses</h1>
-            <button type="button" className="empire-action" onClick={() => setRefresh(value => value + 1)}>Refresh lenses</button>
-        </div>
+            <button type="submit" className="empire-action">Refresh lenses</button>
+        </form>
         <nav className="empire-lens-modes" aria-label="Roster lenses">
             {Object.entries(modes).map(([key, descriptor]) => <button type="button" key={key} aria-pressed={mode === key}
                 onClick={() => onView({ mode: key, scroll: 0 })}>{descriptor.label}</button>)}
