@@ -1,26 +1,71 @@
 .empire-shell[data-workspace="lenses"] > :not(.empire-lens-board) { display: none; }
-.empire-lens-board { display: grid; gap: 12px; max-width: 1040px; margin: 0 auto; }
-.empire-lens-heading, .empire-lens-card-head, .empire-lens-move { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.empire-lens-heading h1 { font-size: 1.5rem; line-height: 1.1; margin: 0; color: var(--white); }
-.empire-lens-modes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px; border: 1px solid var(--ov-6); border-radius: 12px; background: var(--ov-3); }
-.empire-lens-modes button, .empire-lens-card-head > button:first-child, .wr-empire-return { color: var(--white); background: transparent; border: 1px solid transparent; border-radius: 8px; font: inherit; cursor: pointer; min-height: 44px; }
-.empire-lens-modes button[aria-pressed="true"] { background: var(--acc-fill2); border-color: var(--acc-line2); font-weight: 700; }
-.empire-lens-basis { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--silver); font-size: .9rem; }
-.empire-lens-basis select { color: var(--white); background: var(--surf-solid); border: 1px solid var(--ov-6); border-radius: 8px; font: inherit; padding: 0 7px; min-height: 44px; }
-.empire-lens-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 10px; align-items: start; }
-.empire-lens-card { min-width: 0; border: 1px solid var(--ov-6); border-radius: 12px; background: var(--surf-solid); }
-.empire-lens-card-head { padding: 6px 10px; }
-.empire-lens-card-head > button:first-child { padding: 2px 0; flex: 1 1 auto; min-width: 0; text-align: left; }
-.empire-lens-card-head > button:first-child::before { content: '▸'; margin-inline-end: 5px; }
-.empire-lens-card-head > button:first-child[aria-expanded="true"]::before { content: '▾'; }
-.empire-lens-card-head .empire-action { flex: 0 0 auto; min-height: 44px; padding-inline: 8px; }
-.empire-lens-card strong { overflow-wrap: anywhere; }
-.empire-lens-card small { display: block; color: var(--silver); font-size: .82rem; }
-.empire-lens-card-body { padding: 0 10px; }
-.empire-lens-card-body p, .empire-lens-status { margin: 0; padding: 9px 0; font-size: .875rem; line-height: 1.4; color: var(--silver); }
-.empire-lens-move { border-top: 1px solid var(--ov-6); padding: 8px 0; }
-.empire-lens-move > span { color: var(--silver); white-space: nowrap; font-weight: 700; font-variant-numeric: tabular-nums; }
-.empire-lens-move > span[data-positive="true"] { color: #8de0cb; }
+.empire-lens-board {
+    --empire-lens-ink: var(--cx-ink, #f3f6fc);
+    --empire-lens-muted: var(--cx-muted, #b6c5da);
+    --empire-lens-edge: var(--gx-edge, #798ea77d);
+    --empire-lens-rule: #b7ceff24;
+    display: grid;
+    gap: 10px;
+    max-width: 1040px;
+    margin: 0 auto;
+    color: var(--empire-lens-ink);
+}
+.empire-lens-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.empire-lens-heading h1 { font-size: 1.5rem; line-height: 1.1; letter-spacing: -.025em; margin: 0; }
+.empire-lens-modes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px; border: 1px solid var(--empire-lens-edge); border-radius: 13px; background: #15243b8a; }
+.empire-lens-modes button, .wr-empire-return { color: var(--white); background: transparent; border: 1px solid transparent; border-radius: 8px; font: inherit; cursor: pointer; min-height: 44px; }
+.empire-lens-modes button[aria-pressed="true"] { background: #6e9fe335; border-color: #a6caff80; color: #f5f9ff; font-weight: 700; }
+.empire-lens-controls { display: flex; align-items: start; gap: 8px; }
+.empire-lens-filters { flex: 1; min-width: 0; }
+.empire-lens-basis { display: block; flex: 0 1 auto; min-width: 0; }
+.empire-lens-basis select, .empire-lens-filters > summary, .empire-lens-unavailable > summary { color: var(--empire-lens-ink); background: #2a405d; border: 1px solid var(--empire-lens-edge); border-radius: 10px; font: inherit; font-size: .83rem; padding: 0 10px; min-height: 44px; }
+.empire-lens-basis select { max-width: 100%; }
+.empire-lens-filters > summary, .empire-lens-unavailable > summary { display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none; }
+.empire-lens-filters > summary::-webkit-details-marker, .empire-lens-unavailable > summary::-webkit-details-marker { display: none; }
+.empire-lens-filters > summary::after, .empire-lens-unavailable > summary::after { content: '›'; margin-left: auto; font-size: 1.15rem; color: var(--empire-lens-muted); }
+.empire-lens-filters[open] > summary::after, .empire-lens-unavailable[open] > summary::after { transform: rotate(90deg); }
+.empire-lens-filters summary b { color: #c4dafe; font-variant-numeric: tabular-nums; }
+.empire-lens-filter-list { max-height: min(44dvh, 320px); overflow: auto; margin-top: 4px; padding: 2px 8px 5px; border: 1px solid var(--empire-lens-edge); border-radius: 12px; background: #1c2e48; }
+.empire-lens-filter-list label { min-height: 44px; display: flex; align-items: center; gap: 8px; color: var(--empire-lens-ink); font-size: .83rem; cursor: pointer; }
+.empire-lens-filter-list label + label { border-top: 1px solid var(--empire-lens-rule); }
+.empire-lens-filter-list input { flex-shrink: 0; width: 17px; height: 17px; min-height: 0 !important; accent-color: #82b4ff; }
+.empire-lens-filter-list label > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.empire-lens-filter-list label small { display: block; }
+.empire-lens-filter-list .empire-action { margin: 4px 0; }
+.empire-lens-status { margin: 0; padding: 8px 0; font-size: .84rem; line-height: 1.4; color: var(--empire-lens-muted); }
+
+.empire-lens-board .empire-lens-roster { display: grid; gap: 8px; }
+.empire-lens-board .wr-roster-mobile-group-heading { display: flex; align-items: center; justify-content: space-between; margin: 0; padding: 6px 4px; font: 750 .71rem/1.1 var(--font-body, sans-serif); color: var(--empire-lens-muted); letter-spacing: .07em; }
+.empire-lens-board .wr-roster-mobile-player-rows, .empire-lens-unavailable > ul { list-style: none; margin: 0; padding: 0; border: 1px solid var(--empire-lens-edge); border-radius: 13px; background: #1b2a42a6; overflow: clip; box-shadow: inset 0 1px #ffffff12; }
+.empire-lens-board .empire-lens-player + .empire-lens-player { border-top: 1px solid var(--empire-lens-rule); }
+.empire-root.wr-mission-v8 .empire-lens-board .wr-roster-mobile-player-trigger { display: grid; grid-template-columns: minmax(0, 1fr) minmax(58px, auto) minmax(51px, auto) auto !important; align-items: center; gap: 9px; width: 100%; min-height: 51px !important; padding: 6px 9px !important; border: 0; background: transparent; text-align: left; color: var(--empire-lens-ink); font: inherit; cursor: pointer; }
+.empire-root.wr-mission-v8 .empire-lens-board .wr-roster-mobile-player-trigger[aria-expanded="true"] { background: #4882c82e !important; }
+.empire-lens-board .wr-roster-mobile-player-trigger:hover { background: #49698d26; }
+.empire-lens-board .wr-roster-mobile-player-identity { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.empire-lens-board .wr-roster-position-icon { display: grid; place-items: center; flex: 0 0 29px; height: 29px; border: 1px solid color-mix(in srgb, var(--wr-position-color), #dce8ff 24%); border-radius: 7px; background: color-mix(in srgb, var(--wr-position-color) 20%, transparent); color: color-mix(in srgb, var(--wr-position-color), #edf5ff 43%); font: 800 .63rem/1 var(--font-body, sans-serif); }
+.empire-lens-board .wr-roster-identity-copy { min-width: 0; }
+.empire-lens-board .wr-roster-identity-copy strong { display: block; font-size: .9rem; font-weight: 740; line-height: 1.14; overflow-wrap: anywhere; color: var(--empire-lens-ink); }
+.empire-lens-board small, .empire-lens-board .wr-roster-identity-copy > span { font-size: .69rem; color: var(--empire-lens-muted); line-height: 1.3; }
+.empire-lens-appearances, .empire-lens-row-gain { display: grid; justify-items: end; gap: 2px; text-align: right; white-space: nowrap; }
+.empire-lens-league-icons { display: flex; gap: 3px; }
+.empire-lens-league-mark { display: grid; place-items: center; position: relative; flex-shrink: 0; width: 22px; height: 22px; border-radius: 6px; color: #cfddff; background: #344e78; overflow: hidden; font-size: .54rem; font-weight: 750; }
+.empire-lens-league-mark img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.empire-lens-league-mark img[hidden] { display: none; }
+.empire-lens-row-gain strong { font-variant-numeric: tabular-nums; font-size: .94rem; color: var(--empire-lens-ink); }
+.empire-lens-row-gain[data-positive="true"] strong, .empire-lens-scenario b[data-positive="true"] { color: #a2f0d0; }
+.empire-lens-board .wr-roster-mobile-player-chevron { color: var(--empire-lens-muted); font-size: 1.08rem; line-height: 1; }
+.empire-lens-player-detail { padding: 0 10px 6px; background: #101f35a3; border-top: 1px solid var(--empire-lens-rule); }
+.empire-lens-league-detail + .empire-lens-league-detail { border-top: 1px solid var(--empire-lens-rule); }
+.empire-lens-drill { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; border: 0; padding: 0; background: transparent; color: #d4e6ff; font: inherit; font-size: .81rem; text-align: left; cursor: pointer; }
+.empire-lens-drill > strong { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.empire-lens-scenario { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 6px 0; border-top: 1px solid var(--empire-lens-rule); color: var(--empire-lens-ink); font-size: .8rem; }
+.empire-lens-scenario small { display: block; }
+.empire-lens-scenario > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.empire-lens-scenario > span:nth-child(2) { text-align: right; white-space: nowrap; }
+.empire-lens-unavailable > ul { margin-top: 5px; padding-inline: 10px; }
+.empire-lens-unavailable li + li { border-top: 1px solid var(--empire-lens-rule); }
+.empire-lens-unavailable li > small { display: block; padding-bottom: 8px; }
+.empire-lens-board :is(button, summary, select, input):focus-visible { outline: 2px solid #a6caff; outline-offset: -2px; }
 .empire-start { display: inline-flex; align-items: center; gap: 8px; margin: 0 24px; min-height: 44px; color: var(--silver); font-weight: 600; cursor: pointer; }
 .empire-start input { accent-color: var(--gold); min-height: auto !important; }
 .empire-phone-actions { display: none; }
