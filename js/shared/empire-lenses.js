@@ -60,14 +60,112 @@
             return { key: JSON.stringify([provider, id(league), String(league.season), String(roster?.roster_id ?? '')]), league, userId, roster, provider };
         });
     }
+    function elimination(entry, nfl) {
+        const { league, roster, provider } = entry;
+        if (!roster || league._portfolioStale || provider !== 'sleeper'
+            || (nfl && String(nfl.season) !== String(league.season))) return null;
+        if (App.Chopped?.isChopped?.(league)) {
+            const choppedWeek = App.Chopped.eliminatedWeek?.(roster);
+            const week = Number(nfl?.display_week || nfl?.week);
+            return Number.isInteger(choppedWeek) && choppedWeek <= 18 && (!(week > 0) || choppedWeek <= week)
+                ? 'Chopped in Week ' + choppedWeek : null;
+        }
+        if (nfl?.season_type !== 'regular' || ['pre_draft', 'drafting'].includes(league.status)
+            || !Object.prototype.hasOwnProperty.call(league, 'bracket_overrides_id')) return null;
+        // Use league records only after an entire week has cleared the provider
+        // calendar. The playoff race verifier checks every team, the seeding
+        // rules and exact record coverage before allowing elimination calls.
+        const through = Number(nfl.display_week || nfl.week) - 1;
+        if (!Number.isInteger(through) || through < 1 || through >= Number(league.settings?.playoff_week_start)) return null;
+        const table = (league.rosters || []).map(({ roster_id: rid, settings = {} }) =>
+            ({ rid, wins: settings.wins, losses: settings.losses, ties: settings.ties }));
+        if (Number(league.total_rosters) !== table.length) return null;
+        const race = root.WrWirePlayoffs?.race?.({ league, edition: { completedThrough: through, table } });
+        return race?.supported && race.rows.some(row => row.id === String(roster.roster_id) && row.status === 'Eliminated')
+            ? 'Eliminated from playoff contention' : null;
+    }
+    async function playoffElimination(entry, nfl, signal) {
+        const { league, roster, provider, userId } = entry;
+        const start = Number(league.settings?.playoff_week_start);
+        const week = Number(nfl?.display_week || nfl?.week);
+        const slots = Number(league.settings?.playoff_teams);
+        if (!roster || league._portfolioStale || provider !== 'sleeper' || App.Chopped?.isChopped?.(league)
+            || ['pre_draft', 'drafting'].includes(league.status) || ![2, 4, 6, 8].includes(slots)
+            || !Number.isInteger(start) || start < 1 || start > 18 || !(week >= start)
+            || !root.WrWirePlayoffs?.load || signal?.aborted) return null;
+        const controller = new AbortController();
+        const cancel = () => controller.abort();
+        signal?.addEventListener('abort', cancel, { once: true });
+        const timeout = setTimeout(cancel, 7000);
+        try {
+            const bracket = await root.WrWirePlayoffs.load({ league, signal: controller.signal });
+            if (controller.signal.aborted || bracket?.provisional !== false || !['ready', 'partial'].includes(bracket.status)
+                || id(bracket.league) !== id(league) || String(bracket.season) !== String(league.season)
+                || Number(bracket.league?.settings?.playoff_teams) !== slots || !Array.isArray(bracket.paths)) return null;
+            const ownId = String(roster.roster_id);
+            const officialRoster = bracket.league?.rosters?.find(row => String(row.roster_id) === ownId);
+            const account = String(userId || roster.owner_id || '');
+            if (!officialRoster || !account || (String(officialRoster.owner_id) !== account
+                && !(officialRoster.co_owners || []).map(String).includes(account))) return null;
+            const own = bracket.paths.find(path => path.team?.id === ownId);
+            if (own?.rounds?.some(round => round.outcome === 'eliminated')) return 'Eliminated in the playoffs';
+            const field = new Set(bracket.paths.map(path => path.team?.id).filter(Boolean));
+            return !own && field.size === slots ? 'Missed the playoffs' : null;
+        } catch (_) {
+            return null;
+        } finally {
+            clearTimeout(timeout);
+            signal?.removeEventListener('abort', cancel);
+        }
+    }
+    const positions = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF', 'DL', 'LB', 'DB', 'Other'];
+    function groupPlayers(entries, rows, players) {
+        const grouped = new Map();
+        entries.forEach(entry => {
+            const cached = rows[entry.key];
+            if (cached?.league !== entry.league) return;
+            for (const candidate of cached.result?.candidates || []) {
+                for (const asset of candidate.incoming || []) {
+                    const pid = String(asset?.pid ?? asset?.id ?? '');
+                    if (!pid) continue;
+                    let row = grouped.get(pid);
+                    if (!row) {
+                        const player = players?.[pid];
+                        const raw = player?.position || asset.position || asset.pos;
+                        const normalized = App.RosterLensBasis?.position(raw) || String(raw || '').toUpperCase();
+                        const position = positions.includes(normalized) ? normalized : 'Other';
+                        row = { pid, player, position, name: player?.full_name || asset.name || pid,
+                            team: player?.team || asset.team || null, byLeague: new Map(), bestDelta: null };
+                        grouped.set(pid, row);
+                    }
+                    if (!row.byLeague.has(entry.key)) row.byLeague.set(entry.key, { entry, candidates: [] });
+                    const matches = row.byLeague.get(entry.key).candidates;
+                    if (matches.some(value => value === candidate || (candidate.id != null && value.id === candidate.id))) continue;
+                    matches.push(candidate);
+                    const delta = candidate.weekly?.delta;
+                    if (Number.isFinite(delta) && (row.bestDelta == null || delta > row.bestDelta)) row.bestDelta = delta;
+                }
+            }
+        });
+        const byPosition = new Map();
+        for (const { byLeague, ...row } of grouped.values()) {
+            if (!byPosition.has(row.position)) byPosition.set(row.position, []);
+            byPosition.get(row.position).push({ ...row, leagues: Array.from(byLeague.values()) });
+        }
+        return positions.filter(position => byPosition.has(position)).map(position => ({
+            position,
+            players: byPosition.get(position).sort((a, b) => (b.bestDelta ?? -Infinity) - (a.bestDelta ?? -Infinity)
+                || a.name.localeCompare(b.name) || a.pid.localeCompare(b.pid)),
+        }));
+    }
     function summarize(mode, result) {
         const candidates = mode === 'lineup' ? (result?.recommendations || result?.candidates) : result?.candidates;
         const available = mode === 'waivers' ? (candidates || []).filter(candidate => candidate.weekly?.delta > 0)
             .sort((a, b) => b.weekly.delta - a.weekly.delta) : (candidates || []);
-        return { ...result, status: result?.status || 'unavailable', candidates: available.slice(0, 3), total: available.length };
+        return { ...result, status: result?.status || 'unavailable', candidates: available, total: available.length };
     }
     const unavailable = reason => ({ status: 'unavailable', reason, candidates: [], total: 0 });
-    async function load(entry, { mode, basis, players, accountKey, nfl, statsData, priorData, projectionsData, priceCache, isCurrent = () => true }) {
+    async function load(entry, { mode, basis, players, accountKey, nfl, statsData, priorData, projectionsData, priceCache, signal, isCurrent = () => true }) {
         const service = App[modes[mode]?.service];
         const { league: raw, roster, userId, provider } = entry;
         const currentWeek = Number(nfl?.display_week || nfl?.week);
@@ -76,7 +174,10 @@
         if (raw._portfolioStale) return unavailable('Refresh this league to verify player ownership.');
         if (!nfl || String(nfl.season) !== String(raw.season) || !Number.isInteger(currentWeek) || currentWeek < 1 || currentWeek > 18) return unavailable('Current-season NFL data is unavailable for this league.');
         if (nfl.season_type !== 'regular') return unavailable('Recommendations resume in the NFL regular season.');
-        if (!service?.load) return unavailable('The comparison service could not load.');
+        const eliminationReason = elimination(entry, nfl) || await playoffElimination(entry, nfl, signal);
+        if (!isCurrent()) return unavailable('Account context changed. Open Empire again.');
+        const markEliminated = result => eliminationReason ? { ...result, status: 'eliminated', elimination: eliminationReason } : result;
+        if (!service?.load) return markEliminated(unavailable('The comparison service could not load.'));
         const league = { ...raw, _platform: provider };
         const skin = App.LeagueSkin?.build?.({ league, rosters: league.rosters, myRoster: roster, nflState: nfl });
         const activePrices = captureActivePrices(priceCache, league, accountKey);
@@ -118,11 +219,11 @@
         const result = await service.load(opts);
         if (!isCurrent()) return unavailable('Account context changed. Open Empire again.');
         if (mode === 'trades' && ['dynasty', 'keeper'].includes(skin?.type) && !dynastyPrices && result?.status === 'unavailable') {
-            return unavailable('Open this league to load its dynasty trade values.');
+            return markEliminated(unavailable('Open this league to load its dynasty trade values.'));
         }
-        return summarize(mode, result);
+        return markEliminated(summarize(mode, result));
     }
-    const api = { modes, ownerKey, createPriceCache, captureActivePrices, list, load };
+    const api = { modes, ownerKey, createPriceCache, captureActivePrices, list, elimination, groupPlayers, load };
     App.EmpireLenses = api;
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

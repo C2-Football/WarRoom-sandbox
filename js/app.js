@@ -237,7 +237,9 @@
                 fresh.set(id, { id, total_rosters: league.total_rosters, name: league.name, status: league.status || '', season: String(season),
                     wins: mine?.settings?.wins || 0, losses: mine?.settings?.losses || 0, ties: mine?.settings?.ties || 0,
                     scoring_settings: league.scoring_settings || {}, roster_positions: league.roster_positions || [],
-                    settings: league.settings || {}, rosters, users, _portfolioStale: false });
+                    settings: league.settings || {},
+                    ...(Object.prototype.hasOwnProperty.call(league, 'bracket_overrides_id') && { bracket_overrides_id: league.bracket_overrides_id }),
+                    rosters, users, _portfolioStale: false });
             } catch (_) { failed.add(id); }
             finally { pending.delete(id); onProgress(snapshot()); }
         }));

@@ -2,6 +2,9 @@ const assert = require('node:assert/strict');
 const { test } = require('node:test');
 
 global.App = {};
+require('../js/shared/chopped.js');
+require('../js/shared/roster-lens-basis.js');
+require('../js/shared/league-wire-playoffs.js');
 const lens = require('../js/shared/empire-lenses.js');
 const roster = { owner_id: 'mine', roster_id: 1, players: ['starter'] };
 const league = overrides => ({ id: 'one', season: '2026', scoring_settings: { rec: 1 }, rosters: [roster], ...overrides });
@@ -36,8 +39,92 @@ test('waiver comparisons retain each league scoring and ownership and rank verif
     assert.deepEqual(observed.map(input => [input.league.id, input.league.scoring_settings.rec, input.week, input.rostersLeagueId]), [
         ['one', 1, 11, 'one'], ['two', .5, 11, 'two'],
     ]);
-    assert.deepEqual(results[0].candidates.map(move => move.weekly.delta), [5, 3, 2]);
+    assert.deepEqual(results[0].candidates.map(move => move.weekly.delta), [5, 3, 2, 1]);
     assert.equal(results[0].total, 4);
+});
+
+test('combined roster rows use player IDs, keep distinct league moves, and skip filtered and stale results', () => {
+    const [a, b, c, d] = lens.list(['a', 'b', 'c', 'd'].map(id => league({ id })), 'mine');
+    const move = (id, pid, pos, delta) => ({ id, incoming: [{ pid, pos, name: 'Same Name' }], outgoing: [{ pid: 'outgoing-only', pos }],
+        weekly: { delta } });
+    const first = move('first', 'target', 'WR', 7);
+    const second = move('second', 'target', 'WR', 2);
+    const rows = {
+        [a.key]: { league: a.league, result: { candidates: [first, second, first, move('def', 'defender', 'EDGE', 1)] } },
+        [b.key]: { league: b.league, result: { candidates: [first, move('same-name', 'other', 'WR', null), move('zero', 'zero', 'WR', 0)] } },
+        [c.key]: { league: c.league, result: { candidates: [move('filtered', 'target', 'WR', 100)] } },
+        [d.key]: { league: d.league, result: { candidates: [move('stale', 'target', 'WR', 200)] } },
+    };
+    const previous = { ...d, league: { ...d.league } };
+    const players = { target: { full_name: 'Target Player', position: 'WR', team: 'KC' } };
+    const [wr, dl] = lens.groupPlayers([a, b, previous], rows, players);
+    assert.equal(wr.position, 'WR');
+    assert.deepEqual(wr.players.map(player => [player.pid, player.bestDelta]), [['target', 7], ['zero', 0], ['other', null]]);
+    assert.equal(wr.players[0].name, 'Target Player');
+    assert.equal(wr.players[0].team, 'KC');
+    assert.equal(wr.players[0].player, players.target);
+    assert.deepEqual(wr.players[0].leagues.map(item => [item.entry.key, item.candidates.map(candidate => candidate.id)]), [
+        [a.key, ['first', 'second']], [b.key, ['first']],
+    ]);
+    assert.deepEqual(dl.players.map(player => player.pid), ['defender']);
+});
+
+test('Chopped and mathematically eliminated teams are hidden only with verified current evidence', () => {
+    const dropped = { ...roster, settings: { eliminated: 9 } };
+    const chopped = league({ rosters: [dropped], settings: { type: 3 } });
+    const choppedStatus = (overrides, nfl = options.nfl) => lens.elimination(lens.list([{ ...chopped, ...overrides }], 'mine')[0], nfl);
+    assert.equal(choppedStatus({}), 'Chopped in Week 9');
+    assert.equal(choppedStatus({ _portfolioStale: true }), null);
+    assert.equal(choppedStatus({ season: '2025' }), null);
+    assert.equal(choppedStatus({}, { ...options.nfl, week: 8 }), null);
+
+    const rosters = [1, 11, 9, 7, 5, 3].map((wins, index) => ({
+        roster_id: index + 1, owner_id: index ? 'opponent-' + index : 'mine',
+        settings: { wins, losses: 12 - wins, ties: 0 },
+    }));
+    const race = league({ bracket_overrides_id: null, total_rosters: 6, rosters,
+        settings: { playoff_week_start: 14, playoff_teams: 4, playoff_seed_type: 0 } });
+    const beforePlayoffs = { ...options.nfl, week: 13 };
+    const eliminated = values => lens.elimination(lens.list([values], 'mine')[0], beforePlayoffs);
+    assert.equal(eliminated(race), 'Eliminated from playoff contention');
+    assert.equal(eliminated({ ...race, bracket_overrides_id: 'custom' }), null);
+    assert.equal(eliminated({ ...race, rosters: rosters.slice(0, -1) }), null);
+    assert.equal(eliminated({ ...race, settings: { ...race.settings, divisions: 2 } }), null);
+    assert.equal(eliminated({ ...race, _espn: true, myRosterId: 1 }), null);
+    const { bracket_overrides_id, ...unknownSeeding } = race;
+    assert.equal(eliminated(unknownSeeding), null);
+});
+
+test('official Sleeper brackets can hide a playoff loss or a verified missed field without deleting recommendations', async () => {
+    const current = league({ settings: { playoff_week_start: 14, playoff_teams: 4 } });
+    const nfl = { ...options.nfl, week: 15 };
+    const [entry] = lens.list([current], 'mine');
+    const [stale] = lens.list([{ ...current, _portfolioStale: true }], 'mine');
+    const originalLoad = WrWirePlayoffs.load;
+    const path = (id, outcome = 'pending') => ({ team: { id: String(id) }, rounds: [{ outcome }] });
+    const bracket = { status: 'ready', season: current.season, league: current, provisional: false,
+        paths: [path(1, 'eliminated'), path(2), path(3), path(4)] };
+    let checks = 0;
+    WrWirePlayoffs.load = async () => { checks++; return bracket; };
+    const move = { id: 'remains', incoming: [{ pid: 'target', position: 'WR' }], weekly: { delta: 3 } };
+    App.RosterWaiverLens = { load: async () => ({ status: 'ready', candidates: [move] }) };
+    try {
+        const confirmed = await lens.load(entry, { ...options, nfl });
+        assert.equal(confirmed.status, 'eliminated');
+        assert.equal(confirmed.elimination, 'Eliminated in the playoffs');
+        assert.deepEqual(confirmed.candidates, [move]);
+        assert.equal((await lens.load(stale, { ...options, nfl })).status, 'unavailable');
+        assert.equal(checks, 1);
+        bracket.paths = [path(2), path(3), path(4), path(5)];
+        assert.equal((await lens.load(entry, { ...options, nfl })).elimination, 'Missed the playoffs');
+        bracket.paths.pop();
+        assert.equal((await lens.load(entry, { ...options, nfl })).status, 'ready');
+        bracket.paths = [path(1, 'eliminated'), path(2), path(3), path(4)];
+        bracket.provisional = true;
+        assert.equal((await lens.load(entry, { ...options, nfl })).status, 'ready');
+    } finally {
+        WrWirePlayoffs.load = originalLoad;
+    }
 });
 
 test('historical, stale, and account-changed snapshots cannot yield recommendations', async () => {

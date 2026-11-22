@@ -44,6 +44,14 @@ test('partial success publishes usable leagues with an explicit unknown remainde
     assert.equal(retried.coverage.freshCount, 2);
 });
 
+test('normalized leagues retain provider bracket overrides and preserve unknown seeding evidence', async () => {
+    const result = await load(options({ fetcher: fixture({
+        'user/me/leagues/nfl/2026': [{ ...leagues[0], bracket_overrides_id: null }, leagues[1]],
+    }) }));
+    assert.equal(result.leagues[0].bracket_overrides_id, null);
+    assert.equal(Object.hasOwn(result.leagues[1], 'bracket_overrides_id'), false);
+});
+
 test('fast leagues stream before slow ones and final order stays in provider order', async () => {
     let release;
     const seen = [];
