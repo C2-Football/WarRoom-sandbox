@@ -1,0 +1,230 @@
+/* Empire uses the same blue glass palette as the Dynasty HQ league workspace. */
+.empire-root.wr-mission-v8 {
+    --cx-bg: #131d31;
+    --cx-paper: #202d44;
+    --cx-ink: #f3f6fc;
+    --cx-muted: #b6c5da;
+    --cx-line: #435571;
+    --cx-soft: #2c3d5d;
+    --cx-accent: #b7ceff;
+    --gx-edge: #798ea77d;
+    --gx-shadow: #00000050;
+    --empire-glass: linear-gradient(145deg, #273a58, #1b2941);
+    --empire-panel: #202e47;
+    --empire-inset: #19263d;
+    --empire-input: #1c2940;
+    --black: var(--cx-bg);
+    --off-black: var(--empire-inset);
+    --page-bg: var(--cx-bg);
+    --surf-solid: var(--cx-paper);
+    --white: var(--cx-ink);
+    --text-primary: var(--cx-ink);
+    --text: var(--cx-ink);
+    --silver: var(--cx-muted);
+    --text-secondary: var(--cx-muted);
+    --text-muted: #a8bad5;
+    --gold: var(--cx-accent);
+    --purple: #c6b6ff;
+    --good: #8de0cb;
+    --warn: #f5cc82;
+    --bad: #f8a8a7;
+    --acc-fill1: #b7ceff1f;
+    --acc-fill2: #b7ceff2e;
+    --acc-fill3: #b7ceff3a;
+    --acc-line1: #b7ceff57;
+    --acc-line2: #b7ceff75;
+    --acc-line3: #b7ceffa8;
+    --ov-1: #f3f6fc06;
+    --ov-2: #f3f6fc09;
+    --ov-3: #f3f6fc0e;
+    --ov-4: #f3f6fc14;
+    --ov-5: #f3f6fc1c;
+    --ov-6: #f3f6fc29;
+    --ov-7: #94a8c5;
+    --ov-8: #a4b6d0;
+    --ov-9: var(--cx-muted);
+    background: radial-gradient(85% 42% at 15% 0%, #7766a554, transparent 75%),
+        radial-gradient(70% 44% at 100% 8%, #326d982e, transparent 76%),
+        linear-gradient(180deg, #17233a, #131d31 55%, #111a2c);
+    color: var(--cx-ink);
+    font-family: var(--font-body, "DM Sans", system-ui, sans-serif);
+}
+
+.empire-root .empire-header {
+    background: linear-gradient(110deg, #21314bfa, #233653f2);
+    border-color: var(--gx-edge);
+    box-shadow: inset 0 1px #ffffff1f, 0 9px 28px var(--gx-shadow);
+    backdrop-filter: blur(20px) saturate(132%);
+}
+.empire-root .empire-workspace-primary {
+    background: #1f2e47b3;
+    border: 1px solid var(--gx-edge);
+    border-radius: 13px;
+    box-shadow: inset 0 1px #ffffff14;
+}
+.empire-root .empire-workspace-nav button[aria-current="page"] {
+    background: var(--acc-fill2);
+    color: var(--cx-ink);
+    box-shadow: inset 0 1px #ffffff33;
+}
+.empire-root .empire-workspace-nav button:hover { color: var(--cx-ink); }
+.empire-root .empire-workspace-primary button svg { color: var(--workspace-accent, var(--cx-accent)); }
+.empire-root [data-empire-workspace="lenses"] { --workspace-accent: #8de0cb; }
+.empire-root [data-empire-workspace="actions"] { --workspace-accent: #f5cc82; }
+.empire-root [data-empire-workspace="leagues"] { --workspace-accent: #b7ceff; }
+.empire-root [data-empire-workspace="assets"] { --workspace-accent: #c6b6ff; }
+.empire-root .empire-summary { background: var(--ov-2); }
+.empire-root .empire-rail { background: var(--empire-inset); border-color: var(--gx-edge); }
+.empire-root .empire-rail-btn::after { background: var(--empire-inset); color: var(--cx-ink); }
+.empire-root .empire-title strong,
+.empire-root .empire-detail-hero h1 {
+    color: var(--cx-ink);
+    font-family: var(--font-body);
+    font-weight: 750;
+    letter-spacing: -.035em;
+}
+
+.empire-root :is(.empire-panel, .empire-workspace, .empire-lab-entry, .empire-secondary-details, .empire-ranking-options) {
+    background: var(--empire-panel);
+    border-color: var(--gx-edge);
+    box-shadow: inset 0 1px #ffffff12;
+}
+.empire-root :is(.empire-command-primary, .empire-detail-hero) {
+    background: var(--empire-glass);
+    border-color: var(--gx-edge);
+    box-shadow: inset 0 1px #ffffff1a;
+}
+.empire-root :is(.empire-viewbar, .empire-advanced-filters, .empire-sections-sheet, .empire-quality, .empire-metric, .empire-tile, .empire-prov-tile, .empire-threat-row) {
+    background: var(--empire-inset);
+    border-color: var(--gx-edge);
+}
+.empire-root :is(.empire-kpi strong, .empire-metric strong, .empire-asset-row > :nth-child(4)) {
+    font-variant-numeric: tabular-nums;
+}
+.empire-root :is(.empire-panel-head, .empire-workspace-head, .empire-table-head) { border-color: var(--ov-6); }
+.empire-root .empire-table-head { background: var(--empire-inset); color: var(--cx-muted); }
+
+.empire-root :is(.empire-back, .empire-action, .empire-row-btn, .empire-filter, .empire-ghost, .empire-sections-btn) {
+    color: var(--cx-accent);
+    border-color: var(--gx-edge);
+    background: var(--ov-3);
+}
+.empire-root :is(.empire-back, .empire-action, .empire-row-btn, .empire-filter, .empire-ghost, .empire-sections-btn):hover {
+    color: var(--cx-ink);
+    border-color: var(--acc-line2);
+    background: var(--acc-fill1);
+}
+.empire-root :is(.empire-filter, .empire-ghost, .empire-sections-btn).is-active {
+    color: var(--cx-ink);
+    border-color: var(--acc-line2);
+    background: var(--acc-fill2);
+}
+.empire-root .empire-clear { color: var(--bad); }
+.empire-root :is(input:not([type="checkbox"], [type="range"]), select, textarea) {
+    background-color: var(--empire-input);
+    color: var(--cx-ink);
+    border-color: var(--gx-edge);
+    color-scheme: dark;
+}
+.empire-root :is(input[type="checkbox"], input[type="range"]) { accent-color: var(--cx-accent); }
+.empire-root :focus-visible { outline: 2px solid var(--cx-accent); outline-offset: 2px; }
+
+.empire-root :is(.empire-signal, .empire-move-card, .empire-decision-row, .empire-league-card, .empire-expo-row) {
+    background: var(--empire-inset);
+    border-color: var(--ov-6);
+}
+.empire-root :is(.empire-signal, .empire-move-card, .empire-decision-row, .empire-league-card) {
+    border-inline-start-color: var(--tone, var(--cx-accent));
+}
+.empire-root :is(.empire-signal, .empire-league-card, .empire-expo-row, .empire-asset-row, .empire-tile, .empire-prov-tile, .empire-threat-row):hover {
+    background: color-mix(in srgb, var(--empire-inset), var(--cx-accent) 8%);
+    border-color: var(--acc-line1);
+}
+.empire-root .empire-priority-list .empire-signal { border-inline-start: 0; background: transparent; }
+.empire-root .empire-asset-row { min-height: 52px; border-color: var(--ov-5); }
+.empire-root .empire-asset-row:nth-child(even) { background: var(--ov-2); }
+.empire-root .empire-asset-row:hover { background: var(--acc-fill1); }
+.empire-root :is(.empire-pill, .empire-filter.is-active) {
+    background: color-mix(in srgb, var(--tone, var(--cx-accent)), var(--empire-inset) 82%);
+}
+.empire-root .empire-pill { color: color-mix(in srgb, var(--tone, var(--cx-accent)), var(--cx-ink) 28%); }
+.empire-root .empire-empty { border-color: var(--gx-edge); color: var(--cx-muted); background: var(--ov-2); }
+.empire-root .empire-empty strong { font-family: var(--font-body); }
+.empire-root .empire-empty .empire-action { margin-inline-start: 8px; }
+.empire-root .empire-method { margin-top: 8px; color: var(--cx-muted); font-size: var(--text-label, .75rem); line-height: 1.4; }
+.empire-root .empire-method > summary { cursor: pointer; width: fit-content; align-content: center; }
+.empire-root .empire-method > p { margin: 0 0 8px; }
+.empire-root .empire-workspace-nav .empire-method { margin: 0 0 4px; }
+.empire-root .empire-scores { display: flex; gap: 8px; overflow: auto; margin-top: 14px; }
+.empire-root .empire-scores > span {
+    flex: 0 0 auto;
+    padding: 8px 10px;
+    border: 1px solid var(--ov-6);
+    border-radius: 8px;
+    background: var(--empire-inset);
+    color: var(--cx-muted);
+    font-size: var(--text-label, .75rem);
+    font-variant-numeric: tabular-nums;
+}
+
+.empire-root .empire-identity { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.empire-root .empire-identity-copy { display: grid; min-width: 0; }
+.empire-root .empire-identity-copy strong { color: var(--cx-ink); font-weight: 700; overflow-wrap: anywhere; }
+.empire-root .empire-identity-copy small { color: var(--cx-muted); }
+.empire-root .empire-mark {
+    display: grid;
+    place-items: center;
+    position: relative;
+    isolation: isolate;
+    flex: 0 0 34px;
+    width: 34px;
+    height: 38px;
+    margin: 0;
+    overflow: hidden;
+    border: 1px solid color-mix(in srgb, var(--mark-tone, var(--cx-accent)), var(--empire-inset) 48%);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--mark-tone, var(--cx-accent)), var(--empire-inset) 77%);
+    color: var(--cx-ink);
+    font: 750 11px/1 var(--font-body);
+}
+.empire-root .empire-mark > img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border-radius: 0;
+    object-fit: cover;
+    object-position: top;
+}
+.empire-root .empire-hero-identity > .empire-mark { flex-basis: 54px; width: 54px; height: 58px; font-size: 16px; }
+.empire-root .empire-league-card .empire-identity-copy > span { margin-top: 3px; }
+.empire-root .empire-league-card .empire-mark { display: grid; }
+.empire-root .empire-league-card > :last-child { min-width: 0; }
+.empire-root :is(.empire-asset-row, .empire-ranking-row):focus-visible { outline-offset: -3px; }
+.empire-root :is(.empire-tile, .empire-prov-tile) { max-width: none; text-align: left; }
+.empire-root .empire-tile { flex-basis: 142px; }
+.empire-root .empire-tile .empire-mark { width: 27px; flex-basis: 27px; height: 30px; }
+.empire-root .empire-tile .empire-identity-copy strong { font-size: var(--text-label, .75rem); }
+.empire-root .empire-tile .empire-identity-copy small { color: var(--cx-muted); font-size: var(--text-micro, .675rem); }
+
+@media (max-width: 767px) {
+    .empire-root .empire-workspace-primary { border-radius: 0; border-width: 1px 0 0; background: #202e47f5; }
+    .empire-root .empire-workspace-primary button { font-size: 12px; }
+    .empire-root .empire-workspace-secondary {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        scrollbar-width: thin;
+    }
+    .empire-root .empire-workspace-secondary button { flex: 0 0 auto; white-space: nowrap; }
+    .empire-root .empire-shell:not([data-workspace="lenses"]), .empire-root .empire-detail { padding: 12px 12px 20px; }
+    .empire-root .empire-command-deck .empire-panel,
+    .empire-root :is(.empire-panel, .empire-lab-entry) { padding: 12px; }
+    .empire-root .empire-panel-head { padding-bottom: 8px; margin-bottom: 6px; }
+    .empire-root .empire-detail-hero { padding: 12px; gap: 8px; }
+    .empire-root .empire-main-grid { gap: 10px; }
+    .empire-root .empire-asset-row { padding: 9px 10px; }
+    .empire-root .empire-phone-asset-meta { margin-top: 2px; font-size: 12px; line-height: 1.35; }
+    .empire-root .empire-mark { flex-basis: 32px; width: 32px; height: 36px; }
+    .empire-root .empire-league-card { min-height: 56px; }
+    .empire-root .empire-scores > span { font-size: 12px; }
+}

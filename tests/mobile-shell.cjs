@@ -109,8 +109,10 @@ assert(backStart > 0 && backEnd > backStart);
 for (const isInstalledApp of [false, true]) for (const proMode of [false, true]) {
     const actions = [], routes = [];
     let allowed = true;
+    const selectedLeague = { id: 'league-123' };
     const defaultTab = workspaces.defaultTab({ isInstalledApp });
     const navigationContext = vm.createContext({ window: { App: { NavigationGuard: { canNavigate: () => allowed } } }, proMode, defaultTab,
+        selectedLeague, rememberEmpirePrices: league => actions.push(['prices', league]),
         cancelLinkedLeagueRoute: () => actions.push('cancel'), setSelectedLeague: league => actions.push(['league', league]),
         setActiveTab: tab => actions.push(['tab', tab]), setProMode: value => actions.push(['pro', value]),
         isNavigatingRef: { current: false }, routeUrl: () => '/', history: { pushState: state => routes.push(state.view) },
@@ -118,6 +120,7 @@ for (const isInstalledApp of [false, true]) for (const proMode of [false, true])
     const leaveLeague = vm.runInContext('(' + appSource.slice(backStart, backEnd + 1) + ')', navigationContext);
     leaveLeague({ leagueSelector: true });
     assert.deepEqual(routes, ['hub'], 'Explicit league switching opens the selector even from Empire mode');
+    assert.deepEqual(actions[0], ['prices', selectedLeague], 'Leaving a league retains its verified Empire pricing');
     assert(actions.some(action => Array.isArray(action) && action[0] === 'pro' && action[1] === false));
     assert(actions.some(action => Array.isArray(action) && action[0] === 'tab' && action[1] === defaultTab));
     actions.length = 0; routes.length = 0; allowed = false;
