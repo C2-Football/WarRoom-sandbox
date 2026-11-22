@@ -29,7 +29,7 @@ const rows = classes(tree, 'tl-lineup-row');
 assert(rows.every(row => !text(row).includes('1993')), 'The true year does not appear in local roster rows');
 const editions = classes(rows, 'tl-roster-edition');
 assert(editions.every(node => text(node).includes('1990s') && text(node).includes('3 possible years')), 'Compact roster metadata keeps the public decade and uncertainty visible');
-assert(editions.every(node => node.props['aria-label'] === '1990s · hidden year · 3 possible years' && node.props.title === node.props['aria-label']), 'The complete hidden-year explanation remains available to assistive text and hover');
+assert(editions.every(node => node.props['aria-label'].startsWith('1990s · hidden year · 3 possible years') && node.props.title === node.props['aria-label']), 'The complete hidden-year explanation remains available to assistive text and hover');
 assert(rows.every(row => walk(row).some(node => node.props['aria-describedby'] === classes(row, 'tl-roster-edition')[0].props.id)), 'The history control is connected to its public edition description');
 assert.equal(classes(tree, 'tl-player-signals').length, 2);
 assert(text(tree).includes('8.0') && text(tree).includes('3 possible years'));

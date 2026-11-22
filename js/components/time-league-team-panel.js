@@ -308,13 +308,17 @@
     }
 
     function RosterSection({ league, cards, archiveCards, team, apply, logIndex, eraFactors, onBrowseWaivers, throughWeek, onStats, onNavigate, onlineMeta, onReopenPlanning }) {
+        const phone = window.WR?.useViewport ? window.WR.useViewport().isPhone : false;
         const [selectedId,setSelectedId]=useState(null);
         const [draggedId, setDraggedId] = useState(null);
         const [moveNotice, setMoveNotice] = useState('');
         const [moveChoice, setMoveChoice] = useState(null);
         const [moving, setMoving] = useState(false);
         const [comparisonOpen, setComparisonOpen] = useState(false);
+        const [undoMove, setUndoMove] = useState(null);
         const fillInFlightRef = React.useRef(false);
+        const moveInFlightRef = React.useRef(false);
+        const undoPlanRef = React.useRef(null);
         const moveRef = React.useRef(null);
         const moveTrigger = React.useRef(null);
         const dossierRef=React.useRef(null);
@@ -345,13 +349,14 @@
                 : !fillPlan ? `No eligible bench player can fill ${emptyCount === 1 ? 'the empty starting slot' : `these ${emptyCount} empty starting slots`}. Select + Add player in an empty slot to review your roster options.`
                     : `Fill ${fillPlan.moved.length} empty starting slot${fillPlan.moved.length === 1 ? '' : 's'} from your bench. Existing starters stay in place.${fillPlan.remaining ? ` ${fillPlan.remaining} other slot${fillPlan.remaining === 1 ? ' needs' : 's need'} an eligible player.` : ''}`;
         const fillEmptySlots = async () => {
-            if (!editable || moving || fillInFlightRef.current) return;
+            if (!editable || moving || fillInFlightRef.current || moveInFlightRef.current) return;
             if (!fillPlan) { setMoveNotice(fillHelp); return; }
             fillInFlightRef.current = true;
             setMoving(true);
             setMoveNotice('');
             try {
                 const saved = await apply(fillPlan.next, { type: 'auto-lineup', teamId: team.teamId });
+                if (saved !== false) setUndoMove(null);
                 const moves = fillPlan.moved.slice(0, 3).map(entry => `${entry.name} → ${slotName(entry.slot)}`).join('; ');
                 const more = fillPlan.moved.length > 3 ? `; ${fillPlan.moved.length - 3} more` : '';
                 setMoveNotice(saved === false ? 'The filled lineup was not saved. Review your current lineup and try again.'
@@ -429,19 +434,48 @@
                 return read.status === 'ready' && read.currentAvailable === false;
             });
         }, [league, team.roster, cards, logIndex, eraFactors, throughWeek, participation.requiresLineup]);
+        const slotMap = roster => new Map(roster.map(entry => [entry.entryId, entry.slot]));
+        const matchesSlots = (roster, slots) => roster.length === slots.size && roster.every(entry => slots.get(entry.entryId) === entry.slot);
+        const rosterIn = state => state.teams.find(item => item.teamId === team.teamId).roster;
+        const undoPlan = editable && undoMove?.leagueId === league.leagueId && undoMove.week === league.currentWeek
+            && undoMove.stage === league.weekStage && matchesSlots(team.roster, undoMove.expectedSlots)
+            ? Engine.setEntrySlot(league, team.teamId, undoMove.entryId, undoMove.slot, undoMove.partnerId) : null;
+        const canUndo = Boolean(undoPlan && undoPlan !== league && matchesSlots(rosterIn(undoPlan), undoMove.originalSlots));
+        undoPlanRef.current = canUndo ? undoPlan : null;
+        const applyUndo = async () => {
+            if (!canUndo || undoPlanRef.current !== undoPlan || moving || fillInFlightRef.current || moveInFlightRef.current) return;
+            const { entryId, slot, partnerId } = undoMove;
+            moveInFlightRef.current = true;
+            setMoving(true);
+            try {
+                const saved = await apply(undoPlan, { type: 'lineup', teamId: team.teamId, entryId, slot, targetEntryId: partnerId });
+                if (saved !== false) setUndoMove(null);
+                setMoveNotice(saved === false ? 'Undo was not saved. Review your lineup and try again.' : 'Lineup move undone.');
+            } catch { setMoveNotice('Undo could not be saved. Review your lineup and try again.'); }
+            finally { moveInFlightRef.current = false; setMoving(false); }
+        };
         const moveEntry = async (entryId, slot, targetEntryId) => {
+            if (moveInFlightRef.current || fillInFlightRef.current) return;
             if (!editable || moving) { setMoveNotice('Lineups open during the waiver and roster gates.'); return; }
             const next = Engine.setEntrySlot(league, team.teamId, entryId, slot, targetEntryId);
             if (next === league) { setMoveNotice('That player cannot move into this slot. Choose a compatible position.'); return; }
+            const player = team.roster.find(entry => entry.entryId === entryId);
+            const target = team.roster.find(entry => entry.entryId === targetEntryId);
+            const originalSlots = slotMap(team.roster);
+            const nextRoster = rosterIn(next);
+            const partnerId = nextRoster.find(entry => entry.entryId !== entryId && entry.slot === player.slot && originalSlots.get(entry.entryId) !== entry.slot)?.entryId;
+            moveInFlightRef.current = true;
             setMoving(true);
             try {
                 const saved = await apply(next, { type: 'lineup', teamId: team.teamId, entryId, slot, targetEntryId });
-                const player = team.roster.find(entry => entry.entryId === entryId);
-                const target = team.roster.find(entry => entry.entryId === targetEntryId);
                 setMoveNotice(saved === false ? 'Move was not saved. Review the current lineup and try again.' : target ? `${player.name} and ${target.name} swapped places.` : `${player.name} moved to ${slotName(slot)}.`);
-                if (saved !== false) setMoveChoice(null);
+                if (saved !== false) {
+                    setMoveChoice(null);
+                    setUndoMove({ leagueId: league.leagueId, week: league.currentWeek, stage: league.weekStage,
+                        entryId, slot: player.slot, partnerId, originalSlots, expectedSlots: slotMap(nextRoster) });
+                }
             } catch { setMoveNotice('Move could not be saved. Please try again.'); }
-            finally { setMoving(false); }
+            finally { moveInFlightRef.current = false; setMoving(false); }
         };
         const dropProps = (slot, targetEntryId) => ({
             onDragOver: (event) => { if (editable && draggedId) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; } },
@@ -454,7 +488,8 @@
             const fullEdition = knownYear ?? yearLabel(league, entry, cards, logIndex, eraFactors, throughWeek);
             const edition = unresolved ? window.App.TimeLeagueHiddenYears?.decadeFor(league, entry, cards) || 'Unknown decade' : fullEdition;
             const editionId = `vault-roster-edition-${league.leagueId}-${team.teamId}-${entry.entryId}`;
-            const editionDescription = `${fullEdition}${unresolved && Number.isInteger(scouting.candidateCount) ? ` · ${scouting.candidateCount} possible years` : ''}`;
+            const rating = scouting.currentAvailable === false ? 'No game' : Number.isInteger(scouting.currentStars) ? `★ ${scouting.currentStars}/5` : null;
+            const editionDescription = `${fullEdition}${unresolved && Number.isInteger(scouting.candidateCount) ? ` · ${scouting.candidateCount} possible years` : ''}${phone && rating ? ` · ${rating}` : ''}`;
             return h('div', { key: entry.entryId, className: 'tl-lineup-row tl-decision-row' + (draggedId === entry.entryId ? ' is-dragging' : ''), draggable: editable, onDragStart: (event) => { setDraggedId(entry.entryId); event.dataTransfer.setData('text/plain', entry.entryId); event.dataTransfer.effectAllowed = 'move'; }, onDragEnd: () => setDraggedId(null), ...dropProps(entry.slot, entry.entryId), style: { gridTemplateColumns: LINEUP_GRID } },
                 h('span', { className: 'tl-lineup-slot', title: slotName(slotLabel) }, slotLabel === 'SUPER_FLEX' ? 'SFLX' : slotLabel),
                 h('button', { type:'button', className: 'tl-lineup-player tl-roster-player-link', onClick:()=>setSelectedId(entry.entryId), 'aria-label':`Explore ${entry.name}'s history`, 'aria-describedby': league.seasonsRevealed ? editionId : undefined, 'aria-pressed':selectedId===entry.entryId },
@@ -462,14 +497,17 @@
                     h('span', { className: `tl-pos-badge tl-pos-${entry.position}${slotLabel === entry.position ? ' is-slot-position' : ''}`, style: { marginLeft: 6 } }, entry.position),
                     league.seasonsRevealed
                         ? h('span', { className: `meta tl-roster-edition${knownYear != null ? ' is-known' : ''}`, id: editionId, title: editionDescription, 'aria-label': editionDescription }, edition,
-                            knownYear == null && Number.isInteger(scouting.candidateCount) && h('span', { className: 'tl-roster-clue-count' }, ` · ${scouting.candidateCount} possible years`))
+                            knownYear == null && Number.isInteger(scouting.candidateCount) && h('span', { className: 'tl-roster-clue-count' }, ` · ${scouting.candidateCount} possible years`),
+                            phone && rating && h('span', { className: 'tl-roster-week-rating' }, ` · ${rating}`))
                         : h('span', { className: 'tl-pill warn', style: { marginLeft: 6 } }, 'SEALED')),
                 h('span', { className: 'tl-lineup-pts tl-lineup-remaining tabular', title: remainingTitle(scouting) },
                     Number.isFinite(scouting.remainingPoints) ? fmt1(scouting.remainingPoints) : '—', h('small', null, remainingLabel(scouting))),
+                h('span', { className: 'tl-lineup-pts tl-lineup-ppg tabular', title: 'Average points per completed Vault game' },
+                    Number.isFinite(scouting.average) ? fmt1(scouting.average) : '—'),
                 h('span', { className: 'tl-lineup-pts tl-lineup-ytd tabular', title: 'Player points through completed Vault weeks, including bench games' }, ytd.get(entry.entryId) == null ? '—' : fmt1(ytd.get(entry.entryId)), h('small', null, 'YTD PTS')),
                 h('button', { type: 'button', className: 'tl-btn tl-roster-move', 'aria-label': `Move ${entry.name}`, disabled: !editable || moving,
                     onClick: event => openMove({ entryId: entry.entryId }, event) }, 'Move'),
-                h(PlayerSignals, { league, cards, entry, logIndex, eraFactors, throughWeek, className: 'tl-roster-signals' }));
+                h(PlayerSignals, { league, cards, entry, logIndex, eraFactors, throughWeek, className: 'tl-roster-signals', read: scouting }));
         };
         const openRow = (slotLabel, key) => h('div', { key, className: 'tl-lineup-row open-slot', ...dropProps(slotLabel), style: { gridTemplateColumns: LINEUP_GRID } },
             h('span', { className: 'tl-lineup-slot', title: slotName(slotLabel) }, slotLabel === 'SUPER_FLEX' ? 'SFLX' : slotLabel),
@@ -489,6 +527,8 @@
 
         const optimal = league.phase !== 'draft' && problems.length === 0;
         const headline = league.phase === 'draft' ? 'DRAFT IN PROGRESS' : participation.kind === 'observer' ? 'ROSTER DETAILS · NOT REQUIRED THIS ROUND' : optimal ? 'LINEUP IS VALID' : `${problems.length} ISSUE${problems.length === 1 ? '' : 'S'} TO FIX`;
+        const lineupHead = () => h('div', { className: 'tl-lineup-head', style: { gridTemplateColumns: LINEUP_GRID } },
+            h('span', null, 'Slot'), h('span', null, 'Player'), h('span', { style: { textAlign: 'right' } }, phone ? 'PPG' : 'LEFT'), h('span', { style: { textAlign: 'right' } }, 'YTD'), h('span', null));
 
         const selected=team.roster.find(e=>e.entryId===selectedId);
         const dossier = selected && h('aside', { className: 'tl-roster-dossier tl-scouting-card', ref: dossierRef, tabIndex: -1, 'aria-label': 'Historical player dossier' },
@@ -537,9 +577,11 @@
         return h('div', { className: 'tl-roster-layout'+(selected?' has-selection':'') },
             h('div', { className: 'tl-roster-main' },
                 h(RosterPlanningRecovery, { league, team, onlineMeta, onReopenPlanning }),
-                league.weekStage === 'lineup' && h(WaiverBatchReceipt, { league, team, onNavigate, compact: true }),
+                !phone && league.weekStage === 'lineup' && h(WaiverBatchReceipt, { league, team, onNavigate, compact: true }),
                 h('div', { className: 'tl-roster-toolbar' },
-                    h('div', null, h('h2', null, 'My Roster'), h('p', null, `${team.name} · Week ${league.currentWeek} · ${team.roster.length}/${capacity} players · ${weeksRemaining} weeks left`)),
+                    h('div', null, !phone && h('h2', null, 'My Roster'), h('p', null, phone
+                        ? `${team.roster.length}/${capacity} players`
+                        : `${team.name} · Week ${league.currentWeek} · ${team.roster.length}/${capacity} players · ${weeksRemaining} weeks left`)),
                     h('div', { className: 'tl-roster-toolbar-actions' }, h('span', { className: `tl-roster-lineup-status ${optimal || participation.kind === 'observer' ? 'good' : 'warn'}` }, participation.kind === 'observer' ? 'No lineup required this round' : editable ? optimal ? 'Lineup legal' : `${problems.length} lineup issue${problems.length === 1 ? '' : 's'}` : league.phase === 'complete' ? 'Season complete' : 'Lineup locked'),
                         PlayerComparison && h('button', { type: 'button', className: 'tl-btn', 'aria-expanded': comparisonOpen, onClick: () => setComparisonOpen(value => !value) }, comparisonOpen ? 'Hide comparison' : 'Compare players'),
                         onStats && h('button', { type: 'button', className: 'tl-btn', onClick: onStats }, 'Player stats'),
@@ -555,22 +597,27 @@
                     rows: comparisonRows, columns: comparisonColumns, scoutingForRow: comparisonScouting,
                     workspaceKey: `vault-lineup:${league.leagueId}:${team.teamId}`, title: 'Compare lineup options', onSelect: row => setSelectedId(row.id),
                 })),
-                moveNotice && !moveChoice && h('p', { className: 'tl-roster-notice', role: 'status', 'aria-live': 'polite', 'aria-atomic': true }, moveNotice),
+                !moveChoice && (moveNotice || canUndo) && h('div', { className: 'tl-roster-move-feedback' },
+                    moveNotice && h('p', { className: 'tl-roster-notice', role: 'status', 'aria-live': 'polite', 'aria-atomic': true }, moveNotice),
+                    canUndo && h('button', { type: 'button', className: 'tl-btn', disabled: moving, 'aria-label': 'Undo lineup move', onClick: applyUndo }, 'Undo')),
                 !optimal && problems.length > 0 && h('details', { className: 'tl-roster-help tl-roster-problems' }, h('summary', null, headline), problems.map((problem, i) => h('p', { key: i }, problem))),
-                h('div', { className: 'tl-lineup-table' },
+                h('div', { className: 'tl-lineup-table tl-starting-lineup', role: 'region', 'aria-label': 'Starting lineup' },
                     h('div', { className: 'tl-lineup-table-title' }, 'Starting Lineup'),
-                    h('div', { className: 'tl-lineup-head', style: { gridTemplateColumns: LINEUP_GRID } },
-                        h('span', null, 'Slot'), h('span', null, 'Player'), h('span', { style: { textAlign: 'right' } }, 'LEFT'), h('span', { style: { textAlign: 'right' } }, 'YTD'), h('span', null)),
+                    lineupHead(),
                     starterRows),
-                league.settings.rosterSlots.BN > 0 && h('div', { className: 'tl-lineup-table' },
-                    h('div', { className: 'tl-lineup-table-title', ...dropProps('BN') }, editable ? 'Bench · drop here' : 'Bench'),
+                phone && league.weekStage === 'lineup' && h(WaiverBatchReceipt, { league, team, onNavigate, compact: true }),
+                league.settings.rosterSlots.BN > 0 && h('details', { className: 'tl-lineup-table tl-reserve-lineup', open: !phone },
+                    h('summary', { className: 'tl-lineup-table-title', ...dropProps('BN') }, phone ? `Bench · ${bench.length}` : editable ? 'Bench · drop here' : 'Bench'),
+                    phone && bench.length > 0 && lineupHead(),
                     bench.length
                         ? bench.map((entry) => entryRow(entry, 'BN'))
                         : h('p', { className: 'tl-empty', style: { padding: '10px 14px' } }, 'Bench is empty.')),
                 reserves.map((slot) => {
                     const occupants = team.roster.filter((e) => e.slot === slot);
-                    return h('div', { key: slot, className: 'tl-lineup-table' },
-                        h('div', { className: 'tl-lineup-table-title' }, slot === 'IR' ? 'Injured Reserve' : 'Taxi Squad'),
+                    const label = slot === 'IR' ? 'Injured Reserve' : 'Taxi Squad';
+                    return h('details', { key: slot, className: 'tl-lineup-table tl-reserve-lineup', open: !phone },
+                        h('summary', { className: 'tl-lineup-table-title' }, phone ? `${label} · ${occupants.length}` : label),
+                        phone && occupants.length > 0 && lineupHead(),
                         occupants.length ? occupants.map((entry) => entryRow(entry, slot)) : h('p', { className: 'tl-empty', style: { padding: '10px 14px' } }, `No entries stashed at ${slot}.`));
                 })),
             dossier,

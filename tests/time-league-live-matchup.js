@@ -86,6 +86,8 @@ const gateButton=label=>button(dock(dockProps()),label);
     const scoreRail=all(primary).find(node=>node.props.className==='tl-gameday-score-rail');
     assert(all(scoreRail).some(node=>node.props['aria-label']==='Game playback controls'), 'Playback controls remain with the score');
     assert(all(primary).some(node=>node.type?.name==='LiveLineups'), 'Every starter remains in the primary view');
+    assert(all(getLineups()).some(node => node.type === 'label' && node.props.className === 'tl-coach-details'
+        && all(node).some(input => input.type === 'input' && input.props.type === 'checkbox')), 'The mobile coach board exposes full scorer stats without leaving the matchup');
     assert(words(scoreRail).includes('Playback controls do not change the saved result'), 'Playback provenance remains visible beside the score');
     assert(points().every(value=>value==='0.00'),'Final player totals stay hidden at kickoff');
     assert(!words(getLineups()).includes('320 passing yards'));

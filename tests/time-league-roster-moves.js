@@ -140,6 +140,26 @@ const choices = tree => byClass(tree, 'tl-roster-candidate').map(node => node.pr
     assert.equal(last.next.teams[0].roster.filter(item => item.slot === 'BN').length, 4, 'A full bench remains legal after an exact swap');
     assert.equal(byClass(render(), 'tl-roster-move-sheet').length, 0, 'Successful save closes the choice sheet');
 
+    const swappedLeague = last.next;
+    assert.equal(button(render(), 'Undo lineup move'), undefined, 'Undo waits for the saved roster to arrive');
+    const moved = render({ league: swappedLeague });
+    const undo = button(moved, 'Undo lineup move');
+    assert(undo, 'A valid saved move offers inline Undo');
+    assert.equal(button(render({ league: { ...swappedLeague, weekStage: 'claims' } }), 'Undo lineup move'), undefined, 'Stage changes invalidate a previous Undo');
+    const beforeUndoAttempt = applied.length;
+    await undo.props.onClick();
+    assert.equal(applied.length, beforeUndoAttempt, 'A stale Undo callback cannot write');
+    await button(render({ league: swappedLeague }), 'Undo lineup move').props.onClick();
+    last = applied.at(-1);
+    assert.equal(last.action.targetEntryId, 'stabler');
+    assert.deepEqual(last.next.teams[0].roster.map(item => [item.entryId, item.slot]), entries.map(item => [item.entryId, item.slot]), 'Undo uses the same exact swap and restores the earlier lineup');
+
+    window.WR = { useViewport: () => ({ isPhone: true }) };
+    const compact = render();
+    assert.equal(byClass(compact, 'tl-reserve-lineup')[0].props.open, false, 'Bench starts collapsed on the phone');
+    assert(text(byClass(compact, 'tl-starting-lineup')).includes('PPG'), 'Starters show PPG above the collapsed bench');
+    window.WR = undefined;
+
     button(render(), 'Fill open TE slot').props.onClick();
     tree = render();
     assert.deepEqual(choices(tree), ['Start Shannon Sharpe at TE']);

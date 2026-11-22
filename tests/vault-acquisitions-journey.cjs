@@ -18,10 +18,10 @@ async function ready(page){await page.locator('.tl-root.tl-play').waitFor();awai
 async function tab(page,name){
     activePage=page;
     await page.bringToFront();
-    const labels={HOME:'Home',GAMEDAY:'Game day',ROSTER:'My team',WAIVERS:'Players',TRADES:'Trades',ACTIVITY:'Activity'};
+    const labels={HOME:'Home',GAMEDAY:'Game Day',ROSTER:'Lineup',WAIVERS:'Waivers',TRADES:'Trades',ACTIVITY:'Activity'};
     if(await page.locator('.tl-sidenav').isVisible()){
         const target=page.locator('.tl-sidenav').getByRole('button',{name,exact:true});if(!/\bactive\b/.test(await target.getAttribute('class')||''))await target.click();
-    }else if(['TRADES','ACTIVITY'].includes(name)){
+    }else if(name==='ACTIVITY'){
         await page.locator('.tl-mobile-nav').getByRole('button',{name:'More',exact:true}).click();await page.getByRole('dialog',{name:'More Vault views',exact:true}).getByRole('button',{name:labels[name],exact:true}).click();
     }else{
         const target=page.locator('.tl-mobile-nav').getByRole('button',{name:labels[name],exact:true});if(await target.getAttribute('aria-current')!=='page')await target.click();

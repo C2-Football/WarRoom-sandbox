@@ -939,17 +939,18 @@
             return () => { document.body.style.overflow = overflow; };
         }, [expanded]);
         useEffect(() => { if (!phone && expanded) close(); }, [phone, expanded]);
-        const primary = tabs.includes('home') ? ['home', 'roster', 'gameday', 'waivers'] : ['draft', 'activity'];
+        const inSeason = tabs.includes('home');
+        const primary = inSeason ? ['home', 'gameday', 'roster', 'waivers', 'trades'] : ['draft', 'activity'];
         const extra = tabs.filter(tab => !primary.includes(tab));
-        const labels = { home: 'Home', roster: 'My team', gameday: 'Game day', waivers: 'Players', stats: 'Player stats', draft: tabs.includes('home') ? 'Draft recap' : 'Draft', activity: 'Activity', trades: 'Trades', achievements: 'Trophies', standings: 'Command Central', messages: 'Messages', career: 'My profile', community: 'Community' };
+        const labels = { home: 'Home', roster: 'Lineup', gameday: 'Game Day', waivers: 'Waivers', stats: 'Player stats', draft: inSeason ? 'Draft recap' : 'Draft', activity: 'Activity', trades: 'Trades', achievements: 'Trophies', standings: 'Command Central', messages: 'Messages', career: 'My profile', community: 'Community' };
         const choose = tab => { close(); onNavigate(tab); };
         return h(React.Fragment, null,
             h('dialog', { ref: dialogRef, className: 'tl-mobile-more', id: 'vault-more-navigation', 'aria-label': 'More Vault views', onCancel: event => { event.preventDefault(); close(); }, onClose: close },
                 h('div', { className: 'tl-card-title' }, 'More ways to play', h('button', { className: 'tl-btn icon', 'aria-label': 'Close more navigation', autoFocus: true, onClick: close }, '×')),
                 h('div', null, extra.map(tab => h('button', { key: tab, onClick: () => choose(tab), 'aria-current': activeTab === tab ? 'page' : undefined }, h('span', { 'aria-hidden': 'true' }, TAB_ICONS[tab]), tab === 'desk' ? 'The Desk' : labels[tab], tab === 'messages' && unread > 0 ? h('em', { className: 'tl-mail-badge' }, unread) : null)),
                     onReportBug && h('button', { type: 'button', onClick: () => { close(); onReportBug(); } }, h('span', { 'aria-hidden': true }, '⚑'), 'Report a bug'))),
-            h('nav', { ref: navRef, className: 'tl-mobile-nav', 'aria-label': 'Vault game navigation' },
-                primary.map(tab => h('button', { key: tab, className: activeTab === tab ? 'active' : '', 'aria-current': activeTab === tab ? 'page' : undefined, onClick: () => choose(tab) },
+            h('nav', { ref: navRef, className: `tl-mobile-nav${inSeason ? ' is-season' : ''}`, 'aria-label': 'Vault game navigation' },
+                primary.map(tab => h('button', { key: tab, className: activeTab === tab ? 'active' : '', 'aria-current': activeTab === tab ? 'page' : undefined, onClick: () => onNavigate(tab) },
                     h('span', { 'aria-hidden': 'true' }, TAB_ICONS[tab]), h('b', null, labels[tab]))),
                 extra.length > 0 && h('button', { ref: triggerRef, 'aria-haspopup': 'dialog', className: expanded || extra.includes(activeTab) ? 'active' : '', 'aria-expanded': expanded, 'aria-controls': 'vault-more-navigation', onClick: () => setExpanded(value => !value) }, h('span', { 'aria-hidden': 'true' }, '•••'), h('b', null, 'More'), unread > 0 ? h('em', { className: 'tl-mail-badge', 'aria-label': `${unread} unread messages` }, unread) : null)));
     }

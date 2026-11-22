@@ -45,7 +45,7 @@ async function tab(page,id){
  const desktop=page.locator('.tl-sidenav .tl-tabbtn').filter({hasText:({home:'HOME',roster:'ROSTER',gameday:'GAMEDAY',messages:'MESSAGES',career:'MY PROFILE'})[id]});
  if(await desktop.first().isVisible())await desktop.first().click();
  else {
-  const labels={home:'Home',roster:'My team',gameday:'Game day',messages:'Messages',career:'My career'};
+  const labels={home:'Home',roster:'Lineup',gameday:'Game Day',messages:'Messages',career:'My profile'};
   let button=page.locator('.tl-mobile-nav').getByRole('button',{name:labels[id],exact:true});
   if(!await button.count()){await page.locator('.tl-mobile-nav').getByRole('button',{name:/^More/}).click();button=page.getByRole('dialog',{name:'More Vault views'}).getByRole('button',{name:labels[id],exact:true});}
   await button.click();

@@ -408,11 +408,111 @@
   .tl-root.tl-play .tl-live-edition-compact { display:inline; }
   .tl-root.tl-play .tl-week-action-menu { background:#17261a; }
 }
+.tl-root .tl-coach-details { display:none; }
+.tl-root.tl-play .tl-reserve-lineup > summary { cursor:pointer; }
+.tl-root.tl-play .tl-roster-layout .tl-lineup-row > .tl-lineup-ppg { display:none; }
+.tl-root.tl-play .tl-roster-move-feedback { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:0 0 8px; }
+.tl-root.tl-play .tl-roster-move-feedback .tl-roster-notice { margin:0; flex:1; }
+
+@media(max-width:767px) {
+  .tl-root.tl-play .tl-mobile-nav.is-season { padding-inline:4px; gap:1px; }
+  .tl-root.tl-play .tl-mobile-nav.is-season > button { min-height:50px; min-width:44px; padding-inline:0; gap:3px; }
+  .tl-root.tl-play .tl-mobile-nav.is-season span { font-size:17px; }
+  .tl-root.tl-play .tl-mobile-nav.is-season b { font-size:11px; white-space:nowrap; }
+  .tl-root.tl-play .tl-mobile-nav.is-season .tl-mail-badge { font-size:9px; }
+
+  .tl-root.tl-play[data-vault-tab=roster] .tl-league-bar { margin-bottom:8px; padding-bottom:7px; }
+  .tl-root.tl-play .tl-roster-toolbar { gap:4px; margin-bottom:6px; }
+  .tl-root.tl-play .tl-roster-toolbar p { margin-top:2px; }
+  .tl-root.tl-play .tl-roster-toolbar-actions { justify-content:flex-start; gap:4px; }
+  .tl-root.tl-play .tl-roster-toolbar-actions .tl-btn { padding:4px 8px; font-size:12px!important; }
+  .tl-root.tl-play .tl-roster-layout .tl-starting-lineup { margin-bottom:8px; overflow:hidden; }
+  .tl-root.tl-play .tl-starting-lineup > .tl-lineup-table-title { padding:6px 8px; font-size:12px; }
+  .tl-root.tl-play .tl-roster-layout :is(.tl-starting-lineup,.tl-reserve-lineup) > :is(.tl-lineup-head,.tl-lineup-row) {
+    grid-template-columns:28px minmax(0,1fr) 44px 40px 44px!important;
+    grid-template-rows:auto;
+    gap:4px;
+    align-items:center;
+    padding:0 6px;
+  }
+  .tl-root.tl-play .tl-roster-layout :is(.tl-starting-lineup,.tl-reserve-lineup) > .tl-lineup-head { display:grid!important; min-height:24px; }
+  .tl-root.tl-play .tl-roster-layout .tl-lineup-head span { font-size:10px; }
+  .tl-root.tl-play .tl-roster-layout :is(.tl-starting-lineup,.tl-reserve-lineup) > .tl-lineup-row { min-height:45px; }
+  .tl-root.tl-play .tl-roster-layout .tl-lineup-row > .tl-lineup-slot { font-size:11px; }
+  .tl-root.tl-play .tl-roster-layout .tl-lineup-player { min-height:44px; }
+  .tl-root.tl-play .tl-roster-layout .tl-lineup-player .name { font-size:14px!important; line-height:1.13; }
+  .tl-root.tl-play .tl-roster-layout .tl-lineup-player .meta { font-size:11px!important; line-height:1.15!important; }
+  .tl-root.tl-play .tl-roster-layout .tl-lineup-player .tl-pos-badge { font-size:9px!important; }
+  .tl-root.tl-play .tl-roster-layout :is(.tl-roster-clue-count,.tl-lineup-pts small) { display:none; }
+  .tl-root.tl-play .tl-roster-layout .tl-roster-week-rating { color:var(--tl-accent,var(--gold)); white-space:nowrap; }
+  .tl-root.tl-play .tl-roster-layout .tl-lineup-row > :is(.tl-lineup-ppg,.tl-lineup-ytd) { display:block!important; font-size:12px; letter-spacing:0; }
+  .tl-root.tl-play .tl-roster-layout :is(.tl-starting-lineup,.tl-reserve-lineup) .tl-lineup-row > .tl-roster-move {
+    grid-column:5; width:44px; min-width:44px; min-height:44px; padding:0; font-size:11px!important;
+  }
+  .tl-root.tl-play .tl-roster-layout :is(.tl-starting-lineup,.tl-reserve-lineup) .tl-decision-row > .tl-roster-signals { display:none!important; }
+  .tl-root.tl-play .tl-starting-lineup .open-slot > .tl-roster-open-slot { grid-column:2/-1; }
+  .tl-root.tl-play .tl-reserve-lineup > summary { min-height:44px; padding:6px 8px; }
+
+  .tl-root.tl-play .tl-waiver-heading { flex-direction:row; align-items:center; padding:8px 10px; margin-bottom:6px; }
+  .tl-root.tl-play .tl-waiver-summary { gap:5px; margin-bottom:8px; }
+  .tl-root.tl-play .tl-waiver-summary-item { padding:6px 8px; }
+  .tl-root.tl-play .tl-waiver-market { padding:8px; }
+  .tl-root.tl-play .tl-waiver-table :is(.tl-waiver-player,.tl-waiver-action) { padding-block:5px; }
+  .tl-root.tl-play .tl-waiver-table td strong { font-size:14px; }
+  .tl-root.tl-play .tl-waiver-mobile-totals { margin-top:1px; }
+  .tl-root.tl-play .tl-trade-toolbar { gap:6px; padding:8px; margin-bottom:8px; }
+  .tl-root.tl-play .tl-trade-toolbar > div:first-child { display:none; }
+  .tl-root.tl-play .tl-trade-tabs { width:100%; }
+  .tl-root.tl-play .tl-trade-tabs .tl-btn { flex:1; padding-inline:5px; font-size:12px!important; }
+  .tl-root.tl-play .tl-trade-builder { padding:8px; }
+  .tl-root.tl-play .tl-trade-player { min-height:44px; padding-block:4px; }
+
+  .tl-root.tl-play .tl-live-lineups-title { flex-wrap:nowrap; padding:4px 8px; }
+  .tl-root.tl-play .tl-live-lineups-title h3 { font-size:16px; }
+  .tl-root.tl-play .tl-coach-details { display:flex; align-items:center; gap:4px; min-height:44px; font-size:12px; white-space:nowrap; cursor:pointer; }
+  .tl-root.tl-play .tl-coach-details input { width:16px; min-height:16px; height:16px; margin:0; accent-color:var(--mint); }
+  .tl-root.tl-play .tl-live-lineups:not(:has(.tl-coach-details input:checked)) .tl-live-lineup-row {
+    background:repeating-linear-gradient(90deg,transparent 0 calc(10% - 1px),#94aa8c1f calc(10% - 1px) 10%),#213127;
+  }
+  .tl-root.tl-play .tl-live-lineups:not(:has(.tl-coach-details input:checked)) .tl-live-lineup-slot {
+    align-self:center;
+    justify-self:center;
+    padding:4px 2px;
+    background:#152019;
+    border:1px solid #768767;
+    border-radius:5px;
+    font-size:10px;
+  }
+  .tl-root.tl-play .tl-live-lineups:not(:has(.tl-coach-details input:checked)) .tl-live-player {
+    grid-template-columns:minmax(0,1fr) auto;
+    grid-template-rows:auto auto;
+    gap:1px 4px;
+    min-height:46px;
+    padding:4px 6px;
+  }
+  .tl-root.tl-play .tl-live-lineups:not(:has(.tl-coach-details input:checked)) .tl-live-player.is-right { grid-template-columns:auto minmax(0,1fr); }
+  .tl-root.tl-play .tl-live-lineups:not(:has(.tl-coach-details input:checked)) .tl-live-player-name > strong {
+    grid-column:1; grid-row:1; min-width:0; font-size:13px; line-height:1.15; overflow-wrap:anywhere;
+  }
+  .tl-root.tl-play .tl-live-lineups:not(:has(.tl-coach-details input:checked)) .tl-live-player-name > .tl-live-player-edition {
+    grid-column:1; grid-row:2; justify-self:start; font-size:11px!important;
+  }
+  .tl-root.tl-play .tl-live-lineups:not(:has(.tl-coach-details input:checked)) .tl-live-player-points {
+    grid-column:2; grid-row:1 / 3; align-self:center; font-size:13px;
+  }
+  .tl-root.tl-play .tl-live-lineups:not(:has(.tl-coach-details input:checked)) .tl-live-player.is-right :is(.tl-live-player-name > strong,.tl-live-player-name > .tl-live-player-edition) {
+    grid-column:2; justify-self:end; text-align:right;
+  }
+  .tl-root.tl-play .tl-live-lineups:not(:has(.tl-coach-details input:checked)) .tl-live-player.is-right .tl-live-player-points { grid-column:1; grid-row:1 / 3; }
+  .tl-root.tl-play .tl-live-lineups:not(:has(.tl-coach-details input:checked)) :is(.tl-live-availability,.tl-live-player-stats.is-no-game) { font-size:10px!important; }
+  .tl-root.tl-play .tl-live-lineups:not(:has(.tl-coach-details input:checked)) .tl-live-player-stats:not(.is-no-game) { display:none; }
+}
 /* Short landscape keeps both navigation and the current week action in reach. */
 @media(min-width:520px) and (max-width:767px) and (max-height:500px) {
   .tl-root.tl-play { --tl-mobile-nav-space:calc(53px + env(safe-area-inset-bottom,0px)); }
   .tl-root.tl-play .tl-mobile-nav { padding:4px 6px calc(4px + env(safe-area-inset-bottom,0px)); }
   .tl-root.tl-play .tl-mobile-nav > button { min-height:44px; flex-direction:row; gap:6px; }
+  .tl-root.tl-play .tl-mobile-nav.is-season > button { min-height:44px; gap:4px; }
   .tl-root.tl-play .tl-mobile-nav span { font-size:18px; }
   .tl-root.tl-play .tl-week-action-row { padding:6px 12px; }
   .tl-root.tl-play .tl-week-action-inner { grid-template-columns:minmax(0,1fr) auto auto; gap:8px; }

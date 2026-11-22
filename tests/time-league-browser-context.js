@@ -63,7 +63,7 @@ const eraNode = tree => walk(tree).find(node => typeof node.type === 'function' 
 let passed = 0;
 const test = (name, fn) => { fn(); passed++; console.log('ok ' + name); };
 
-test('Trades precedes Player stats in the real desktop and mobile overflow navigation across season contexts', () => {
+test('Lineup, Waivers and Trades each have a direct mobile destination in every season stage', () => {
     for (const phase of ['season', 'complete']) for (const weekStage of ['claims', 'lineup', 'ready', 'postgame']) {
         const draw = mount(fixture({ phase, weekStage }));
         let tree = draw();
@@ -74,10 +74,12 @@ test('Trades precedes Player stats in the real desktop and mobile overflow navig
         const mobileNode = walk(tree).find(node => node.type?.name === 'MobileGameNav');
         phone = true;
         const mobile = renderHelper(mobileNode), more = walk(mobile).find(node => node.type === 'dialog');
-        const mobileLabels = walk(more).filter(node => node.type === 'button').map(text);
-        assert(mobileLabels.findIndex(value => value.trim().endsWith('Trades')) < mobileLabels.findIndex(value => value.trim().endsWith('Player stats')));
-        button(more, 'Trades').props.onClick(); tree = draw();
-        assert.equal(component(tree, 'Team').props.section, 'trades', 'The ordered destination still opens its actual workspace');
+        const dock = byClass(mobile, 'tl-mobile-nav');
+        assert(!button(more, 'Trades') && button(more, 'Player stats'));
+        for (const [label, section] of [['Lineup', 'roster'], ['Waivers', 'waivers'], ['Trades', 'trades']]) {
+            button(dock, label).props.onClick(); tree = draw();
+            assert.equal(component(tree, 'Team').props.section, section, `${label} opens its actual workspace`);
+        }
         assert.equal(byClass(tree, 'tl-sidenav').children.flat(Infinity).find(node => node?.type === 'button' && text(node).includes('TRADES')).props['aria-current'], 'page');
         phone = false;
     }

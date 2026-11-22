@@ -65,10 +65,12 @@
                 entry?.availabilityUpdate && h('small', { className: 'tl-live-availability', role: 'status' },
                     entry.availabilityUpdate.status === 'out' ? 'OUT · VAULT SIMULATION' : 'NO RECORDED APPEARANCE')),
             h('strong', { className: 'tl-live-player-points tabular' }, entry ? entry.points.toFixed(2) : '—'),
-            entry && h('span', { className: `tl-live-player-stats${!weekData && !final ? ' is-pregame' : ''}` }, Gamecast.describeStats(entry.stats || {}, 2) || (final ? entry.stats ? 'No scoring stats' : 'No game recorded' : weekData ? 'No scoring yet' : 'Awaiting kickoff')));
+            entry && h('span', { className: `tl-live-player-stats${!weekData && !final ? ' is-pregame' : ''}${final && !entry.stats && !entry.availabilityUpdate ? ' is-no-game' : ''}` }, Gamecast.describeStats(entry.stats || {}, 2) || (final ? entry.stats ? 'No scoring stats' : 'No game recorded' : weekData ? 'No scoring yet' : 'Awaiting kickoff')));
         };
         return h('section', { className: `tl-live-lineups${unpaired ? ' is-unpaired' : ''}`, 'aria-label': unpaired ? 'Starting lineup on a regular-season bye' : 'Head-to-head starting lineups' },
-            h('div', { className: 'tl-live-lineups-title' }, h('h3', null, unpaired ? 'Your scoring lineup' : 'Lineup matchup'), h('small', null, final ? 'FINAL POINTS' : weekData ? 'LIVE POINTS' : 'STARTERS')),
+            h('div', { className: 'tl-live-lineups-title' },
+                h('h3', null, unpaired ? 'Your scoring lineup' : 'Lineup matchup'), h('small', null, final ? 'FINAL POINTS' : weekData ? 'LIVE POINTS' : 'STARTERS'),
+                h('label', { className: 'tl-coach-details' }, h('input', { type: 'checkbox' }), 'Full stats')),
             h('p', { className: 'tl-live-phone-context' }, [!weekData && !final ? 'Awaiting kickoff' : null, concealed ? 'Hidden-year mode' : null].filter(Boolean).join(' · ')),
             h('div', { className: 'tl-live-lineups-head' }, h('strong', null, sides[0].team?.name || ids[0]), h('span', null, unpaired ? 'NO HEAD-TO-HEAD' : 'VS'), !unpaired && h('strong', null, sides[1].team?.name || ids[1])),
             rows.map(item => h('div', { key: `${item.slot}:${item.index}`, className: 'tl-live-lineup-row' },

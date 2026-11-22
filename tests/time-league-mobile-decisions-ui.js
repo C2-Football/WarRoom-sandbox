@@ -93,7 +93,7 @@ async function test(name, fn) { reset(); await fn(); count++; console.log(`  ok 
         const card = cards.get('player:0-RB'); cards.set(card.identity, { ...card, seasons: [card.seasons[0], { ...card.seasons[0], season: 2001 }] });
         const tree = render('roster'), row = walk(tree).find(node => hasClass(node, 'tl-lineup-row') && copy(node).includes('0 RB'));
         const meta = walk(row).find(node => hasClass(node, 'tl-roster-edition'));
-        assert.equal(copy(meta), '2000s  · 2 possible years'); assert(!copy(meta).includes('hidden year'));
+        assert.equal(copy(meta).trim(), '2000s  · 2 possible years'); assert(!copy(meta).includes('hidden year'));
         assert(meta.props['aria-label'].includes('2000s · hidden year · 2 possible years')); assert.equal(meta.props.title, meta.props['aria-label']);
         assert.equal(button(row, "Explore 0 RB's history").props['aria-describedby'], meta.props.id);
     });
