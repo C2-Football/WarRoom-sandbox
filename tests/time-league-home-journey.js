@@ -12,6 +12,7 @@ global.React = {
 global.TimeLeagueHelmetIcon = () => null;
 global.WrTimeLeagueStandingsPanel = () => null;
 global.WrTimeLeagueCeremony = () => ({ type: 'section', props: { 'aria-label': 'Championship ceremony' }, children: ['Saved champion'] });
+require('../js/components/time-league-postseason-desk.js');
 require('../js/components/time-league-home-panel.js');
 const Engine = App.TimeLeagueEngine;
 const walk = node => !node || typeof node !== 'object' ? [] : Array.isArray(node) ? node.flatMap(walk) : [node, ...walk(node.children)];

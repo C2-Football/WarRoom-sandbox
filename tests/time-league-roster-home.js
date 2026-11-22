@@ -10,6 +10,7 @@ global.React = {
     useRef: () => ({ current: null }), useEffect: () => {}, Fragment: 'fragment',
 };
 global.TimeLeagueHelmetIcon = () => null;
+require('../js/components/time-league-postseason-desk.js');
 for (const module of ['standings', 'home', 'team']) require('../js/components/time-league-' + module + '-panel.js');
 const E = App.TimeLeagueEngine, S = App.TimeLeagueSeason;
 let league = E.createTimeLeague({ name: 'UI smoke', seed: 'ui', createdAt: '2026-01-01', settings: { gameDeckVersion: 0, hiddenYears: false, rosterSlots: { QB: 1, BN: 1 }, regularSeasonWeeks: 12, playoffTeams: 4, scoring: { passTd: 4, reception: .5, rushRecYd: .1, passingYd: .04, turnover: -2 } }, seats: Array.from({ length: 4 }, (_, i) => ({ name: 'Team ' + i, manager: i ? 'ai' : 'human' })) });
@@ -19,6 +20,78 @@ const home = JSON.stringify(render(() => WrTimeLeagueHomePanel({ league, onNavig
 assert(home.includes('Playoff Hunt')); assert(!home.includes('League briefing')); assert(!home.includes('Command Central'));
 states = [];
 assert(!JSON.stringify(render(() => WrTimeLeagueHomePanel({ league: { ...league, currentWeek: 1 }, onNavigate: () => {} }))).includes('Playoff Hunt'));
+
+function verifyPostseasonDesk(count) {
+    const playoffRounds = Math.log2(count);
+    const regularSeasonWeeks = 14 - playoffRounds;
+    const game = E.createTimeLeague({
+        name: `${count}-team bracket`, seed: `desk-${count}`, createdAt: '2026-01-01',
+        settings: { ...league.settings, regularSeasonWeeks, playoffTeams: count, draftOrderMode: 'random' },
+        seats: Array.from({ length: Math.max(count, 4) }, (_, index) => ({ name: `Club ${index + 1}`, manager: index ? 'ai' : 'human' })),
+    });
+    const strength = new Map(game.teams.map((team, index) => [team.teamId, 100 - index * 7]));
+    const teamId = game.teams[0].teamId;
+    const finals = game.schedule.map(({ week, pairs }) => ({
+        week,
+        results: game.teams.map(team => ({
+            teamId: team.teamId,
+            total: strength.get(team.teamId),
+            starters: [{ name: 'Visible starter', position: 'QB', points: strength.get(team.teamId),
+                get drawnSeason() { throw new Error('The Desk opened a sealed edition'); } }],
+        })),
+        matchups: pairs.map(([home, away]) => ({
+            home, away, homePoints: strength.get(home), awayPoints: strength.get(away),
+            winner: strength.get(home) > strength.get(away) ? home : away,
+        })),
+    }));
+    const state = { ...game, phase: 'season', currentWeek: regularSeasonWeeks, finalizedWeeks: finals.slice(0, -1) };
+    const { buildDesk } = App.TimeLeaguePostseasonDesk;
+    const race = buildDesk(state, teamId);
+    assert.equal(race.remaining, 1);
+    assert.equal(race.field[0].status, 'Clinched');
+    if (count < game.teams.length) assert.equal(race.field.at(-1).status, 'Eliminated');
+    assert.equal(race.rounds.length, 0);
+
+    state.finalizedWeeks = finals;
+    state.currentWeek = regularSeasonWeeks + 1;
+    const bracket = buildDesk(state, teamId);
+    assert.equal(bracket.rounds[0].matches.length, count / 2);
+    assert.equal(bracket.rounds[0].past, false);
+    assert.equal(bracket.rounds[0].matches[0].positionEdge.position, 'QB');
+    assert.equal(bracket.rounds[0].matches[0].home.recent.games, 3);
+    assert(bracket.rounds[0].matches[0].opponentRates.every(Number.isFinite));
+    assert(bracket.rounds[0].matches[0].lastMeeting.includes('Last meeting'));
+    assert(!JSON.stringify(bracket).includes('drawnSeason'));
+
+    const hiddenFinal = { week: state.currentWeek, get matchups() { throw new Error('The Desk read an undisclosed result'); } };
+    const hidden = buildDesk({ ...state, currentWeek: state.currentWeek + 1, finalizedWeeks: [...finals, hiddenFinal] }, teamId, regularSeasonWeeks);
+    assert.deepStrictEqual(hidden, bracket);
+
+    for (let round = 0; round < playoffRounds; round++) {
+        const week = state.currentWeek;
+        const pairs = E.playoffPairs(state, week);
+        state.finalizedWeeks = [...state.finalizedWeeks, { week, results: [], matchups: pairs.map(([home, away], index) => ({
+            home, away, homePoints: index === 0 ? 95 : 94.96, awayPoints: 95, winner: index === 0 ? home : away,
+        })) }];
+        state.currentWeek++;
+    }
+    state.phase = 'complete';
+    const recap = buildDesk(state, teamId);
+    assert.equal(recap.rounds.length, playoffRounds);
+    assert.equal(recap.rounds.at(-1).name, 'Championship');
+    assert.equal(recap.champion, game.teams[0].name);
+    assert.equal(recap.rounds[0].matches[0].margin, 0);
+    if (count > 2) {
+        assert.equal(recap.rounds[0].matches[1].margin, 4);
+        assert(recap.rounds[0].matches[1].upset);
+    }
+    const opened = [];
+    const recapView = WrTimeLeaguePostseasonDesk({ desk: recap, onInspectScore: week => opened.push(week) });
+    const boxScore = walk(recapView).find(node => node.type === 'button' && node.children.includes('Week 14 box scores →'));
+    boxScore.props.onClick();
+    assert.deepStrictEqual(opened, [14]);
+}
+
 const entries = [{ entryId: 'start', identity: 'qb:a', name: 'Starter', position: 'QB', drawnSeason: 2000, slot: 'QB' }, { entryId: 'bench', identity: 'qb:b', name: 'Reserve', position: 'QB', drawnSeason: 2000, slot: 'BN' }];
 league.teams[0].roster = entries;
 const cards = new Map(entries.map(entry => [entry.identity, { identity: entry.identity, seasons: [{ season: 2000, points: 100 }] }]));
@@ -28,6 +101,7 @@ let applied;
 states = [];
 const roster = () => render(() => WrTimeLeagueTeamPanel({ league, cards, section: 'roster', activeTeamId: league.teams[0].teamId, onSelectTeam: () => {}, onUpdate: (next, action) => { applied = { next, action }; }, logIndex: index }));
 const walk = node => !node || typeof node !== 'object' ? [] : Array.isArray(node) ? node.flatMap(walk) : [node, ...walk(node.children)];
+[2, 4, 8].forEach(verifyPostseasonDesk);
 let tree = roster();
 assert(JSON.stringify(tree).includes('Avg pts / game')); assert(JSON.stringify(tree).includes('W7 game rating'));
 assert(!JSON.stringify(tree).includes('Lineup tips & scouting'));

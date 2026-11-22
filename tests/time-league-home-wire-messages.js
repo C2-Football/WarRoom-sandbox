@@ -13,6 +13,7 @@ global.React = {
 global.localStorage = { getItem: () => null, setItem: () => { throw new Error('Read-only views cannot save new mail'); } };
 global.TimeLeagueHelmetIcon = () => null;
 global.WrTimeLeagueStandingsPanel = () => null;
+require('../js/components/time-league-postseason-desk.js');
 require('../js/components/time-league-home-panel.js');
 require('../js/components/time-league-rivals-panel.js');
 const walk = node => !node || typeof node !== 'object' ? [] : Array.isArray(node) ? node.flatMap(walk) : [node, ...walk(node.children)];

@@ -12,6 +12,7 @@ global.React = {
 };
 global.TimeLeagueHelmetIcon = () => null;
 global.WrTimeLeagueStandingsPanel = () => null;
+require('../js/components/time-league-postseason-desk.js');
 require('../js/components/time-league-home-panel.js');
 require('../js/components/time-league-gamecast-panel.js');
 const E = App.TimeLeagueEngine, G = App.TimeLeagueGamecast, S = App.TimeLeagueSeason;

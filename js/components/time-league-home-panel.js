@@ -156,16 +156,8 @@
                     : { tab: ready ? 'gameday' : 'roster', label: ready ? 'Go to game day →' : 'Review lineup issue →', detail: ready ? 'Lineup locked. Review the matchup, then start game day with the week actions below.' : 'The locked lineup needs attention. Lineups must reopen before you can make changes.' };
         const showWaiverDecision = !watchingPlayoffs && league.settings.waiversEnabled && stage === 'claims';
         const showTradeDecision = !watchingPlayoffs && league.settings.tradesEnabled && (stage === 'claims' || (stage === 'lineup' && openTrades > 0));
-        const playoffCount = Engine.playoffCount(league);
-        const showHunt = playoffCount > 0 && league.currentWeek > Math.floor(league.settings.regularSeasonWeeks / 2);
-        const remaining = Math.max(0, league.settings.regularSeasonWeeks - league.finalizedWeeks.filter(week => week.week <= league.settings.regularSeasonWeeks).length);
-        const playoffHunt = showHunt && h('section', { className: 'tl-card tl-playoff-hunt' },
-            h('div', { className: 'tl-card-title' }, h('span', null, '🏆 Playoff Hunt'), h('small', null, remaining ? `${remaining} regular-season games left · Top ${playoffCount} advance` : 'Postseason field')),
-            h('p', { className: 'tl-hint' }, remaining ? 'The field if the season ended today. The line separates playoff seeds from the chase; standings can still change.' : champion ? `${champion.name} is your champion.` : 'The regular season is settled. Follow the bracket through game day.'),
-            h('div', { className: 'tl-hunt-field' }, standings.map((row, index) => h('div', { key: row.teamId, className: 'tl-hunt-team' + (index < playoffCount ? ' in-field' : '') + (index === playoffCount ? ' cut-line' : '') },
-                h('span', { className: 'tl-hunt-seed' }, index < playoffCount ? `#${index+1}` : 'Chasing'),
-                h('strong', null, teamName(row.teamId)), h('span', null, `${row.wins}–${row.losses}${row.ties ? '–'+row.ties : ''}`), h('small', null, `${row.pointsFor.toFixed(1)} PF`)))),
-            !remaining && league.currentWeek <= Engine.seasonEndWeek(league) && h('div', { className: 'tl-hunt-bracket' }, Engine.playoffPairs(league, league.currentWeek).map((pair, index) => h('div', { key: index }, h('small', null, `WEEK ${league.currentWeek}`), h('strong', null, pair.map(teamName).join(' vs. '))))));
+        const desk = useMemo(() => window.App.TimeLeaguePostseasonDesk.buildDesk(league, myTeam.teamId, throughWeek), [league, myTeam.teamId, throughWeek]);
+        const postseasonDesk = desk && h(window.WrTimeLeaguePostseasonDesk, { desk, onNavigate, onInspectScore, showEntry: true });
 
         if (postgame && league.phase === 'season' && justFinished) {
             const finishedKind = Engine.weekParticipation(league, myTeam.teamId, justFinished.week).kind;
@@ -200,6 +192,7 @@
                     h('div', { className: 'tl-update-results', 'aria-label': `Week ${justFinished.week} results` }, justFinished.matchups.map(match =>
                         h('div', { key: `${match.home}:${match.away}`, className: 'tl-update-match' }, h('small', null, 'FINAL'),
                             [[match.home, match.homePoints], [match.away, match.awayPoints]].map(([id, points]) => h('div', { key: id, className: match.winner === id ? 'winner' : '' }, h('span', null, teamName(id)), h('strong', null, points.toFixed(2)))))))),
+                postseasonDesk,
                 h('details', { className: 'tl-home-secondary' }, h('summary', null, 'Updated standings & team profiles'), h(window.WrTimeLeagueStandingsPanel, { league, embedded: true })))));
         }
 
@@ -250,8 +243,8 @@
                 })),
 
             h('div', { className: 'tl-home-dashboard-grid' },
-            h('div', { className: 'tl-home-standings-workspace' }, playoffHunt,
-                (showHunt || phone) ? h('details', { className: 'tl-home-secondary' }, h('summary', null, 'Full standings & team details'), h(window.WrTimeLeagueStandingsPanel, { league: visibleLeague, onNavigate, embedded: true })) : h(window.WrTimeLeagueStandingsPanel, { league: visibleLeague, onNavigate, embedded: true })),
+            h('div', { className: 'tl-home-standings-workspace' }, postseasonDesk,
+                (desk || phone) ? h('details', { className: 'tl-home-secondary' }, h('summary', null, 'Full standings & team details'), h(window.WrTimeLeagueStandingsPanel, { league: visibleLeague, onNavigate, embedded: true })) : h(window.WrTimeLeagueStandingsPanel, { league: visibleLeague, onNavigate, embedded: true })),
             h('section', { className: 'tl-home-recap-grid' },
                 h('article', { className: 'tl-card tl-league-update' },
                     h('header', { className: 'tl-league-update-heading' }, h('div', null, h('small', { className: 'tl-home-wire-masthead' }, 'THE VAULT WIRE'), h('h2', null, 'League update')),

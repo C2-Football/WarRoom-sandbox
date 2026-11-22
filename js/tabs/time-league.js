@@ -31,14 +31,14 @@
     const REGULAR_SEASON_WEEKS = 14;
     const MAX_QUARTERBACKS = 2;
 
-    const TAB_IDS = ['home', 'draft', 'gameday', 'roster', 'waivers', 'trades', 'stats', 'achievements', 'messages', 'career', 'community', 'activity'];
+    const TAB_IDS = ['home', 'draft', 'gameday', 'roster', 'waivers', 'trades', 'stats', 'achievements', 'messages', 'career', 'community', 'activity', 'desk'];
     const TAB_LABELS = {
         home: 'HOME', draft: 'DRAFT', gameday: 'GAMEDAY', roster: 'ROSTER', waivers: 'WAIVERS', stats: 'PLAYER STATS',
-        trades: 'TRADES', achievements: 'ACHIEVEMENTS', messages: 'MESSAGES', career: 'MY PROFILE', community: 'COMMUNITY', standings: 'COMMAND CENTRAL', activity: 'ACTIVITY',
+        trades: 'TRADES', achievements: 'ACHIEVEMENTS', messages: 'MESSAGES', career: 'MY PROFILE', community: 'COMMUNITY', standings: 'COMMAND CENTRAL', activity: 'ACTIVITY', desk: 'THE DESK',
     };
     const TAB_ICONS = {
         home: '⌂', draft: '▤', gameday: '▶', roster: '♙', waivers: '+', stats: '▥', trades: '⇄',
-        achievements: '♛', messages: '✉', career: '★', community: '◎', standings: '≡', activity: '◷',
+        achievements: '♛', messages: '✉', career: '★', community: '◎', standings: '≡', activity: '◷', desk: '▦',
     };
     const gateWorkspace = (league, previousStage) => previousStage === 'postgame' && league.weekStage !== 'postgame' ? 'home' : league.weekStage === 'claims'
         ? league.settings.waiversEnabled ? 'waivers' : league.settings.tradesEnabled ? 'trades' : 'roster'
@@ -946,7 +946,7 @@
         return h(React.Fragment, null,
             h('dialog', { ref: dialogRef, className: 'tl-mobile-more', id: 'vault-more-navigation', 'aria-label': 'More Vault views', onCancel: event => { event.preventDefault(); close(); }, onClose: close },
                 h('div', { className: 'tl-card-title' }, 'More ways to play', h('button', { className: 'tl-btn icon', 'aria-label': 'Close more navigation', autoFocus: true, onClick: close }, '×')),
-                h('div', null, extra.map(tab => h('button', { key: tab, onClick: () => choose(tab), 'aria-current': activeTab === tab ? 'page' : undefined }, h('span', { 'aria-hidden': 'true' }, TAB_ICONS[tab]), labels[tab], tab === 'messages' && unread > 0 ? h('em', { className: 'tl-mail-badge' }, unread) : null)),
+                h('div', null, extra.map(tab => h('button', { key: tab, onClick: () => choose(tab), 'aria-current': activeTab === tab ? 'page' : undefined }, h('span', { 'aria-hidden': 'true' }, TAB_ICONS[tab]), tab === 'desk' ? 'The Desk' : labels[tab], tab === 'messages' && unread > 0 ? h('em', { className: 'tl-mail-badge' }, unread) : null)),
                     onReportBug && h('button', { type: 'button', onClick: () => { close(); onReportBug(); } }, h('span', { 'aria-hidden': true }, '⚑'), 'Report a bug'))),
             h('nav', { ref: navRef, className: 'tl-mobile-nav', 'aria-label': 'Vault game navigation' },
                 primary.map(tab => h('button', { key: tab, className: activeTab === tab ? 'active' : '', 'aria-current': activeTab === tab ? 'page' : undefined, onClick: () => choose(tab) },
@@ -1762,6 +1762,8 @@
         const tabs = league.phase === 'draft'
             ? ['draft', 'messages', 'career', 'community', 'activity']
             : ['home', 'gameday', 'roster', 'waivers', 'trades', 'stats', 'draft', 'messages', 'career', 'community', 'activity'];
+        const Desk = window.App.TimeLeaguePostseasonDesk;
+        if (Desk?.canShowDesk(league)) tabs.splice(2, 0, 'desk');
         // Keep old trophy links and saved view preferences working inside My Profile.
         const activeTab = tab === 'achievements' && league.phase !== 'draft' ? 'career' : tabs.includes(tab) ? tab : tabs[0];
         const profileAchievements = activeTab === 'career' && tab === 'achievements';
@@ -1784,6 +1786,11 @@
         // Replaying a finished week must not roll the live season's stats or
         // conversations backwards. Only first-time playback needs a spoiler cap.
         const mailThroughWeek = watching && !playback.replay ? playback.week - 1 : undefined;
+        const desk = activeTab === 'desk' ? Desk?.buildDesk(league, responseTeam, mailThroughWeek) : null;
+        const inspectScore = week => {
+            setScoreRequest(previous => ({ leagueId: league.leagueId, week, requestId: (previous?.requestId || 0) + 1 }));
+            navigateTab('gameday');
+        };
         const unreadMail = Mail ? Mail.unreadMessages(presentedMail.league, responseTeam, mailReads[mailKey] || Mail.readIds(league.leagueId, responseTeam), mailThroughWeek) : [];
         const openMail = teamId => {
             setMailThread(teamId ? { key: mailKey, teamId } : null);
@@ -1887,8 +1894,13 @@
                     h('h2', null, `Week ${playback.week} is still in progress`), h('p', null, 'Your week recap opens after the final whistle.'),
                     h('button', { className: 'tl-btn primary', onClick: () => navigateTab('gameday') }, 'Watch game'))
                     : activeTab === 'home' && HomePanel ? h(HomePanel, { league, onNavigate: navigateTab,
-                        onInspectScore: week => { setScoreRequest(previous => ({ leagueId: league.leagueId, week, requestId: (previous?.requestId || 0) + 1 })); navigateTab('gameday'); },
+                        onInspectScore: inspectScore,
                         seatTeamId: responseTeam, cards, logIndex, eraFactors, throughWeek: mailThroughWeek }) : null,
+                activeTab === 'desk' && (desk && window.WrTimeLeaguePostseasonDesk
+                    ? h(window.WrTimeLeaguePostseasonDesk, { desk, onNavigate: navigateTab, onInspectScore: inspectScore })
+                    : h('section', { className: 'tl-card' }, h('h2', null, 'The Desk'),
+                        h('p', null, 'Coverage updates after the final whistle.'),
+                        h('button', { type: 'button', className: 'tl-btn', onClick: () => navigateTab('gameday') }, 'Watch game'))),
                 activeTab === 'draft' ? (cardsReady && DraftPanel ? h(DraftPanel, {
                     key: league.leagueId, league, cards, logIndex, eraFactors, throughWeek: mailThroughWeek, onUpdate: (next, action) => handleUpdate(next, action, { base: league }), onlineMeta, onRevealReadyChange: onDraftRevealReady, onDraftAction: dispatchDraft, onRevealEra: onlineMeta ? revealOnlineEra : undefined,
                     draftControls: league.phase === 'draft' && DraftClock && h(DraftClock, { league, onlineMeta, saving, onAction: dispatchDraft }),

@@ -1,0 +1,53 @@
+.tl-play .tl-postseason-desk {
+  --desk-rule: rgba(103, 172, 214, .27);
+  min-width: 0;
+  border-top: 2px solid var(--gold, #ecba66);
+  background: linear-gradient(150deg, rgba(36, 77, 111, .32), transparent 65%), #121d2b;
+  color: #edf5fc;
+}
+.tl-play .tl-postseason-desk header { margin-bottom: 12px; }
+.tl-play .tl-postseason-desk .tl-eyebrow { color: var(--gold, #ecba66); }
+.tl-play .tl-postseason-desk h2 { margin: 4px 0 7px; font-size: 24px; }
+.tl-play .tl-postseason-desk header p { margin: 0; font: 600 16px/1.35 var(--font-title, system-ui); overflow-wrap: anywhere; }
+.tl-play .tl-desk-context { margin: 8px 0; color: #b8cce0; font-size: 12px; }
+.tl-play .tl-desk-field { list-style: none; margin: 0; padding: 0; }
+.tl-play .tl-desk-field li {
+  display: grid;
+  grid-template-columns: 4ch minmax(0, 1fr) max-content max-content;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 5px 3px;
+  border-bottom: 1px solid var(--desk-rule);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.tl-play .tl-desk-field li.at-cut { border-top: 2px dashed var(--gold, #ecba66); }
+.tl-play .tl-desk-field li:has(+ .at-cut) { border-bottom: 0; }
+.tl-play .tl-desk-field strong, .tl-play .tl-desk-match strong { min-width: 0; overflow-wrap: anywhere; }
+.tl-play .tl-desk-field .is-mine { color: #9debd8; }
+.tl-play .tl-desk-status { display: block; margin-top: 2px; color: #b8cce0; font-size: 10px; }
+.tl-play .tl-desk-seed, .tl-play .tl-desk-tag { color: #f2c881; font-weight: 700; font-size: 11px; }
+.tl-play .tl-desk-matchups { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 215px), 1fr)); gap: 8px; }
+.tl-play .tl-desk-match {
+  min-width: 0;
+  border: 1px solid var(--desk-rule);
+  border-radius: 6px;
+  background: rgba(5, 12, 21, .44);
+  padding: 8px;
+}
+.tl-play .tl-desk-match > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 13px;
+}
+.tl-play .tl-desk-match > div > span { flex: none; font-size: 12px; font-variant-numeric: tabular-nums; }
+.tl-play .tl-desk-match .is-winner { color: #9debd8; }
+.tl-play .tl-desk-match p { margin: 6px 0 0; color: #b8cce0; font-size: 12px; line-height: 1.35; overflow-wrap: anywhere; }
+.tl-play .tl-postseason-desk .tl-btn { margin-top: 8px; min-height: 44px; }
+.tl-play .tl-postseason-desk details { margin-top: 8px; border-top: 1px solid var(--desk-rule); }
+.tl-play .tl-postseason-desk summary { min-height: 44px; padding-top: 12px; cursor: pointer; font-size: 13px; }
+.tl-play .tl-postseason-desk summary:focus-visible, .tl-play .tl-postseason-desk button:focus-visible { outline: 2px solid #9debd8; outline-offset: 2px; }
