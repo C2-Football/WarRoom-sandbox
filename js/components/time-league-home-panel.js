@@ -156,7 +156,7 @@
                     : { tab: ready ? 'gameday' : 'roster', label: ready ? 'Go to game day →' : 'Review lineup issue →', detail: ready ? 'Lineup locked. Review the matchup, then start game day with the week actions below.' : 'The locked lineup needs attention. Lineups must reopen before you can make changes.' };
         const showWaiverDecision = !watchingPlayoffs && league.settings.waiversEnabled && stage === 'claims';
         const showTradeDecision = !watchingPlayoffs && league.settings.tradesEnabled && (stage === 'claims' || (stage === 'lineup' && openTrades > 0));
-        const desk = useMemo(() => window.App.TimeLeaguePostseasonDesk.buildDesk(league, myTeam.teamId, throughWeek), [league, myTeam.teamId, throughWeek]);
+        const desk = useMemo(() => window.App.TimeLeaguePostseasonDesk?.buildDesk(league, myTeam.teamId, throughWeek), [league, myTeam.teamId, throughWeek]);
         const postseasonDesk = desk && h(window.WrTimeLeaguePostseasonDesk, { desk, onNavigate, onInspectScore, showEntry: true });
 
         if (postgame && league.phase === 'season' && justFinished) {
