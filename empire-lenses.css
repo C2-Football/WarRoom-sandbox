@@ -74,6 +74,8 @@
 .wr-empire-return-sidebar { margin: 0 6px 8px; min-width: 0; }
 
 @media (max-width: 767px) {
+    .empire-lens-controls { position: relative; }
+    .empire-lens-filter-list { position: absolute; inset: 44px 0 auto; z-index: 3; box-shadow: 0 10px 24px #0007; }
     .empire-root.wr-mission-v8 { padding-bottom: calc(62px + env(safe-area-inset-bottom, 0px)); box-sizing: border-box; }
     .empire-root .empire-header { background: linear-gradient(110deg, #21314b, #233653); border-color: var(--gx-edge); }
     .empire-root .empire-topbar, .empire-root.is-local-preview .empire-topbar { padding: calc(5px + env(safe-area-inset-top, 0px)) 12px 5px; gap: 8px; min-height: 52px; }

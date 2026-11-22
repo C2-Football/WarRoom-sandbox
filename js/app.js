@@ -546,7 +546,7 @@
         const linkedRouteRequestRef = React.useRef(0);
         const [allWireOpen, setAllWireOpen] = useState(false);
         const [proMode, setProMode] = useState(false); // Empire Dashboard mode
-        const [empireLensView, setEmpireLensView] = useState({ mode: 'waivers', basis: 'projected', expanded: {}, scroll: 0 });
+        const [empireLensView, setEmpireLensView] = useState({ mode: 'waivers', basis: 'projected', scroll: 0 });
         const [empireOpenLenses, setEmpireOpenLenses] = useState(false);
         const [empireStartup, setEmpireStartup] = useState({ key: '', enabled: false });
         const [empirePriceCache] = useState(() => window.App.EmpireLenses?.createPriceCache());

@@ -94,7 +94,7 @@ function EmpireLensBoard({ leagues, players, playersLoaded, sleeperUserId, view,
             if (!isCurrent()) return;
             const evidenceWeek = JSON.stringify([accountKey, nfl?.season, nfl?.season_type, nfl?.display_week || nfl?.week]);
             const lastEvidence = cache.current.eligibility;
-            const verified = lastEvidence?.week === evidenceWeek ? { ...lastEvidence.verified } : {};
+            const verified = refresh === 0 && lastEvidence?.week === evidenceWeek ? { ...lastEvidence.verified } : {};
             const publishEligibility = () => {
                 const evidence = { accountKey, nfl, week: evidenceWeek, verified: { ...verified } };
                 cache.current = { ...cache.current, eligibility: evidence };
