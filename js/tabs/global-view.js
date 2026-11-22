@@ -2076,7 +2076,7 @@ function useEmpireDecisionJournal(api) {
     return { tick, drafts, failure, edit, commit, retry, hasPending, discard };
 }
 
-function EmpireDashboard({ allLeagues, playersData, sleeperUserId, onEnterLeague: enterLeague, onBack: leaveEmpire, onRefresh, refreshing, hasNonSleeperLeagues, portfolioCoverage, lensView, onLensView, lensCache, openLenses, onWorkspaceChange, startInEmpire, onStartInEmpire }) {
+function EmpireDashboard({ allLeagues, playersData, playersLoaded, sleeperUserId, onEnterLeague: enterLeague, onBack: leaveEmpire, onRefresh, refreshing, hasNonSleeperLeagues, portfolioCoverage, lensView, onLensView, lensCache, priceCache, openLenses, onWorkspaceChange, startInEmpire, onStartInEmpire }) {
     const { useState, useMemo, useCallback, useEffect, useRef } = React;
     const emptyFilters = { league: '', status: '', position: '', agePhase: '', tier: '', exposure: '', assetType: '' };
     const [filters, setFilters] = useState(emptyFilters);
@@ -3516,8 +3516,8 @@ const renderScoutDetail = () => {
             </header>
 
             <main className="empire-shell" data-workspace={workspace} data-asset-view={assetView}>
-                {workspace === 'lenses' && lensView && <EmpireLensBoard leagues={enabledLeagues} players={playersData} sleeperUserId={sleeperUserId}
-                    view={lensView} onView={onLensView} cache={lensCache} onOpenLeague={(league, tab) => {
+                {workspace === 'lenses' && lensView && <EmpireLensBoard leagues={enabledLeagues} players={playersData} playersLoaded={playersLoaded} sleeperUserId={sleeperUserId}
+                    view={lensView} onView={onLensView} cache={lensCache} priceCache={priceCache} onOpenLeague={(league, tab) => {
                         if (!decisionJournal.hasPending()) onLensView({ scroll: window.scrollY });
                         onEnterLeague(league, tab, true);
                     }} />}

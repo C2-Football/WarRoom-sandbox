@@ -71,7 +71,7 @@ test('trade forecasts stay in the future week with explicit league scoring and v
         },
     };
     App.RosterTradeLens = { load: async input => {
-        assert.equal(input.valuesByPid, undefined);
+        assert.deepEqual(input.valuesByPid, {});
         assert.equal(input.projectionsByPid.starter.points.median, 1);
         return { status: 'unavailable' };
     } };
@@ -81,4 +81,21 @@ test('trade forecasts stay in the future week with explicit league scoring and v
     assert.equal(lens.modes.trades.tab, 'trades');
     assert.equal(lens.modes.lineup.tab, 'lineup');
     assert.equal(lens.modes.waivers.tab, 'fa');
+});
+
+test('verified prices remain isolated by account, league, season and settings and expire', () => {
+    const cache = lens.createPriceCache();
+    const current = league({ roster_positions: ['WR', 'BN'], total_rosters: 10 });
+    const sameAccount = 'account:one', otherAccount = 'account:two';
+    const time = Date.parse('2026-11-22T13:00:00Z');
+    const intel = { sourceLeagueId: 'one', builtAt: new Date(time).toISOString(), playerScores: { starter: 1200 } };
+    assert.equal(cache.capture(current, sameAccount, intel, { ...current, id: 'two' }, time), null);
+    assert.equal(cache.capture(current, sameAccount, { ...intel, _projectedYear: 2027 }, current, time), null);
+    assert.deepEqual(cache.capture(current, sameAccount, intel, current, time), { starter: 1200 });
+    intel.playerScores.starter = 0;
+    assert.deepEqual(cache.read(current, sameAccount, time + 1000), { starter: 1200 });
+    assert.equal(cache.read(current, otherAccount, time + 1000), null);
+    assert.equal(cache.read({ ...current, season: '2027' }, sameAccount, time + 1000), null);
+    assert.equal(cache.read({ ...current, scoring_settings: { rec: .5 } }, sameAccount, time + 1000), null);
+    assert.equal(cache.read(current, sameAccount, time + 15 * 60 * 1000), null);
 });

@@ -1,8 +1,9 @@
-function EmpireLensBoard({ leagues, players, sleeperUserId, view, onView, onOpenLeague, cache }) {
+function EmpireLensBoard({ leagues, players, playersLoaded, sleeperUserId, view, onView, onOpenLeague, cache, priceCache }) {
     const { modes, list, load, ownerKey } = window.App.EmpireLenses;
     const { mode, basis, expanded, scroll } = view;
     const accountKey = ownerKey(sleeperUserId);
     const entries = React.useMemo(() => list(leagues, sleeperUserId), [leagues, sleeperUserId]);
+    const hasPlayers = Object.keys(players || {}).length > 0;
     const context = JSON.stringify([accountKey, mode, basis]);
     const [results, setResults] = React.useState(() => cache.current);
     const [refresh, setRefresh] = React.useState(0);
@@ -12,7 +13,7 @@ function EmpireLensBoard({ leagues, players, sleeperUserId, view, onView, onOpen
         if (scroll > 0) window.scrollTo({ top: scroll, behavior: 'instant' });
     }, []);
     React.useEffect(() => {
-        if (!accountKey || !entries.length || !Object.keys(players || {}).length) return;
+        if (!accountKey || !entries.length || !hasPlayers) return;
         const controller = new AbortController();
         const isCurrent = () => !controller.signal.aborted && ownerKey(sleeperUserId) === accountKey && window.App.AccountSession?.isCurrent?.() !== false;
         const old = cache.current.context === context ? cache.current.rows : {};
@@ -44,7 +45,7 @@ function EmpireLensBoard({ leagues, players, sleeperUserId, view, onView, onOpen
                 if (!isCurrent()) return;
                 let result;
                 try {
-                    result = await load(entry, { mode, basis, players, accountKey, nfl, isCurrent,
+                    result = await load(entry, { mode, basis, players, accountKey, nfl, isCurrent, priceCache,
                         statsData: statsData || {}, priorData: priorData || {}, projectionsData: projectionsData || {} });
                 } catch (_) {
                     result = { status: 'unavailable', reason: 'The league comparison could not load.', candidates: [], total: 0 };
@@ -104,7 +105,7 @@ function EmpireLensBoard({ leagues, players, sleeperUserId, view, onView, onOpen
                             aria-label={(canDrillDown ? 'Open ' + modes[mode].label + ' in ' : 'Open ') + (league.name || 'league')}>Open league <span aria-hidden="true">›</span></button>
                     </div>
                     {open && <div className="empire-lens-card-body">
-                        {!result ? <p>{error || (loading ? 'Checking this league…' : 'No verified comparison.')}</p> : <>
+                        {!result ? <p>{error || (playersLoaded && !hasPlayers ? 'The player feed is unavailable.' : loading ? 'Checking this league…' : 'No verified comparison.')}</p> : <>
                             {result.participationNotice && <p>{result.participationNotice}</p>}
                             {!result.candidates.length && <p>{result.reason || 'No improving moves found for this league.'}</p>}
                             {result.candidates.map(candidate => <div className="empire-lens-move" key={candidate.id}>

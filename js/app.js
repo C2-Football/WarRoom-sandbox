@@ -547,11 +547,15 @@
         const [empireLensView, setEmpireLensView] = useState({ mode: 'waivers', basis: 'projected', expanded: {}, scroll: 0 });
         const [empireOpenLenses, setEmpireOpenLenses] = useState(false);
         const [empireStartup, setEmpireStartup] = useState({ key: '', enabled: false });
+        const [empirePriceCache] = useState(() => window.App.EmpireLenses?.createPriceCache());
         const empireLensCache = React.useRef({ context: '', rows: {} });
         const checkedEmpireStartup = React.useRef(false);
         const updateEmpireLensView = patch => setEmpireLensView(previous => ({ ...previous, ...patch }));
         const empireOwnerKey = window.App.EmpireLenses?.ownerKey(sleeperUser?.user_id);
         const empireStartKey = empireOwnerKey ? 'wr_empire_start_v1_' + encodeURIComponent(empireOwnerKey) : '';
+        function rememberEmpirePrices(league) {
+            if (accountSessionCurrent()) window.App.EmpireLenses?.captureActivePrices(empirePriceCache, league, empireOwnerKey);
+        }
         const [leagueQuery, setLeagueQuery] = useState('');
         const [hubAllLeagues, setHubAllLeagues] = useState(false);
         const [showConnect, setShowConnect] = useState(false); // hub: show platform connect / add-league view
@@ -885,6 +889,7 @@
                     window.App.NavigationGuard.restoreHistory();
                     return;
                 }
+                rememberEmpirePrices(selectedLeague);
                 cancelLinkedLeagueRoute();
                 isNavigatingRef.current = true;
                 const state = e.state;
@@ -913,7 +918,7 @@
                 history.replaceState(state, '', routeUrl(window.location.hash));
             }
             return () => window.removeEventListener('popstate', onPopState);
-        }, [sleeperLeagues, espnLeagues, mflLeagues, sleeperUser?.user_id]);
+        }, [sleeperLeagues, espnLeagues, mflLeagues, sleeperUser?.user_id, selectedLeague, empireOwnerKey]);
 
         React.useEffect(() => {
             if (initialRouteAppliedRef.current) return;
@@ -1330,6 +1335,7 @@
                     <_EmpireDash
                         allLeagues={empireLeagues}
                         playersData={empirePlayers}
+                        playersLoaded={empirePlayersLoaded}
                         sleeperUserId={sleeperUser?.user_id}
                         onRefresh={refreshEmpirePortfolio}
                         refreshing={empireRefreshing || loading}
@@ -1337,6 +1343,7 @@
                         hasNonSleeperLeagues={!!(visibleEspnLeagues.length || visibleMflLeagues.length)}
                         lensView={empireLensView}
                         lensCache={empireLensCache}
+                        priceCache={empirePriceCache}
                         onLensView={updateEmpireLensView}
                         openLenses={empireOpenLenses}
                         onWorkspaceChange={changeEmpireWorkspace}
@@ -1442,6 +1449,7 @@
                         onBack={(navigation) => {
                             if (window.App.NavigationGuard?.canNavigate() === false) return;
                             const leagueSelector = navigation?.leagueSelector === true;
+                            rememberEmpirePrices(selectedLeague);
                             cancelLinkedLeagueRoute();
                             setSelectedLeague(null);
                             setActiveTab(defaultTab);
