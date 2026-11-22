@@ -6,6 +6,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { createHash } = require('node:crypto');
 
 const ROOT = path.resolve(__dirname, '..');
 const TARGET = path.join(ROOT, 'reconai-shared');
@@ -100,7 +101,18 @@ for (const file of SERVER_FILES) fs.copyFileSync(path.join(SOURCE, file), path.j
 // never propagate a change to it in either direction. That convention has no
 // enforcement, so a one-sided edit silently forks the value engine (DHQ, ROS,
 // keeper blend) between the two repos. Fail loudly instead.
-for (const file of ['startsit-engine.js', 'weekly-proj.js', 'nfl-context.js', 'redraft-market.js', 'roster-waiver-lens.js', 'roster-trade-lens.js', 'waiver-roster-read.js', 'roster-lens-basis.js']) fs.copyFileSync(path.join(SOURCE, file), path.join(ROOT, 'js/shared', file));
+for (const file of ['startsit-engine.js', 'weekly-proj.js', 'nfl-context.js', 'redraft-market.js', 'roster-trade-lens.js', 'waiver-roster-read.js', 'roster-lens-basis.js']) fs.copyFileSync(path.join(SOURCE, file), path.join(ROOT, 'js/shared', file));
+
+// Keep the sandbox Waiver Lens fix while the shared dependency remains pinned.
+// Reconcile and resume copying this file when dhq-shared updates the lens.
+const waiverLens = 'roster-waiver-lens.js';
+const sharedWaiverLens = fs.readFileSync(path.join(SOURCE, waiverLens));
+const localWaiverLens = fs.readFileSync(path.join(ROOT, 'js/shared', waiverLens));
+const waiverLensBase = '36a34f01d7918e05f3239ff9f4c5505e98ff08fd246e34e7adcea260d6a47710';
+if (!sharedWaiverLens.equals(localWaiverLens) && createHash('sha256').update(sharedWaiverLens).digest('hex') !== waiverLensBase) {
+  console.error('[sync-reconai-shared] Reconcile the sandbox Waiver Lens fixes with the updated dhq-shared module before syncing.');
+  process.exit(1);
+}
 const TWIN = 'player-value.js';
 const twinLocal = path.join(ROOT, 'js', 'utils', TWIN);
 const twinShared = path.join(SOURCE, TWIN);
@@ -149,7 +161,6 @@ if (fs.existsSync(DATA_SOURCE)) {
 }
 
 // Identical source fingerprint in browser history and the headless canonical host.
-const {createHash}=require('node:crypto');
 const {MODULES}=require(path.join(SOURCE,'value-monitor-runtime.cjs'));
 const engineSource=MODULES.map(name=>name+fs.readFileSync(path.join(SOURCE,name),'utf8')).join('')+fs.readFileSync(path.join(ROOT,'js/shared/availability-forecast.js'),'utf8');
 fs.writeFileSync(path.join(ROOT,'js/shared/value-engine-version.js'),'window.App=window.App||{};window.App.ValueEngineVersion='+JSON.stringify(createHash('sha256').update(engineSource).digest('hex'))+';\n');

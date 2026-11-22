@@ -119,7 +119,50 @@ const select = (out, predicate) => all(out).find(predicate);
 const button = (out, label) => select(out, n => n.type === 'button' && textOf(n) === label);
 const matchupPanel = node => String(node?.props?.className || '').split(/\s+/).includes('gd-matchup');
 
+async function checkScheduleForecastCoverage() {
+    const window = { App: {} };
+    const ctx = vm.createContext({ window });
+    for (const file of ['js/shared/matchup.js', 'js/utils/schedule-engine.js']) {
+        vm.runInContext(fs.readFileSync(file, 'utf8'), ctx, { filename: file });
+    }
+    const { Matchup, Schedule } = window.App;
+    const mine = { roster_id: 1, players: ['a', 'b'], settings: { wins: 1, fpts: 94 } };
+    const theirs = { roster_id: 2, players: ['c', 'd'] };
+    const league = { id: 'coverage-test', settings: { playoff_week_start: 4 }, rosters: [mine, theirs] };
+    Matchup.resolveSeasonOpponents = async () => ({
+        1: { oppRosterId: 2, myPts: 94, oppPts: 88 },
+        2: { oppRosterId: 2 },
+        3: { oppRosterId: 2 },
+    });
+    let ready = false;
+    window.App.WeeklyProj = {
+        currentWeek: () => 2,
+        optimalForRoster(roster, _league, { week }) {
+            const slots = roster.players.map(pid => ({ pid }));
+            const projections = Object.fromEntries(roster.players.map(pid => [
+                pid,
+                { available: true, points: pid === 'd' && week === 2 ? (ready ? { median: 0 } : {}) : { median: 10 } },
+            ]));
+            return { optimal: { starters: slots, slots }, projections };
+        },
+    };
+    const partial = await Schedule.buildSeason({ league, myRoster: mine });
+    assert.equal(partial.summary.record, '1-0');
+    assert.equal(partial.weeks[1].winPct, null, 'missing coverage cannot make one side the favorite');
+    assert.equal(partial.weeks[2].winPct, 50, 'complete weeks still show their odds');
+    assert.equal(partial.summary.projRecord, null);
+    assert.equal(partial.summary.projPF, null);
+    assert.equal(partial.summary.winPct, null);
+
+    ready = true;
+    const recovered = await Schedule.buildSeason({ league, myRoster: mine });
+    assert.equal(recovered.weeks[1].oppProj, 10, 'a measured zero counts toward coverage');
+    assert.equal(recovered.summary.remainingWeeks, 2, 'partial forecasts do not block a fresh attempt');
+    assert.notEqual(recovered.summary.projRecord, null);
+}
+
 (async () => {
+    await checkScheduleForecastCoverage();
     {
     const handoff = { source: 'roster-lineup-lens', accountKey: 'account:viewer', leagueId: '123', season: '2026', rosterId: '1',
         week: 2, slotIndex: 0, incomingPid: 'd', outgoingPid: 'a', ts: Date.now() };

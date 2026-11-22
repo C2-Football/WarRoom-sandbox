@@ -24,7 +24,13 @@ assert.equal(Lens.evaluate({...args,roster:{...roster,locked_players:['w','r','b
 assert.equal(Lens.evaluate({...args,gm:{untouchable:['w','r','b']}}).status,'empty');
 assert(!Lens.evaluate({...args,gm:{faFilters:{excludePositions:['RB']}}}).candidates.some(x=>x.pid==='add'));
 assert(!Lens.evaluate({...args,valuesByPid:{...args.valuesByPid,add:1}}).candidates.some(x=>x.pid==='add'),'One-week bump cannot silently sacrifice a stronger asset');
-out=Lens.evaluate({...args,projectionsByPid:{...args.projectionsByPid,w:null}});assert.equal(out.readiness.weekly,false);assert.equal(out.candidates[0].weekly.delta,null,'Missing projection does not become zero');
+out=Lens.evaluate({...args,projectionsByPid:{...args.projectionsByPid,w:null}});
+pick=out.candidates.find(c=>c.pid==='add');
+assert.equal(out.readiness.weekly,true);
+assert.equal(pick.weekly.partial,true);
+assert.equal(pick.weekly.before,15);
+assert.equal(pick.weekly.delta,3,'Measure the RB upgrade while keeping the unprojected WR in both lineups');
+assert.match(out.comparisonNote,/unscored starters/i);
 out=Lens.evaluate({...args,projectionsByPid:{...args.projectionsByPid,w:0}});assert.equal(out.readiness.weekly,true);assert.equal(out.before.weekly,15,'A measured zero remains zero');
 out=Lens.evaluate({...args,gm:{untouchable:['w','r']},projectionsByPid:{...args.projectionsByPid,b:{available:false,points:{median:5}}}});
 assert.equal(out.candidates.find(x=>x.pid==='add').outgoing[0].projection,null,'An unavailable player does not leak an unplayable median into PROJ');
@@ -121,9 +127,15 @@ for (const [type,code] of [['redraft',0],['keeper',1],['dynasty',2],['best_ball'
     assert.equal(missing.status,'unavailable');
     assert.equal(missing.suggestProjected,true,type+': offer projections when no averages can be compared');
     const projected=Lens.evaluate({...averageArgs,basis:'projected',
-        projectionsByPid:{...args.projectionsByPid,w:null},rosState:null});
-    assert.equal(projected.status,'unavailable',type+': missing forecasts still require a complete comparison');
+        projectionsByPid:{...args.projectionsByPid,w:null,unknownReplacement:30},rosState:null});
+    assert.equal(projected.status,'ready',type+': unrelated missing forecasts still permit measured upgrades');
+    assert.equal(projected.candidates.find(c=>c.pid==='add')?.weekly.delta,3);
+    assert(!projected.candidates.some(c=>c.pid==='unknownReplacement'),type+': a scored player cannot replace an unscored starter in a partial gain');
 }
+const unprojected=Lens.evaluate({...args,projectionsByPid:{},rosState:null});
+assert.equal(unprojected.status,'unavailable');
+assert.match(unprojected.reason,/too few player projections/i);
+assert.equal(unprojected.candidates.length,0);
 const balancedRoster={roster_id:1,owner_id:'owner',players:['mainQ','reserveQ','oldDef'],settings:{waiver_budget_used:0}};
 const balancedArgs={...args,league:{...league,roster_positions:['QB','DEF','BN']},roster:balancedRoster,
     rosters:[balancedRoster,rosters[1]],players:{held:players.held,
